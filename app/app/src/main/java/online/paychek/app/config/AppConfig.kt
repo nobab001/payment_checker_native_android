@@ -1,0 +1,49 @@
+package online.paychek.app.config
+
+/**
+ * Central configuration for API base URLs and app-level constants.
+ * Corresponds to blueprint: config/api_config.dart
+ *
+ * VPS-Ready: শুধু BASE_URL পরিবর্তন করলেই production-এ কাজ করবে।
+ * Local  → BASE_URL = "http://10.0.2.2:3000/"   (Android Emulator → localhost)
+ * XAMPP  → BASE_URL = "http://192.168.x.x:3000/" (Real device → LAN IP)
+ * VPS    → BASE_URL = "https://paychek.online/"
+ */
+object AppConfig {
+
+    // -----------------------------------------------------------------------
+    // Server URLs — VPS-ready: শুধু এই একটি লাইন পরিবর্তন করুন
+    // -----------------------------------------------------------------------
+    const val BASE_URL        = "https://paychek.online/"
+    const val API_BASE_URL    = "${BASE_URL}api/"
+    const val SOCKET_URL      = BASE_URL
+
+    // -----------------------------------------------------------------------
+    // SharedPreferences keys
+    // -----------------------------------------------------------------------
+    const val PREF_NAME               = "paychek_prefs"
+    const val KEY_AUTH_TOKEN          = "pcu_auth_token"
+    const val KEY_DEVICE_ID           = "pcu_hw_device_id_v1"
+    const val KEY_SMS_SERVICE_ACTIVE  = "pcu_sms_service_active"
+    const val KEY_OFFLINE_INGEST_QUEUE= "pcu_payment_ingest_pending_v1"
+    const val KEY_PIN_VERIFIED        = "pcu_pin_verified_session"
+
+    // -----------------------------------------------------------------------
+    // P2P Sync defaults
+    // -----------------------------------------------------------------------
+    const val DEFAULT_SYNC_PORT    = 8765
+    const val SYNC_PING_PATH       = "/ping"
+    const val SYNC_POST_PATH       = "/sync"
+
+    // -----------------------------------------------------------------------
+    // Polling & Worker intervals
+    // -----------------------------------------------------------------------
+    const val DEVICE_POLL_INTERVAL_MS   = 12_000L   // 12 seconds
+    const val SYNC_WORKER_INTERVAL_MIN  = 15L        // 15 minutes
+
+    // -----------------------------------------------------------------------
+    // HTTP Headers
+    // -----------------------------------------------------------------------
+    const val HEADER_DEVICE_ID    = "X-Device-Id"
+    const val HEADER_AUTH_TOKEN   = "Authorization"
+}

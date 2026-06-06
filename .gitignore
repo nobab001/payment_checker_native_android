@@ -1,0 +1,19 @@
+# Gradle files
+.gradle/
+app/.gradle/
+app/build/
+app/app/build/
+app/local.properties
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+
+# Node dependencies
+backend/node_modules/
+backend/.env
+
+# OS files
+Thumbs.db
+.DS_Store
