@@ -15,7 +15,7 @@ object AppConfig {
     // Server URLs — VPS-ready: শুধু এই একটি লাইন পরিবর্তন করুন
     // -----------------------------------------------------------------------
     // 🔴 XAMPP LOCAL TEST MODE (আপনার LAN IP + Node.js port)
-    const val BASE_URL        = "http://192.168.0.116:3000/"
+    const val BASE_URL        = "https://drastic-fringe-unlined.ngrok-free.dev/"
     // ✅ VPS PRODUCTION — সার্ভারে deploy করার সময় এই লাইনটি uncomment করুন:
     // const val BASE_URL     = "https://paychek.online/"
     const val API_BASE_URL    = "${BASE_URL}api/"

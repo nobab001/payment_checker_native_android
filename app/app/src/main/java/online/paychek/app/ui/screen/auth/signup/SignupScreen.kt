@@ -50,218 +50,239 @@ fun SignupScreen(
         modifier = modifier
             .fillMaxSize()
             .background(AppBackground)
-            .padding(16.dp),
+            .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = CardBackground),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-            shape = RoundedCornerShape(16.dp),
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(scrollState)
+                .verticalScroll(scrollState),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "প্রোফাইল সম্পন্ন করুন",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = RoyalIndigo,
-                    textAlign = TextAlign.Center
-                )
+            Spacer(modifier = Modifier.height(16.dp))
 
-                Text(
-                    text = "আপনার পেমেন্ট চেকার অ্যাকাউন্টটি সক্রিয় করতে নিচের তথ্যগুলো পূরণ করুন।",
-                    fontSize = 13.sp,
-                    color = TextSecondary,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
+            Text(
+                text = "প্রোফাইল সম্পন্ন করুন",
+                fontSize = 26.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = RoyalIndigo,
+                textAlign = TextAlign.Center
+            )
 
-                // Error Message
-                uiState.errorMessage?.let { error ->
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = error,
-                            color = StatusRed,
-                            fontSize = 13.sp,
-                            modifier = Modifier.padding(10.dp),
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
+            Text(
+                text = "আপনার পেমেন্ট চেকার অ্যাকাউন্টটি সক্রিয় করতে নিচের তথ্যগুলো পূরণ করুন।",
+                fontSize = 13.sp,
+                color = TextSecondary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
 
-                // 1. Full Name Field
-                OutlinedTextField(
-                    value = uiState.name,
-                    onValueChange = { viewModel.onNameChanged(it) },
-                    label = { Text("পূর্ণ নাম (Full Name)") },
-                    placeholder = { Text("আপনার পুরো নাম লিখুন") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = "Name Icon",
-                            tint = RoyalIndigo
-                        )
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text,
-                        imeAction = ImeAction.Next
-                    ),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = RoyalIndigo,
-                        focusedLabelColor = RoyalIndigo
-                    ),
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Error Message
+            uiState.errorMessage?.let { error ->
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
-                )
-
-                // 2. Mobile Phone (Read-Only if prefilled)
-                OutlinedTextField(
-                    value = uiState.phone ?: "",
-                    onValueChange = { viewModel.onPhoneChanged(it) },
-                    label = { Text("মোবাইল নম্বর") },
-                    placeholder = { Text("যেমন: 017xxxxxxxx") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.PhoneAndroid,
-                            contentDescription = "Phone Icon",
-                            tint = if (uiState.isPhonePreFilled) Color.Gray else RoyalIndigo
-                        )
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Phone,
-                        imeAction = ImeAction.Next
-                    ),
-                    singleLine = true,
-                    readOnly = uiState.isPhonePreFilled,
-                    enabled = !uiState.isPhonePreFilled,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = RoyalIndigo,
-                        focusedLabelColor = RoyalIndigo
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // 3. Email (Read-Only if prefilled)
-                OutlinedTextField(
-                    value = uiState.email ?: "",
-                    onValueChange = { viewModel.onEmailChanged(it) },
-                    label = { Text("ইমেইল ঠিকানা") },
-                    placeholder = { Text("যেমন: yourname@gmail.com") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Email,
-                            contentDescription = "Email Icon",
-                            tint = if (uiState.isEmailPreFilled) Color.Gray else RoyalIndigo
-                        )
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Email,
-                        imeAction = ImeAction.Next
-                    ),
-                    singleLine = true,
-                    readOnly = uiState.isEmailPreFilled,
-                    enabled = !uiState.isEmailPreFilled,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = RoyalIndigo,
-                        focusedLabelColor = RoyalIndigo
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // 4. PIN Field (6-digits, numeric)
-                OutlinedTextField(
-                    value = uiState.pin,
-                    onValueChange = { viewModel.onPinChanged(it) },
-                    label = { Text("৬-ডিজিটের নিরাপত্তা পিন (PIN)") },
-                    placeholder = { Text("যেমন: ১২৩৪৫৬") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = "PIN Icon",
-                            tint = RoyalIndigo
-                        )
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next
-                    ),
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = RoyalIndigo,
-                        focusedLabelColor = RoyalIndigo
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // 5. Confirm PIN Field (6-digits, numeric)
-                OutlinedTextField(
-                    value = uiState.confirmPin,
-                    onValueChange = { viewModel.onConfirmPinChanged(it) },
-                    label = { Text("নিরাপত্তা পিনটি পুনরায় লিখুন") },
-                    placeholder = { Text("যেমন: ১২৩৪৫৬") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = "Confirm PIN Icon",
-                            tint = RoyalIndigo
-                        )
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            focusManager.clearFocus()
-                            viewModel.submitSignup(onSignupComplete)
-                        }
-                    ),
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = RoyalIndigo,
-                        focusedLabelColor = RoyalIndigo
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Submit Button
-                if (uiState.isLoading) {
-                    CircularProgressIndicator(color = RoyalIndigo)
-                } else {
-                    Button(
-                        onClick = {
-                            focusManager.clearFocus()
-                            viewModel.submitSignup(onSignupComplete)
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                    ) {
-                        Text(
-                            text = "অ্যাকাউন্ট তৈরি করুন",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
+                ) {
+                    Text(
+                        text = error,
+                        color = StatusRed,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(12.dp),
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
+
+            // 1. Full Name Field
+            OutlinedTextField(
+                value = uiState.name,
+                onValueChange = { viewModel.onNameChanged(it) },
+                placeholder = { Text("পূর্ণ নাম (Full Name)") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = "Name Icon",
+                        tint = RoyalIndigo
+                    )
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    imeAction = ImeAction.Next
+                ),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color(0xFFFBFBFC),
+                    focusedBorderColor = RoyalIndigo,
+                    unfocusedBorderColor = Color(0xFFE2E8F0),
+                    focusedPlaceholderColor = Color(0xFF94A3B8),
+                    unfocusedPlaceholderColor = Color(0xFF94A3B8)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // 2. Mobile Phone (Read-Only if prefilled)
+            OutlinedTextField(
+                value = uiState.phone ?: "",
+                onValueChange = { viewModel.onPhoneChanged(it) },
+                placeholder = { Text("মোবাইল নম্বর") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.PhoneAndroid,
+                        contentDescription = "Phone Icon",
+                        tint = if (uiState.isPhonePreFilled) Color.Gray else RoyalIndigo
+                    )
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Phone,
+                    imeAction = ImeAction.Next
+                ),
+                singleLine = true,
+                readOnly = uiState.isPhonePreFilled,
+                enabled = !uiState.isPhonePreFilled,
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color(0xFFFBFBFC),
+                    focusedBorderColor = RoyalIndigo,
+                    unfocusedBorderColor = Color(0xFFE2E8F0),
+                    focusedPlaceholderColor = Color(0xFF94A3B8),
+                    unfocusedPlaceholderColor = Color(0xFF94A3B8)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // 3. Email (Read-Only if prefilled)
+            OutlinedTextField(
+                value = uiState.email ?: "",
+                onValueChange = { viewModel.onEmailChanged(it) },
+                placeholder = { Text("ইমেইল ঠিকানা") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Email,
+                        contentDescription = "Email Icon",
+                        tint = if (uiState.isEmailPreFilled) Color.Gray else RoyalIndigo
+                    )
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Email,
+                    imeAction = ImeAction.Next
+                ),
+                singleLine = true,
+                readOnly = uiState.isEmailPreFilled,
+                enabled = !uiState.isEmailPreFilled,
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color(0xFFFBFBFC),
+                    focusedBorderColor = RoyalIndigo,
+                    unfocusedBorderColor = Color(0xFFE2E8F0),
+                    focusedPlaceholderColor = Color(0xFF94A3B8),
+                    unfocusedPlaceholderColor = Color(0xFF94A3B8)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // 4. PIN Field (6-digits, numeric)
+            OutlinedTextField(
+                value = uiState.pin,
+                onValueChange = { viewModel.onPinChanged(it) },
+                placeholder = { Text("৬-ডিজিটের নিরাপত্তা পিন (PIN)") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "PIN Icon",
+                        tint = RoyalIndigo
+                    )
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Next
+                ),
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color(0xFFFBFBFC),
+                    focusedBorderColor = RoyalIndigo,
+                    unfocusedBorderColor = Color(0xFFE2E8F0),
+                    focusedPlaceholderColor = Color(0xFF94A3B8),
+                    unfocusedPlaceholderColor = Color(0xFF94A3B8)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // 5. Confirm PIN Field (6-digits, numeric)
+            OutlinedTextField(
+                value = uiState.confirmPin,
+                onValueChange = { viewModel.onConfirmPinChanged(it) },
+                placeholder = { Text("নিরাপত্তা পিনটি পুনরায় লিখুন") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Confirm PIN Icon",
+                        tint = RoyalIndigo
+                    )
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        focusManager.clearFocus()
+                        viewModel.submitSignup(onSignupComplete)
+                    }
+                ),
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color(0xFFFBFBFC),
+                    focusedBorderColor = RoyalIndigo,
+                    unfocusedBorderColor = Color(0xFFE2E8F0),
+                    focusedPlaceholderColor = Color(0xFF94A3B8),
+                    unfocusedPlaceholderColor = Color(0xFF94A3B8)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Submit Button
+            if (uiState.isLoading) {
+                CircularProgressIndicator(
+                    color = RoyalIndigo,
+                    modifier = Modifier.padding(8.dp)
+                )
+            } else {
+                Button(
+                    onClick = {
+                        focusManager.clearFocus()
+                        viewModel.submitSignup(onSignupComplete)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                ) {
+                    Text(
+                        text = "অ্যাকাউন্ট তৈরি করুন",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
