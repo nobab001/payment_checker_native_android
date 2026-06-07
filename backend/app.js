@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const cron = require('node-cron');
+const { query } = require('./db/connection');
 require('dotenv').config();
 
 const authRoutes     = require('./routes/authRoutes');
@@ -45,6 +47,16 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error('Express Error Handler caught:', err);
   res.status(500).json({ error: 'Internal Server Error' });
+});
+
+// Schedule a daily midnight task to reset email limits
+cron.schedule('0 0 * * *', async () => {
+  try {
+    await query('UPDATE email_accounts SET sent_today = 0');
+    console.log('[CRON] Reset daily email send limits successfully.');
+  } catch (err) {
+    console.error('[CRON] Error resetting daily email limits:', err);
+  }
 });
 
 // Start listening for connections

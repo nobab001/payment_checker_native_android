@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS `otps` (
   `created_at` TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   INDEX `idx_contact` (`contact`),
-  INDEX `idx_code_contact` (`code`, `contact`)
+  INDEX `idx_code_contact` (`code`, `contact`),
+  INDEX `idx_contact_code` (`contact`, `code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
@@ -226,7 +227,11 @@ INSERT INTO `checkout_view_templates` (`sms_template_id`, `single_number_instruc
   (1, 'নিচের বিকাশ পার্সোনাল নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', 'নিচের যেকোনো একটি সক্রিয় বিকাশ নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।'),
   (2, 'নিচের নগদ নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', 'নিচের যেকোনো একটি সক্রিয় নগদ নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।'),
   (3, 'নিচের রকেট নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', 'নিচের যেকোনো একটি সক্রিয় রকেট নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।'),
-  (4, 'নিচের উপায় নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', 'নিচের যেকোনো একটি সক্রিয় উপায় নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।')
+  (4, 'নিচের উপায় নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', 'নিচের যেকোনো একটি সক্রিয় উপায় নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।'),
+  (5, 'নিচের বিকাশ এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', 'নিচের যেকোনো একটি সক্রিয় বিকাশ এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।'),
+  (6, 'নিচের নগদ এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', 'নিচের যেকোনো একটি সক্রিয় নগদ এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।'),
+  (7, 'নিচের রকেট এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', 'নিচের যেকোনো একটি সক্রিয় রকেট এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।'),
+  (8, 'নিচের উপায় এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', 'নিচের যেকোনো একটি সক্রিয় উপায় এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।')
 ON DUPLICATE KEY UPDATE 
   `single_number_instruction` = VALUES(`single_number_instruction`),
   `multiple_number_instruction` = VALUES(`multiple_number_instruction`);
@@ -270,7 +275,11 @@ INSERT INTO `sms_templates` (`id`, `template_name`, `sender_id`, `matching_keywo
   (1, 'bKash Personal', 'bKash', 'You have received,Tk.,Ref:', 'You have received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})', 1, 1),
   (2, 'Nagad Personal', 'NAGAD', 'received cash in Tk,TrxID:', 'received cash in Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})', 1, 1),
   (3, 'Rocket Personal', '16216', 'received Tk,TrxID:', 'received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})', 1, 1),
-  (4, 'Upay Personal', 'upay', 'received Tk,TrxID', 'received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})', 1, 1)
+  (4, 'Upay Personal', 'upay', 'received Tk,TrxID', 'received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})', 1, 1),
+  (5, 'bKash Agent', 'bKash', 'Cash In,Tk.,Ref:', 'Cash In Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})', 1, 1),
+  (6, 'Nagad Agent', 'NAGAD', 'Cash in received,Tk.,TrxID:', 'Cash in received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})', 1, 1),
+  (7, 'Rocket Agent', '16216', 'Cash In received,Tk.,TrxID:', 'Cash In received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})', 1, 1),
+  (8, 'Upay Agent', 'upay', 'Cash In received,Tk.,TrxID', 'Cash In received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})', 1, 1)
 ON DUPLICATE KEY UPDATE 
   `template_name` = VALUES(`template_name`),
   `sender_id` = VALUES(`sender_id`),
@@ -320,6 +329,26 @@ CREATE TABLE IF NOT EXISTS `sms_settings` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
+-- TABLE 10: email_accounts
+-- SMTP accounts configurations for Round-Robin OTP dispatch (admin-managed)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS `email_accounts` (
+  `id`                 INT          NOT NULL AUTO_INCREMENT,
+  `email`              VARCHAR(255) NOT NULL,
+  `password`           VARCHAR(255) NOT NULL COMMENT 'SMTP app-specific password',
+  `host`               VARCHAR(255) NOT NULL DEFAULT 'smtp.gmail.com',
+  `port`               INT          NOT NULL DEFAULT 465,
+  `secure`             TINYINT(1)   NOT NULL DEFAULT 1 COMMENT '1 = SSL, 0 = TLS',
+  `daily_limit`        INT          NOT NULL DEFAULT 500,
+  `sent_today`         INT          NOT NULL DEFAULT 0,
+  `is_active`          TINYINT(1)   NOT NULL DEFAULT 1,
+  `created_at`         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_email_acc` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================================================
 -- END OF SCHEMA
 -- Tables created:
 --   1. users               — User profiles
@@ -328,7 +357,9 @@ CREATE TABLE IF NOT EXISTS `sms_settings` (
 --   4. registered_devices  — Device tracking + Trial Lock
 --   5. sms_history         — Parsed payment records (Unique TrxID)
 --   6. sms_templates       — Admin regex parsing rules
+--   6.5. checkout_view_templates — Checkout gateway display text mappings
 --   7. gateway_layouts     — Merchant checkout API sites
 --   8. global_config       — App-wide feature flags
 --   9. sms_settings        — SMS gateway provider config
+--   10. email_accounts     — SMTP email configuration details
 -- =============================================================================

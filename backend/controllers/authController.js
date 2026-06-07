@@ -1,6 +1,7 @@
 const { query } = require('../db/connection');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_987654321';
 const TRIAL_DEFAULT_DAYS = parseInt(process.env.TRIAL_DEFAULT_DAYS || '7', 10);
@@ -17,7 +18,6 @@ async function checkContact(req, res) {
     }
 
     const cleanedContact = contact.trim();
-    // Query users table
     const users = await query(
       'SELECT id FROM users WHERE phone = ? OR email = ? LIMIT 1',
       [cleanedContact, cleanedContact]
@@ -32,11 +32,12 @@ async function checkContact(req, res) {
 
 /**
  * 2. POST /api/send-otp
- * Sends/generates OTP for an existing user.
+ * Sends/generates OTP for an existing user (Login Flow).
+ * Returns HTTP 404 with action SHOW_NOT_FOUND_DIALOG if account is missing.
  */
 async function sendOtp(req, res) {
   try {
-    const { contact, deviceId } = req.body;
+    const { contact } = req.body;
     if (!contact) {
       return res.status(400).json({ error: 'Contact is required' });
     }
@@ -49,7 +50,11 @@ async function sendOtp(req, res) {
     );
 
     if (users.length === 0) {
-      return res.status(404).json({ success: false, message: 'অ্যাকাউন্টটি খুঁজে পাওয়া যায়নি।' });
+      return res.status(404).json({
+        success: false,
+        action: 'SHOW_NOT_FOUND_DIALOG',
+        message: 'অ্যাকাউন্টটি খুঁজে পাওয়া যায়নি।'
+      });
     }
 
     const otpCode = generateOtpCode();
@@ -60,9 +65,15 @@ async function sendOtp(req, res) {
       [cleanedContact, otpCode, expiresAt]
     );
 
-    // In a real application, you would integrate an SMS gateway or SMTP service here.
-    // For local testing/XAMPP, we print it to console and return success.
-    console.log(`[OTP SENT] To: ${cleanedContact} | Code: ${otpCode}`);
+    // Dispatch OTP via SMS or Email
+    const success = await sendOtpDispatch(cleanedContact, otpCode);
+    if (!success) {
+      const isEmail = cleanedContact.includes('@');
+      const errorMsg = isEmail 
+        ? 'দুঃখিত, ওটিপি ইমেইল পাঠাতে ব্যর্থ হয়েছে। অনুগ্রহ করে কিছু সময় পর আবার চেষ্টা করুন।'
+        : 'দুঃখিত, ওটিপি এসএমএস পাঠাতে ব্যর্থ হয়েছে। অনুগ্রহ করে সঠিক নম্বর দিন এবং পুনরায় চেষ্টা করুন।';
+      return res.status(500).json({ success: false, message: errorMsg });
+    }
 
     return res.json({ success: true, message: 'ওটিপি কোড সফলভাবে পাঠানো হয়েছে।' });
   } catch (error) {
@@ -72,12 +83,12 @@ async function sendOtp(req, res) {
 }
 
 /**
- * 3. POST /api/send-otp-new
+ * 3. POST /api/auth/register-send-otp
  * Sends/generates OTP for new user registration.
  */
-async function sendOtpNew(req, res) {
+async function registerSendOtp(req, res) {
   try {
-    const { contact, deviceId } = req.body;
+    const { contact } = req.body;
     if (!contact) {
       return res.status(400).json({ error: 'Contact is required' });
     }
@@ -90,7 +101,10 @@ async function sendOtpNew(req, res) {
     );
 
     if (users.length > 0) {
-      return res.status(400).json({ success: false, message: 'এই মোবাইল বা ইমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট খোলা হয়েছে।' });
+      return res.status(400).json({
+        success: false,
+        message: 'এই মোবাইল বা ইমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট খোলা হয়েছে।'
+      });
     }
 
     const otpCode = generateOtpCode();
@@ -101,13 +115,29 @@ async function sendOtpNew(req, res) {
       [cleanedContact, otpCode, expiresAt]
     );
 
-    console.log(`[REGISTRATION OTP SENT] To: ${cleanedContact} | Code: ${otpCode}`);
+    // Dispatch OTP
+    const success = await sendOtpDispatch(cleanedContact, otpCode);
+    if (!success) {
+      const isEmail = cleanedContact.includes('@');
+      const errorMsg = isEmail 
+        ? 'দুঃখিত, ওটিপি ইমেইল পাঠাতে ব্যর্থ হয়েছে। অনুগ্রহ করে কিছু সময় পর আবার চেষ্টা করুন।'
+        : 'দুঃখিত, ওটিপি এসএমএস পাঠাতে ব্যর্থ হয়েছে। অনুগ্রহ করে সঠিক নম্বর দিন এবং পুনরায় চেষ্টা করুন।';
+      return res.status(500).json({ success: false, message: errorMsg });
+    }
 
     return res.json({ success: true, message: 'রেজিস্ট্রেশন ওটিপি সফলভাবে পাঠানো হয়েছে।' });
   } catch (error) {
-    console.error('Error sending signup OTP:', error);
+    console.error('Error sending registration OTP:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
+}
+
+/**
+ * 3.2. POST /api/send-otp-new
+ * Legacy fallback endpoint for registration OTP.
+ */
+async function sendOtpNew(req, res) {
+  return registerSendOtp(req, res);
 }
 
 /**
@@ -237,7 +267,6 @@ async function verifyOtp(req, res) {
       { expiresIn: '30d' }
     );
 
-    // Map fields to match client DTO structures
     return res.json({
       token,
       requiresSecurityPin: !!user.pin,
@@ -289,16 +318,63 @@ async function completeProfile(req, res) {
       return res.status(400).json({ error: 'PIN must be exactly 6 digits' });
     }
 
+    // Fetch current pending user details
+    const users = await query('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const user = users[0];
+
+    let finalPhone = user.phone;
+    let finalEmail = user.email;
+
+    // Conditional Validation logic
+    if (user.email && !user.phone) {
+      // Email signup: mobile number (phone) is MANDATORY
+      if (!phone || !phone.trim()) {
+        return res.status(400).json({ error: 'মোবাইল নম্বর প্রদান করা বাধ্যতামূলক।' });
+      }
+      finalPhone = phone.trim();
+      if (!/^01[3-9]\d{8}$/.test(finalPhone)) {
+        return res.status(400).json({ error: 'অনুগ্রহ করে সঠিক মোবাইল নম্বর দিন।' });
+      }
+
+      // Check if phone number is already registered by someone else
+      const duplicateUsers = await query(
+        'SELECT id FROM users WHERE phone = ? AND id != ? LIMIT 1',
+        [finalPhone, userId]
+      );
+      if (duplicateUsers.length > 0) {
+        return res.status(400).json({ error: 'এই মোবাইল নম্বরটি ইতিমধ্যে অন্য অ্যাকাউন্টে ব্যবহার করা হয়েছে।' });
+      }
+    } else if (user.phone && !user.email) {
+      // Mobile signup: email is OPTIONAL. If provided, validate formatting & uniqueness
+      if (email && email.trim()) {
+        finalEmail = email.trim().toLowerCase();
+        if (!finalEmail.includes('@')) {
+          return res.status(400).json({ error: 'অনুগ্রহ করে সঠিক ইমেইল ঠিকানা দিন।' });
+        }
+        
+        const duplicateUsers = await query(
+          'SELECT id FROM users WHERE email = ? AND id != ? LIMIT 1',
+          [finalEmail, userId]
+        );
+        if (duplicateUsers.length > 0) {
+          return res.status(400).json({ error: 'এই ইমেইল ঠিকানাটি ইতিমধ্যে অন্য অ্যাকাউন্টে ব্যবহার করা হয়েছে।' });
+        }
+      }
+    }
+
     // Hash the 6-digit PIN
     const hashedPin = await bcrypt.hash(pin, 10);
 
     // Update user record
     await query(
-      'UPDATE users SET name = ?, pin = ?, phone = COALESCE(phone, ?), email = COALESCE(email, ?), profile_complete = 1 WHERE id = ?',
-      [name.trim(), hashedPin, phone || null, email || null, userId]
+      'UPDATE users SET name = ?, pin = ?, phone = ?, email = ?, profile_complete = 1 WHERE id = ?',
+      [name.trim(), hashedPin, finalPhone, finalEmail, userId]
     );
 
-    // Auto-insert 8 default gateway methods if they do not exist
+    // Auto-insert 8 default gateway methods (4 Personal on SIM 1, 4 Agent on SIM 2)
     const existingMethods = await query(
       'SELECT id FROM gateway_methods WHERE user_id = ? LIMIT 1',
       [userId]
@@ -311,31 +387,31 @@ async function completeProfile(req, res) {
           (?, 2, 1, 'Nagad', 2),
           (?, 3, 1, 'Rocket', 3),
           (?, 4, 1, 'Upay', 4),
-          (?, 1, 2, 'bKash', 5),
-          (?, 2, 2, 'Nagad', 6),
-          (?, 3, 2, 'Rocket', 7),
-          (?, 4, 2, 'Upay', 8)`,
+          (?, 5, 2, 'bKash', 5),
+          (?, 6, 2, 'Nagad', 6),
+          (?, 7, 2, 'Rocket', 7),
+          (?, 8, 2, 'Upay', 8)`,
         [userId, userId, userId, userId, userId, userId, userId, userId]
       );
     }
 
     // Fetch updated user details
     const updatedUsers = await query('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
-    const user = updatedUsers[0];
+    const updatedUser = updatedUsers[0];
 
     return res.json({
       success: true,
       user: {
-        id: user.id,
-        name: user.name,
-        phone: user.phone,
-        email: user.email,
-        role: user.role,
-        balance: parseFloat(user.balance),
-        blocked: !!user.blocked,
-        profileComplete: !!user.profile_complete,
-        smsEnabled: !!user.sms_enabled,
-        gmailEnabled: !!user.gmail_enabled
+        id: updatedUser.id,
+        name: updatedUser.name,
+        phone: updatedUser.phone,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        balance: parseFloat(updatedUser.balance),
+        blocked: !!updatedUser.blocked,
+        profileComplete: !!updatedUser.profile_complete,
+        smsEnabled: !!updatedUser.sms_enabled,
+        gmailEnabled: !!updatedUser.gmail_enabled
       }
     });
   } catch (error) {
@@ -350,12 +426,11 @@ async function completeProfile(req, res) {
  */
 async function checkDeviceTrial(req, res) {
   try {
-    const { deviceId, fingerprint } = req.body;
+    const { deviceId } = req.body;
     if (!deviceId) {
       return res.status(400).json({ error: 'Device ID is required' });
     }
 
-    // Query device based on deviceId
     const devices = await query(
       'SELECT * FROM registered_devices WHERE device_id = ? LIMIT 1',
       [deviceId]
@@ -382,9 +457,8 @@ async function checkDeviceTrial(req, res) {
         });
       }
 
-      // Check if trial has expired or is manual block
       return res.json({
-        trialAllowed: true, // Still allowed if trial is currently active (not expired/locked)
+        trialAllowed: true,
         isLocked: false,
         lockReason: null
       });
@@ -402,6 +476,133 @@ async function checkDeviceTrial(req, res) {
   }
 }
 
+/**
+ * Helper: Dispatches OTP via Round-Robin Email or SMS Gateways
+ */
+async function sendOtpDispatch(contact, otpCode) {
+  const isEmail = contact.includes('@');
+  
+  // Log locally for debugging ease
+  console.log(`[OTP GENERATED] To: ${contact} | Code: ${otpCode}`);
+
+  if (isEmail) {
+    // 1. Database-driven Round-Robin SMTP Dispatcher
+    try {
+      const accounts = await query(
+        `SELECT * FROM email_accounts 
+          WHERE is_active = 1 AND sent_today < daily_limit 
+       ORDER BY sent_today ASC, updated_at ASC 
+          LIMIT 1`
+      );
+
+      if (accounts.length > 0) {
+        const acc = accounts[0];
+        console.log(`[ROUND-ROBIN] Using SMTP Account: ${acc.email} (Sent today: ${acc.sent_today}/${acc.daily_limit})`);
+        
+        const transporter = nodemailer.createTransport({
+          host: acc.host,
+          port: acc.port,
+          secure: acc.secure === 1,
+          auth: {
+            user: acc.email,
+            pass: acc.password
+          }
+        });
+
+        await transporter.sendMail({
+          from: acc.email,
+          to: contact,
+          subject: 'Paychek Verification Code',
+          text: `Your Paychek login/registration verification code is: ${otpCode}. It is valid for 5 minutes.`
+        });
+
+        // Increment usage
+        await query('UPDATE email_accounts SET sent_today = sent_today + 1 WHERE id = ?', [acc.id]);
+        return true;
+      }
+    } catch (dbErr) {
+      console.error('[ROUND-ROBIN] SMTP DB Dispatch failed, trying backup env config...', dbErr);
+    }
+
+    // 2. Fallback to .env SMTP settings
+    try {
+      const fallbackUser = process.env.SMTP_USER;
+      const fallbackPass = process.env.SMTP_PASS;
+      const fallbackHost = process.env.SMTP_HOST;
+      const fallbackPort = parseInt(process.env.SMTP_PORT || '465', 10);
+      const fallbackSecure = process.env.SMTP_SECURE === 'true' || fallbackPort === 465;
+
+      if (fallbackUser && fallbackPass && fallbackHost) {
+        console.log(`[SMTP-BACKUP] Using backup SMTP: ${fallbackUser}`);
+        const transporter = nodemailer.createTransport({
+          host: fallbackHost,
+          port: fallbackPort,
+          secure: fallbackSecure,
+          auth: {
+            user: fallbackUser,
+            pass: fallbackPass
+          }
+        });
+
+        await transporter.sendMail({
+          from: fallbackUser,
+          to: contact,
+          subject: 'Paychek Verification Code',
+          text: `Your Paychek verification code is: ${otpCode}. It is valid for 5 minutes.`
+        });
+        return true;
+      }
+    } catch (envErr) {
+      console.error('[SMTP-BACKUP] Backup SMTP Dispatch failed:', envErr);
+    }
+
+    return false;
+  } else {
+    // SMS Dispatcher
+    try {
+      const settings = await query('SELECT * FROM sms_settings WHERE is_active = 1 LIMIT 1');
+      if (settings.length > 0) {
+        const setting = settings[0];
+        let url = setting.gateway_url
+          .replace('{to}', contact)
+          .replace('{msg}', encodeURIComponent(`Your Paychek OTP is ${otpCode}`))
+          .replace('{code}', otpCode);
+        
+        if (setting.api_key && !url.includes('api_key')) {
+          url += `${url.includes('?') ? '&' : '?'}api_key=${encodeURIComponent(setting.api_key)}`;
+        }
+        if (setting.sender_id && !url.includes('sender')) {
+          url += `${url.includes('?') ? '&' : '?'}sender=${encodeURIComponent(setting.sender_id)}`;
+        }
+
+        const method = setting.http_method || 'GET';
+        const options = { method };
+        
+        if (method.toUpperCase() === 'POST' && setting.post_body_template) {
+          const bodyText = setting.post_body_template
+            .replace('{to}', contact)
+            .replace('{msg}', `Your Paychek OTP is ${otpCode}`)
+            .replace('{code}', otpCode);
+          options.headers = { 'Content-Type': 'application/json' };
+          options.body = bodyText;
+        }
+
+        console.log(`[SMS-GATEWAY] Sending request to: ${url}`);
+        const res = await fetch(url, options);
+        if (res.ok) {
+          return true;
+        } else {
+          console.error(`[SMS-GATEWAY] HTTP dispatch failed with status: ${res.status}`);
+        }
+      }
+    } catch (smsErr) {
+      console.error('[SMS-GATEWAY] Dispatch failed:', smsErr);
+    }
+    
+    return false;
+  }
+}
+
 // Helper: Generates a 6-digit verification code
 function generateOtpCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -410,6 +611,7 @@ function generateOtpCode() {
 module.exports = {
   checkContact,
   sendOtp,
+  registerSendOtp,
   sendOtpNew,
   verifyOtp,
   completeProfile,
