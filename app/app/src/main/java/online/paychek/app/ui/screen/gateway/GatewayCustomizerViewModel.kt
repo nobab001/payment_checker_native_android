@@ -46,7 +46,21 @@ class GatewayCustomizerViewModel(application: Application) : AndroidViewModel(ap
     // 1.5s debounce job — drag শেষে priority সেভের জন্য
     private var saveJob: Job? = null
 
-    init { loadGatewayMethods() }
+    init {
+        val sim1 = prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, true)
+        val sim2 = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, true)
+        _state.update { it.copy(sim1Enabled = sim1, sim2Enabled = sim2, isLoading = true) }
+        loadGatewayMethods()
+    }
+
+    private fun saveMethodsToCache(methods: List<GatewayMethod>) {
+        try {
+            val json = com.google.gson.Gson().toJson(methods)
+            prefs.edit().putString(AppConfig.KEY_GATEWAY_METHODS_CACHE, json).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // API থেকে Method List লোড করা
@@ -61,6 +75,7 @@ class GatewayCustomizerViewModel(application: Application) : AndroidViewModel(ap
                     if (res.isSuccessful && res.body()?.success == true) {
                         val sorted = (res.body()!!.data).sortedBy { it.priority }
                         _state.update { it.copy(methods = sorted, isLoading = false) }
+                        saveMethodsToCache(sorted)
                     } else {
                         setError("মেথড লোড ব্যর্থ হয়েছে (${res.code()})")
                     }
@@ -125,13 +140,13 @@ class GatewayCustomizerViewModel(application: Application) : AndroidViewModel(ap
     fun toggleMethod(method: GatewayMethod) {
         val newEnabled = if (method.isEnabled == 1) 0 else 1
 
-        // তাৎক্ষণিক UI আপডেট (optimistic update)
+        // 🧅 Optimistic update (UI + Local Cache)
         _state.update { current ->
-            current.copy(
-                methods = current.methods.map {
-                    if (it.id == method.id) it.copy(isEnabled = newEnabled) else it
-                }
-            )
+            val updated = current.methods.map {
+                if (it.id == method.id) it.copy(isEnabled = newEnabled) else it
+            }
+            saveMethodsToCache(updated)
+            current.copy(methods = updated)
         }
 
         // API call
@@ -142,11 +157,11 @@ class GatewayCustomizerViewModel(application: Application) : AndroidViewModel(ap
             }.onFailure {
                 // Rollback on failure
                 _state.update { current ->
-                    current.copy(
-                        methods = current.methods.map {
-                            if (it.id == method.id) it.copy(isEnabled = method.isEnabled) else it
-                        }
-                    )
+                    val updated = current.methods.map {
+                        if (it.id == method.id) it.copy(isEnabled = method.isEnabled) else it
+                    }
+                    saveMethodsToCache(updated)
+                    current.copy(methods = updated)
                 }
             }
         }
@@ -161,8 +176,13 @@ class GatewayCustomizerViewModel(application: Application) : AndroidViewModel(ap
         val newValue = !isCurrentlyEnabled
 
         _state.update {
-            if (simSlot == 1) it.copy(sim1Enabled = newValue)
-            else              it.copy(sim2Enabled = newValue)
+            if (simSlot == 1) {
+                prefs.edit().putBoolean(AppConfig.KEY_SIM1_ENABLED, newValue).apply()
+                it.copy(sim1Enabled = newValue)
+            } else {
+                prefs.edit().putBoolean(AppConfig.KEY_SIM2_ENABLED, newValue).apply()
+                it.copy(sim2Enabled = newValue)
+            }
         }
     }
 
@@ -210,13 +230,15 @@ class GatewayCustomizerViewModel(application: Application) : AndroidViewModel(ap
                 if (res.isSuccessful) {
                     // লোকাল আপডেট
                     _state.update { current ->
+                        val updated = current.methods.map {
+                            if (it.id == method.id)
+                                it.copy(number = number.ifEmpty { null },
+                                        displayName = displayName.ifEmpty { null })
+                            else it
+                        }
+                        saveMethodsToCache(updated)
                         current.copy(
-                            methods = current.methods.map {
-                                if (it.id == method.id)
-                                    it.copy(number = number.ifEmpty { null },
-                                            displayName = displayName.ifEmpty { null })
-                                else it
-                            },
+                            methods = updated,
                             editingMethod = null,
                             successMessage = "আপডেট সফল হয়েছে ✓"
                         )

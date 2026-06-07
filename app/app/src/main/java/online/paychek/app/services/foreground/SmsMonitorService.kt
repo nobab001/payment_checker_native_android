@@ -90,6 +90,11 @@ class SmsMonitorService : Service() {
             retryOfflineQueue()
         }
 
+        // ── গেটওয়ে মেথড কনফিগ সিঙ্ক করা ─────────────────────────────
+        serviceScope.launch {
+            syncGatewayMethods()
+        }
+
         return START_STICKY // সিস্টেম kill করলে নিজে পুনরায় চালু হবে
     }
 
@@ -262,6 +267,27 @@ class SmsMonitorService : Service() {
 
         } catch (e: Exception) {
             Log.e(TAG, "Queue retry-তে ত্রুটি: ${e.message}")
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // গেটওয়ে মেথড কনফিগ সিঙ্ক করা ও ক্যাশ আপডেট
+    // ─────────────────────────────────────────────────────────────────────────
+    private suspend fun syncGatewayMethods() {
+        try {
+            val sharedPrefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+            val token = sharedPrefs.getString(AppConfig.KEY_AUTH_TOKEN, "") ?: ""
+            if (token.isEmpty()) return
+
+            val response = RetrofitClient.gatewayApiService.getGatewayMethods("Bearer $token")
+            if (response.isSuccessful && response.body() != null) {
+                val methods = response.body()!!.data
+                val json = com.google.gson.Gson().toJson(methods)
+                sharedPrefs.edit().putString(AppConfig.KEY_GATEWAY_METHODS_CACHE, json).apply()
+                Log.i(TAG, "✅ গেটওয়ে মেথড কনফিগ সফলভাবে সিঙ্ক করা হয়েছে (মোট: ${methods.size})")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "গেটওয়ে মেথড সিঙ্ক করতে ব্যর্থ: ${e.message}")
         }
     }
 

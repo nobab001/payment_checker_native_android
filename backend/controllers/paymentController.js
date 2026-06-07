@@ -39,7 +39,7 @@ async function paymentSmsIngest(req, res) {
 
     const originalBody = fullSms || rawBody;
 
-    if (!amount || !trxId || !providerTag || !smsTimestamp || !originalBody) {
+    if (amount === undefined || amount === null || !trxId || !providerTag || !smsTimestamp || !originalBody) {
       return res.status(400).json({ error: 'প্রয়োজনীয় ফিল্ড অনুপস্থিত' });
     }
 

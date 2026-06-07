@@ -188,14 +188,17 @@ CREATE TABLE IF NOT EXISTS `sms_history` (
 CREATE TABLE IF NOT EXISTS `sms_templates` (
   `id`               INT          NOT NULL AUTO_INCREMENT,
   `user_id`          INT          DEFAULT NULL COMMENT 'NULL for admin/global, user_id for custom templates',
-  `customer_preview` VARCHAR(128) NOT NULL COMMENT 'Display name e.g. bKash Personal',
+  `template_name`    VARCHAR(128) NOT NULL COMMENT 'Display name e.g. bKash Personal',
   `sender_id`        VARCHAR(64)  NOT NULL DEFAULT '' COMMENT 'Sender address to match e.g. bKash',
-  `formats`          JSON         NOT NULL COMMENT 'Array of format strings with [Amount],[TrxID] tokens',
+  `matching_keyword` VARCHAR(255) DEFAULT NULL COMMENT 'Comma-separated keywords required for strict verification',
+  `regex_pattern`    TEXT         DEFAULT NULL COMMENT 'Regex pattern for parsing trx_id and amount',
+  `is_official`      TINYINT(1)   NOT NULL DEFAULT 1 COMMENT '1 = Official admin template, 0 = Custom user template',
   `is_active`        TINYINT(1)   NOT NULL DEFAULT 1,
   `created_at`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  INDEX `idx_template_active` (`customer_preview`, `is_active`),
+  INDEX `idx_template_name` (`template_name`),
+  INDEX `idx_template_sender` (`sender_id`),
   INDEX `idx_template_user` (`user_id`),
   CONSTRAINT `fk_template_user`
     FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE

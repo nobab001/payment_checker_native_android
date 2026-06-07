@@ -13,8 +13,21 @@ ALTER TABLE `sms_history`
 ALTER TABLE `sms_history` 
   ADD INDEX IF NOT EXISTS `idx_user_trx` (`user_id`, `trx_id`);
 
--- 3. Add user_id to sms_templates for custom user-defined templates/sender IDs
+-- 3. Modify sms_templates table structure
 ALTER TABLE `sms_templates` 
   ADD COLUMN IF NOT EXISTS `user_id` INT DEFAULT NULL AFTER `id`,
+  ADD COLUMN IF NOT EXISTS `template_name` VARCHAR(128) NOT NULL DEFAULT '' AFTER `user_id`,
+  ADD COLUMN IF NOT EXISTS `matching_keyword` VARCHAR(255) DEFAULT NULL AFTER `sender_id`,
+  ADD COLUMN IF NOT EXISTS `regex_pattern` TEXT DEFAULT NULL AFTER `matching_keyword`,
+  ADD COLUMN IF NOT EXISTS `is_official` TINYINT(1) NOT NULL DEFAULT 1 AFTER `regex_pattern`,
   ADD INDEX IF NOT EXISTS `idx_template_user` (`user_id`),
-  ADD CONSTRAINT `fk_template_user` FOREIGN KEY IF NOT EXISTS (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+  ADD INDEX IF NOT EXISTS `idx_template_sender` (`sender_id`);
+
+-- Drop old columns if they exist (clean up database)
+ALTER TABLE `sms_templates` DROP COLUMN IF EXISTS `customer_preview`;
+ALTER TABLE `sms_templates` DROP COLUMN IF EXISTS `formats`;
+
+-- 4. Add template_id to gateway_methods table
+ALTER TABLE `gateway_methods`
+  ADD COLUMN IF NOT EXISTS `template_id` INT DEFAULT NULL AFTER `user_id`,
+  ADD CONSTRAINT `fk_gateway_template` FOREIGN KEY IF NOT EXISTS (`template_id`) REFERENCES `sms_templates` (`id`) ON DELETE SET NULL;

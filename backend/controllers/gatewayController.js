@@ -9,10 +9,12 @@ async function getGatewayMethods(req, res) {
     const userId = req.user.userId;
 
     const rows = await query(
-      `SELECT id, sim_slot, provider, number, display_name, is_enabled, priority
-         FROM gateway_methods
-        WHERE user_id = ?
-        ORDER BY priority ASC, sim_slot ASC`,
+      `SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.is_enabled, gm.priority, gm.template_id,
+              t.sender_id, t.matching_keyword, t.regex_pattern, COALESCE(t.is_official, 1) AS is_official
+         FROM gateway_methods gm
+    LEFT JOIN sms_templates t ON gm.template_id = t.id
+        WHERE gm.user_id = ?
+        ORDER BY gm.priority ASC, gm.sim_slot ASC`,
       [userId]
     );
 
@@ -102,10 +104,10 @@ async function updateMethod(req, res) {
   try {
     const userId   = req.user.userId;
     const methodId = parseInt(req.params.id);
-    const { number, display_name } = req.body;
+    const { number, display_name, template_id } = req.body;
 
-    if (number === undefined && display_name === undefined) {
-      return res.status(400).json({ error: 'number বা display_name প্রয়োজন' });
+    if (number === undefined && display_name === undefined && template_id === undefined) {
+      return res.status(400).json({ error: 'number, display_name বা template_id প্রয়োজন' });
     }
 
     const setClauses = [];
@@ -118,6 +120,10 @@ async function updateMethod(req, res) {
     if (display_name !== undefined) {
       setClauses.push('display_name = ?');
       values.push(display_name || null);
+    }
+    if (template_id !== undefined) {
+      setClauses.push('template_id = ?');
+      values.push(template_id || null);
     }
     values.push(methodId, userId);
 

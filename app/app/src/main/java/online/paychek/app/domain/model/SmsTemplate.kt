@@ -15,8 +15,11 @@ package online.paychek.app.domain.model
  */
 data class SmsTemplate(
     val id: Int,
-    val customerPreview: String,    // e.g. "bKash Personal", "Nagad Agent"
+    val userId: Int?,
+    val templateName: String,       // e.g. "bKash Personal", "Nagad Agent"
     val senderId: String,           // e.g. "bKash", "01700000000"
-    val formats: List<String>,      // format strings with token placeholders
-    val isActive: Boolean,
+    val matchingKeyword: String?,   // e.g. "You have received,Tk.,Ref:"
+    val regexPattern: String?,      // regex string
+    val isOfficial: Int,            // 1 = official, 0 = custom
+    val isActive: Int
 )

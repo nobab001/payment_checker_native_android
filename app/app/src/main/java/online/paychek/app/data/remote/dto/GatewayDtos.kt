@@ -21,7 +21,22 @@ data class GatewayMethod(
     @SerializedName("is_enabled")
     val isEnabled: Int,             // 0 = OFF | 1 = ON
 
-    val priority: Int               // সাজানোর ক্রম (1 = সবচেয়ে উপরে)
+    val priority: Int,              // সাজানোর ক্রম (1 = সবচেয়ে উপরে)
+
+    @SerializedName("template_id")
+    val templateId: Int?,
+
+    @SerializedName("sender_id")
+    val senderId: String?,
+
+    @SerializedName("matching_keyword")
+    val matchingKeyword: String?,
+
+    @SerializedName("regex_pattern")
+    val regexPattern: String?,
+
+    @SerializedName("is_official")
+    val isOfficial: Int?
 )
 
 // =============================================================================
