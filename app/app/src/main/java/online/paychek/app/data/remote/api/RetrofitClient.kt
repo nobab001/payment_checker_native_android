@@ -35,4 +35,13 @@ object RetrofitClient {
             .build()
             .create(PaymentApiService::class.java)
     }
+
+    val gatewayApiService: GatewayApiService by lazy {
+        Retrofit.Builder()
+            .baseUrl(AppConfig.API_BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(GatewayApiService::class.java)
+    }
 }

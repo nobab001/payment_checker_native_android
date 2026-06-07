@@ -1,0 +1,40 @@
+package online.paychek.app.data.remote.api
+
+import online.paychek.app.data.remote.dto.*
+import retrofit2.Response
+import retrofit2.http.*
+
+/**
+ * GatewayApiService — গেটওয়ে কাস্টমাইজারের সকল API endpoint
+ */
+interface GatewayApiService {
+
+    // ── মেথড তালিকা লোড করা ─────────────────────────────────────────────────
+    @GET("gateway/methods")
+    suspend fun getGatewayMethods(
+        @Header("Authorization") token: String
+    ): Response<GatewayListResponse>
+
+    // ── Drag & Drop-এর পর Priority ক্রম সেভ করা ──────────────────────────────
+    @PATCH("gateway/priority")
+    suspend fun updatePriority(
+        @Header("Authorization") token: String,
+        @Body request: UpdatePriorityRequest
+    ): Response<BasicResponse>
+
+    // ── একটি Method চালু/বন্ধ করা ────────────────────────────────────────────
+    @PATCH("gateway/methods/{id}/toggle")
+    suspend fun toggleMethod(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Body request: ToggleRequest
+    ): Response<BasicResponse>
+
+    // ── Method-এর নম্বর / নাম আপডেট করা ─────────────────────────────────────
+    @PATCH("gateway/methods/{id}")
+    suspend fun updateMethod(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Body request: UpdateMethodRequest
+    ): Response<BasicResponse>
+}

@@ -89,4 +89,7 @@ dependencies {
   // Material Icons
   implementation(libs.androidx.compose.material.icons.core)
   implementation(libs.androidx.compose.material.icons.extended)
+
+  // Drag & Drop Reordering (Gateway Customizer)
+  implementation(libs.sh.calvin.reorderable)
 }

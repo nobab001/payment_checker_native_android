@@ -2,9 +2,10 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
-const authRoutes = require('./routes/authRoutes');
-const paymentRoutes = require('./routes/paymentRoutes');
+const authRoutes     = require('./routes/authRoutes');
+const paymentRoutes  = require('./routes/paymentRoutes');
 const checkoutRoutes = require('./routes/checkoutRoutes');
+const gatewayRoutes  = require('./routes/gatewayRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -33,6 +34,7 @@ app.get('/health', (req, res) => {
 app.use('/api', authRoutes);
 app.use('/api', paymentRoutes);
 app.use('/api', checkoutRoutes);
+app.use('/api', gatewayRoutes);
 
 // General 404 Route handler
 app.use((req, res) => {
