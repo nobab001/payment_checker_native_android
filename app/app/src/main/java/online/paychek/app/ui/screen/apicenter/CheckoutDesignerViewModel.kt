@@ -1,13 +1,19 @@
 package online.paychek.app.ui.screen.apicenter
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import android.content.Context
+import androidx.lifecycle.AndroidViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import online.paychek.app.config.AppConfig
+import online.paychek.app.data.remote.dto.GatewayMethod
 import java.util.Collections
 
-class CheckoutDesignerViewModel : ViewModel() {
+class CheckoutDesignerViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val prefs = application.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
 
     private val _uiState = MutableStateFlow(CheckoutDesignerUiState())
     val uiState: StateFlow<CheckoutDesignerUiState> = _uiState.asStateFlow()
@@ -21,6 +27,35 @@ class CheckoutDesignerViewModel : ViewModel() {
             CheckoutBlock("upay", "Upay (উপায়) পেমেন্ট", "Upay", false)
         )
         _uiState.update { it.copy(blocks = defaultBlocks) }
+        loadGatewayMethodsCache()
+    }
+
+    // SharedPreferences ক্যাশ থেকে গেটওয়ে মেথড ও নাম্বার লোড করা
+    fun loadGatewayMethodsCache() {
+        val json = prefs.getString(AppConfig.KEY_GATEWAY_METHODS_CACHE, "[]") ?: "[]"
+        val type = object : com.google.gson.reflect.TypeToken<List<GatewayMethod>>() {}.type
+        val methods: List<GatewayMethod> = try {
+            com.google.gson.Gson().fromJson(json, type)
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+        // শুধুমাত্র সচল (isEnabled == 1) এবং যেগুলোতে নাম্বার ইনপুট দেওয়া আছে
+        val active = methods.filter { it.isEnabled == 1 && !it.number.isNullOrBlank() }
+
+        _uiState.update {
+            it.copy(
+                activeMethods = active
+            )
+        }
+    }
+
+    fun selectTab(tabIndex: Int) {
+        _uiState.update { it.copy(selectedTab = tabIndex) }
+        if (tabIndex == 1) {
+            // Preview মোডে যাওয়ার সময় ফ্রেশ ক্যাশ লোড করা
+            loadGatewayMethodsCache()
+        }
     }
 
     fun toggleBlock(blockId: String) {
@@ -69,10 +104,8 @@ class CheckoutDesignerViewModel : ViewModel() {
     fun saveLayout() {
         _uiState.update { it.copy(isLoading = true, statusMessage = null) }
         
-        // In a full implementation, we make a network call to update layout config on server.
-        // We simulate success here.
+        // Simulated delay
         kotlinx.coroutines.GlobalScope.run {
-            // Simulated delay
             _uiState.update {
                 it.copy(
                     isLoading = false,
@@ -93,6 +126,8 @@ data class CheckoutDesignerUiState(
     val sim1Number: String = "01700000000",
     val sim2Method: String = "Nagad",
     val sim2Number: String = "01800000000",
+    val activeMethods: List<GatewayMethod> = emptyList(), // SharedPreferences থেকে সচল কনফিগ
+    val selectedTab: Int = 0, // ০ = Edit Mode, ১ = Customer Preview Mode
     val isLoading: Boolean = false,
     val statusMessage: String? = null
 )

@@ -36,7 +36,13 @@ data class GatewayMethod(
     val regexPattern: String?,
 
     @SerializedName("is_official")
-    val isOfficial: Int?
+    val isOfficial: Int?,
+
+    @SerializedName("single_number_instruction")
+    val singleNumberInstruction: String?,
+
+    @SerializedName("multiple_number_instruction")
+    val multipleNumberInstruction: String?
 )
 
 // =============================================================================

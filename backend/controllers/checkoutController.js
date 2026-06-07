@@ -34,25 +34,45 @@ async function getCheckoutLayout(req, res) {
       layoutConfig = JSON.parse(layoutConfig);
     }
 
-    // Retrieve merchant SIM slot details to get phone numbers
-    // We get them from the registered_devices profile for this user_id where is_parent = 1
-    const devices = await query(
-      'SELECT sim1_number, sim1_operator, sim2_number, sim2_operator, sim_settings FROM registered_devices WHERE user_id = ? AND is_parent = 1 LIMIT 1',
+    // Retrieve active gateways linked to sms_templates and checkout_view_templates (Security Lock)
+    const activeGateways = await query(
+      `SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name,
+              cvt.single_number_instruction, cvt.multiple_number_instruction
+         FROM gateway_methods gm
+         JOIN sms_templates t ON gm.template_id = t.id
+         JOIN checkout_view_templates cvt ON cvt.sms_template_id = t.id
+        WHERE gm.user_id = ? AND gm.is_enabled = 1 AND gm.number IS NOT NULL AND gm.number != ''
+     ORDER BY gm.priority ASC, gm.sim_slot ASC`,
       [layout.user_id]
     );
 
-    const simConfig = devices.length > 0 ? devices[0] : null;
+    // Count active numbers per provider to decide single/multiple instructions
+    const providerCounts = {};
+    activeGateways.forEach(g => {
+      const p = g.provider;
+      providerCounts[p] = (providerCounts[p] || 0) + 1;
+    });
+
+    // Format active gateways with dynamic instruction texts
+    const formattedGateways = activeGateways.map(g => {
+      const count = providerCounts[g.provider] || 1;
+      const instruction = count > 1 ? g.multiple_number_instruction : g.single_number_instruction;
+      return {
+        id: g.id,
+        simSlot: g.sim_slot,
+        provider: g.provider,
+        number: g.number,
+        displayName: g.display_name || g.provider,
+        instruction: instruction
+      };
+    });
 
     return res.json({
       siteName: layout.site_name,
       siteUrl: layout.site_url,
       layoutConfig,
-      simConfig: simConfig ? {
-        sim1Number: simConfig.sim1_number,
-        sim1Operator: simConfig.sim1_operator,
-        sim2Number: simConfig.sim2_number,
-        sim2Operator: simConfig.sim2_operator
-      } : null
+      activeGateways: formattedGateways,
+      redirectUrl: layout.redirect_url
     });
 
   } catch (error) {

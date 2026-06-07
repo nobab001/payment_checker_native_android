@@ -10,9 +10,11 @@ async function getGatewayMethods(req, res) {
 
     const rows = await query(
       `SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.is_enabled, gm.priority, gm.template_id,
-              t.sender_id, t.matching_keyword, t.regex_pattern, COALESCE(t.is_official, 1) AS is_official
+              t.sender_id, t.matching_keyword, t.regex_pattern, COALESCE(t.is_official, 1) AS is_official,
+              cvt.single_number_instruction, cvt.multiple_number_instruction
          FROM gateway_methods gm
     LEFT JOIN sms_templates t ON gm.template_id = t.id
+    LEFT JOIN checkout_view_templates cvt ON cvt.sms_template_id = t.id
         WHERE gm.user_id = ?
         ORDER BY gm.priority ASC, gm.sim_slot ASC`,
       [userId]
