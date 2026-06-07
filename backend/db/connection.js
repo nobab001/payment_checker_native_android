@@ -7,7 +7,7 @@ const pool = mysql.createPool({
   port: process.env.DB_PORT || 3306,
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASS || '',
-  database: process.env.DB_NAME || 'payment_checker_db',
+  database: process.env.DB_NAME || 'paychek_online_v2',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,

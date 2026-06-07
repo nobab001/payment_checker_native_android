@@ -1,17 +1,17 @@
 -- =============================================================================
 -- Payment Checker NTK — Complete MySQL Database Schema
--- Version : 1.0.0
+-- Version : 2.0.0  (paychek_online_v2)
 -- Engine  : InnoDB | Charset: utf8mb4_unicode_ci
 -- Usage   : Run this file directly in phpMyAdmin (Import tab)
 --           or via CLI: mysql -u root -p < schema.sql
 -- =============================================================================
 
 -- Step 1: Create & select the database
-CREATE DATABASE IF NOT EXISTS `payment_checker_db`
+CREATE DATABASE IF NOT EXISTS `paychek_online_v2`
   CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
 
-USE `payment_checker_db`;
+USE `paychek_online_v2`;
 
 -- =============================================================================
 -- TABLE 1: users
