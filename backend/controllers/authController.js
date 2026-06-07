@@ -306,15 +306,15 @@ async function completeProfile(req, res) {
 
     if (existingMethods.length === 0) {
       await query(
-        `INSERT INTO gateway_methods (user_id, sim_slot, provider, priority) VALUES 
-          (?, 1, 'bKash', 1),
-          (?, 1, 'Nagad', 2),
-          (?, 1, 'Rocket', 3),
-          (?, 1, 'Upay', 4),
-          (?, 2, 'bKash', 5),
-          (?, 2, 'Nagad', 6),
-          (?, 2, 'Rocket', 7),
-          (?, 2, 'Upay', 8)`,
+        `INSERT INTO gateway_methods (user_id, template_id, sim_slot, provider, priority) VALUES 
+          (?, 1, 1, 'bKash', 1),
+          (?, 2, 1, 'Nagad', 2),
+          (?, 3, 1, 'Rocket', 3),
+          (?, 4, 1, 'Upay', 4),
+          (?, 1, 2, 'bKash', 5),
+          (?, 2, 2, 'Nagad', 6),
+          (?, 3, 2, 'Rocket', 7),
+          (?, 4, 2, 'Upay', 8)`,
         [userId, userId, userId, userId, userId, userId, userId, userId]
       );
     }

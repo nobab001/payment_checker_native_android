@@ -180,10 +180,20 @@ class SmsReceiver(
             val pattern = Pattern.compile(patternStr, Pattern.CASE_INSENSITIVE or Pattern.DOTALL)
             val matcher = pattern.matcher(body)
             if (matcher.find()) {
+                val groupCount = matcher.groupCount()
                 val amountStr = matcher.group(1)?.replace(",", "") ?: "0.0"
                 val amount = amountStr.toDoubleOrNull() ?: 0.0
-                val trxId = matcher.group(2) ?: ""
-                val senderNumber = if (matcher.groupCount() >= 3) matcher.group(3) ?: "Unknown" else "Unknown"
+                
+                val trxId: String
+                val senderNumber: String
+
+                if (groupCount >= 3) {
+                    senderNumber = matcher.group(2) ?: "Unknown"
+                    trxId = matcher.group(3) ?: ""
+                } else {
+                    trxId = if (groupCount >= 2) matcher.group(2) ?: "" else ""
+                    senderNumber = "Unknown"
+                }
 
                 if (trxId.isNotEmpty()) {
                     SmsParser.ParsedPayment(

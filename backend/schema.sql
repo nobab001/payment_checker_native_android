@@ -238,6 +238,20 @@ CREATE TABLE IF NOT EXISTS `gateway_layouts` (
     FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Default templates
+INSERT INTO `sms_templates` (`id`, `template_name`, `sender_id`, `matching_keyword`, `regex_pattern`, `is_official`, `is_active`) VALUES
+  (1, 'bKash Personal', 'bKash', 'You have received,Tk.,Ref:', 'You have received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})', 1, 1),
+  (2, 'Nagad Personal', 'NAGAD', 'received cash in Tk,TrxID:', 'received cash in Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})', 1, 1),
+  (3, 'Rocket Personal', '16216', 'received Tk,TrxID:', 'received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})', 1, 1),
+  (4, 'Upay Personal', 'upay', 'received Tk,TrxID', 'received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})', 1, 1)
+ON DUPLICATE KEY UPDATE 
+  `template_name` = VALUES(`template_name`),
+  `sender_id` = VALUES(`sender_id`),
+  `matching_keyword` = VALUES(`matching_keyword`),
+  `regex_pattern` = VALUES(`regex_pattern`),
+  `is_official` = VALUES(`is_official`),
+  `is_active` = VALUES(`is_active`);
+
 -- =============================================================================
 -- TABLE 8: global_config
 -- Admin-controlled feature flags (maintenance mode, registration toggle, etc.)
