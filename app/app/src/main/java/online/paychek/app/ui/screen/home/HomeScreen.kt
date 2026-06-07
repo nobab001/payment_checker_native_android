@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
 import online.paychek.app.NavKey as AppNavKey
 import online.paychek.app.ui.screen.dashboard.DashboardScreen
+import online.paychek.app.ui.screen.transactions.TransactionHistoryScreen
 import online.paychek.app.ui.theme.RoyalIndigo
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -96,7 +97,9 @@ fun HomeScreen(
                     onNavigateToHistory = { selectedTab = HomeTab.HISTORY },
                     modifier            = Modifier.fillMaxSize()
                 )
-                HomeTab.HISTORY   -> HistoryPlaceholderScreen()
+                HomeTab.HISTORY   -> TransactionHistoryScreen(
+                    modifier = Modifier.fillMaxSize()
+                )
                 HomeTab.SETTINGS  -> SettingsPlaceholderScreen()
             }
         }

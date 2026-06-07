@@ -1,0 +1,749 @@
+package online.paychek.app.ui.screen.transactions
+
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import online.paychek.app.data.remote.dto.TransactionItem
+import online.paychek.app.ui.theme.*
+import java.text.DecimalFormat
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+// =============================================================================
+// Design Tokens (Dashboard-এর সাথে সামঞ্জস্যপূর্ণ)
+// =============================================================================
+private val HistBg       = Color(0xFF0F172A)
+private val HistCard     = Color(0xFF1E293B)
+private val HistCardAlt  = Color(0xFF253349)
+private val AccentCyan   = Color(0xFF22D3EE)
+private val AccentGreen  = Color(0xFF10B981)
+private val AccentRed    = Color(0xFFEF4444)
+private val TextWhite    = Color(0xFFF8FAFC)
+private val TextMuted    = Color(0xFF94A3B8)
+private val ChipSelected = Color(0xFF22D3EE)
+
+// =============================================================================
+// TransactionHistoryScreen — Root Composable
+// =============================================================================
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TransactionHistoryScreen(
+    modifier: Modifier = Modifier,
+    viewModel: TransactionHistoryViewModel = viewModel()
+) {
+    val state        by viewModel.state.collectAsStateWithLifecycle()
+    val listState    = rememberLazyListState()
+    val focusManager = LocalFocusManager.current
+
+    // ── Infinite Scroll Trigger ───────────────────────────────────────────────
+    // displayList-এর শেষ থেকে ৩য় item দেখা গেলে পরের পেজ লোড করে
+    val shouldLoadMore = remember {
+        derivedStateOf {
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val totalItems  = listState.layoutInfo.totalItemsCount
+            lastVisible >= totalItems - 3 && totalItems > 0
+        }
+    }
+    LaunchedEffect(shouldLoadMore.value) {
+        if (shouldLoadMore.value) viewModel.loadNextPage()
+    }
+
+    PullToRefreshBox(
+        isRefreshing = false, // isInitialLoading দিয়ে handle হচ্ছে
+        onRefresh    = { viewModel.onRefresh() },
+        modifier     = modifier
+            .fillMaxSize()
+            .background(HistBg)
+    ) {
+        LazyColumn(
+            state               = listState,
+            modifier            = Modifier.fillMaxSize(),
+            contentPadding      = PaddingValues(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+
+            // ─── ১. Top Bar (Title) ────────────────────────────────────────
+            item {
+                HistoryTopBar()
+            }
+
+            // ─── ২. Search Box ─────────────────────────────────────────────
+            item {
+                SearchBox(
+                    query         = state.searchQuery,
+                    onQueryChange = { viewModel.onSearchQueryChanged(it) },
+                    onClear       = { viewModel.onSearchQueryChanged("") },
+                    onDone        = { focusManager.clearFocus() },
+                    modifier      = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
+
+            // ─── ৩. Filter Chips (LazyRow) ─────────────────────────────────
+            item {
+                FilterChipsRow(
+                    selected = state.selectedProvider,
+                    onSelect = { viewModel.onProviderFilterChanged(it) },
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            }
+
+            // ─── ৪. Summary Row ────────────────────────────────────────────
+            if (!state.isInitialLoading && state.errorMessage == null) {
+                item {
+                    SummaryRow(
+                        displayCount = state.displayList.size,
+                        rawCount     = state.rawList.size,
+                        hasSearch    = state.searchQuery.isNotEmpty(),
+                        modifier     = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            // ─── ৫. প্রথম লোড — Skeleton ───────────────────────────────────
+            if (state.isInitialLoading) {
+                items(6) { SkeletonTransactionCard() }
+            }
+
+            // ─── ৬. Error State ────────────────────────────────────────────
+            state.errorMessage?.let { msg ->
+                item {
+                    HistoryErrorCard(
+                        message = msg,
+                        onRetry = { viewModel.onRefresh() },
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            }
+
+            // ─── ৭. Empty State ────────────────────────────────────────────
+            if (!state.isInitialLoading &&
+                state.errorMessage == null &&
+                state.displayList.isEmpty()
+            ) {
+                item { EmptyStateCard(hasFilter = state.selectedProvider != ProviderFilter.ALL) }
+            }
+
+            // ─── ৮. Transaction List ───────────────────────────────────────
+            if (!state.isInitialLoading && state.errorMessage == null) {
+                itemsIndexed(
+                    items = state.displayList,
+                    key   = { _, item -> item.id }
+                ) { _, item ->
+                    TransactionCard(
+                        item     = item,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            // ─── ৯. Loading More Spinner ────────────────────────────────────
+            if (state.isLoadingMore) {
+                item {
+                    Box(
+                        modifier         = Modifier.fillMaxWidth().padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            color       = AccentCyan,
+                            modifier    = Modifier.size(28.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                }
+            }
+
+            // ─── ১০. End of List Footer ──────────────────────────────────────
+            if (!state.isInitialLoading && !state.hasMore && state.displayList.isNotEmpty()) {
+                item {
+                    Box(
+                        modifier         = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text     = "✅ সব ট্রানজেকশন দেখানো হয়েছে",
+                            color    = TextMuted,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Component 1 — Top Bar
+// =============================================================================
+@Composable
+private fun HistoryTopBar() {
+    Row(
+        modifier             = Modifier
+            .fillMaxWidth()
+            .background(HistBg)
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalAlignment    = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(AccentCyan.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector     = Icons.Default.History,
+                contentDescription = "History",
+                tint            = AccentCyan,
+                modifier        = Modifier.size(20.dp)
+            )
+        }
+        Column {
+            Text(
+                text       = "ট্রানজেকশন হিস্টোরি",
+                color      = TextWhite,
+                fontSize   = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text     = "সকল পেমেন্ট রেকর্ড",
+                color    = TextMuted,
+                fontSize = 12.sp
+            )
+        }
+    }
+}
+
+// =============================================================================
+// Component 2 — Search Box
+// =============================================================================
+@Composable
+private fun SearchBox(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClear: () -> Unit,
+    onDone: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    OutlinedTextField(
+        value         = query,
+        onValueChange = onQueryChange,
+        placeholder   = {
+            Text(
+                text     = "ট্রানজেকশন আইডি বা নম্বর দিয়ে সার্চ করুন...",
+                color    = TextMuted,
+                fontSize = 13.sp
+            )
+        },
+        leadingIcon = {
+            Icon(
+                imageVector     = Icons.Default.Search,
+                contentDescription = "Search",
+                tint            = AccentCyan,
+                modifier        = Modifier.size(20.dp)
+            )
+        },
+        trailingIcon = if (query.isNotEmpty()) {
+            {
+                IconButton(onClick = onClear) {
+                    Icon(
+                        imageVector     = Icons.Default.Close,
+                        contentDescription = "Clear Search",
+                        tint            = TextMuted,
+                        modifier        = Modifier.size(18.dp)
+                    )
+                }
+            }
+        } else null,
+        singleLine    = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { onDone() }),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor   = AccentCyan,
+            unfocusedBorderColor = TextMuted.copy(alpha = 0.3f),
+            focusedTextColor     = TextWhite,
+            unfocusedTextColor   = TextWhite,
+            cursorColor          = AccentCyan,
+            focusedContainerColor   = HistCard,
+            unfocusedContainerColor = HistCard
+        ),
+        shape    = RoundedCornerShape(12.dp),
+        modifier = modifier.fillMaxWidth()
+    )
+}
+
+// =============================================================================
+// Component 3 — Filter Chips Row (LazyRow)
+// =============================================================================
+@Composable
+private fun FilterChipsRow(
+    selected: ProviderFilter,
+    onSelect: (ProviderFilter) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyRow(
+        modifier            = modifier,
+        contentPadding      = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(ProviderFilter.entries) { filter ->
+            ProviderChip(
+                filter     = filter,
+                isSelected = selected == filter,
+                onClick    = { onSelect(filter) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProviderChip(
+    filter: ProviderFilter,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val bgColor by animateColorAsState(
+        targetValue   = if (isSelected) ChipSelected.copy(alpha = 0.18f) else HistCard,
+        animationSpec = tween(200),
+        label         = "ChipBg"
+    )
+    val borderColor by animateColorAsState(
+        targetValue   = if (isSelected) ChipSelected else TextMuted.copy(alpha = 0.25f),
+        animationSpec = tween(200),
+        label         = "ChipBorder"
+    )
+    val textColor by animateColorAsState(
+        targetValue   = if (isSelected) ChipSelected else TextMuted,
+        animationSpec = tween(200),
+        label         = "ChipText"
+    )
+
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(bgColor)
+            .border(1.dp, borderColor, RoundedCornerShape(20.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+    ) {
+        Row(
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(text = filter.emoji, fontSize = 13.sp)
+            Text(
+                text       = filter.label,
+                color      = textColor,
+                fontSize   = 13.sp,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+            )
+        }
+    }
+}
+
+// =============================================================================
+// Component 4 — Summary Row ("১২৩টি ফলাফল")
+// =============================================================================
+@Composable
+private fun SummaryRow(
+    displayCount: Int,
+    rawCount: Int,
+    hasSearch: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier          = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text     = if (hasSearch)
+                "$displayCount টি ফলাফল পাওয়া গেছে ($rawCount লোড হয়েছে)"
+            else
+                "$rawCount টি ট্রানজেকশন লোড হয়েছে",
+            color    = TextMuted,
+            fontSize = 11.sp
+        )
+    }
+}
+
+// =============================================================================
+// Component 5 — Transaction Card (UNUSED / SOLDOUT badge সহ)
+// =============================================================================
+@Composable
+private fun TransactionCard(
+    item: TransactionItem,
+    modifier: Modifier = Modifier
+) {
+    val isSoldOut = item.isUsed == 1
+
+    val providerColor = when (item.providerTag.lowercase()) {
+        "bkash"  -> BkashPink
+        "nagad"  -> NagadOrange
+        "rocket" -> RocketPurple
+        "upay"   -> UpayTeal
+        else     -> AccentCyan
+    }
+    val providerEmoji = when (item.providerTag.lowercase()) {
+        "bkash"  -> "🟢"
+        "nagad"  -> "🟠"
+        "rocket" -> "🔵"
+        "upay"   -> "🟡"
+        else     -> "⚪"
+    }
+
+    Card(
+        colors   = CardDefaults.cardColors(
+            containerColor = if (isSoldOut) HistCard else HistCard
+        ),
+        shape    = RoundedCornerShape(12.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier             = Modifier
+                .fillMaxWidth()
+                .padding(0.dp),
+            verticalAlignment    = Alignment.CenterVertically
+        ) {
+            // ── Provider Color Side Bar ──────────────────────────────────────
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(84.dp)
+                    .background(
+                        if (isSoldOut) providerColor.copy(alpha = 0.3f)
+                        else providerColor
+                    )
+            )
+
+            // ── Main Content ─────────────────────────────────────────────────
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Row 1: Provider + SIM slot + Amount
+                Row(
+                    modifier             = Modifier.fillMaxWidth(),
+                    verticalAlignment    = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment  = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text       = "$providerEmoji ${item.providerTag}",
+                            color      = if (isSoldOut) providerColor.copy(alpha = 0.55f) else providerColor,
+                            fontSize   = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (item.simSlot != null) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(TextMuted.copy(alpha = 0.12f))
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text     = "SIM ${item.simSlot}",
+                                    color    = TextMuted,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                    // Amount
+                    Text(
+                        text       = "৳ ${DecimalFormat("#,##0.00").format(item.amount)}",
+                        color      = if (isSoldOut) TextMuted else TextWhite,
+                        fontSize   = 16.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+
+                // Row 2: TrxID + Badge
+                Row(
+                    modifier             = Modifier.fillMaxWidth(),
+                    verticalAlignment    = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text     = "TrxID: ${item.trxId}",
+                        color    = TextMuted,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    // ── UNUSED / SOLDOUT Badge ───────────────────────────────
+                    StatusBadge(isSoldOut = isSoldOut)
+                }
+
+                // Row 3: From number + Timestamp
+                Row(
+                    modifier             = Modifier.fillMaxWidth(),
+                    verticalAlignment    = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    item.senderNumber?.let {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Icon(
+                                imageVector     = Icons.Default.PhoneAndroid,
+                                contentDescription = "From",
+                                tint            = TextMuted.copy(alpha = 0.6f),
+                                modifier        = Modifier.size(11.dp)
+                            )
+                            Text(
+                                text     = it,
+                                color    = TextMuted.copy(alpha = 0.7f),
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                    Text(
+                        text     = formatTrxTimestamp(item.smsTimestamp),
+                        color    = TextMuted.copy(alpha = 0.6f),
+                        fontSize = 10.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Component 6 — Status Badge (UNUSED / SOLDOUT)
+// =============================================================================
+@Composable
+private fun StatusBadge(isSoldOut: Boolean) {
+    val bgColor   = if (isSoldOut) AccentRed.copy(alpha = 0.12f) else AccentGreen.copy(alpha = 0.12f)
+    val textColor = if (isSoldOut) AccentRed else AccentGreen
+    val label     = if (isSoldOut) "🔴 SOLDOUT" else "✅ UNUSED"
+
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(bgColor)
+            .border(0.5.dp, textColor.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+    ) {
+        Text(
+            text       = label,
+            color      = textColor,
+            fontSize   = 9.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+    }
+}
+
+// =============================================================================
+// Component 7 — Skeleton Loading Card
+// =============================================================================
+@Composable
+private fun SkeletonTransactionCard() {
+    Card(
+        colors   = CardDefaults.cardColors(containerColor = HistCard),
+        shape    = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .height(84.dp)
+    ) {
+        Row(
+            modifier          = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(TextMuted.copy(alpha = 0.15f))
+            )
+            Column(
+                modifier            = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.45f)
+                        .height(12.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(TextMuted.copy(alpha = 0.12f))
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.7f)
+                        .height(10.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(TextMuted.copy(alpha = 0.08f))
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.35f)
+                        .height(9.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(TextMuted.copy(alpha = 0.06f))
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .width(60.dp)
+                    .height(20.dp)
+                    .padding(end = 12.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(TextMuted.copy(alpha = 0.10f))
+            )
+        }
+    }
+}
+
+// =============================================================================
+// Component 8 — Empty State
+// =============================================================================
+@Composable
+private fun EmptyStateCard(hasFilter: Boolean) {
+    Column(
+        modifier                = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 48.dp),
+        horizontalAlignment     = Alignment.CenterHorizontally,
+        verticalArrangement     = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(
+            imageVector     = Icons.Default.Inbox,
+            contentDescription = "Empty",
+            tint            = TextMuted.copy(alpha = 0.4f),
+            modifier        = Modifier.size(56.dp)
+        )
+        Text(
+            text       = if (hasFilter) "এই প্রোভাইডারের কোনো রেকর্ড নেই" else "কোনো ট্রানজেকশন পাওয়া যায়নি",
+            color      = TextMuted,
+            fontSize   = 15.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign  = TextAlign.Center
+        )
+        Text(
+            text      = if (hasFilter) "অন্য ফিল্টার ব্যবহার করুন অথবা SMS মনিটর চালু রাখুন"
+                        else "আপনার SMS মনিটর সার্ভিস সক্রিয় রাখুন",
+            color     = TextMuted.copy(alpha = 0.6f),
+            fontSize  = 12.sp,
+            textAlign = TextAlign.Center,
+            modifier  = Modifier.padding(horizontal = 32.dp)
+        )
+    }
+}
+
+// =============================================================================
+// Component 9 — Error Card
+// =============================================================================
+@Composable
+private fun HistoryErrorCard(
+    message: String,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        colors   = CardDefaults.cardColors(containerColor = HistCard),
+        shape    = RoundedCornerShape(14.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier            = Modifier.padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector     = Icons.Default.CloudOff,
+                contentDescription = "Error",
+                tint            = AccentRed,
+                modifier        = Modifier.size(36.dp)
+            )
+            Text(
+                text      = message,
+                color     = TextMuted,
+                fontSize  = 13.sp,
+                textAlign = TextAlign.Center
+            )
+            Button(
+                onClick = onRetry,
+                colors  = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                shape   = RoundedCornerShape(8.dp)
+            ) {
+                Icon(
+                    imageVector     = Icons.Default.Refresh,
+                    contentDescription = "Retry",
+                    tint            = Color(0xFF0F172A),
+                    modifier        = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text       = "পুনরায় চেষ্টা করুন",
+                    color      = Color(0xFF0F172A),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Utility — Timestamp Format
+// =============================================================================
+private fun formatTrxTimestamp(raw: String): String {
+    return try {
+        val formats = listOf(
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd"
+        )
+        var parsed: Date? = null
+        for (fmt in formats) {
+            try {
+                parsed = SimpleDateFormat(fmt, Locale.US).parse(raw)
+                break
+            } catch (_: Exception) { }
+        }
+        parsed?.let {
+            SimpleDateFormat("dd MMM yy, hh:mm a", Locale.ENGLISH).format(it)
+        } ?: raw.take(16)
+    } catch (_: Exception) {
+        raw.take(16)
+    }
+}
