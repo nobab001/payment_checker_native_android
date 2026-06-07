@@ -29,6 +29,7 @@ async function paymentSmsIngest(req, res) {
       receiverNumber,
       smsTimestamp, // Epoch milliseconds
       rawBody,
+      fullSms,
       simSlot,
       simNumber
     } = req.body;
@@ -36,7 +37,9 @@ async function paymentSmsIngest(req, res) {
     const userId   = req.user.userId;
     const deviceId = req.user.deviceId || 'unknown_device';
 
-    if (!amount || !trxId || !providerTag || !smsTimestamp || !rawBody) {
+    const originalBody = fullSms || rawBody;
+
+    if (!amount || !trxId || !providerTag || !smsTimestamp || !originalBody) {
       return res.status(400).json({ error: 'প্রয়োজনীয় ফিল্ড অনুপস্থিত' });
     }
 
@@ -45,7 +48,7 @@ async function paymentSmsIngest(req, res) {
     const formattedDate    = dateObj.toISOString().slice(0, 10);
 
     // Deduplication Key গঠন
-    const bodyHash = sha256(rawBody);
+    const bodyHash = sha256(originalBody);
     const dedupeKey = `${smsTimestamp}|${senderNumber || ''}|${bodyHash}`;
 
     // ────────────────────────────────────────────────────────────────────────
@@ -57,7 +60,7 @@ async function paymentSmsIngest(req, res) {
       `INSERT IGNORE INTO sms_history (
         user_id, device_id, sim_slot, sim_number, provider_tag, amount,
         trx_id, sender_number, receiver_number, sms_timestamp, sms_date,
-        raw_body, dedupe_key, is_synced, is_used
+        full_sms, dedupe_key, is_synced, is_used
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)`,
       [
         userId,
@@ -71,7 +74,7 @@ async function paymentSmsIngest(req, res) {
         receiverNumber || null,
         formattedTimestamp,
         formattedDate,
-        rawBody,
+        originalBody,
         dedupeKey
       ]
     );

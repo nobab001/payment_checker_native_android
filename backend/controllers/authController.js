@@ -298,6 +298,27 @@ async function completeProfile(req, res) {
       [name.trim(), hashedPin, phone || null, email || null, userId]
     );
 
+    // Auto-insert 8 default gateway methods if they do not exist
+    const existingMethods = await query(
+      'SELECT id FROM gateway_methods WHERE user_id = ? LIMIT 1',
+      [userId]
+    );
+
+    if (existingMethods.length === 0) {
+      await query(
+        `INSERT INTO gateway_methods (user_id, sim_slot, provider, priority) VALUES 
+          (?, 1, 'bKash', 1),
+          (?, 1, 'Nagad', 2),
+          (?, 1, 'Rocket', 3),
+          (?, 1, 'Upay', 4),
+          (?, 2, 'bKash', 5),
+          (?, 2, 'Nagad', 6),
+          (?, 2, 'Rocket', 7),
+          (?, 2, 'Upay', 8)`,
+        [userId, userId, userId, userId, userId, userId, userId, userId]
+      );
+    }
+
     // Fetch updated user details
     const updatedUsers = await query('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
     const user = updatedUsers[0];

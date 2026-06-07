@@ -147,11 +147,11 @@ CREATE TABLE IF NOT EXISTS `sms_history` (
   -- SMS Metadata
   `sms_timestamp`   DATETIME      NOT NULL COMMENT 'Timestamp parsed from SMS body',
   `sms_date`        DATE          DEFAULT NULL,
-  `raw_body`        TEXT          DEFAULT NULL COMMENT 'Original SMS text',
+  `full_sms`        TEXT          DEFAULT NULL COMMENT 'Original SMS text',
 
   -- -----------------------------------------------------------------------
   -- DEDUPLICATION KEY
-  -- Formula: sms_timestamp + '|' + sender_number + '|' + SHA2(raw_body, 256)
+  -- Formula: sms_timestamp + '|' + sender_number + '|' + SHA2(full_sms, 256)
   -- UNIQUE constraint prevents same SMS being inserted twice
   -- App uses ConflictAlgorithm.IGNORE equivalent on INSERT
   -- -----------------------------------------------------------------------
@@ -187,6 +187,7 @@ CREATE TABLE IF NOT EXISTS `sms_history` (
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS `sms_templates` (
   `id`               INT          NOT NULL AUTO_INCREMENT,
+  `user_id`          INT          DEFAULT NULL COMMENT 'NULL for admin/global, user_id for custom templates',
   `customer_preview` VARCHAR(128) NOT NULL COMMENT 'Display name e.g. bKash Personal',
   `sender_id`        VARCHAR(64)  NOT NULL DEFAULT '' COMMENT 'Sender address to match e.g. bKash',
   `formats`          JSON         NOT NULL COMMENT 'Array of format strings with [Amount],[TrxID] tokens',
@@ -194,7 +195,10 @@ CREATE TABLE IF NOT EXISTS `sms_templates` (
   `created_at`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  INDEX `idx_template_active` (`customer_preview`, `is_active`)
+  INDEX `idx_template_active` (`customer_preview`, `is_active`),
+  INDEX `idx_template_user` (`user_id`),
+  CONSTRAINT `fk_template_user`
+    FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
