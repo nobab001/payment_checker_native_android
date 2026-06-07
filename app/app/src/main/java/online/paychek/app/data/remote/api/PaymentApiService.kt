@@ -1,17 +1,49 @@
 package online.paychek.app.data.remote.api
 
-import online.paychek.app.data.remote.dto.PaymentIngestRequest
-import online.paychek.app.data.remote.dto.PaymentIngestResponse
+import online.paychek.app.data.remote.dto.*
 import retrofit2.Response
-import retrofit2.http.Body
-import retrofit2.http.Header
-import retrofit2.http.POST
+import retrofit2.http.*
 
+/**
+ * PaymentApiService — পেমেন্ট সম্পর্কিত সকল API endpoint
+ *
+ * Endpoints:
+ *  POST api/payment-sms-ingest  → SMS পার্স করে সার্ভারে পাঠানো (আগে থেকে আছে)
+ *  GET  api/sms-history         → পেজিনেটেড ট্রানজেকশন লিস্ট
+ *  GET  api/dashboard/stats     → Dashboard statistics (মোট আয়, আজকের আয় ইত্যাদি)
+ */
 interface PaymentApiService {
 
+    // ─── SMS Ingest (আগে থেকে আছে) ──────────────────────────────────────────
     @POST("payment-sms-ingest")
     suspend fun ingestPaymentSms(
         @Header("Authorization") token: String,
         @Body request: PaymentIngestRequest
     ): Response<PaymentIngestResponse>
+
+    // ─── Transaction History ─────────────────────────────────────────────────
+    /**
+     * পেজিনেটেড ট্রানজেকশন লিস্ট
+     * @param token    Bearer JWT token
+     * @param page     পেজ নম্বর (1 থেকে শুরু)
+     * @param limit    প্রতি পেজে কটি আইটেম (default 20)
+     * @param provider ফিল্টার: bKash | Nagad | Rocket | Upay | all
+     */
+    @GET("sms-history")
+    suspend fun getTransactionHistory(
+        @Header("Authorization") token: String,
+        @Query("page")     page: Int     = 1,
+        @Query("limit")    limit: Int    = 20,
+        @Query("provider") provider: String = "all"
+    ): Response<TransactionListResponse>
+
+    // ─── Dashboard Stats ─────────────────────────────────────────────────────
+    /**
+     * Dashboard-এর জন্য সংক্ষিপ্ত পরিসংখ্যান
+     * @param token Bearer JWT token
+     */
+    @GET("dashboard/stats")
+    suspend fun getDashboardStats(
+        @Header("Authorization") token: String
+    ): Response<DashboardStatsResponse>
 }

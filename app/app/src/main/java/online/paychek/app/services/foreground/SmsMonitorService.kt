@@ -19,174 +19,285 @@ import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.data.remote.dto.PaymentIngestRequest
 import online.paychek.app.services.sms.SmsReceiver
 import online.paychek.app.utils.SmsParser
+import org.json.JSONArray
+import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
+/**
+ * SmsMonitorService — প্রোডাকশন-রেডি Foreground Service
+ *
+ * নতুন ফিচার (ধাপ ১):
+ *  ১. SIM Slot সংখ্যা সহ ingest request পাঠানো হয়
+ *  ২. Offline Queue — নেটওয়ার্ক না থাকলে SharedPrefs-এ JSON সেভ, পরে retry
+ *  ৩. Notification-এ সর্বশেষ পেমেন্টের সময় দেখানো হয়
+ *  ৪. START_STICKY — সিস্টেম kill করলে নিজে থেকে পুনরায় চালু হয়
+ */
 class SmsMonitorService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var wakeLock: PowerManager.WakeLock? = null
     private var smsReceiver: SmsReceiver? = null
 
+    // সর্বশেষ সফল পেমেন্টের সময় (notification-এ দেখানোর জন্য)
+    private var lastPaymentTime: String = "এখনো কোনো পেমেন্ট আসেনি"
+
     companion object {
-        private const val NOTIFICATION_ID = 991
-        private const val CHANNEL_ID = "sms_monitor_channel"
-        private const val CHANNEL_NAME = "SMS Tracking Service"
+        private const val TAG = "SmsMonitorService"
+
+        const val NOTIFICATION_ID   = 991
+        const val CHANNEL_ID        = "sms_monitor_channel"
+        private const val CHANNEL_NAME = "SMS ট্র্যাকিং সার্ভিস"
 
         const val ACTION_START = "ACTION_START_SERVICE"
-        const val ACTION_STOP = "ACTION_STOP_SERVICE"
+        const val ACTION_STOP  = "ACTION_STOP_SERVICE"
+
+        // Offline Queue SharedPrefs key (AppConfig থেকে)
+        private val QUEUE_KEY = AppConfig.KEY_OFFLINE_INGEST_QUEUE
+        private const val MAX_QUEUE_SIZE = 50 // সর্বোচ্চ ৫০টি পেন্ডিং রাখা হবে
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        Log.i("SmsMonitorService", "Foreground service onCreate called")
+        Log.i(TAG, "Foreground service onCreate")
         createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
-        Log.i("SmsMonitorService", "Foreground service onStartCommand: Action=$action")
+        Log.i(TAG, "onStartCommand — Action: $action")
 
         if (action == ACTION_STOP) {
             stopMonitoring()
             return START_NOT_STICKY
         }
 
-        // Start Foreground Notification
+        // Foreground notification চালু করা
         startForeground(NOTIFICATION_ID, buildNotification())
 
-        // Acquire WakeLock to prevent CPU sleep
+        // CPU Wakelock নেওয়া
         acquireWakeLock()
 
-        // Register SMS BroadcastReceiver dynamically
+        // SMS BroadcastReceiver রেজিস্টার করা
         registerSmsReceiver()
 
-        return START_STICKY
-    }
-
-    private fun startMonitoring() {
-        // Handled in onStartCommand default flow
-    }
-
-    private fun stopMonitoring() {
-        Log.i("SmsMonitorService", "Stopping SMS monitoring service")
-        stopForeground(true)
-        stopSelf()
-    }
-
-    private fun acquireWakeLock() {
-        try {
-            if (wakeLock == null) {
-                val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-                wakeLock = powerManager.newWakeLock(
-                    PowerManager.PARTIAL_WAKE_LOCK,
-                    "Paychek::SmsMonitorWakeLock"
-                ).apply {
-                    acquire(10 * 60 * 1000L) // Bounded acquisition fallback (10 mins)
-                }
-                Log.d("SmsMonitorService", "WakeLock acquired successfully")
-            }
-        } catch (e: Exception) {
-            Log.e("SmsMonitorService", "Failed to acquire WakeLock: ", e)
+        // ── পুরনো Offline Queue retry করা ──────────────────────────────
+        serviceScope.launch {
+            delay(3_000L) // সার্ভিস পুরোপুরি চালু হতে ৩ সেকেন্ড দেওয়া
+            retryOfflineQueue()
         }
+
+        return START_STICKY // সিস্টেম kill করলে নিজে পুনরায় চালু হবে
     }
 
-    private fun releaseWakeLock() {
-        try {
-            wakeLock?.let {
-                if (it.isHeld) {
-                    it.release()
-                    Log.d("SmsMonitorService", "WakeLock released")
-                }
-            }
-            wakeLock = null
-        } catch (e: Exception) {
-            Log.e("SmsMonitorService", "Failed to release WakeLock: ", e)
-        }
-    }
-
+    // ─────────────────────────────────────────────────────────────────────────
+    // SMS BroadcastReceiver রেজিস্ট্রেশন
+    // ─────────────────────────────────────────────────────────────────────────
     private fun registerSmsReceiver() {
-        if (smsReceiver == null) {
-            smsReceiver = SmsReceiver { parsedPayment ->
-                uploadParsedPayment(parsedPayment)
-            }
+        if (smsReceiver != null) return // ইতিমধ্যে রেজিস্টার্ড
 
-            val filter = IntentFilter(Telephony.Sms.Intents.SMS_RECEIVED_ACTION).apply {
-                priority = 999
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                // Must specify RECEIVER_EXPORTED since SMS is broadcast by the Android OS
-                registerReceiver(smsReceiver, filter, RECEIVER_EXPORTED)
-            } else {
-                registerReceiver(smsReceiver, filter)
-            }
-            Log.d("SmsMonitorService", "SmsReceiver dynamically registered")
+        smsReceiver = SmsReceiver { parsedPayment ->
+            // SMS পাওয়ার সাথে সাথে upload করার চেষ্টা
+            uploadOrQueuePayment(parsedPayment)
         }
+
+        val filter = IntentFilter(Telephony.Sms.Intents.SMS_RECEIVED_ACTION).apply {
+            priority = 999
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(smsReceiver, filter, RECEIVER_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(smsReceiver, filter)
+        }
+        Log.d(TAG, "SmsReceiver dynamically registered ✅")
     }
 
     private fun unregisterSmsReceiver() {
         smsReceiver?.let {
             try {
                 unregisterReceiver(it)
-                Log.d("SmsMonitorService", "SmsReceiver unregistered")
+                Log.d(TAG, "SmsReceiver unregistered")
             } catch (e: Exception) {
-                Log.e("SmsMonitorService", "Failed to unregister receiver: ", e)
+                Log.w(TAG, "Unregister failed (already removed?): ${e.message}")
             }
         }
         smsReceiver = null
     }
 
-    private fun uploadParsedPayment(parsed: SmsParser.ParsedPayment) {
+    // ─────────────────────────────────────────────────────────────────────────
+    // পেমেন্ট Upload অথবা Offline Queue-তে সেভ
+    // ─────────────────────────────────────────────────────────────────────────
+    private fun uploadOrQueuePayment(parsed: SmsParser.ParsedPayment) {
         serviceScope.launch {
-            try {
-                // 1. Retrieve session auth token from SharedPreferences
-                val sharedPrefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
-                val token = sharedPrefs.getString(AppConfig.KEY_AUTH_TOKEN, "") ?: ""
-
-                if (token.isEmpty()) {
-                    Log.w("SmsMonitorService", "Cannot ingest payment. Auth Token is empty.")
-                    return@launch
-                }
-
-                // Format Bearer Token
-                val authHeader = "Bearer $token"
-
-                // 2. Build Ingest DTO
-                val request = PaymentIngestRequest(
-                    amount = parsed.amount,
-                    trxId = parsed.trxId,
-                    providerTag = parsed.providerTag,
-                    senderNumber = parsed.senderNumber,
-                    receiverNumber = null, // Injected by SIM/slot configs if known
-                    smsTimestamp = parsed.smsTimestamp,
-                    rawBody = parsed.rawBody,
-                    simSlot = null,
-                    simNumber = null
-                )
-
-                Log.i("SmsMonitorService", "Uploading parsed payment telemetry for Trx: ${parsed.trxId}")
-
-                // 3. Make Retrofit Network Call
-                val response = RetrofitClient.paymentApiService.ingestPaymentSms(authHeader, request)
-
-                if (response.isSuccessful && response.body() != null) {
-                    val res = response.body()!!
-                    if (res.isDuplicate) {
-                        Log.i("SmsMonitorService", "Server reported duplicate for Trx: ${parsed.trxId}. Ignored.")
-                    } else {
-                        Log.i("SmsMonitorService", "Successfully ingested Trx: ${parsed.trxId} to API.")
-                    }
-                } else {
-                    Log.e("SmsMonitorService", "Ingest API failed. Code: ${response.code()} Msg: ${response.message()}")
-                }
-
-            } catch (e: Exception) {
-                Log.e("SmsMonitorService", "Network exception uploading transaction: ", e)
+            val success = attemptUpload(parsed)
+            if (!success) {
+                Log.w(TAG, "Upload ব্যর্থ — Offline Queue-তে সেভ করা হচ্ছে: ${parsed.trxId}")
+                addToOfflineQueue(parsed)
+                updateNotification("⚠️ অফলাইন — ${parsed.trxId} কিউতে সেভ আছে")
             }
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Retrofit দিয়ে API-তে upload করার চেষ্টা
+    // সফল হলে true, ব্যর্থ হলে false রিটার্ন
+    // ─────────────────────────────────────────────────────────────────────────
+    private suspend fun attemptUpload(parsed: SmsParser.ParsedPayment): Boolean {
+        return try {
+            val sharedPrefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+            val token = sharedPrefs.getString(AppConfig.KEY_AUTH_TOKEN, "") ?: ""
+
+            if (token.isEmpty()) {
+                Log.w(TAG, "Auth Token নেই — upload করা যাচ্ছে না")
+                return false
+            }
+
+            val request = PaymentIngestRequest(
+                amount         = parsed.amount,
+                trxId          = parsed.trxId,
+                providerTag    = parsed.providerTag,
+                senderNumber   = parsed.senderNumber,
+                receiverNumber = parsed.simNumber, // SIM নম্বরকে receiver হিসেবে পাঠানো
+                smsTimestamp   = parsed.smsTimestamp,
+                rawBody        = parsed.rawBody,
+                simSlot        = parsed.simSlot,
+                simNumber      = parsed.simNumber
+            )
+
+            Log.i(TAG, "Upload চেষ্টা — TrxID: ${parsed.trxId} | SIM: ${parsed.simSlot}")
+
+            val response = RetrofitClient.paymentApiService
+                .ingestPaymentSms("Bearer $token", request)
+
+            if (response.isSuccessful && response.body() != null) {
+                val body = response.body()!!
+                if (body.isDuplicate) {
+                    Log.i(TAG, "Duplicate TrxID — সার্ভার ignore করেছে: ${parsed.trxId}")
+                } else {
+                    // সফল — notification আপডেট করা
+                    lastPaymentTime = formatTime(parsed.smsTimestamp)
+                    updateNotification("✅ সর্বশেষ: ${parsed.providerTag} ${parsed.amount}৳ — $lastPaymentTime")
+                    Log.i(TAG, "✅ Upload সফল — TrxID: ${parsed.trxId}")
+                }
+                true
+            } else {
+                Log.e(TAG, "API Error ${response.code()} — ${response.message()}")
+                false
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Network Exception: ${e.message}")
+            false
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // OFFLINE QUEUE — SharedPreferences-এ JSON Array হিসেবে পেন্ডিং সেভ করা
+    // ─────────────────────────────────────────────────────────────────────────
+    private fun addToOfflineQueue(parsed: SmsParser.ParsedPayment) {
+        try {
+            val prefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+            val queueJson = prefs.getString(QUEUE_KEY, "[]") ?: "[]"
+            val queue = JSONArray(queueJson)
+
+            // Queue সর্বোচ্চ সীমা চেক
+            if (queue.length() >= MAX_QUEUE_SIZE) {
+                Log.w(TAG, "Offline Queue পূর্ণ ($MAX_QUEUE_SIZE) — সবচেয়ে পুরনো বাদ দেওয়া হচ্ছে")
+                // সবচেয়ে পুরনো আইটেম বাদ দেওয়া (FIFO)
+                val newQueue = JSONArray()
+                for (i in 1 until queue.length()) newQueue.put(queue.get(i))
+                newQueue.put(parsedToJson(parsed))
+                prefs.edit().putString(QUEUE_KEY, newQueue.toString()).apply()
+            } else {
+                queue.put(parsedToJson(parsed))
+                prefs.edit().putString(QUEUE_KEY, queue.toString()).apply()
+            }
+
+            Log.d(TAG, "Offline Queue-এ যোগ — মোট পেন্ডিং: ${queue.length() + 1}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Offline Queue সেভ ব্যর্থ: ${e.message}")
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // OFFLINE QUEUE RETRY — সার্ভিস চালু হলে পেন্ডিং আইটেম পাঠানোর চেষ্টা
+    // ─────────────────────────────────────────────────────────────────────────
+    private suspend fun retryOfflineQueue() {
+        try {
+            val prefs     = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+            val queueJson = prefs.getString(QUEUE_KEY, "[]") ?: "[]"
+            val queue     = JSONArray(queueJson)
+
+            if (queue.length() == 0) return
+
+            Log.i(TAG, "Offline Queue retry শুরু — মোট পেন্ডিং: ${queue.length()}")
+            val successfulIndexes = mutableListOf<Int>()
+
+            for (i in 0 until queue.length()) {
+                val item   = queue.getJSONObject(i)
+                val parsed = jsonToParsed(item) ?: continue
+
+                val success = attemptUpload(parsed)
+                if (success) {
+                    successfulIndexes.add(i)
+                    delay(500L) // প্রতিটি retry-এর মাঝে ছোট বিরতি
+                }
+            }
+
+            // সফল আইটেমগুলো Queue থেকে বাদ দেওয়া
+            if (successfulIndexes.isNotEmpty()) {
+                val newQueue = JSONArray()
+                for (i in 0 until queue.length()) {
+                    if (i !in successfulIndexes) newQueue.put(queue.get(i))
+                }
+                prefs.edit().putString(QUEUE_KEY, newQueue.toString()).apply()
+                Log.i(TAG, "Retry সফল — ${successfulIndexes.size}টি পাঠানো হয়েছে, " +
+                        "${newQueue.length()}টি এখনো পেন্ডিং")
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Queue retry-তে ত্রুটি: ${e.message}")
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ParsedPayment ↔ JSON রূপান্তর (Queue সিরিয়ালাইজেশন)
+    // ─────────────────────────────────────────────────────────────────────────
+    private fun parsedToJson(p: SmsParser.ParsedPayment): JSONObject = JSONObject().apply {
+        put("amount",       p.amount)
+        put("trxId",        p.trxId)
+        put("providerTag",  p.providerTag)
+        put("senderNumber", p.senderNumber)
+        put("rawBody",      p.rawBody)
+        put("smsTimestamp", p.smsTimestamp)
+        put("simSlot",      p.simSlot ?: JSONObject.NULL)
+        put("simNumber",    p.simNumber ?: JSONObject.NULL)
+    }
+
+    private fun jsonToParsed(json: JSONObject): SmsParser.ParsedPayment? = try {
+        SmsParser.ParsedPayment(
+            amount        = json.getDouble("amount"),
+            trxId         = json.getString("trxId"),
+            providerTag   = json.getString("providerTag"),
+            senderNumber  = json.getString("senderNumber"),
+            rawBody       = json.getString("rawBody"),
+            smsTimestamp  = json.getLong("smsTimestamp"),
+            simSlot       = if (json.isNull("simSlot")) null else json.getInt("simSlot"),
+            simNumber     = if (json.isNull("simNumber")) null else json.getString("simNumber")
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "JSON parse error: ${e.message}")
+        null
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Notification helpers
+    // ─────────────────────────────────────────────────────────────────────────
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -194,27 +305,76 @@ class SmsMonitorService : Service() {
                 CHANNEL_NAME,
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps SMS capturing active in the background"
+                description = "ব্যাকগ্রাউন্ডে পেমেন্ট SMS ট্র্যাক করে রাখে"
+                setShowBadge(false)
             }
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .createNotificationChannel(channel)
         }
     }
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(statusText: String = "পেমেন্ট SMS ব্যাকগ্রাউন্ডে ট্র্যাক হচ্ছে..."): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("পেমেন্ট নোটিফিকেশন ট্র্যাকার")
-            .setContentText("ইনকামিং পেমেন্ট SMS ব্যাকগ্রাউন্ডে ট্র্যাক করা হচ্ছে...")
-            .setSmallIcon(android.R.drawable.ic_menu_info_details)
-            .setOngoing(true)
+            .setContentTitle("💳 Paychek — সক্রিয়")
+            .setContentText(statusText)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setOngoing(true)  // সোয়াইপ করে বন্ধ করা যাবে না
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
     }
 
+    /** Notification live আপডেট করা (নতুন SMS পেলে) */
+    private fun updateNotification(statusText: String) {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIFICATION_ID, buildNotification(statusText))
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // WakeLock helpers
+    // ─────────────────────────────────────────────────────────────────────────
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "Paychek::SmsMonitorWakeLock"
+            ).also {
+                it.acquire(10 * 60 * 1000L) // ১০ মিনিট bounded, সার্ভিস রি-একোয়্যার করে
+            }
+            Log.d(TAG, "WakeLock acquired ✅")
+        } catch (e: Exception) {
+            Log.e(TAG, "WakeLock acquire failed: ${e.message}")
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+            wakeLock = null
+            Log.d(TAG, "WakeLock released")
+        } catch (e: Exception) {
+            Log.w(TAG, "WakeLock release error: ${e.message}")
+        }
+    }
+
+    private fun stopMonitoring() {
+        Log.i(TAG, "SMS Monitoring সার্ভিস বন্ধ হচ্ছে")
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Utility
+    // ─────────────────────────────────────────────────────────────────────────
+    private fun formatTime(epochMs: Long): String =
+        SimpleDateFormat("hh:mm a", Locale("bn", "BD")).format(Date(epochMs))
+
     override fun onDestroy() {
         super.onDestroy()
-        Log.i("SmsMonitorService", "Foreground service onDestroy called")
+        Log.i(TAG, "Foreground service onDestroy")
         releaseWakeLock()
         unregisterSmsReceiver()
         serviceScope.cancel()

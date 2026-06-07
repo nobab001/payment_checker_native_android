@@ -59,18 +59,17 @@
             </intent-filter>
         </receiver>
 
-        <!-- Boot BroadcastReceiver — restores SMS service after reboot -->
-        <!-- Full implementation: services.sms.BootReceiver (next phase) -->
-        <!--
+        <!-- Boot BroadcastReceiver — ফোন রিস্টার্টের পর SMS সার্ভিস পুনরায় চালু করে -->
         <receiver
-            android:name=".services.sms.BootReceiver"
-            android:exported="true">
+            android:name=".services.boot.BootReceiver"
+            android:exported="true"
+            android:directBootAware="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
-        -->
 
         <!-- SMS Foreground Service -->
         <service
