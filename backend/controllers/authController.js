@@ -727,149 +727,209 @@ async function checkDeviceTrial(req, res) {
 }
 
 /**
- * Helper: Dispatches OTP via Round-Robin Email or SMS Gateways
+ * Helper: Dispatches OTP via Sequential Gmail Round-Robin or Single Active SMS Gateway
+ *
+ * EMAIL FLOW (Sequential Multi-Gmail):
+ *  Layer 1 — DB Accounts (sequential by id ASC, skip if sent_today >= daily_limit)
+ *  Layer 2 — .env SMTP Fallback (EMAIL_USER + EMAIL_PASS + SMTP_HOST)
+ *  Layer 3 — Return false → caller sends EMAIL_ALL_FAILED
+ *
+ * SMS FLOW (One-Active Policy):
+ *  Use whichever single gateway has is_active = 1
+ *  Return false → caller sends SMS_ALL_FAILED
  */
 async function sendOtpDispatch(contact, otpCode) {
   const isEmail = contact.includes('@');
-  
-  // Log locally for debugging ease
-  console.log(`[OTP GENERATED] To: ${contact} | Code: ${otpCode}`);
 
+  // ── Log locally always ───────────────────────────────────────────────────
+  console.log(`[OTP] To: ${contact} | Code: ${otpCode}`);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // EMAIL DISPATCH
+  // ══════════════════════════════════════════════════════════════════════════
   if (isEmail) {
-    // 1. Try Database-driven Round-Robin SMTP Dispatcher first
+
+    // ── LAYER 1: Sequential Gmail Round-Robin (DB-driven) ──────────────────
+    // সবচেয়ে কম ID-র অ্যাকাউন্ট থেকে শুরু করব এবং sent_today < daily_limit
+    // না হলে পরবর্তী অ্যাকাউন্টে যাব। এটি সিকোয়েন্সিয়াল ফাসলাইন লজিক।
     try {
-      const accounts = await query(
-        `SELECT * FROM email_accounts 
-          WHERE is_active = 1 AND COALESCE(sent_today, 0) < COALESCE(daily_limit, 500) 
-       ORDER BY COALESCE(sent_today, 0) ASC, updated_at ASC 
-          LIMIT 1`
+      const dbAccounts = await query(
+        `SELECT * FROM email_accounts
+          WHERE is_active = 1
+            AND COALESCE(sent_today, 0) < COALESCE(daily_limit, 500)
+          ORDER BY id ASC
+          LIMIT 10`  // max 10 accounts to iterate over
       );
 
-      if (accounts.length > 0) {
-        const acc = accounts[0];
-        console.log(`[ROUND-ROBIN] Using SMTP Account: ${acc.email} (Sent today: ${acc.sent_today}/${acc.daily_limit})`);
-        
-        const smtpConfig = {
-          host: acc.host,
-          port: acc.port,
-          secure: acc.secure === 1,
-          auth: {
-            user: acc.email,
-            pass: acc.password
-          }
-        };
+      for (const acc of dbAccounts) {
+        const sentToday = acc.sent_today || 0;
+        const limit     = acc.daily_limit || 500;
 
-        // Enable Gmail helper if applicable
-        if (acc.host.toLowerCase().includes('gmail.com')) {
-          smtpConfig.service = 'gmail';
+        if (sentToday >= limit) {
+          // এই অ্যাকাউন্টের দৈনিক কোটা পূর্ণ — পরবর্তীতে যাই
+          console.log(`[GMAIL-SEQ] ${acc.email} quota full (${sentToday}/${limit}), skipping...`);
+          continue;
         }
 
-        const transporter = nodemailer.createTransport(smtpConfig);
+        console.log(`[GMAIL-SEQ] Attempting via: ${acc.email} (${sentToday}/${limit})`);
 
-        await transporter.sendMail({
-          from: acc.email,
-          to: contact,
-          subject: 'Paychek Verification Code',
-          text: `Your Paychek login/registration verification code is: ${otpCode}. It is valid for 5 minutes.`
-        });
+        try {
+          const smtpConfig = {
+            host:   acc.host,
+            port:   acc.port,
+            secure: acc.secure === 1,
+            auth: {
+              user: acc.email,
+              pass: acc.password
+            },
+            // Connection timeout settings
+            connectionTimeout: 10000,
+            greetingTimeout:   5000,
+            socketTimeout:     10000
+          };
 
-        // Increment usage safely
-        await query('UPDATE email_accounts SET sent_today = COALESCE(sent_today, 0) + 1 WHERE id = ?', [acc.id]);
-        return true;
-      } else {
-        console.log(`[ROUND-ROBIN] No active database SMTP accounts with capacity found.`);
+          if (acc.host && acc.host.toLowerCase().includes('gmail')) {
+            smtpConfig.service = 'gmail';
+          }
+
+          const transporter = nodemailer.createTransport(smtpConfig);
+
+          await transporter.sendMail({
+            from:    `"Paychek" <${acc.email}>`,
+            to:      contact,
+            subject: 'Paychek Verification Code',
+            text:    `আপনার Paychek যাচাই কোড: ${otpCode}\n\nএটি ৫ মিনিট পর্যন্ত বৈধ।\n\nYour Paychek verification code is: ${otpCode}\nValid for 5 minutes only.`
+          });
+
+          // সফলভাবে পাঠানো হয়েছে — sent_today বাড়াই
+          await query(
+            'UPDATE email_accounts SET sent_today = COALESCE(sent_today, 0) + 1 WHERE id = ?',
+            [acc.id]
+          );
+          console.log(`[GMAIL-SEQ] Sent via ${acc.email} (now ${sentToday + 1}/${limit})`);
+          return true;
+
+        } catch (smtpErr) {
+          // এই অ্যাকাউন্ট দিয়ে পাঠানো সম্ভব হয়নি — পরবর্তী অ্যাকাউন্টে যাই
+          console.error(`[GMAIL-SEQ] ${acc.email} failed:`, smtpErr.message);
+          // continue to next account
+        }
       }
-    } catch (dbErr) {
-      console.error('[ROUND-ROBIN] SMTP DB Dispatch failed with error:', dbErr);
+
+      // সব DB অ্যাকাউন্ট ব্যর্থ বা কোটা পূর্ণ
+      if (dbAccounts.length === 0) {
+        console.log('[GMAIL-SEQ] No active DB email accounts with remaining quota.');
+      } else {
+        console.log('[GMAIL-SEQ] All active DB accounts exhausted or failed. Falling back to .env...');
+      }
+
+    } catch (dbFetchErr) {
+      console.error('[GMAIL-SEQ] DB fetch error:', dbFetchErr.message);
     }
 
-    // 2. Fallback to .env SMTP settings
+    // ── LAYER 2: .env SMTP Failsafe Backup ────────────────────────────────
+    // DB-র সমস্ত অ্যাকাউন্টের কোটা শেষ বা সব ব্যর্থ হলে এখানে আসব।
     try {
-      const fallbackUser = process.env.EMAIL_USER || process.env.SMTP_USER;
-      const fallbackPass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
-      const fallbackHost = process.env.SMTP_HOST;
-      const fallbackPort = parseInt(process.env.SMTP_PORT || '465', 10);
-      const fallbackSecure = process.env.SMTP_SECURE === 'true' || fallbackPort === 465;
+      const envUser   = process.env.EMAIL_USER || process.env.SMTP_USER;
+      const envPass   = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+      const envHost   = process.env.SMTP_HOST  || 'smtp.gmail.com';
+      const envPort   = parseInt(process.env.SMTP_PORT   || '465', 10);
+      const envSecure = process.env.SMTP_SECURE === 'true' || envPort === 465;
 
-      if (fallbackUser && fallbackPass && fallbackHost) {
-        console.log(`[SMTP-BACKUP] Using backup SMTP: ${fallbackUser}`);
-        
+      if (envUser && envPass) {
+        console.log(`[SMTP-ENV-FALLBACK] Using .env account: ${envUser}`);
+
         const smtpConfig = {
-          host: fallbackHost,
-          port: fallbackPort,
-          secure: fallbackSecure,
-          auth: {
-            user: fallbackUser,
-            pass: fallbackPass
-          }
+          host:   envHost,
+          port:   envPort,
+          secure: envSecure,
+          auth: { user: envUser, pass: envPass },
+          connectionTimeout: 10000,
+          socketTimeout:     10000
         };
-
-        if (fallbackHost.toLowerCase().includes('gmail.com')) {
+        if (envHost.toLowerCase().includes('gmail')) {
           smtpConfig.service = 'gmail';
         }
 
         const transporter = nodemailer.createTransport(smtpConfig);
-
         await transporter.sendMail({
-          from: fallbackUser,
-          to: contact,
+          from:    `"Paychek" <${envUser}>`,
+          to:      contact,
           subject: 'Paychek Verification Code',
-          text: `Your Paychek verification code is: ${otpCode}. It is valid for 5 minutes.`
+          text:    `আপনার Paychek যাচাই কোড: ${otpCode}\n\nএটি ৫ মিনিট পর্যন্ত বৈধ।\n\nYour Paychek verification code is: ${otpCode}\nValid for 5 minutes only.`
         });
+
+        console.log(`[SMTP-ENV-FALLBACK] OTP sent successfully via .env account.`);
         return true;
       } else {
-        console.warn(`[SMTP-BACKUP] Backup SMTP environment variables (EMAIL_USER/SMTP_USER, EMAIL_PASS/SMTP_PASS, SMTP_HOST) are incomplete.`);
+        console.warn('[SMTP-ENV-FALLBACK] EMAIL_USER/EMAIL_PASS not set in .env. Cannot use fallback.');
       }
     } catch (envErr) {
-      console.error('[SMTP-BACKUP] Backup SMTP Dispatch failed with error:', envErr);
+      console.error('[SMTP-ENV-FALLBACK] .env SMTP failed:', envErr.message);
     }
 
+    // ── LAYER 3: All layers exhausted ─────────────────────────────────────
+    console.error('[EMAIL-DISPATCH] All email dispatch layers failed. Returning false.');
     return false;
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SMS DISPATCH (One-Active Policy)
+  // ══════════════════════════════════════════════════════════════════════════
   } else {
-    // SMS Dispatcher
     try {
-      const settings = await query('SELECT * FROM sms_settings WHERE is_active = 1 LIMIT 1');
-      if (settings.length > 0) {
-        const setting = settings[0];
-        let url = setting.gateway_url
-          .replace('{to}', contact)
-          .replace('{msg}', encodeURIComponent(`Your Paychek OTP is ${otpCode}`))
-          .replace('{code}', otpCode);
-        
-        if (setting.api_key && !url.includes('api_key')) {
-          url += `${url.includes('?') ? '&' : '?'}api_key=${encodeURIComponent(setting.api_key)}`;
-        }
-        if (setting.sender_id && !url.includes('sender')) {
-          url += `${url.includes('?') ? '&' : '?'}sender=${encodeURIComponent(setting.sender_id)}`;
-        }
+      // শুধুমাত্র একটি মাত্র অ্যাক্টিভ SMS গেটওয়ে থাকবে (One-Active Policy)
+      const settings = await query(
+        'SELECT * FROM sms_settings WHERE is_active = 1 LIMIT 1'
+      );
 
-        const method = setting.http_method || 'GET';
-        const options = { method };
-        
-        if (method.toUpperCase() === 'POST' && setting.post_body_template) {
-          const bodyText = setting.post_body_template
-            .replace('{to}', contact)
-            .replace('{msg}', `Your Paychek OTP is ${otpCode}`)
-            .replace('{code}', otpCode);
-          options.headers = { 'Content-Type': 'application/json' };
-          options.body = bodyText;
-        }
-
-        console.log(`[SMS-GATEWAY] Sending request to: ${url}`);
-        const res = await fetch(url, options);
-        if (res.ok) {
-          return true;
-        } else {
-          console.error(`[SMS-GATEWAY] HTTP dispatch failed with status: ${res.status}`);
-        }
-      } else {
-        console.warn(`[SMS-GATEWAY] No active SMS Gateway config found in sms_settings.`);
+      if (settings.length === 0) {
+        console.warn('[SMS-GATEWAY] No active SMS Gateway found in sms_settings.');
+        return false;
       }
+
+      const setting = settings[0];
+      const msg     = `Your Paychek OTP is ${otpCode}. Valid for 5 minutes.`;
+
+      let url = setting.gateway_url
+        .replace('{to}',   contact)
+        .replace('{msg}',  encodeURIComponent(msg))
+        .replace('{code}', otpCode);
+
+      if (setting.api_key && !url.includes('api_key')) {
+        url += `${url.includes('?') ? '&' : '?'}api_key=${encodeURIComponent(setting.api_key)}`;
+      }
+      if (setting.sender_id && !url.includes('sender')) {
+        url += `${url.includes('?') ? '&' : '?'}sender=${encodeURIComponent(setting.sender_id)}`;
+      }
+
+      const method  = (setting.http_method || 'GET').toUpperCase();
+      const options = { method, signal: AbortSignal.timeout(15000) };
+
+      if (method === 'POST' && setting.post_body_template) {
+        const bodyText = setting.post_body_template
+          .replace('{to}',   contact)
+          .replace('{msg}',  msg)
+          .replace('{code}', otpCode);
+        options.headers = { 'Content-Type': 'application/json' };
+        options.body    = bodyText;
+      }
+
+      console.log(`[SMS-GATEWAY] Dispatching to: ${url.split('?')[0]}...`);
+      const response = await fetch(url, options);
+
+      if (response.ok) {
+        console.log(`[SMS-GATEWAY] OTP sent successfully. Status: ${response.status}`);
+        return true;
+      } else {
+        const body = await response.text().catch(() => '');
+        console.error(`[SMS-GATEWAY] Failed. HTTP ${response.status}: ${body}`);
+        return false;
+      }
+
     } catch (smsErr) {
-      console.error('[SMS-GATEWAY] Dispatch failed with error:', smsErr);
+      console.error('[SMS-GATEWAY] Dispatch error:', smsErr.message);
+      return false;
     }
-    
-    return false;
   }
 }
 

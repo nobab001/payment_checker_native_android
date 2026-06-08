@@ -26,6 +26,11 @@ router.delete('/email-accounts/:id', admin.deleteEmailAccount);
 // 5. SMS Gateway Configuration settings
 router.get('/sms-settings', admin.getSmsSettings);
 router.post('/sms-settings', admin.saveSmsSettings);
+router.delete('/sms-settings/:id', admin.deleteSmsSettings);   // ← NEW: delete SMS provider
+
+// 5b. Email Account SMTP Counter Management
+router.post('/email-accounts/:id/reset', admin.resetEmailCounter);       // ← NEW: reset one counter
+router.post('/email-accounts/reset-all', admin.resetAllEmailCounters);   // ← NEW: reset all counters
 
 // 6. User and Device management list and toggle endpoints
 router.get('/users', admin.listUsers);

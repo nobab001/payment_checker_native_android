@@ -214,26 +214,83 @@ async function getSmsSettings(req, res) {
 
 async function saveSmsSettings(req, res) {
   try {
-    const { id, gateway_url, http_method, post_body_template, api_key, username, sender_id, is_active } = req.body;
+    const { id, gateway_url, http_method, post_body_template, api_key, username, sender_id, is_active, provider_name } = req.body;
     if (!gateway_url) {
       return res.status(400).json({ error: 'gateway_url is required' });
     }
 
+    const activeFlag = is_active ? 1 : 0;
+
     if (id) {
       await query(
         `UPDATE sms_settings 
-         SET gateway_url = ?, http_method = ?, post_body_template = ?, api_key = ?, username = ?, sender_id = ?, is_active = ? 
+         SET gateway_url = ?, http_method = ?, post_body_template = ?, api_key = ?, username = ?, sender_id = ?, is_active = ?, provider_name = ? 
          WHERE id = ?`,
-        [gateway_url, http_method || 'GET', post_body_template || null, api_key || null, username || null, sender_id || null, is_active ? 1 : 0, id]
+        [gateway_url, http_method || 'GET', post_body_template || null, api_key || null, username || null, sender_id || null, activeFlag, provider_name || null, id]
       );
     } else {
       await query(
-        `INSERT INTO sms_settings (gateway_url, http_method, post_body_template, api_key, username, sender_id, is_active) 
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [gateway_url, http_method || 'GET', post_body_template || null, api_key || null, username || null, sender_id || null, is_active ? 1 : 0]
+        `INSERT INTO sms_settings (gateway_url, http_method, post_body_template, api_key, username, sender_id, is_active, provider_name) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gateway_url, http_method || 'GET', post_body_template || null, api_key || null, username || null, sender_id || null, activeFlag, provider_name || null]
       );
     }
+
+    // ─── ONE-ACTIVE SMS POLICY ────────────────────────────────────────────────
+    // যদি এই প্রোভাইডারটি activate করা হয়, তাহলে বাকি সমস্ত প্রোভাইডারকে
+    // স্বয়ংক্রিয়ভাবে deactivate করতে হবে।
+    if (activeFlag === 1) {
+      // সদ্য সেভ হওয়া row-এর id বের করা
+      const [savedRow] = await query(
+        'SELECT id FROM sms_settings WHERE gateway_url = ? ORDER BY id DESC LIMIT 1',
+        [gateway_url]
+      );
+      if (savedRow) {
+        await query(
+          'UPDATE sms_settings SET is_active = 0 WHERE id != ?',
+          [savedRow.id]
+        );
+        console.log(`[SMS-POLICY] One-Active enforced. Only provider id=${savedRow.id} is now active.`);
+      }
+    }
+
     return res.json({ success: true, message: 'SMS Gateway configurations saved successfully.' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+async function deleteSmsSettings(req, res) {
+  try {
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: 'SMS provider id is required' });
+    await query('DELETE FROM sms_settings WHERE id = ?', [id]);
+    return res.json({ success: true, message: 'SMS Gateway provider deleted successfully.' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+// Reset daily sent_today counter for a specific email account
+async function resetEmailCounter(req, res) {
+  try {
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: 'Email account id is required' });
+    await query('UPDATE email_accounts SET sent_today = 0 WHERE id = ?', [id]);
+    return res.json({ success: true, message: 'Daily email counter reset to 0 successfully.' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+// Reset ALL email account daily counters at once
+async function resetAllEmailCounters(req, res) {
+  try {
+    await query('UPDATE email_accounts SET sent_today = 0');
+    return res.json({ success: true, message: 'All daily email counters reset to 0.' });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal Server Error' });
@@ -354,6 +411,9 @@ module.exports = {
   deleteEmailAccount,
   getSmsSettings,
   saveSmsSettings,
+  deleteSmsSettings,
+  resetEmailCounter,
+  resetAllEmailCounters,
   listUsers,
   toggleUserBlock,
   updateDeviceTrial
