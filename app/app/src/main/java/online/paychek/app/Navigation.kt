@@ -31,10 +31,13 @@ fun MainNavigation() {
                         backStack.add(NavKey.Signup(contact, token))
                     },
                     onNavigateToHome = { token ->
-                        // Clear backstack and go home
+                        val sharedPrefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
+                        sharedPrefs.edit().putString(online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN, token).apply()
                         backStack.add(NavKey.Home)
                     },
                     onNavigateToAdminDashboard = { token ->
+                        val sharedPrefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
+                        sharedPrefs.edit().putString(online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN, token).apply()
                         backStack.add(NavKey.AdminDashboard)
                     },
                     modifier = Modifier.fillMaxSize()
@@ -46,6 +49,8 @@ fun MainNavigation() {
                     contact = key.contact,
                     token = key.token,
                     onSignupComplete = {
+                        val sharedPrefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
+                        sharedPrefs.edit().putString(online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN, key.token).apply()
                         backStack.add(NavKey.Home)
                     },
                     modifier = Modifier.fillMaxSize()

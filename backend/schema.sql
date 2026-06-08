@@ -307,7 +307,9 @@ INSERT INTO `global_config` (`config_key`, `config_value`) VALUES
   ('gmail_tracking_enabled','false'),
   ('trial_days',            '7'),
   ('telegram_support_link', ''),
-  ('whatsapp_support_link', '')
+  ('whatsapp_support_link', ''),
+  ('facebook_support_link', ''),
+  ('youtube_support_link', '')
 ON DUPLICATE KEY UPDATE `config_value` = VALUES(`config_value`);
 
 -- =============================================================================

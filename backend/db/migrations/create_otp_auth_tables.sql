@@ -59,3 +59,9 @@ INSERT INTO `checkout_view_templates` (`sms_template_id`, `single_number_instruc
 ON DUPLICATE KEY UPDATE 
   `single_number_instruction` = VALUES(`single_number_instruction`),
   `multiple_number_instruction` = VALUES(`multiple_number_instruction`);
+
+-- 6. Seed missing facebook and youtube support links in global_config
+INSERT INTO `global_config` (`config_key`, `config_value`) VALUES
+  ('facebook_support_link', ''),
+  ('youtube_support_link', '')
+ON DUPLICATE KEY UPDATE `config_value` = `config_value`;
