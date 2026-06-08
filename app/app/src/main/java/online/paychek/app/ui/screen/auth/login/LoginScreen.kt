@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Support
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,59 +71,77 @@ fun LoginScreen(
     }
 
     if (uiState.showRegisterDialog) {
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissRegisterDialog() },
-            title = {
-                Text(
-                    text = "অ্যাকাউন্ট খুঁজে পাওয়া যায়নি",
-                    fontWeight = FontWeight.Bold,
-                    color = RoyalIndigo,
-                    fontSize = 18.sp
-                )
-            },
-            text = {
-                Text(
-                    text = "আপনার প্রদানকৃত কন্টাক্ট নম্বর বা ইমেইল ঠিকানাটি আমাদের সিস্টেমে নিবন্ধিত নেই। আপনি কি এই নম্বর/ইমেইল ব্যবহার করে একটি নতুন অ্যাকাউন্ট তৈরি করতে চান?",
-                    color = TextSecondary,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp
-                )
-            },
-            confirmButton = {
+        Dialog(
+            onDismissRequest = { viewModel.dismissRegisterDialog() }
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color.White,
+                tonalElevation = 6.dp,
+                modifier = Modifier
+                    .width(300.dp)
+                    .wrapContentHeight()
+            ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Button(
-                        onClick = { viewModel.proceedToRegister(context) },
-                        colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "নতুন অ্যাকাউন্ট তৈরি করুন",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                    Text(
+                        text = "অ্যাকাউন্ট খুঁজে পাওয়া যায়নি",
+                        fontWeight = FontWeight.Bold,
+                        color = RoyalIndigo,
+                        fontSize = 18.sp
+                    )
+
+                    val isEmail = uiState.contact.contains("@")
+                    val messageText = if (isEmail) {
+                        "আপনার প্রদানকৃত ইমেইল ঠিকানাটি আমাদের সিস্টেমে নিবন্ধিত নেই। আপনি কি এই ইমেইল ব্যবহার করে একটি নতুন অ্যাকাউন্ট তৈরি করতে চান?"
+                    } else {
+                        "আপনার প্রদানকৃত মোবাইল নম্বরটি আমাদের সিস্টেমে নিবন্ধিত নেই। আপনি কি এই নম্বর ব্যবহার করে একটি নতুন অ্যাকাউন্ট তৈরি করতে চান?"
                     }
-                    TextButton(
-                        onClick = { viewModel.dismissRegisterDialog() },
-                        modifier = Modifier.fillMaxWidth()
+
+                    Text(
+                        text = messageText,
+                        color = TextSecondary,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = "বাতিল করুন",
-                            color = TextSecondary,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        TextButton(
+                            onClick = { viewModel.dismissRegisterDialog() }
+                        ) {
+                            Text(
+                                text = "বাতিল করুন",
+                                color = TextSecondary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        Button(
+                            onClick = { viewModel.proceedToRegister(context) },
+                            colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                        ) {
+                            Text(
+                                text = "নতুন অ্যাকাউন্ট তৈরি করুন",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
-            },
-            shape = RoundedCornerShape(16.dp),
-            containerColor = Color.White
-        )
+            }
+        }
     }
 
     Box(
