@@ -73,6 +73,7 @@ private fun providerEmoji(tag: String): String = when (tag.lowercase()) {
 @Composable
 fun GatewayCustomizerScreen(
     onNavigateToApiCenter: () -> Unit = {},
+    onNavigateBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     viewModel: GatewayCustomizerViewModel = viewModel()
 ) {
@@ -114,7 +115,7 @@ fun GatewayCustomizerScreen(
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             // ─── Header ──────────────────────────────────────────────────────
-            item { GatewayTopBar(isSaving = state.isSaving) }
+            item { GatewayTopBar(isSaving = state.isSaving, onNavigateBack = onNavigateBack) }
 
             // ─── API Integration Banner ───────────────────────────────────────
             item {
@@ -282,7 +283,7 @@ fun GatewayCustomizerScreen(
 // Component 1 — Top Bar
 // =============================================================================
 @Composable
-private fun GatewayTopBar(isSaving: Boolean) {
+private fun GatewayTopBar(isSaving: Boolean, onNavigateBack: (() -> Unit)? = null) {
     Row(
         modifier             = Modifier
             .fillMaxWidth()
@@ -291,19 +292,33 @@ private fun GatewayTopBar(isSaving: Boolean) {
         verticalAlignment    = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(AccentCyan.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector     = Icons.Default.Tune,
-                contentDescription = null,
-                tint            = AccentCyan,
-                modifier        = Modifier.size(20.dp)
-            )
+        if (onNavigateBack != null) {
+            IconButton(
+                onClick = onNavigateBack,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector        = Icons.Default.ArrowBackIosNew,
+                    contentDescription = "Back",
+                    tint               = AccentCyan,
+                    modifier           = Modifier.size(20.dp)
+                )
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(AccentCyan.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector     = Icons.Default.Tune,
+                    contentDescription = null,
+                    tint            = AccentCyan,
+                    modifier        = Modifier.size(20.dp)
+                )
+            }
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
