@@ -112,12 +112,15 @@ async function registerSendOtp(req, res) {
 
     // Trial abuse prevention check
     if (deviceId) {
-      const abused = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds);
+      const { abused, userId: abuseUserId } = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds);
       if (abused) {
+        const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
         return res.status(403).json({
           success: false,
           action: 'TRIAL_EXPIRED_FOR_DEVICE',
-          message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।'
+          message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।',
+          boundPhones,
+          boundEmails
         });
       }
     }
@@ -256,12 +259,15 @@ async function verifyOtp(req, res) {
 
     // If it's a new registration flow, verify that they are not using a device that consumed trial
     if (existingUsers.length === 0) {
-      const abused = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds);
+      const { abused, userId: abuseUserId } = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds);
       if (abused) {
+        const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
         return res.status(403).json({
           success: false,
           action: 'TRIAL_EXPIRED_FOR_DEVICE',
-          message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।'
+          message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।',
+          boundPhones,
+          boundEmails
         });
       }
     }
@@ -531,19 +537,20 @@ async function completeProfile(req, res) {
 /**
  * Helper: Checks if the device signature matches any registered device trial lock,
  * or if it is logged in device_trial_logs as having consumed a trial.
+ * Returns: { abused: Boolean, userId: Number|null }
  */
 async function isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds) {
   // 1. Check if the device exists in registered_devices and is trial locked or expired
   if (deviceId) {
     const devices = await query(
-      'SELECT id, trial_expires_at, is_trial_locked FROM registered_devices WHERE device_id = ? LIMIT 1',
+      'SELECT id, user_id, trial_expires_at, is_trial_locked FROM registered_devices WHERE device_id = ? LIMIT 1',
       [deviceId]
     );
     if (devices.length > 0) {
       const dev = devices[0];
       const expired = dev.trial_expires_at && new Date(dev.trial_expires_at) < new Date();
       if (dev.is_trial_locked || expired) {
-        return true;
+        return { abused: true, userId: dev.user_id || null };
       }
     }
   }
@@ -574,14 +581,78 @@ async function isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotId
   }
 
   if (checkFields.length > 0) {
-    const queryStr = `SELECT id FROM device_trial_logs WHERE (${checkFields.join(' OR ')}) AND has_used_trial = 1 LIMIT 1`;
+    const queryStr = `SELECT id, user_id FROM device_trial_logs WHERE (${checkFields.join(' OR ')}) AND has_used_trial = 1 LIMIT 1`;
     const logs = await query(queryStr, checkParams);
     if (logs.length > 0) {
-      return true;
+      return { abused: true, userId: logs[0].user_id || null };
     }
   }
 
-  return false;
+  return { abused: false, userId: null };
+}
+
+/**
+ * Helper: Masks phone/email for safe client display.
+ * Phone  : keeps first 3 and last 3 digits → 017****541
+ * Email  : keeps first 2 chars + domain part → de*****er@gmail.com
+ */
+function maskCredential(value, type) {
+  if (!value) return '';
+  if (type === 'phone') {
+    if (value.length <= 6) return value;
+    const start = value.slice(0, 3);
+    const end   = value.slice(-3);
+    const stars = '*'.repeat(Math.max(4, value.length - 6));
+    return `${start}${stars}${end}`;
+  }
+  if (type === 'email') {
+    const atIdx = value.indexOf('@');
+    if (atIdx <= 2) return value;
+    const localPart  = value.slice(0, atIdx);
+    const domainPart = value.slice(atIdx); // includes @
+    const visible    = localPart.slice(0, 2);
+    const stars      = '*'.repeat(Math.max(3, localPart.length - 2));
+    return `${visible}${stars}${domainPart}`;
+  }
+  return value;
+}
+
+/**
+ * Helper: Fetches all verified credentials for a user and returns masked arrays.
+ * Sources: users.phone / users.email  +  user_credentials table.
+ * Returns: { boundPhones: String[], boundEmails: String[] }
+ */
+async function getBoundCredentials(userId) {
+  if (!userId) return { boundPhones: [], boundEmails: [] };
+
+  const phones = new Set();
+  const emails = new Set();
+
+  // Primary credentials from users table
+  try {
+    const users = await query('SELECT phone, email FROM users WHERE id = ? LIMIT 1', [userId]);
+    if (users.length > 0) {
+      if (users[0].phone) phones.add(maskCredential(users[0].phone, 'phone'));
+      if (users[0].email) emails.add(maskCredential(users[0].email, 'email'));
+    }
+  } catch (_) { /* continue */ }
+
+  // Additional credentials from user_credentials table
+  try {
+    const creds = await query(
+      "SELECT type, value FROM user_credentials WHERE user_id = ? AND verified_at IS NOT NULL",
+      [userId]
+    );
+    for (const cred of creds) {
+      if (cred.type === 'phone') phones.add(maskCredential(cred.value, 'phone'));
+      if (cred.type === 'email') emails.add(maskCredential(cred.value, 'email'));
+    }
+  } catch (_) { /* continue */ }
+
+  return {
+    boundPhones: [...phones].filter(Boolean),
+    boundEmails: [...emails].filter(Boolean)
+  };
 }
 
 /**
@@ -595,12 +666,15 @@ async function checkDeviceTrial(req, res) {
       return res.status(400).json({ error: 'Device ID is required' });
     }
 
-    const abused = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds);
+    const { abused, userId: abuseUserId } = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds);
     if (abused) {
+      const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
       return res.status(403).json({
         success: false,
         action: 'TRIAL_EXPIRED_FOR_DEVICE',
-        message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।'
+        message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।',
+        boundPhones,
+        boundEmails
       });
     }
 
@@ -623,10 +697,13 @@ async function checkDeviceTrial(req, res) {
       }
 
       if (device.is_trial_locked) {
+        const { boundPhones: lkPhones, boundEmails: lkEmails } = await getBoundCredentials(device.user_id);
         return res.status(403).json({
           success: false,
           action: 'TRIAL_EXPIRED_FOR_DEVICE',
-          message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।'
+          message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।',
+          boundPhones: lkPhones,
+          boundEmails: lkEmails
         });
       }
 
@@ -825,5 +902,6 @@ module.exports = {
   verifyOtp,
   completeProfile,
   checkDeviceTrial,
-  getPublicConfig
+  getPublicConfig,
+  sendOtpDispatch   // exported for reuse by credentialController & pinController
 };

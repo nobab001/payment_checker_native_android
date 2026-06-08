@@ -14,6 +14,7 @@ import online.paychek.app.ui.screen.auth.signup.SignupScreen
 import online.paychek.app.ui.screen.home.HomeScreen
 import online.paychek.app.ui.screen.apicenter.CheckoutDesignerScreen
 import online.paychek.app.ui.screen.admin.AdminDashboardScreen
+import online.paychek.app.ui.screen.profile.ProfileSettingsScreen
 
 @Composable
 fun MainNavigation() {
@@ -70,6 +71,13 @@ fun MainNavigation() {
                 CheckoutDesignerScreen(
                     onNavigateBack = { backStack.removeLastOrNull() },
                     modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            entry<NavKey.Profile> {
+                ProfileSettingsScreen(
+                    onNavigateBack = { backStack.removeLastOrNull() },
+                    modifier       = Modifier.fillMaxSize()
                 )
             }
 

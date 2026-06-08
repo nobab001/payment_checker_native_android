@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
 import online.paychek.app.NavKey as AppNavKey
 import online.paychek.app.ui.screen.dashboard.DashboardScreen
-import online.paychek.app.ui.screen.gateway.GatewayCustomizerScreen
+import online.paychek.app.ui.screen.profile.ProfileSettingsScreen
 import online.paychek.app.ui.screen.transactions.TransactionHistoryScreen
 import online.paychek.app.ui.theme.RoyalIndigo
 
@@ -102,9 +102,9 @@ fun HomeScreen(
                 HomeTab.HISTORY   -> TransactionHistoryScreen(
                     modifier = Modifier.fillMaxSize()
                 )
-                HomeTab.SETTINGS  -> GatewayCustomizerScreen(
-                    onNavigateToApiCenter = onNavigateToApiCenter,
-                    modifier = Modifier.fillMaxSize()
+                HomeTab.SETTINGS  -> ProfileSettingsScreen(
+                    onNavigateBack = { /* already at root tab — no-op */ },
+                    modifier       = Modifier.fillMaxSize()
                 )
             }
         }

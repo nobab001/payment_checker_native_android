@@ -153,10 +153,13 @@ class LoginViewModel : ViewModel() {
         } else {
             val errorBody = response.errorBody()?.string()
             if (response.code() == 403 && errorBody?.contains("TRIAL_EXPIRED_FOR_DEVICE") == true) {
+                val (phones, emails) = parseBoundCredentials(errorBody)
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        showTrialExpiredDialog = true
+                        showTrialExpiredDialog = true,
+                        boundPhones = phones,
+                        boundEmails = emails
                     )
                 }
                 return
@@ -255,12 +258,23 @@ class LoginViewModel : ViewModel() {
                 } else if (trialResponse.code() == 403) {
                     val errorBody = trialResponse.errorBody()?.string()
                     val isTrialAbused = errorBody?.contains("TRIAL_EXPIRED_FOR_DEVICE") == true
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            showTrialExpiredDialog = if (isTrialAbused) true else it.showTrialExpiredDialog,
-                            errorMessage = if (!isTrialAbused) "ডিভাইস ট্রায়াল যাচাই করতে ব্যর্থ হয়েছে।" else null
-                        )
+                    if (isTrialAbused) {
+                        val (phones, emails) = parseBoundCredentials(errorBody)
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                showTrialExpiredDialog = true,
+                                boundPhones = phones,
+                                boundEmails = emails
+                            )
+                        }
+                    } else {
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                errorMessage = "ডিভাইস ট্রায়াল যাচাই করতে ব্যর্থ হয়েছে।"
+                            )
+                        }
                     }
                     return@launch
                 } else {
@@ -340,10 +354,13 @@ class LoginViewModel : ViewModel() {
                 } else {
                     val errorBody = response.errorBody()?.string()
                     if (response.code() == 403 && errorBody?.contains("TRIAL_EXPIRED_FOR_DEVICE") == true) {
+                        val (phones, emails) = parseBoundCredentials(errorBody)
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
-                                showTrialExpiredDialog = true
+                                showTrialExpiredDialog = true,
+                                boundPhones = phones,
+                                boundEmails = emails
                             )
                         }
                     } else {
@@ -385,6 +402,24 @@ class LoginViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Parses `boundPhones` and `boundEmails` arrays from the TRIAL_EXPIRED_FOR_DEVICE JSON error body.
+     * Returns Pair(phones, emails) where each is an empty list if the field is absent or parsing fails.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun parseBoundCredentials(errorBody: String?): Pair<List<String>, List<String>> {
+        if (errorBody.isNullOrBlank()) return Pair(emptyList(), emptyList())
+        return try {
+            val gson = com.google.gson.Gson()
+            val map = gson.fromJson(errorBody, Map::class.java) as? Map<String, Any>
+            val phones = (map?.get("boundPhones") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+            val emails = (map?.get("boundEmails") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+            Pair(phones, emails)
+        } catch (e: Exception) {
+            Pair(emptyList(), emptyList())
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         timerJob?.cancel()
@@ -401,6 +436,8 @@ data class LoginUiState(
     val isTrialBlocked: Boolean = false,
     val showRegisterDialog: Boolean = false,
     val showTrialExpiredDialog: Boolean = false,
+    val boundPhones: List<String> = emptyList(),
+    val boundEmails: List<String> = emptyList(),
     val errorMessage: String? = null,
     val isMaintenanceMode: Boolean = false,
     val whatsappSupportLink: String = "https://wa.me/8801700000000",

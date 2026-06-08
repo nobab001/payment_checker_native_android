@@ -4,11 +4,13 @@ const cron = require('node-cron');
 const { query } = require('./db/connection');
 require('dotenv').config();
 
-const authRoutes     = require('./routes/authRoutes');
-const paymentRoutes  = require('./routes/paymentRoutes');
-const checkoutRoutes = require('./routes/checkoutRoutes');
-const gatewayRoutes  = require('./routes/gatewayRoutes');
-const adminRoutes    = require('./routes/adminRoutes');
+const authRoutes        = require('./routes/authRoutes');
+const paymentRoutes     = require('./routes/paymentRoutes');
+const checkoutRoutes    = require('./routes/checkoutRoutes');
+const gatewayRoutes     = require('./routes/gatewayRoutes');
+const adminRoutes       = require('./routes/adminRoutes');
+const credentialRoutes  = require('./routes/credentialRoutes');
+const pinRoutes         = require('./routes/pinRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -38,6 +40,8 @@ app.use('/api', authRoutes);
 app.use('/api', paymentRoutes);
 app.use('/api', checkoutRoutes);
 app.use('/api', gatewayRoutes);
+app.use('/api', credentialRoutes);
+app.use('/api', pinRoutes);
 app.use('/api/admin', adminRoutes);
 
 // General 404 Route handler

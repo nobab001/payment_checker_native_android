@@ -129,7 +129,7 @@ fun LoginScreen(
                             lineHeight = 20.sp
                         )
 
-                        // ── বাটন কলাম (খাড়া, ডানপাশে) ───────────────────
+                        // ── বাটন কলাম (খাড়া, ডানপাশে) ───────────────────
                         Column(
                             modifier            = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.End,
@@ -163,7 +163,7 @@ fun LoginScreen(
         }
     }
 
-    // ── "ট্রায়াল সীমাবদ্ধতা" প্রিমিয়াম কাস্টম ডায়ালগ ─────────────
+    // ── "ডিভাইস লিংকড" প্রিমিয়াম কাস্টম ডায়ালগ ─────────────
     if (uiState.showTrialExpiredDialog) {
         Dialog(
             onDismissRequest = { viewModel.dismissTrialExpiredDialog() }
@@ -173,7 +173,7 @@ fun LoginScreen(
                 color    = Color.White,
                 tonalElevation = 8.dp,
                 modifier = Modifier
-                    .width(280.dp)
+                    .width(300.dp)
                     .wrapContentHeight()
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -190,27 +190,111 @@ fun LoginScreen(
                             )
                             .padding(horizontal = 20.dp, vertical = 16.dp)
                     ) {
-                        Text(
-                            text      = "ট্রায়াল সীমাবদ্ধতা",
-                            fontWeight = FontWeight.Bold,
-                            color     = Color.White,
-                            fontSize  = 16.sp
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text      = "ডিভাইস লিংকড",
+                                fontWeight = FontWeight.Bold,
+                                color     = Color.White,
+                                fontSize  = 16.sp
+                            )
+                            Text(
+                                text    = "নিরাপত্তা বিধিনিষেধ সক্রিয়",
+                                color   = Color.White.copy(alpha = 0.80f),
+                                fontSize = 12.sp
+                            )
+                        }
                     }
 
-                    // ── মূল বার্তা ও বাটনসমূহ ────────────────────────────
+                    // ── মূল বার্তা ও বাউন্ড অ্যাকাউন্ট তালিকা ────────────────────────────
                     Column(
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        // মূল সিকিউরিটি বার্তা
                         Text(
-                            text       = "দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।",
+                            text       = "আপনার এই ডিভাইসটি নিচের অ্যাকাউন্টটির সাথে লিংক করা রয়েছে। নিরাপত্তা জনিত কারণে আপনি নতুন কোনো অ্যাকাউন্ট তৈরি বা অন্য অ্যাকাউন্ট ব্যবহার করতে পারবেন না। অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন।",
                             color      = Color(0xFF475569),
-                            fontSize   = 13.sp,
-                            lineHeight = 20.sp
+                            fontSize   = 12.sp,
+                            lineHeight = 19.sp
                         )
 
-                        // ── বাটন কলাম (খাড়া, ডানপাশে) ───────────────────
+                        // ── বাউন্ড কন্টাক্ট তালিকা ──────────────────
+                        val hasCredentials = uiState.boundPhones.isNotEmpty() || uiState.boundEmails.isNotEmpty()
+                        if (hasCredentials) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        color = Color(0xFFF1F5F9),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text       = "লিংকড অ্যাকাউন্ট:",
+                                    fontWeight = FontWeight.SemiBold,
+                                    color      = Color(0xFF334155),
+                                    fontSize   = 11.sp
+                                )
+                                // ── ফোন নম্বরগুলো ──
+                                uiState.boundPhones.forEach { maskedPhone ->
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .background(RoyalIndigo.copy(alpha = 0.12f), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.PhoneAndroid,
+                                                contentDescription = null,
+                                                tint   = RoyalIndigo,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                        Text(
+                                            text       = maskedPhone,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color      = Color(0xFF1E293B),
+                                            fontSize   = 13.sp
+                                        )
+                                    }
+                                }
+                                // ── ইমেইলগুলো ──
+                                uiState.boundEmails.forEach { maskedEmail ->
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .background(Color(0xFF0EA5E9).copy(alpha = 0.12f), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Person,
+                                                contentDescription = null,
+                                                tint   = Color(0xFF0EA5E9),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                        Text(
+                                            text       = maskedEmail,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color      = Color(0xFF1E293B),
+                                            fontSize   = 13.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── বাটন কলাম (খাড়া, ডানপাশে) ───────────────────
                         Column(
                             modifier            = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.End,
