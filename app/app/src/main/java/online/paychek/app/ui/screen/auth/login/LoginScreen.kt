@@ -70,73 +70,92 @@ fun LoginScreen(
         }
     }
 
+    // ── "অ্যাকাউন্ট খুঁজে পাওয়া যায়নি" প্রিমিয়াম কাস্টম ডায়ালগ ─────────────
     if (uiState.showRegisterDialog) {
         Dialog(
             onDismissRequest = { viewModel.dismissRegisterDialog() }
         ) {
             Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Color.White,
-                tonalElevation = 6.dp,
+                shape    = RoundedCornerShape(20.dp),
+                color    = Color.White,
+                tonalElevation = 8.dp,
                 modifier = Modifier
-                    .width(270.dp)
+                    .width(280.dp)
                     .wrapContentHeight()
             ) {
-                Column(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 24.dp)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "অ্যাকাউন্ট খুঁজে পাওয়া যায়নি",
-                        fontWeight = FontWeight.Bold,
-                        color = RoyalIndigo,
-                        fontSize = 18.sp
-                    )
+                Column(modifier = Modifier.fillMaxWidth()) {
 
-                    val isEmail = uiState.contact.contains("@")
-                    val messageText = if (isEmail) {
-                        "আপনার প্রদানকৃত ইমেইল ঠিকানাটি আমাদের সিস্টেমে নিবন্ধিত নেই। আপনি কি এই ইমেইল ব্যবহার করে একটি নতুন অ্যাকাউন্ট তৈরি করতে চান?"
-                    } else {
-                        "আপনার প্রদানকৃত মোবাইল নম্বরটি আমাদের সিস্টেমে নিবন্ধিত নেই। আপনি কি এই নম্বর ব্যবহার করে একটি নতুন অ্যাকাউন্ট তৈরি করতে চান?"
-                    }
-
-                    Text(
-                        text = messageText,
-                        color = TextSecondary,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp
-                    )
-
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    // ── রয়্যাল ইন্ডিগো শীর্ষ ব্যান্ড ─────────────────────────
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                    listOf(RoyalIndigo, Color(0xFF7C3AED))
+                                ),
+                                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+                            )
+                            .padding(horizontal = 20.dp, vertical = 16.dp)
                     ) {
-                        TextButton(
-                            onClick = { viewModel.dismissRegisterDialog() }
-                        ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                text = "ফিরে যান",
-                                color = TextSecondary,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
+                                text      = "অ্যাকাউন্ট খুঁজে পাওয়া যায়নি",
+                                fontWeight = FontWeight.Bold,
+                                color     = Color.White,
+                                fontSize  = 16.sp
+                            )
+                            val subLabel = if (uiState.contact.contains("@")) "ইমেইল ঠিকানা" else "মোবাইল নম্বর"
+                            Text(
+                                text    = "প্রদানকৃত $subLabel নিবন্ধিত নেই",
+                                color   = Color.White.copy(alpha = 0.80f),
+                                fontSize = 12.sp
                             )
                         }
+                    }
 
-                        Button(
-                            onClick = { viewModel.proceedToRegister(context) },
-                            colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                    // ── মূল বার্তা ────────────────────────────────────
+                    Column(
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        val isEmail     = uiState.contact.contains("@")
+                        val contactType = if (isEmail) "ইমেইল ঠিকানাটি" else "মোবাইল নম্বরটি"
+                        val bodyText    = "আপনার প্রদানকৃত $contactType আমাদের সিস্টেমে নিবন্ধিত নেই। আপনি কি এটি ব্যবহার করে একটি নতুন অ্যাকাউন্ট তৈরি করতে চান?"
+
+                        Text(
+                            text       = bodyText,
+                            color      = Color(0xFF475569),
+                            fontSize   = 13.sp,
+                            lineHeight = 20.sp
+                        )
+
+                        // ── বাটন কলাম (খাড়া, ডানপাশে) ───────────────────
+                        Column(
+                            modifier            = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Text(
-                                text = "নতুন অ্যাকাউন্ট তৈরি করুন",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            TextButton(onClick = { viewModel.dismissRegisterDialog() }) {
+                                Text(
+                                    text       = "ফিরে যান",
+                                    color      = Color(0xFF64748B),
+                                    fontSize   = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Button(
+                                onClick        = { viewModel.proceedToRegister(context) },
+                                colors         = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
+                                shape          = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)
+                            ) {
+                                Text(
+                                    text       = "নতুন অ্যাকাউন্ট তৈরি করুন",
+                                    color      = Color.White,
+                                    fontSize   = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }
@@ -417,68 +436,80 @@ fun LoginScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // WhatsApp
-                SocialItem(
-                    name = "WhatsApp",
-                    iconColor = Color(0xFF25D366),
-                    iconBg = Color(0xFFE8F9EE),
-                    icon = Icons.Default.Support,
-                    onClick = {
-                        val rawLink = uiState.whatsappSupportLink.trim()
-                        val finalUrl = when {
-                            rawLink.startsWith("http://") || rawLink.startsWith("https://") -> rawLink
-                            rawLink.all { it.isDigit() || it == '+' || it == ' ' || it == '-' } -> {
-                                val cleanNumber = rawLink.filter { it.isDigit() }
-                                "https://wa.me/$cleanNumber"
+                // WhatsApp — only shown when link is configured
+                val waLink = uiState.whatsappSupportLink
+                if (waLink.isNotBlank()) {
+                    SocialItem(
+                        name = "WhatsApp",
+                        iconColor = Color(0xFF25D366),
+                        iconBg = Color(0xFFE8F9EE),
+                        icon = Icons.Default.Support,
+                        onClick = {
+                            val rawLink = waLink.trim()
+                            val finalUrl = when {
+                                rawLink.startsWith("http://") || rawLink.startsWith("https://") -> rawLink
+                                rawLink.all { it.isDigit() || it == '+' || it == ' ' || it == '-' } -> {
+                                    val cleanNumber = rawLink.filter { it.isDigit() }
+                                    "https://wa.me/$cleanNumber"
+                                }
+                                else -> "https://wa.me/$rawLink"
                             }
-                            else -> "https://wa.me/$rawLink"
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
+                            context.startActivity(intent)
                         }
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
-                        context.startActivity(intent)
-                    }
-                )
+                    )
+                }
 
                 // Facebook
-                SocialItem(
-                    name = "Facebook",
-                    iconColor = Color(0xFF1877F2),
-                    iconBg = Color(0xFFE8F1FF),
-                    icon = Icons.Default.Person,
-                    onClick = {
-                        val rawLink = uiState.facebookSupportLink.trim()
-                        val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
-                        context.startActivity(intent)
-                    }
-                )
+                val fbLink = uiState.facebookSupportLink
+                if (fbLink.isNotBlank()) {
+                    SocialItem(
+                        name = "Facebook",
+                        iconColor = Color(0xFF1877F2),
+                        iconBg = Color(0xFFE8F1FF),
+                        icon = Icons.Default.Person,
+                        onClick = {
+                            val rawLink = fbLink.trim()
+                            val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
+                            context.startActivity(intent)
+                        }
+                    )
+                }
 
                 // Telegram
-                SocialItem(
-                    name = "Telegram",
-                    iconColor = Color(0xFF24A1DE),
-                    iconBg = Color(0xFFE5F6FD),
-                    icon = Icons.AutoMirrored.Filled.Send,
-                    onClick = {
-                        val rawLink = uiState.telegramSupportLink.trim()
-                        val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
-                        context.startActivity(intent)
-                    }
-                )
+                val tgLink = uiState.telegramSupportLink
+                if (tgLink.isNotBlank()) {
+                    SocialItem(
+                        name = "Telegram",
+                        iconColor = Color(0xFF24A1DE),
+                        iconBg = Color(0xFFE5F6FD),
+                        icon = Icons.AutoMirrored.Filled.Send,
+                        onClick = {
+                            val rawLink = tgLink.trim()
+                            val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
+                            context.startActivity(intent)
+                        }
+                    )
+                }
 
                 // YouTube
-                SocialItem(
-                    name = "YouTube",
-                    iconColor = Color(0xFFFF0000),
-                    iconBg = Color(0xFFFFEBEE),
-                    icon = Icons.Default.PlayArrow,
-                    onClick = {
-                        val rawLink = uiState.youtubeSupportLink.trim()
-                        val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
-                        context.startActivity(intent)
-                    }
-                )
+                val ytLink = uiState.youtubeSupportLink
+                if (ytLink.isNotBlank()) {
+                    SocialItem(
+                        name = "YouTube",
+                        iconColor = Color(0xFFFF0000),
+                        iconBg = Color(0xFFFFEBEE),
+                        icon = Icons.Default.PlayArrow,
+                        onClick = {
+                            val rawLink = ytLink.trim()
+                            val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
+                            context.startActivity(intent)
+                        }
+                    )
+                }
             }
         }
     }

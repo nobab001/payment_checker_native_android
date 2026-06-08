@@ -38,10 +38,10 @@ class LoginViewModel : ViewModel() {
                     _uiState.update {
                         it.copy(
                             isMaintenanceMode = isMaintenance,
-                            whatsappSupportLink = configs["whatsapp_support_link"]?.takeIf { it.isNotEmpty() } ?: "https://wa.me/8801700000000",
-                            telegramSupportLink = configs["telegram_support_link"]?.takeIf { it.isNotEmpty() } ?: "https://t.me/paychek_support",
-                            facebookSupportLink = configs["facebook_support_link"]?.takeIf { it.isNotEmpty() } ?: "https://facebook.com",
-                            youtubeSupportLink = configs["youtube_support_link"]?.takeIf { it.isNotEmpty() } ?: "https://youtube.com"
+                            whatsappSupportLink = configs["whatsapp_support_link"]?.takeIf { lnk -> lnk.isNotBlank() } ?: "",
+                            telegramSupportLink = configs["telegram_support_link"]?.takeIf { lnk -> lnk.isNotBlank() } ?: "",
+                            facebookSupportLink = configs["facebook_support_link"]?.takeIf { lnk -> lnk.isNotBlank() } ?: "",
+                            youtubeSupportLink  = configs["youtube_support_link"]?.takeIf { lnk -> lnk.isNotBlank() } ?: ""
                         )
                     }
                 }

@@ -1,4 +1,4 @@
-const { query } = require('../db/connection');
+﻿const { query } = require('../db/connection');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
@@ -77,10 +77,19 @@ async function sendOtp(req, res) {
     const success = await sendOtpDispatch(cleanedContact, otpCode);
     if (!success) {
       const isEmail = cleanedContact.includes('@');
-      const errorMsg = isEmail 
-        ? 'অনুগ্রহ করে মোবাইল নম্বরের মাধ্যমে ভেরিফিকেশন করুন বা অ্যাকাউন্ট তৈরি করুন।'
-        : 'অনুগ্রহ করে জিমেইল/ইমেইলের মাধ্যমে ভেরিফিকেশন করুন বা অ্যাকাউন্ট তৈরি করুন।';
-      return res.status(500).json({ success: false, message: errorMsg });
+      if (isEmail) {
+        return res.status(503).json({
+          success: false,
+          action: 'EMAIL_ALL_FAILED',
+          message: 'ইমেইল OTP পাঠানো সম্ভব হয়নি। মোবাইল নম্বর দিয়ে লগইন করুন অথবা সাপোর্টে যোগাযোগ করুন।'
+        });
+      } else {
+        return res.status(503).json({
+          success: false,
+          action: 'SMS_ALL_FAILED',
+          message: 'SMS OTP পাঠানো সম্ভব হয়নি। Gmail বা ইমেইল দিয়ে লগইন করুন অথবা সাপোর্টে যোগাযোগ করুন।'
+        });
+      }
     }
 
     return res.json({ success: true, message: 'ওটিপি কোড সফলভাবে পাঠানো হয়েছে।' });
@@ -127,10 +136,19 @@ async function registerSendOtp(req, res) {
     const success = await sendOtpDispatch(cleanedContact, otpCode);
     if (!success) {
       const isEmail = cleanedContact.includes('@');
-      const errorMsg = isEmail 
-        ? 'অনুগ্রহ করে মোবাইল নম্বরের মাধ্যমে ভেরিফিকেশন করুন বা অ্যাকাউন্ট তৈরি করুন।'
-        : 'অনুগ্রহ করে জিমেইল/ইমেইলের মাধ্যমে ভেরিফিকেশন করুন বা অ্যাকাউন্ট তৈরি করুন।';
-      return res.status(500).json({ success: false, message: errorMsg });
+      if (isEmail) {
+        return res.status(503).json({
+          success: false,
+          action: 'EMAIL_ALL_FAILED',
+          message: 'ইমেইল OTP পাঠানো সম্ভব হয়নি। মোবাইল নম্বর দিয়ে লগইন করুন অথবা সাপোর্টে যোগাযোগ করুন।'
+        });
+      } else {
+        return res.status(503).json({
+          success: false,
+          action: 'SMS_ALL_FAILED',
+          message: 'SMS OTP পাঠানো সম্ভব হয়নি। Gmail বা ইমেইল দিয়ে লগইন করুন অথবা সাপোর্টে যোগাযোগ করুন।'
+        });
+      }
     }
 
     return res.json({ success: true, message: 'রেজিস্ট্রেশন ওটিপি সফলভাবে পাঠানো হয়েছে।' });
