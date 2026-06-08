@@ -45,6 +45,7 @@ import online.paychek.app.ui.theme.*
 fun LoginScreen(
     onNavigateToSignup: (String, String) -> Unit, // passes (contact, token)
     onNavigateToHome: (String) -> Unit, // passes token
+    onNavigateToAdminDashboard: (String) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: LoginViewModel = viewModel()
 ) {
@@ -58,7 +59,9 @@ fun LoginScreen(
 
     LaunchedEffect(verificationResult) {
         verificationResult?.let { res ->
-            if (!res.user.profileComplete) {
+            if (res.user.role == "admin") {
+                onNavigateToAdminDashboard(res.token)
+            } else if (!res.user.profileComplete) {
                 onNavigateToSignup(uiState.contact, res.token)
             } else {
                 onNavigateToHome(res.token)

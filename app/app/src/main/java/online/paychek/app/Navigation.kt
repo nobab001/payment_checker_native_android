@@ -13,9 +13,11 @@ import online.paychek.app.ui.screen.auth.login.LoginScreen
 import online.paychek.app.ui.screen.auth.signup.SignupScreen
 import online.paychek.app.ui.screen.home.HomeScreen
 import online.paychek.app.ui.screen.apicenter.CheckoutDesignerScreen
+import online.paychek.app.ui.screen.admin.AdminDashboardScreen
 
 @Composable
 fun MainNavigation() {
+    val context = androidx.compose.ui.platform.LocalContext.current
     // Start at Login screen by default
     val backStack = rememberNavBackStack(NavKey.Login)
 
@@ -31,6 +33,9 @@ fun MainNavigation() {
                     onNavigateToHome = { token ->
                         // Clear backstack and go home
                         backStack.add(NavKey.Home)
+                    },
+                    onNavigateToAdminDashboard = { token ->
+                        backStack.add(NavKey.AdminDashboard)
                     },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -60,6 +65,16 @@ fun MainNavigation() {
                 CheckoutDesignerScreen(
                     onNavigateBack = { backStack.removeLastOrNull() },
                     modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            entry<NavKey.AdminDashboard> {
+                AdminDashboardScreen(
+                    onLogout = {
+                        val sharedPrefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
+                        sharedPrefs.edit().remove(online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN).apply()
+                        backStack.add(NavKey.Login)
+                    }
                 )
             }
         },
