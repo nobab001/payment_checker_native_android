@@ -94,59 +94,76 @@ class LoginViewModel : ViewModel() {
             try {
                 // ══════════════════════════════════════════════════════════
                 // STEP 0 — DEVICE-BINDING GATEKEEPER (সবার আগে চলবে)
-                // কন্টাক্ট চেক বা ডায়ালগ দেখানোর আগে এই গেট পার করতে হবে।
+                // Policy:
+                //   HTTP 403 → নিশ্চিতভাবে bound → block করো
+                //   HTTP 200 + isLocked/!trialAllowed → block করো
+                //   অন্য যেকোনো error (500, network fail) → proceed করো
+                //   (false-blocking legitimate users is worse than a rare miss)
                 // ══════════════════════════════════════════════════════════
                 if (!isAdminBypass) {
-                    val trialResponse = apiService.checkDeviceTrial(
-                        CheckDeviceTrialRequest(
-                            deviceId            = deviceId,
-                            fingerprint         = fingerprint,
-                            androidId           = androidId,
-                            hardwareFingerprint = hardwareFingerprint,
-                            simSlotIds          = simSlotIds
+                    try {
+                        val trialResponse = apiService.checkDeviceTrial(
+                            CheckDeviceTrialRequest(
+                                deviceId            = deviceId,
+                                fingerprint         = fingerprint,
+                                androidId           = androidId,
+                                hardwareFingerprint = hardwareFingerprint,
+                                simSlotIds          = simSlotIds
+                            )
                         )
-                    )
 
-                    if (trialResponse.code() == 403) {
-                        // ডিভাইস বাউন্ড — DEVICE_BOUND / TRIAL_EXPIRED_FOR_DEVICE
-                        val errorBody = trialResponse.errorBody()?.string()
-                        val (phones, emails) = parseBoundCredentials(errorBody)
-                        _uiState.update {
-                            it.copy(
-                                isLoading            = false,
-                                showRegisterDialog   = false, // "নতুন অ্যাকাউন্ট" ডায়ালগ নিষিদ্ধ
-                                showTrialExpiredDialog = true,
-                                boundPhones          = phones,
-                                boundEmails          = emails
-                            )
-                        }
-                        return@launch // ← সম্পূর্ণ বন্ধ; নিচের কিছুই চলবে না
-                    }
+                        when {
+                            // ── ✅ HTTP 403: ডিভাইস বাউন্ড — hard block ──────
+                            trialResponse.code() == 403 -> {
+                                val errorBody = trialResponse.errorBody()?.string()
+                                val (phones, emails) = parseBoundCredentials(errorBody)
+                                _uiState.update {
+                                    it.copy(
+                                        isLoading              = false,
+                                        showRegisterDialog     = false,
+                                        showTrialExpiredDialog = true,
+                                        boundPhones            = phones,
+                                        boundEmails            = emails
+                                    )
+                                }
+                                return@launch
+                            }
 
-                    if (!trialResponse.isSuccessful) {
-                        // সার্ভার কোনো কারণে রেসপন্ড করেনি — নিরাপদ পথ: ব্লক করো
-                        _uiState.update {
-                            it.copy(
-                                isLoading    = false,
-                                errorMessage = "ডিভাইস যাচাই করা সম্ভব হয়নি। অনুগ্রহ করে আবার চেষ্টা করুন।"
-                            )
-                        }
-                        return@launch
-                    }
+                            // ── ✅ HTTP 200: body check ───────────────────────
+                            trialResponse.isSuccessful -> {
+                                val body = trialResponse.body()
+                                if (body != null && (!body.trialAllowed || body.isLocked)) {
+                                    _uiState.update {
+                                        it.copy(
+                                            isLoading              = false,
+                                            showRegisterDialog     = false,
+                                            showTrialExpiredDialog = true
+                                        )
+                                    }
+                                    return@launch
+                                }
+                                // trialAllowed = true → proceed
+                            }
 
-                    val trialBody = trialResponse.body()
-                    if (trialBody != null && (!trialBody.trialAllowed || trialBody.isLocked)) {
-                        _uiState.update {
-                            it.copy(
-                                isLoading              = false,
-                                showRegisterDialog     = false,
-                                showTrialExpiredDialog = true
-                            )
+                            // ── ⚠️ অন্য যেকোনো error (500, network) → proceed ──
+                            else -> {
+                                // সার্ভার সাময়িক সমস্যায় — user-কে block করব না,
+                                // check-contact-এ backend double-check আছে
+                                android.util.Log.w(
+                                    "DeviceGatekeeper",
+                                    "check-device-trial returned ${trialResponse.code()} — proceeding with caution"
+                                )
+                            }
                         }
-                        return@launch
+                    } catch (gateEx: Exception) {
+                        // Network error — proceed, backend check-contact-এ double-check আছে
+                        android.util.Log.w(
+                            "DeviceGatekeeper",
+                            "check-device-trial network error: ${gateEx.localizedMessage} — proceeding"
+                        )
                     }
                 }
-                // ── ডিভাইস ক্লিন — পরবর্তী ধাপে যাওয়া যাবে ──────────────
+                // ── ডিভাইস ক্লিন বা check করা সম্ভব হয়নি — পরবর্তী ধাপে ──
 
                 // STEP 1 — কন্টাক্ট ডাটাবেজে আছে কি না চেক (Backend Double-Check সহ)
                 val checkResponse = apiService.checkContact(
