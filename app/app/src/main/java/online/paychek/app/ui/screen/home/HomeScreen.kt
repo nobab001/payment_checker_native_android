@@ -42,6 +42,7 @@ fun HomeScreen(
     onNavigate: (NavKey) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val onNavigateToApiCenter: () -> Unit = { onNavigate(AppNavKey.ApiCenter) }
     var selectedTab by remember { mutableStateOf(HomeTab.DASHBOARD) }
 
     Scaffold(
@@ -102,6 +103,7 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxSize()
                 )
                 HomeTab.SETTINGS  -> GatewayCustomizerScreen(
+                    onNavigateToApiCenter = onNavigateToApiCenter,
                     modifier = Modifier.fillMaxSize()
                 )
             }

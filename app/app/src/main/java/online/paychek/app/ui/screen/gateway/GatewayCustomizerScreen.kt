@@ -2,6 +2,9 @@ package online.paychek.app.ui.screen.gateway
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -19,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -68,6 +72,7 @@ private fun providerEmoji(tag: String): String = when (tag.lowercase()) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GatewayCustomizerScreen(
+    onNavigateToApiCenter: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: GatewayCustomizerViewModel = viewModel()
 ) {
@@ -110,6 +115,14 @@ fun GatewayCustomizerScreen(
         ) {
             // ─── Header ──────────────────────────────────────────────────────
             item { GatewayTopBar(isSaving = state.isSaving) }
+
+            // ─── API Integration Banner ───────────────────────────────────────
+            item {
+                ApiIntegrationBannerCard(
+                    onClick = onNavigateToApiCenter,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
 
             // ─── Success Toast ────────────────────────────────────────────────
             state.successMessage?.let { msg ->
@@ -670,6 +683,78 @@ private fun GatewaySkeletonCard() {
                 Box(Modifier.fillMaxWidth(0.4f).height(12.dp).clip(RoundedCornerShape(6.dp)).background(TextMuted.copy(0.12f)))
                 Box(Modifier.fillMaxWidth(0.6f).height(10.dp).clip(RoundedCornerShape(6.dp)).background(TextMuted.copy(0.08f)))
             }
+        }
+    }
+}
+
+// =============================================================================
+// Component 8 — API Integration Banner Card
+// =============================================================================
+@Composable
+fun ApiIntegrationBannerCard(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = tween(durationMillis = 120),
+        label = "scale"
+    )
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .graphicsLayer(scaleX = scale, scaleY = scale)
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                    listOf(Color(0xFF4F46E5), Color(0xFF7C3AED))
+                )
+            )
+            .clickable(interactionSource = interactionSource, indication = null) { onClick() }
+            .padding(horizontal = 18.dp, vertical = 14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Code,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "API ইন্টিগ্রেশন",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 15.sp
+                    )
+                )
+                Text(
+                    text = "চেকআউট ডিজাইনার ও ডেভেলপার কী",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = Color.White.copy(alpha = 0.80f),
+                        fontSize = 12.sp
+                    )
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.85f),
+                modifier = Modifier.size(22.dp)
+            )
         }
     }
 }
