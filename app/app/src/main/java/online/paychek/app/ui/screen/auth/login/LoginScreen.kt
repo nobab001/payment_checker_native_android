@@ -266,14 +266,16 @@ fun LoginScreen(
                         color = TextSecondary
                     )
 
+                    val isBypass = uiState.contact == "admin"
                     OutlinedTextField(
                         value = uiState.otpCode,
                         onValueChange = { viewModel.onOtpChanged(it) },
-                        placeholder = { Text("৬-ডিজিটের ওটিপি কোড (OTP)") },
+                        placeholder = { Text(if (isBypass) "এডমিন পাসওয়ার্ড লিখুন" else "৬-ডিজিটের ওটিপি কোড (OTP)") },
                         keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
+                            keyboardType = if (isBypass) KeyboardType.Password else KeyboardType.Number,
                             imeAction = ImeAction.Done
                         ),
+                        visualTransformation = if (isBypass) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
                         keyboardActions = KeyboardActions(
                             onDone = {
                                 focusManager.clearFocus()

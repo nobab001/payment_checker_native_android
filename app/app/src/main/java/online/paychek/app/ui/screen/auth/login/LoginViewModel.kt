@@ -29,7 +29,8 @@ class LoginViewModel : ViewModel() {
     }
 
     fun onOtpChanged(otp: String) {
-        if (otp.length <= 6) {
+        val maxLen = if (_uiState.value.contact == "admin") 16 else 6
+        if (otp.length <= maxLen) {
             _uiState.update { it.copy(otpCode = otp, errorMessage = null) }
         }
     }
@@ -191,8 +192,13 @@ class LoginViewModel : ViewModel() {
         val contact = _uiState.value.contact.trim()
         val code = _uiState.value.otpCode.trim()
 
-        if (code.length != 6) {
+        val isBypass = contact == "admin"
+        if (!isBypass && code.length != 6) {
             _uiState.update { it.copy(errorMessage = "৬-ডিজিটের ওটিপি কোড লিখুন") }
+            return
+        }
+        if (isBypass && code.isEmpty()) {
+            _uiState.update { it.copy(errorMessage = "এডমিন পাসওয়ার্ড লিখুন") }
             return
         }
 
