@@ -118,7 +118,7 @@ fun LoginScreen(
                             onClick = { viewModel.dismissRegisterDialog() }
                         ) {
                             Text(
-                                text = "বাতিল করুন",
+                                text = "ফিরে যান",
                                 color = TextSecondary,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold

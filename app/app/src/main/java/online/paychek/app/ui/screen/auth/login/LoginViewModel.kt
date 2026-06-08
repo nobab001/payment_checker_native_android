@@ -138,8 +138,8 @@ class LoginViewModel : ViewModel() {
             }
             startTimer()
         } else {
+            val errorBody = response.errorBody()?.string()
             if (response.code() == 404) {
-                val errorBody = response.errorBody()?.string()
                 if (errorBody?.contains("SHOW_NOT_FOUND_DIALOG") == true) {
                     _uiState.update {
                         it.copy(
@@ -150,7 +150,33 @@ class LoginViewModel : ViewModel() {
                     return
                 }
             }
-            val errorMsg = response.body()?.message ?: "ওটিপি পাঠাতে ব্যর্থ হয়েছে।"
+
+            val rawErrorMsg = try {
+                val gson = com.google.gson.Gson()
+                val map = gson.fromJson(errorBody, Map::class.java)
+                map["message"] as? String ?: map["error"] as? String ?: response.body()?.message ?: "ওটিপি পাঠাতে ব্যর্থ হয়েছে।"
+            } catch (e: Exception) {
+                response.body()?.message ?: "ওটিপি পাঠাতে ব্যর্থ হয়েছে।"
+            }
+
+            val errorMsg = when {
+                rawErrorMsg.contains("মোবাইল নম্বরের মাধ্যমে") -> {
+                    if (isNew) {
+                        "এই মুহূর্তে ইমেইল ওটিপি সার্ভারে সাময়িক সমস্যা হচ্ছে। অনুগ্রহ করে আপনার মোবাইল নম্বর ব্যবহার করে অ্যাকাউন্ট তৈরি করুন।"
+                    } else {
+                        "এই মুহূর্তে ইমেইল ওটিপি সার্ভারে সাময়িক সমস্যা হচ্ছে। অনুগ্রহ করে আপনার মোবাইল নম্বর ব্যবহার করে প্রবেশ করুন।"
+                    }
+                }
+                rawErrorMsg.contains("জিমেইল/ইমেইলের মাধ্যমে") -> {
+                    if (isNew) {
+                        "মোবাইল ওটিপি ডেলিভারিতে সমস্যা হচ্ছে। অনুগ্রহ করে আপনার ইমেইল ঠিকানা ব্যবহার করে নিবন্ধন সম্পন্ন করুন।"
+                    } else {
+                        "মোবাইল ওটিপি ডেলিভারিতে সমস্যা হচ্ছে। অনুগ্রহ করে আপনার ইমেইল ঠিকানা ব্যবহার করে প্রবেশ করুন।"
+                    }
+                }
+                else -> rawErrorMsg
+            }
+
             _uiState.update { it.copy(isLoading = false, errorMessage = errorMsg) }
         }
     }
