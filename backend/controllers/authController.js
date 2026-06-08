@@ -829,15 +829,19 @@ async function sendOtpDispatch(contact, otpCode) {
 
     // ── LAYER 2: .env SMTP Failsafe Backup ────────────────────────────────
     // DB-র সমস্ত অ্যাকাউন্টের কোটা শেষ বা সব ব্যর্থ হলে এখানে আসব।
+    // Key names: BACKUP_EMAIL_HOST, BACKUP_EMAIL_PORT, BACKUP_EMAIL_SECURE,
+    //            BACKUP_EMAIL_USER, BACKUP_EMAIL_PASS
     try {
-      const envUser   = process.env.EMAIL_USER || process.env.SMTP_USER;
-      const envPass   = process.env.EMAIL_PASS || process.env.SMTP_PASS;
-      const envHost   = process.env.SMTP_HOST  || 'smtp.gmail.com';
-      const envPort   = parseInt(process.env.SMTP_PORT   || '465', 10);
-      const envSecure = process.env.SMTP_SECURE === 'true' || envPort === 465;
+      const envUser   = process.env.BACKUP_EMAIL_USER;
+      const envPass   = process.env.BACKUP_EMAIL_PASS;
+      const envHost   = process.env.BACKUP_EMAIL_HOST   || 'smtp.gmail.com';
+      const envPort   = parseInt(process.env.BACKUP_EMAIL_PORT   || '465', 10);
+      const envSecure = process.env.BACKUP_EMAIL_SECURE === 'true' || envPort === 465;
 
-      if (envUser && envPass) {
-        console.log(`[SMTP-ENV-FALLBACK] Using .env account: ${envUser}`);
+      if (envUser && envPass &&
+          envUser !== 'your_backup_email@gmail.com' &&
+          envPass !== 'your_16_character_app_password') {
+        console.log(`[BACKUP-EMAIL] Using .env backup account: ${envUser}`);
 
         const smtpConfig = {
           host:   envHost,
@@ -859,13 +863,13 @@ async function sendOtpDispatch(contact, otpCode) {
           text:    `আপনার Paychek যাচাই কোড: ${otpCode}\n\nএটি ৫ মিনিট পর্যন্ত বৈধ।\n\nYour Paychek verification code is: ${otpCode}\nValid for 5 minutes only.`
         });
 
-        console.log(`[SMTP-ENV-FALLBACK] OTP sent successfully via .env account.`);
+        console.log(`[BACKUP-EMAIL] OTP sent successfully via .env backup account.`);
         return true;
       } else {
-        console.warn('[SMTP-ENV-FALLBACK] EMAIL_USER/EMAIL_PASS not set in .env. Cannot use fallback.');
+        console.warn('[BACKUP-EMAIL] BACKUP_EMAIL_USER/BACKUP_EMAIL_PASS not configured in .env.');
       }
     } catch (envErr) {
-      console.error('[SMTP-ENV-FALLBACK] .env SMTP failed:', envErr.message);
+      console.error('[BACKUP-EMAIL] .env SMTP backup failed:', envErr.message);
     }
 
     // ── LAYER 3: All layers exhausted ─────────────────────────────────────
@@ -922,14 +926,77 @@ async function sendOtpDispatch(contact, otpCode) {
         return true;
       } else {
         const body = await response.text().catch(() => '');
-        console.error(`[SMS-GATEWAY] Failed. HTTP ${response.status}: ${body}`);
-        return false;
+        console.error(`[SMS-GATEWAY] Primary DB gateway failed. HTTP ${response.status}: ${body}`);
+        // Primary ব্যর্থ — Backup SMS Gateway try করব
       }
 
     } catch (smsErr) {
-      console.error('[SMS-GATEWAY] Dispatch error:', smsErr.message);
-      return false;
+      console.error('[SMS-GATEWAY] Primary dispatch error:', smsErr.message);
+      // Primary error — Backup SMS Gateway try করব
     }
+
+    // ── LAYER 2 (SMS): .env Backup SMS Gateway ────────────────────────────
+    // Key names: BACKUP_SMS_GATEWAY_URL, BACKUP_SMS_HTTP_METHOD,
+    //            BACKUP_SMS_API_KEY, BACKUP_SMS_USERNAME, BACKUP_SMS_SENDER_ID
+    try {
+      const backupUrl    = process.env.BACKUP_SMS_GATEWAY_URL;
+      const backupMethod = (process.env.BACKUP_SMS_HTTP_METHOD || 'POST').toUpperCase();
+      const backupApiKey = process.env.BACKUP_SMS_API_KEY;
+      const backupSender = process.env.BACKUP_SMS_SENDER_ID;
+
+      const isPlaceholder = !backupUrl ||
+        backupUrl === 'https://api.smsprovider.com/v1/send' ||
+        backupApiKey === 'your_secret_backup_api_key_here';
+
+      if (!isPlaceholder) {
+        const msg = `Your Paychek OTP is ${otpCode}. Valid for 5 minutes.`;
+
+        let bUrl = backupUrl
+          .replace('{to}',   contact)
+          .replace('{msg}',  encodeURIComponent(msg))
+          .replace('{code}', otpCode);
+
+        if (backupApiKey && !bUrl.includes('api_key')) {
+          bUrl += `${bUrl.includes('?') ? '&' : '?'}api_key=${encodeURIComponent(backupApiKey)}`;
+        }
+        if (backupSender && !bUrl.includes('sender')) {
+          bUrl += `${bUrl.includes('?') ? '&' : '?'}sender=${encodeURIComponent(backupSender)}`;
+        }
+
+        const bOptions = {
+          method: backupMethod,
+          signal: AbortSignal.timeout(15000)
+        };
+
+        if (backupMethod === 'POST') {
+          bOptions.headers = { 'Content-Type': 'application/json' };
+          bOptions.body    = JSON.stringify({
+            to:      contact,
+            message: msg,
+            api_key: backupApiKey,
+            sender:  backupSender,
+            username: process.env.BACKUP_SMS_USERNAME || ''
+          });
+        }
+
+        console.log(`[BACKUP-SMS] Dispatching to backup gateway: ${bUrl.split('?')[0]}...`);
+        const bResponse = await fetch(bUrl, bOptions);
+
+        if (bResponse.ok) {
+          console.log(`[BACKUP-SMS] OTP sent via backup SMS gateway. Status: ${bResponse.status}`);
+          return true;
+        } else {
+          const bBody = await bResponse.text().catch(() => '');
+          console.error(`[BACKUP-SMS] Backup gateway failed. HTTP ${bResponse.status}: ${bBody}`);
+        }
+      } else {
+        console.warn('[BACKUP-SMS] BACKUP_SMS_GATEWAY_URL not configured (still using placeholder).');
+      }
+    } catch (backupSmsErr) {
+      console.error('[BACKUP-SMS] Backup SMS dispatch error:', backupSmsErr.message);
+    }
+
+    return false;
   }
 }
 
