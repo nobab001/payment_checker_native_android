@@ -163,6 +163,111 @@ fun LoginScreen(
         }
     }
 
+    // ── "ট্রায়াল সীমাবদ্ধতা" প্রিমিয়াম কাস্টম ডায়ালগ ─────────────
+    if (uiState.showTrialExpiredDialog) {
+        Dialog(
+            onDismissRequest = { viewModel.dismissTrialExpiredDialog() }
+        ) {
+            Surface(
+                shape    = RoundedCornerShape(20.dp),
+                color    = Color.White,
+                tonalElevation = 8.dp,
+                modifier = Modifier
+                    .width(280.dp)
+                    .wrapContentHeight()
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+
+                    // ── রয়্যাল ইন্ডিগো শীর্ষ ব্যান্ড ─────────────────────────
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                    listOf(RoyalIndigo, Color(0xFF7C3AED))
+                                ),
+                                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+                            )
+                            .padding(horizontal = 20.dp, vertical = 16.dp)
+                    ) {
+                        Text(
+                            text      = "ট্রায়াল সীমাবদ্ধতা",
+                            fontWeight = FontWeight.Bold,
+                            color     = Color.White,
+                            fontSize  = 16.sp
+                        )
+                    }
+
+                    // ── মূল বার্তা ও বাটনসমূহ ────────────────────────────
+                    Column(
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text(
+                            text       = "দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।",
+                            color      = Color(0xFF475569),
+                            fontSize   = 13.sp,
+                            lineHeight = 20.sp
+                        )
+
+                        // ── বাটন কলাম (খাড়া, ডানপাশে) ───────────────────
+                        Column(
+                            modifier            = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            TextButton(onClick = { viewModel.dismissTrialExpiredDialog() }) {
+                                Text(
+                                    text       = "ফিরে যান",
+                                    color      = Color(0xFF64748B),
+                                    fontSize   = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Button(
+                                onClick        = {
+                                    viewModel.dismissTrialExpiredDialog()
+                                    val waLink = uiState.whatsappSupportLink
+                                    val tgLink = uiState.telegramSupportLink
+                                    val finalUrl = when {
+                                        waLink.isNotBlank() -> {
+                                            val raw = waLink.trim()
+                                            if (raw.startsWith("http://") || raw.startsWith("https://")) raw
+                                            else if (raw.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }) "https://wa.me/${raw.filter { it.isDigit() }}"
+                                            else "https://wa.me/$raw"
+                                        }
+                                        tgLink.isNotBlank() -> {
+                                            val raw = tgLink.trim()
+                                            if (raw.startsWith("http://") || raw.startsWith("https://")) raw
+                                            else "https://$raw"
+                                        }
+                                        else -> "https://wa.me/8801700000000"
+                                    }
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        // Ignore
+                                    }
+                                },
+                                colors         = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
+                                shape          = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)
+                            ) {
+                                Text(
+                                    text       = "সাবস্ক্রিপশন কিনুন (Support)",
+                                    color      = Color.White,
+                                    fontSize   = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()

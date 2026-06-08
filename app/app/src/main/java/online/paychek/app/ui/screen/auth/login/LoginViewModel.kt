@@ -119,8 +119,21 @@ class LoginViewModel : ViewModel() {
         }
     }
 
-    private suspend fun sendOtpApi(contact: String, deviceId: String, isNew: Boolean) {
-        val request = SendOtpRequest(contact, deviceId)
+    private suspend fun sendOtpApi(
+        contact: String,
+        deviceId: String,
+        isNew: Boolean,
+        androidId: String? = null,
+        hardwareFingerprint: String? = null,
+        simSlotIds: String? = null
+    ) {
+        val request = SendOtpRequest(
+            contact = contact,
+            deviceId = deviceId,
+            androidId = androidId,
+            hardwareFingerprint = hardwareFingerprint,
+            simSlotIds = simSlotIds
+        )
         val response = if (isNew) {
             apiService.registerSendOtp(request)
         } else {
@@ -139,6 +152,16 @@ class LoginViewModel : ViewModel() {
             startTimer()
         } else {
             val errorBody = response.errorBody()?.string()
+            if (response.code() == 403 && errorBody?.contains("TRIAL_EXPIRED_FOR_DEVICE") == true) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        showTrialExpiredDialog = true
+                    )
+                }
+                return
+            }
+
             if (response.code() == 404) {
                 if (errorBody?.contains("SHOW_NOT_FOUND_DIALOG") == true) {
                     _uiState.update {
@@ -185,10 +208,17 @@ class LoginViewModel : ViewModel() {
         _uiState.update { it.copy(showRegisterDialog = false) }
     }
 
+    fun dismissTrialExpiredDialog() {
+        _uiState.update { it.copy(showTrialExpiredDialog = false) }
+    }
+
     fun proceedToRegister(context: Context) {
         val contact = _uiState.value.contact.trim()
         val deviceId = DeviceIdHelper.getHashedAndroidId(context)
         val fingerprint = DeviceIdHelper.getHashedFingerprint()
+        val androidId = DeviceIdHelper.getAndroidId(context)
+        val hardwareFingerprint = DeviceIdHelper.getBuildFingerprint()
+        val simSlotIds = DeviceIdHelper.getSimSlotIds(context)
 
         _uiState.update {
             it.copy(
@@ -202,7 +232,13 @@ class LoginViewModel : ViewModel() {
             try {
                 // 1. Perform Device Trial Check to prevent trial abuse
                 val trialResponse = apiService.checkDeviceTrial(
-                    CheckDeviceTrialRequest(deviceId, fingerprint)
+                    CheckDeviceTrialRequest(
+                        deviceId = deviceId,
+                        fingerprint = fingerprint,
+                        androidId = androidId,
+                        hardwareFingerprint = hardwareFingerprint,
+                        simSlotIds = simSlotIds
+                    )
                 )
 
                 if (trialResponse.isSuccessful && trialResponse.body() != null) {
@@ -211,12 +247,22 @@ class LoginViewModel : ViewModel() {
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
-                                errorMessage = "এই ডিভাইসে ইতিমধ্যে ট্রায়াল ব্যবহার করা হয়েছে! নতুন অ্যাকাউন্ট খোলা সম্ভব নয়।",
-                                isTrialBlocked = true
+                                showTrialExpiredDialog = true
                             )
                         }
                         return@launch
                     }
+                } else if (trialResponse.code() == 403) {
+                    val errorBody = trialResponse.errorBody()?.string()
+                    val isTrialAbused = errorBody?.contains("TRIAL_EXPIRED_FOR_DEVICE") == true
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            showTrialExpiredDialog = if (isTrialAbused) true else it.showTrialExpiredDialog,
+                            errorMessage = if (!isTrialAbused) "ডিভাইস ট্রায়াল যাচাই করতে ব্যর্থ হয়েছে।" else null
+                        )
+                    }
+                    return@launch
                 } else {
                     _uiState.update {
                         it.copy(
@@ -229,7 +275,14 @@ class LoginViewModel : ViewModel() {
 
                 // 2. Send Registration OTP
                 _uiState.update { it.copy(isNewUser = true) }
-                sendOtpApi(contact, deviceId, isNew = true)
+                sendOtpApi(
+                    contact = contact,
+                    deviceId = deviceId,
+                    isNew = true,
+                    androidId = androidId,
+                    hardwareFingerprint = hardwareFingerprint,
+                    simSlotIds = simSlotIds
+                )
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -261,6 +314,9 @@ class LoginViewModel : ViewModel() {
         val deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}"
         val androidVersion = Build.VERSION.RELEASE
         val fingerprint = DeviceIdHelper.getHashedFingerprint()
+        val androidId = DeviceIdHelper.getAndroidId(context)
+        val hardwareFingerprint = DeviceIdHelper.getBuildFingerprint()
+        val simSlotIds = DeviceIdHelper.getSimSlotIds(context)
 
         viewModelScope.launch {
             try {
@@ -270,7 +326,10 @@ class LoginViewModel : ViewModel() {
                     deviceId = deviceId,
                     deviceModel = deviceModel,
                     androidVersion = androidVersion,
-                    fingerprint = fingerprint
+                    fingerprint = fingerprint,
+                    androidId = androidId,
+                    hardwareFingerprint = hardwareFingerprint,
+                    simSlotIds = simSlotIds
                 )
 
                 val response = apiService.verifyOtp(request)
@@ -279,13 +338,33 @@ class LoginViewModel : ViewModel() {
                     _uiState.update { it.copy(isLoading = false) }
                     onOtpVerified(verifyResponse)
                 } else {
-                    _uiState.update {
-                        it.copy(isLoading = false, errorMessage = "ওটিপি কোডটি সঠিক নয়। অনুগ্রহ করে আবার চেক করুন।")
+                    val errorBody = response.errorBody()?.string()
+                    if (response.code() == 403 && errorBody?.contains("TRIAL_EXPIRED_FOR_DEVICE") == true) {
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                showTrialExpiredDialog = true
+                            )
+                        }
+                    } else {
+                        val rawMsg = try {
+                            val gson = com.google.gson.Gson()
+                            val map = gson.fromJson(errorBody, Map::class.java)
+                            map["message"] as? String ?: map["error"] as? String ?: "ওটিপি কোডটি সঠিক নয়। অনুগ্রহ করে আবার চেক করুন।"
+                        } catch (e: Exception) {
+                            "ওটিপি কোডটি সঠিক নয়। অনুগ্রহ করে আবার চেক করুন।"
+                        }
+                        _uiState.update {
+                            it.copy(isLoading = false, errorMessage = rawMsg)
+                        }
                     }
                 }
             } catch (e: Exception) {
                 _uiState.update {
-                    it.copy(isLoading = false, errorMessage = "ওটিপি যাচাই ব্যর্থ হয়েছে: ${e.localizedMessage ?: "নেটওয়ার্ক এরর"}")
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "ওটিপি যাচাই ব্যর্থ হয়েছে: ${e.localizedMessage ?: "নেটওয়ার্ক এরর"}"
+                    )
                 }
             }
         }
@@ -321,6 +400,7 @@ data class LoginUiState(
     val isNewUser: Boolean = false,
     val isTrialBlocked: Boolean = false,
     val showRegisterDialog: Boolean = false,
+    val showTrialExpiredDialog: Boolean = false,
     val errorMessage: String? = null,
     val isMaintenanceMode: Boolean = false,
     val whatsappSupportLink: String = "https://wa.me/8801700000000",

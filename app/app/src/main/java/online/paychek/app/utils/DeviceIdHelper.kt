@@ -3,6 +3,7 @@ package online.paychek.app.utils
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
+import android.telephony.SubscriptionManager
 import java.security.MessageDigest
 import java.util.Locale
 
@@ -22,6 +23,29 @@ object DeviceIdHelper {
      */
     fun getBuildFingerprint(): String {
         return Build.FINGERPRINT ?: "unknown_fingerprint"
+    }
+
+    /**
+     * Retrieves the unique identifiers for SIM card slots/subscription IDs.
+     * Sorted to ensure stable comparisons.
+     */
+    fun getSimSlotIds(context: Context): String {
+        return try {
+            val subscriptionManager =
+                context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
+            val activeList = subscriptionManager.activeSubscriptionInfoList
+            if (activeList.isNullOrEmpty()) {
+                "no_sims"
+            } else {
+                activeList.map { info ->
+                    "slot_${info.simSlotIndex}_sub_${info.subscriptionId}"
+                }.sorted().joinToString(",")
+            }
+        } catch (e: SecurityException) {
+            "permission_denied"
+        } catch (e: Exception) {
+            "unknown"
+        }
     }
 
     /**
@@ -60,3 +84,4 @@ object DeviceIdHelper {
         }
     }
 }
+

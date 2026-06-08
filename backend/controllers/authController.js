@@ -1,4 +1,4 @@
-﻿const { query } = require('../db/connection');
+const { query } = require('../db/connection');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
@@ -105,9 +105,21 @@ async function sendOtp(req, res) {
  */
 async function registerSendOtp(req, res) {
   try {
-    const { contact } = req.body;
+    const { contact, deviceId, androidId, hardwareFingerprint, simSlotIds } = req.body;
     if (!contact) {
       return res.status(400).json({ error: 'Contact is required' });
+    }
+
+    // Trial abuse prevention check
+    if (deviceId) {
+      const abused = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds);
+      if (abused) {
+        return res.status(403).json({
+          success: false,
+          action: 'TRIAL_EXPIRED_FOR_DEVICE',
+          message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।'
+        });
+      }
     }
 
     const cleanedContact = contact.trim();
@@ -172,7 +184,7 @@ async function sendOtpNew(req, res) {
  */
 async function verifyOtp(req, res) {
   try {
-    const { contact, code, deviceId, deviceModel, androidVersion, fingerprint } = req.body;
+    const { contact, code, deviceId, deviceModel, androidVersion, fingerprint, androidId, hardwareFingerprint, simSlotIds } = req.body;
     if (!contact || !code || !deviceId) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -242,6 +254,18 @@ async function verifyOtp(req, res) {
       [cleanedContact, cleanedContact]
     );
 
+    // If it's a new registration flow, verify that they are not using a device that consumed trial
+    if (existingUsers.length === 0) {
+      const abused = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds);
+      if (abused) {
+        return res.status(403).json({
+          success: false,
+          action: 'TRIAL_EXPIRED_FOR_DEVICE',
+          message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।'
+        });
+      }
+    }
+
     if (existingUsers.length === 0) {
       const isEmail = cleanedContact.includes('@');
       const insertResult = await query(
@@ -305,6 +329,22 @@ async function verifyOtp(req, res) {
           0
         ]
       );
+
+      // Record device trial logs
+      try {
+        const logAndroidId = androidId || deviceId;
+        const logFingerprint = hardwareFingerprint || fingerprint || 'unknown_fingerprint';
+        const logSimSlots = simSlotIds || 'no_sim';
+        await query(
+          `INSERT INTO device_trial_logs (android_id, hardware_fingerprint, sim_slot_ids, has_used_trial) 
+           VALUES (?, ?, ?, 1)
+           ON DUPLICATE KEY UPDATE has_used_trial = 1`,
+          [logAndroidId, logFingerprint, logSimSlots]
+        );
+        console.log(`[DB] Recorded device trial log for device: ${logAndroidId}`);
+      } catch (logErr) {
+        console.error('[DB] Failed to insert device trial log:', logErr);
+      }
 
       const freshDevices = await query('SELECT * FROM registered_devices WHERE id = ?', [insertDeviceResult.insertId]);
       device = freshDevices[0];
@@ -489,14 +529,79 @@ async function completeProfile(req, res) {
 }
 
 /**
+ * Helper: Checks if the device signature matches any registered device trial lock,
+ * or if it is logged in device_trial_logs as having consumed a trial.
+ */
+async function isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds) {
+  // 1. Check if the device exists in registered_devices and is trial locked or expired
+  if (deviceId) {
+    const devices = await query(
+      'SELECT id, trial_expires_at, is_trial_locked FROM registered_devices WHERE device_id = ? LIMIT 1',
+      [deviceId]
+    );
+    if (devices.length > 0) {
+      const dev = devices[0];
+      const expired = dev.trial_expires_at && new Date(dev.trial_expires_at) < new Date();
+      if (dev.is_trial_locked || expired) {
+        return true;
+      }
+    }
+  }
+
+  // 2. Check if any of the three identifiers match device_trial_logs with has_used_trial = 1
+  const checkFields = [];
+  const checkParams = [];
+  
+  if (androidId && androidId !== 'unknown_android_id' && androidId !== '') {
+    checkFields.push('android_id = ?');
+    checkParams.push(androidId);
+  }
+  if (hardwareFingerprint && hardwareFingerprint !== 'unknown_fingerprint' && hardwareFingerprint !== '') {
+    checkFields.push('hardware_fingerprint = ?');
+    checkParams.push(hardwareFingerprint);
+  }
+  
+  // Ignore empty or dummy sim_slot_ids
+  const isValidSimSlotId = simSlotIds && 
+                           simSlotIds !== 'no_sims' && 
+                           simSlotIds !== 'no_sim' && 
+                           simSlotIds !== 'permission_denied' && 
+                           simSlotIds !== 'unknown' &&
+                           simSlotIds !== '';
+  if (isValidSimSlotId) {
+    checkFields.push('sim_slot_ids = ?');
+    checkParams.push(simSlotIds);
+  }
+
+  if (checkFields.length > 0) {
+    const queryStr = `SELECT id FROM device_trial_logs WHERE (${checkFields.join(' OR ')}) AND has_used_trial = 1 LIMIT 1`;
+    const logs = await query(queryStr, checkParams);
+    if (logs.length > 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * 6. POST /api/check-device-trial
  * Verifies if the device is trial-locked or if a trial was already claimed.
  */
 async function checkDeviceTrial(req, res) {
   try {
-    const { deviceId } = req.body;
+    const { deviceId, androidId, hardwareFingerprint, simSlotIds } = req.body;
     if (!deviceId) {
       return res.status(400).json({ error: 'Device ID is required' });
+    }
+
+    const abused = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds);
+    if (abused) {
+      return res.status(403).json({
+        success: false,
+        action: 'TRIAL_EXPIRED_FOR_DEVICE',
+        message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।'
+      });
     }
 
     const devices = await query(
@@ -518,10 +623,10 @@ async function checkDeviceTrial(req, res) {
       }
 
       if (device.is_trial_locked) {
-        return res.json({
-          trialAllowed: false,
-          isLocked: true,
-          lockReason: device.lock_reason || 'trial_expired'
+        return res.status(403).json({
+          success: false,
+          action: 'TRIAL_EXPIRED_FOR_DEVICE',
+          message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।'
         });
       }
 

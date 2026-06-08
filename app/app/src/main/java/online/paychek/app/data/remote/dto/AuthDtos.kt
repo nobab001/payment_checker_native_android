@@ -12,7 +12,10 @@ data class CheckContactResponse(
 
 data class SendOtpRequest(
     val contact: String,
-    val deviceId: String
+    val deviceId: String,
+    val androidId: String? = null,
+    val hardwareFingerprint: String? = null,
+    val simSlotIds: String? = null
 )
 
 data class OtpResponse(
@@ -26,7 +29,10 @@ data class VerifyOtpRequest(
     val deviceId: String,
     val deviceModel: String,
     val androidVersion: String,
-    val fingerprint: String
+    val fingerprint: String,
+    val androidId: String? = null,
+    val hardwareFingerprint: String? = null,
+    val simSlotIds: String? = null
 )
 
 data class VerifyOtpResponse(
@@ -50,7 +56,10 @@ data class CompleteProfileResponse(
 
 data class CheckDeviceTrialRequest(
     val deviceId: String,
-    val fingerprint: String
+    val fingerprint: String,
+    val androidId: String? = null,
+    val hardwareFingerprint: String? = null,
+    val simSlotIds: String? = null
 )
 
 data class CheckDeviceTrialResponse(
