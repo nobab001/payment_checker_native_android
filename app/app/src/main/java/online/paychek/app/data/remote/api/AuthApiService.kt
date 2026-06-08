@@ -18,6 +18,11 @@ interface AuthApiService {
         @Body request: SendOtpRequest
     ): Response<OtpResponse>
 
+    @POST("auth/register-send-otp")
+    suspend fun registerSendOtp(
+        @Body request: SendOtpRequest
+    ): Response<OtpResponse>
+
     @POST("send-otp-new")
     suspend fun sendOtpNew(
         @Body request: SendOtpRequest

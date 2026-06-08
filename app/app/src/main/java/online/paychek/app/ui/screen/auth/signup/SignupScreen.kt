@@ -188,11 +188,11 @@ fun SignupScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // 4. PIN Field (6-digits, numeric)
+            // 4. PIN Field (4-6 digits, numeric)
             OutlinedTextField(
                 value = uiState.pin,
                 onValueChange = { viewModel.onPinChanged(it) },
-                placeholder = { Text("৬-ডিজিটের নিরাপত্তা পিন (PIN)") },
+                placeholder = { Text("৪-৬ ডিজিটের নিরাপত্তা পিন (PIN)") },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Lock,

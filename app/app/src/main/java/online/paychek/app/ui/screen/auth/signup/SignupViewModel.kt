@@ -24,9 +24,21 @@ class SignupViewModel : ViewModel() {
         val isEmail = android.util.Patterns.EMAIL_ADDRESS.matcher(contact).matches()
         _uiState.update {
             if (isEmail) {
-                it.copy(email = contact, phone = "", isEmailPreFilled = true, isPhonePreFilled = false)
+                it.copy(
+                    email = contact,
+                    phone = "",
+                    isEmailPreFilled = true,
+                    isPhonePreFilled = false,
+                    isPhoneMandatory = true
+                )
             } else {
-                it.copy(phone = contact, email = "", isPhonePreFilled = true, isEmailPreFilled = false)
+                it.copy(
+                    phone = contact,
+                    email = "",
+                    isPhonePreFilled = true,
+                    isEmailPreFilled = false,
+                    isPhoneMandatory = false
+                )
             }
         }
     }
@@ -76,8 +88,8 @@ class SignupViewModel : ViewModel() {
             return
         }
 
-        if (pin.length != 6) {
-            _uiState.update { it.copy(errorMessage = "সিকিউরিটি পিন অবশ্যই ৬ ডিজিটের হতে হবে") }
+        if (pin.length !in 4..6) {
+            _uiState.update { it.copy(errorMessage = "সিকিউরিটি পিন অবশ্যই ৪ থেকে ৬ ডিজিটের হতে হবে") }
             return
         }
 
@@ -86,9 +98,24 @@ class SignupViewModel : ViewModel() {
             return
         }
 
-        if (phone.isNullOrEmpty() && email.isNullOrEmpty()) {
-            _uiState.update { it.copy(errorMessage = "মোবাইল অথবা ইমেল যেকোনো একটি থাকতে হবে") }
-            return
+        // Conditional validations
+        if (state.isPhoneMandatory) {
+            if (phone.isNullOrEmpty()) {
+                _uiState.update { it.copy(errorMessage = "ইমেইল দিয়ে অ্যাকাউন্ট খোলার জন্য মোবাইল নম্বর প্রদান করা বাধ্যতামূলক") }
+                return
+            }
+            if (!Regex("^01[3-9]\\d{8}$").matches(phone)) {
+                _uiState.update { it.copy(errorMessage = "সঠিক ১১-ডিজিটের মোবাইল নম্বর দিন (যেমন: 017XXXXXXXX)") }
+                return
+            }
+        } else {
+            // Signed up via mobile: email is optional. If provided, validate email structure.
+            if (!email.isNullOrEmpty()) {
+                if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+                    _uiState.update { it.copy(errorMessage = "সঠিক ইমেইল এড্রেস দিন") }
+                    return
+                }
+            }
         }
 
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
@@ -130,6 +157,7 @@ data class SignupUiState(
     val email: String? = "",
     val isPhonePreFilled: Boolean = false,
     val isEmailPreFilled: Boolean = false,
+    val isPhoneMandatory: Boolean = false,
     val isLoading: Boolean = false,
     val signupSuccess: Boolean = false,
     val errorMessage: String? = null

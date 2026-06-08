@@ -66,6 +66,56 @@ fun LoginScreen(
         }
     }
 
+    if (uiState.showRegisterDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissRegisterDialog() },
+            title = {
+                Text(
+                    text = "অ্যাকাউন্ট পাওয়া যায়নি",
+                    fontWeight = FontWeight.Bold,
+                    color = RoyalIndigo,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Text(
+                    text = "আপনার মোবাইল নম্বর বা ইমেইল ঠিকানাটি নিবন্ধিত নেই। আপনি কি নতুন একটি ট্রায়াল অ্যাকাউন্ট তৈরি করতে চান?",
+                    color = TextSecondary,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.proceedToRegister(context) },
+                    colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = "নতুন অ্যাকাউন্ট তৈরি করুন",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.dismissRegisterDialog() }
+                ) {
+                    Text(
+                        text = "বাতিল করুন",
+                        color = TextSecondary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = Color.White
+        )
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()

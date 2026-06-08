@@ -311,11 +311,11 @@ async function completeProfile(req, res) {
     const userId = req.user.userId; // Populated by JWT authentication middleware
 
     if (!name || !pin) {
-      return res.status(400).json({ error: 'Name and 6-digit PIN are required' });
+      return res.status(400).json({ error: 'Name and PIN are required' });
     }
 
-    if (pin.length !== 6 || isNaN(pin)) {
-      return res.status(400).json({ error: 'PIN must be exactly 6 digits' });
+    if (pin.length < 4 || pin.length > 6 || isNaN(pin)) {
+      return res.status(400).json({ error: 'PIN must be between 4 and 6 digits' });
     }
 
     // Fetch current pending user details

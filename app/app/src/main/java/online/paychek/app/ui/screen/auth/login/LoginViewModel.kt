@@ -54,7 +54,6 @@ class LoginViewModel : ViewModel() {
         }
 
         val deviceId = DeviceIdHelper.getHashedAndroidId(context)
-        val fingerprint = DeviceIdHelper.getHashedFingerprint()
 
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
@@ -67,36 +66,13 @@ class LoginViewModel : ViewModel() {
                     _uiState.update { it.copy(isNewUser = !exists) }
 
                     if (!exists) {
-                        // User does not exist (New User / Signup flow)
-                        // 2. Perform Device Trial Check to prevent trial abuse
-                        val trialResponse = apiService.checkDeviceTrial(
-                            CheckDeviceTrialRequest(deviceId, fingerprint)
-                        )
-
-                        if (trialResponse.isSuccessful && trialResponse.body() != null) {
-                            val trialData = trialResponse.body()!!
-                            if (!trialData.trialAllowed || trialData.isLocked) {
-                                _uiState.update {
-                                    it.copy(
-                                        isLoading = false,
-                                        errorMessage = "এই ডিভাইসে ইতিমধ্যে ট্রায়াল ব্যবহার করা হয়েছে! নতুন অ্যাকাউন্ট খোলা সম্ভব নয়।",
-                                        isTrialBlocked = true
-                                    )
-                                }
-                                return@launch
-                            }
-                        } else {
-                            _uiState.update {
-                                it.copy(
-                                    isLoading = false,
-                                    errorMessage = "ডিভাইস ট্রায়াল যাচাই করতে ব্যর্থ হয়েছে। আবার চেষ্টা করুন।"
-                                )
-                            }
-                            return@launch
+                        // User does not exist (New User / Signup flow) -> Show custom register dialog
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                showRegisterDialog = true
+                            )
                         }
-
-                        // Send Signup OTP
-                        sendOtpApi(contact, deviceId, isNew = true)
                     } else {
                         // User exists (Login flow)
                         sendOtpApi(contact, deviceId, isNew = false)
@@ -117,7 +93,7 @@ class LoginViewModel : ViewModel() {
     private suspend fun sendOtpApi(contact: String, deviceId: String, isNew: Boolean) {
         val request = SendOtpRequest(contact, deviceId)
         val response = if (isNew) {
-            apiService.sendOtpNew(request)
+            apiService.registerSendOtp(request)
         } else {
             apiService.sendOtp(request)
         }
@@ -133,8 +109,80 @@ class LoginViewModel : ViewModel() {
             }
             startTimer()
         } else {
+            if (response.code() == 404) {
+                val errorBody = response.errorBody()?.string()
+                if (errorBody?.contains("SHOW_NOT_FOUND_DIALOG") == true) {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            showRegisterDialog = true
+                        )
+                    }
+                    return
+                }
+            }
             val errorMsg = response.body()?.message ?: "ওটিপি পাঠাতে ব্যর্থ হয়েছে।"
             _uiState.update { it.copy(isLoading = false, errorMessage = errorMsg) }
+        }
+    }
+
+    fun dismissRegisterDialog() {
+        _uiState.update { it.copy(showRegisterDialog = false) }
+    }
+
+    fun proceedToRegister(context: Context) {
+        val contact = _uiState.value.contact.trim()
+        val deviceId = DeviceIdHelper.getHashedAndroidId(context)
+        val fingerprint = DeviceIdHelper.getHashedFingerprint()
+
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                showRegisterDialog = false,
+                errorMessage = null
+            )
+        }
+
+        viewModelScope.launch {
+            try {
+                // 1. Perform Device Trial Check to prevent trial abuse
+                val trialResponse = apiService.checkDeviceTrial(
+                    CheckDeviceTrialRequest(deviceId, fingerprint)
+                )
+
+                if (trialResponse.isSuccessful && trialResponse.body() != null) {
+                    val trialData = trialResponse.body()!!
+                    if (!trialData.trialAllowed || trialData.isLocked) {
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                errorMessage = "এই ডিভাইসে ইতিমধ্যে ট্রায়াল ব্যবহার করা হয়েছে! নতুন অ্যাকাউন্ট খোলা সম্ভব নয়।",
+                                isTrialBlocked = true
+                            )
+                        }
+                        return@launch
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = "ডিভাইস ট্রায়াল যাচাই করতে ব্যর্থ হয়েছে। আবার চেষ্টা করুন।"
+                        )
+                    }
+                    return@launch
+                }
+
+                // 2. Send Registration OTP
+                _uiState.update { it.copy(isNewUser = true) }
+                sendOtpApi(contact, deviceId, isNew = true)
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "রেজিস্ট্রেশন ত্রুটি: ${e.localizedMessage ?: "সংযোগ ব্যর্থ"}"
+                    )
+                }
+            }
         }
     }
 
@@ -212,6 +260,7 @@ data class LoginUiState(
     val isLoading: Boolean = false,
     val isNewUser: Boolean = false,
     val isTrialBlocked: Boolean = false,
+    val showRegisterDialog: Boolean = false,
     val errorMessage: String? = null,
     val isMaintenanceMode: Boolean = false // Admin panel check placeholder
 )
