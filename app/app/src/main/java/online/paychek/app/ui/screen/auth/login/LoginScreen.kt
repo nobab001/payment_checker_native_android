@@ -30,6 +30,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -72,91 +74,149 @@ fun LoginScreen(
 
     // ── "অ্যাকাউন্ট খুঁজে পাওয়া যায়নি" প্রিমিয়াম কাস্টম ডায়ালগ ─────────────
     if (uiState.showRegisterDialog) {
+        var animateTrigger by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            animateTrigger = true
+        }
+        val scale by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (animateTrigger) 1f else 0.9f,
+            animationSpec = androidx.compose.animation.core.tween(durationMillis = 250),
+            label = "DialogScale"
+        )
+        val alpha by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (animateTrigger) 1f else 0f,
+            animationSpec = androidx.compose.animation.core.tween(durationMillis = 250),
+            label = "DialogAlpha"
+        )
+
         Dialog(
             onDismissRequest = { viewModel.dismissRegisterDialog() }
         ) {
             Surface(
-                shape    = RoundedCornerShape(20.dp),
-                color    = Color.White,
+                shape = RoundedCornerShape(28.dp),
+                color = Color.White,
                 tonalElevation = 8.dp,
                 modifier = Modifier
-                    .width(280.dp)
+                    .fillMaxWidth(0.88f)
                     .wrapContentHeight()
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        alpha = alpha
+                    )
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-
-                    // ── রয়্যাল ইন্ডিগো শীর্ষ ব্যান্ড ─────────────────────────
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Top Section: Circular container (64.dp) with Light Blue background and Search+Person icons
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                    listOf(RoyalIndigo, Color(0xFF7C3AED))
-                                ),
-                                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-                            )
-                            .padding(horizontal = 20.dp, vertical = 16.dp)
+                            .size(64.dp)
+                            .background(Color(0xFFEFF6FF), shape = CircleShape),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text      = "অ্যাকাউন্ট খুঁজে পাওয়া যায়নি",
-                                fontWeight = FontWeight.Bold,
-                                color     = Color.White,
-                                fontSize  = 16.sp
+                        Box(modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = null,
+                                tint = Color(0xFF3B82F6),
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .align(Alignment.Center)
                             )
-                            val subLabel = if (uiState.contact.contains("@")) "ইমেইল ঠিকানা" else "মোবাইল নম্বর"
-                            Text(
-                                text    = "প্রদানকৃত $subLabel নিবন্ধিত নেই",
-                                color   = Color.White.copy(alpha = 0.80f),
-                                fontSize = 12.sp
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
+                                tint = Color(0xFF3B82F6),
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .align(Alignment.BottomEnd)
+                                    .background(Color(0xFFEFF6FF), shape = CircleShape)
+                                    .padding(1.dp)
                             )
                         }
                     }
 
-                    // ── মূল বার্তা ────────────────────────────────────
-                    Column(
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    // Title
+                    Text(
+                        text = "অ্যাকাউন্ট পাওয়া যায়নি",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1F2937),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Subtitle
+                    val isEmail = uiState.contact.contains("@")
+                    val subtitleText = if (isEmail) {
+                        "এই ইমেইল ঠিকানাটি আমাদের সিস্টেমে নিবন্ধিত নয়।"
+                    } else {
+                        "এই মোবাইল নম্বরটি আমাদের সিস্টেমে নিবন্ধিত নয়।"
+                    }
+                    Text(
+                        text = subtitleText,
+                        fontSize = 16.sp,
+                        color = Color(0xFF6B7280),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Description
+                    val descText = if (isEmail) {
+                        "আপনি চাইলে এই ইমেইল ব্যবহার করে এখনই একটি নতুন অ্যাকাউন্ট তৈরি করতে পারেন।"
+                    } else {
+                        "আপনি চাইলে এই নম্বরটি ব্যবহার করে এখনই একটি নতুন অ্যাকাউন্ট তৈরি করতে পারেন।"
+                    }
+                    Text(
+                        text = descText,
+                        fontSize = 15.sp,
+                        color = Color(0xFF9CA3AF),
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        lineHeight = 20.sp,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Primary Button (Linear Gradient background #2563EB -> #4F46E5, 52.dp height, 16.dp rounded corner)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .background(
+                                brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                    colors = listOf(Color(0xFF2563EB), Color(0xFF4F46E5))
+                                ),
+                                shape = RoundedCornerShape(16.dp)
+                            )
+                            .clickable { viewModel.proceedToRegister(context) },
+                        contentAlignment = Alignment.Center
                     ) {
-                        val isEmail     = uiState.contact.contains("@")
-                        val contactType = if (isEmail) "ইমেইল ঠিকানাটি" else "মোবাইল নম্বরটি"
-                        val bodyText    = "আপনার প্রদানকৃত $contactType আমাদের সিস্টেমে নিবন্ধিত নেই। আপনি কি এটি ব্যবহার করে একটি নতুন অ্যাকাউন্ট তৈরি করতে চান?"
-
                         Text(
-                            text       = bodyText,
-                            color      = Color(0xFF475569),
-                            fontSize   = 13.sp,
-                            lineHeight = 20.sp
+                            text = "✅ নতুন অ্যাকাউন্ট তৈরি করুন",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
                         )
+                    }
 
-                        // ── বাটন কলাম (খাড়া, ডানপাশে) ───────────────────
-                        Column(
-                            modifier            = Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.End,
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            TextButton(onClick = { viewModel.dismissRegisterDialog() }) {
-                                Text(
-                                    text       = "ফিরে যান",
-                                    color      = Color(0xFF64748B),
-                                    fontSize   = 13.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                            Button(
-                                onClick        = { viewModel.proceedToRegister(context) },
-                                colors         = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
-                                shape          = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)
-                            ) {
-                                Text(
-                                    text       = "নতুন অ্যাকাউন্ট তৈরি করুন",
-                                    color      = Color.White,
-                                    fontSize   = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
+                    // Secondary Button (Text Button below with 12dp spacing)
+                    TextButton(
+                        onClick = { viewModel.dismissRegisterDialog() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "🔙 ফিরে যান",
+                            color = Color(0xFF6B7280),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
