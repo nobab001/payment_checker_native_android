@@ -24,6 +24,33 @@ class LoginViewModel : ViewModel() {
 
     private var timerJob: Job? = null
 
+    init {
+        fetchPublicConfigs()
+    }
+
+    fun fetchPublicConfigs() {
+        viewModelScope.launch {
+            try {
+                val response = apiService.getPublicConfig()
+                if (response.isSuccessful && response.body() != null) {
+                    val configs = response.body()!!.configs
+                    val isMaintenance = configs["maintenance_mode"] == "true"
+                    _uiState.update {
+                        it.copy(
+                            isMaintenanceMode = isMaintenance,
+                            whatsappSupportLink = configs["whatsapp_support_link"]?.takeIf { it.isNotEmpty() } ?: "https://wa.me/8801700000000",
+                            telegramSupportLink = configs["telegram_support_link"]?.takeIf { it.isNotEmpty() } ?: "https://t.me/paychek_support",
+                            facebookSupportLink = configs["facebook_support_link"]?.takeIf { it.isNotEmpty() } ?: "https://facebook.com",
+                            youtubeSupportLink = configs["youtube_support_link"]?.takeIf { it.isNotEmpty() } ?: "https://youtube.com"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore and use defaults
+            }
+        }
+    }
+
     fun onContactChanged(contact: String) {
         _uiState.update { it.copy(contact = contact, errorMessage = null) }
     }
@@ -269,5 +296,9 @@ data class LoginUiState(
     val isTrialBlocked: Boolean = false,
     val showRegisterDialog: Boolean = false,
     val errorMessage: String? = null,
-    val isMaintenanceMode: Boolean = false // Admin panel check placeholder
+    val isMaintenanceMode: Boolean = false,
+    val whatsappSupportLink: String = "https://wa.me/8801700000000",
+    val telegramSupportLink: String = "https://t.me/paychek_support",
+    val facebookSupportLink: String = "https://facebook.com",
+    val youtubeSupportLink: String = "https://youtube.com"
 )

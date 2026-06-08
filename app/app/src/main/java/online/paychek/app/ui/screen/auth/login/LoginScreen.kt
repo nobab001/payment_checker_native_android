@@ -399,7 +399,16 @@ fun LoginScreen(
                     iconBg = Color(0xFFE8F9EE),
                     icon = Icons.Default.Support,
                     onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/8801700000000"))
+                        val rawLink = uiState.whatsappSupportLink.trim()
+                        val finalUrl = when {
+                            rawLink.startsWith("http://") || rawLink.startsWith("https://") -> rawLink
+                            rawLink.all { it.isDigit() || it == '+' || it == ' ' || it == '-' } -> {
+                                val cleanNumber = rawLink.filter { it.isDigit() }
+                                "https://wa.me/$cleanNumber"
+                            }
+                            else -> "https://wa.me/$rawLink"
+                        }
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
                         context.startActivity(intent)
                     }
                 )
@@ -411,7 +420,9 @@ fun LoginScreen(
                     iconBg = Color(0xFFE8F1FF),
                     icon = Icons.Default.Person,
                     onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://facebook.com"))
+                        val rawLink = uiState.facebookSupportLink.trim()
+                        val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
                         context.startActivity(intent)
                     }
                 )
@@ -423,7 +434,9 @@ fun LoginScreen(
                     iconBg = Color(0xFFE5F6FD),
                     icon = Icons.AutoMirrored.Filled.Send,
                     onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/paychek_support"))
+                        val rawLink = uiState.telegramSupportLink.trim()
+                        val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
                         context.startActivity(intent)
                     }
                 )
@@ -435,7 +448,9 @@ fun LoginScreen(
                     iconBg = Color(0xFFFFEBEE),
                     icon = Icons.Default.PlayArrow,
                     onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://youtube.com"))
+                        val rawLink = uiState.youtubeSupportLink.trim()
+                        val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
                         context.startActivity(intent)
                     }
                 )

@@ -4,6 +4,7 @@ const authController = require('../controllers/authController');
 const authenticateToken = require('../middleware/auth');
 
 // Public Auth Endpoints
+router.get('/config/public', authController.getPublicConfig);
 router.post('/check-contact', authController.checkContact);
 router.post('/send-otp', authController.sendOtp);
 router.post('/send-otp-new', authController.sendOtpNew);

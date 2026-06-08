@@ -658,6 +658,22 @@ function generateOtpCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+async function getPublicConfig(req, res) {
+  try {
+    const configs = await query(
+      "SELECT * FROM global_config WHERE config_key IN ('maintenance_mode', 'whatsapp_support_link', 'telegram_support_link', 'facebook_support_link', 'youtube_support_link')"
+    );
+    const configMap = {};
+    configs.forEach(c => {
+      configMap[c.config_key] = c.config_value;
+    });
+    return res.json({ success: true, configs: configMap });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   checkContact,
   sendOtp,
@@ -665,5 +681,6 @@ module.exports = {
   sendOtpNew,
   verifyOtp,
   completeProfile,
-  checkDeviceTrial
+  checkDeviceTrial,
+  getPublicConfig
 };
