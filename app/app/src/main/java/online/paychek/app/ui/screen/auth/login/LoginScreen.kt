@@ -199,7 +199,7 @@ fun LoginScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "✅ নতুন অ্যাকাউন্ট তৈরি করুন",
+                            text = " নতুন অ্যাকাউন্ট তৈরি করুন",
                             color = Color.White,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
@@ -212,7 +212,7 @@ fun LoginScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "🔙 ফিরে যান",
+                            text = " ফিরে যান",
                             color = Color(0xFF6B7280),
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold
