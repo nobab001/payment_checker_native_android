@@ -536,12 +536,12 @@ async function sendOtpDispatch(contact, otpCode) {
   console.log(`[OTP GENERATED] To: ${contact} | Code: ${otpCode}`);
 
   if (isEmail) {
-    // 1. Database-driven Round-Robin SMTP Dispatcher
+    // 1. Try Database-driven Round-Robin SMTP Dispatcher first
     try {
       const accounts = await query(
         `SELECT * FROM email_accounts 
-          WHERE is_active = 1 AND sent_today < daily_limit 
-       ORDER BY sent_today ASC, updated_at ASC 
+          WHERE is_active = 1 AND COALESCE(sent_today, 0) < COALESCE(daily_limit, 500) 
+       ORDER BY COALESCE(sent_today, 0) ASC, updated_at ASC 
           LIMIT 1`
       );
 
@@ -549,7 +549,7 @@ async function sendOtpDispatch(contact, otpCode) {
         const acc = accounts[0];
         console.log(`[ROUND-ROBIN] Using SMTP Account: ${acc.email} (Sent today: ${acc.sent_today}/${acc.daily_limit})`);
         
-        const transporter = nodemailer.createTransport({
+        const smtpConfig = {
           host: acc.host,
           port: acc.port,
           secure: acc.secure === 1,
@@ -557,7 +557,14 @@ async function sendOtpDispatch(contact, otpCode) {
             user: acc.email,
             pass: acc.password
           }
-        });
+        };
+
+        // Enable Gmail helper if applicable
+        if (acc.host.toLowerCase().includes('gmail.com')) {
+          smtpConfig.service = 'gmail';
+        }
+
+        const transporter = nodemailer.createTransport(smtpConfig);
 
         await transporter.sendMail({
           from: acc.email,
@@ -566,25 +573,28 @@ async function sendOtpDispatch(contact, otpCode) {
           text: `Your Paychek login/registration verification code is: ${otpCode}. It is valid for 5 minutes.`
         });
 
-        // Increment usage
-        await query('UPDATE email_accounts SET sent_today = sent_today + 1 WHERE id = ?', [acc.id]);
+        // Increment usage safely
+        await query('UPDATE email_accounts SET sent_today = COALESCE(sent_today, 0) + 1 WHERE id = ?', [acc.id]);
         return true;
+      } else {
+        console.log(`[ROUND-ROBIN] No active database SMTP accounts with capacity found.`);
       }
     } catch (dbErr) {
-      console.error('[ROUND-ROBIN] SMTP DB Dispatch failed, trying backup env config...', dbErr);
+      console.error('[ROUND-ROBIN] SMTP DB Dispatch failed with error:', dbErr);
     }
 
     // 2. Fallback to .env SMTP settings
     try {
-      const fallbackUser = process.env.SMTP_USER;
-      const fallbackPass = process.env.SMTP_PASS;
+      const fallbackUser = process.env.EMAIL_USER || process.env.SMTP_USER;
+      const fallbackPass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
       const fallbackHost = process.env.SMTP_HOST;
       const fallbackPort = parseInt(process.env.SMTP_PORT || '465', 10);
       const fallbackSecure = process.env.SMTP_SECURE === 'true' || fallbackPort === 465;
 
       if (fallbackUser && fallbackPass && fallbackHost) {
         console.log(`[SMTP-BACKUP] Using backup SMTP: ${fallbackUser}`);
-        const transporter = nodemailer.createTransport({
+        
+        const smtpConfig = {
           host: fallbackHost,
           port: fallbackPort,
           secure: fallbackSecure,
@@ -592,7 +602,13 @@ async function sendOtpDispatch(contact, otpCode) {
             user: fallbackUser,
             pass: fallbackPass
           }
-        });
+        };
+
+        if (fallbackHost.toLowerCase().includes('gmail.com')) {
+          smtpConfig.service = 'gmail';
+        }
+
+        const transporter = nodemailer.createTransport(smtpConfig);
 
         await transporter.sendMail({
           from: fallbackUser,
@@ -601,9 +617,11 @@ async function sendOtpDispatch(contact, otpCode) {
           text: `Your Paychek verification code is: ${otpCode}. It is valid for 5 minutes.`
         });
         return true;
+      } else {
+        console.warn(`[SMTP-BACKUP] Backup SMTP environment variables (EMAIL_USER/SMTP_USER, EMAIL_PASS/SMTP_PASS, SMTP_HOST) are incomplete.`);
       }
     } catch (envErr) {
-      console.error('[SMTP-BACKUP] Backup SMTP Dispatch failed:', envErr);
+      console.error('[SMTP-BACKUP] Backup SMTP Dispatch failed with error:', envErr);
     }
 
     return false;
@@ -644,9 +662,11 @@ async function sendOtpDispatch(contact, otpCode) {
         } else {
           console.error(`[SMS-GATEWAY] HTTP dispatch failed with status: ${res.status}`);
         }
+      } else {
+        console.warn(`[SMS-GATEWAY] No active SMS Gateway config found in sms_settings.`);
       }
     } catch (smsErr) {
-      console.error('[SMS-GATEWAY] Dispatch failed:', smsErr);
+      console.error('[SMS-GATEWAY] Dispatch failed with error:', smsErr);
     }
     
     return false;
