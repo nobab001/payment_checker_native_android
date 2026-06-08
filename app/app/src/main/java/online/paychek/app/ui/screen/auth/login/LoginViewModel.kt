@@ -132,15 +132,19 @@ class LoginViewModel : ViewModel() {
                             // ── ✅ HTTP 200: body check ───────────────────────
                             trialResponse.isSuccessful -> {
                                 val body = trialResponse.body()
-                                if (body != null && (!body.trialAllowed || body.isLocked)) {
-                                    _uiState.update {
-                                        it.copy(
-                                            isLoading              = false,
-                                            showRegisterDialog     = false,
-                                            showTrialExpiredDialog = true
-                                        )
+                                if (body != null) {
+                                    if (body.success == true && body.abused == false) {
+                                        // clean device → proceed to step 1
+                                    } else if (!body.trialAllowed || body.isLocked || body.abused == true) {
+                                        _uiState.update {
+                                            it.copy(
+                                                isLoading              = false,
+                                                showRegisterDialog     = false,
+                                                showTrialExpiredDialog = true
+                                            )
+                                        }
+                                        return@launch
                                     }
-                                    return@launch
                                 }
                                 // trialAllowed = true → proceed
                             }
@@ -346,7 +350,9 @@ class LoginViewModel : ViewModel() {
 
                 if (trialResponse.isSuccessful && trialResponse.body() != null) {
                     val trialData = trialResponse.body()!!
-                    if (!trialData.trialAllowed || trialData.isLocked) {
+                    if (trialData.success == true && trialData.abused == false) {
+                        // clean device → proceed
+                    } else if (!trialData.trialAllowed || trialData.isLocked || trialData.abused == true) {
                         _uiState.update {
                             it.copy(
                                 isLoading = false,

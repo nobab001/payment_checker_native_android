@@ -71,7 +71,10 @@ data class CheckDeviceTrialRequest(
 data class CheckDeviceTrialResponse(
     val trialAllowed: Boolean,
     val isLocked: Boolean,
-    val lockReason: String?
+    val lockReason: String?,
+    val success: Boolean? = null,
+    val abused: Boolean? = null,
+    val message: String? = null
 )
 
 // Simplified DTO wrappers to decouple API from Database/Domain layer if needed
