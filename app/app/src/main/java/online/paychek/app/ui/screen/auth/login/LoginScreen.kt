@@ -74,7 +74,7 @@ fun LoginScreen(
             onDismissRequest = { viewModel.dismissRegisterDialog() },
             title = {
                 Text(
-                    text = "অ্যাকাউন্ট পাওয়া যায়নি",
+                    text = "অ্যাকাউন্ট খুঁজে পাওয়া যায়নি",
                     fontWeight = FontWeight.Bold,
                     color = RoyalIndigo,
                     fontSize = 18.sp
@@ -82,36 +82,42 @@ fun LoginScreen(
             },
             text = {
                 Text(
-                    text = "আপনার মোবাইল নম্বর বা ইমেইল ঠিকানাটি নিবন্ধিত নেই। আপনি কি নতুন একটি ট্রায়াল অ্যাকাউন্ট তৈরি করতে চান?",
+                    text = "আপনার প্রদানকৃত কন্টাক্ট নম্বর বা ইমেইল ঠিকানাটি আমাদের সিস্টেমে নিবন্ধিত নেই। আপনি কি এই নম্বর/ইমেইল ব্যবহার করে একটি নতুন অ্যাকাউন্ট তৈরি করতে চান?",
                     color = TextSecondary,
                     fontSize = 14.sp,
                     lineHeight = 20.sp
                 )
             },
             confirmButton = {
-                Button(
-                    onClick = { viewModel.proceedToRegister(context) },
-                    colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
-                    shape = RoundedCornerShape(8.dp)
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        text = "নতুন অ্যাকাউন্ট তৈরি করুন",
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { viewModel.dismissRegisterDialog() }
-                ) {
-                    Text(
-                        text = "বাতিল করুন",
-                        color = TextSecondary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Button(
+                        onClick = { viewModel.proceedToRegister(context) },
+                        colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "নতুন অ্যাকাউন্ট তৈরি করুন",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    TextButton(
+                        onClick = { viewModel.dismissRegisterDialog() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "বাতিল করুন",
+                            color = TextSecondary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             },
             shape = RoundedCornerShape(16.dp),
