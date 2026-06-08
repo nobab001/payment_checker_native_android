@@ -79,12 +79,12 @@ fun LoginScreen(
                 color = Color.White,
                 tonalElevation = 6.dp,
                 modifier = Modifier
-                    .width(300.dp)
+                    .width(270.dp)
                     .wrapContentHeight()
             ) {
                 Column(
                     modifier = Modifier
-                        .padding(24.dp)
+                        .padding(horizontal = 16.dp, vertical = 24.dp)
                         .fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
@@ -112,7 +112,7 @@ fun LoginScreen(
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         TextButton(
                             onClick = { viewModel.dismissRegisterDialog() }
