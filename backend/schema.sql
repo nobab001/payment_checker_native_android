@@ -318,6 +318,7 @@ ON DUPLICATE KEY UPDATE `config_value` = VALUES(`config_value`);
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS `sms_settings` (
   `id`                 INT          NOT NULL AUTO_INCREMENT,
+  `provider_name`      VARCHAR(128) DEFAULT NULL COMMENT 'Human-readable label e.g. "Green Web SMS"',
   `gateway_url`        VARCHAR(512) NOT NULL COMMENT 'Gateway base URL with placeholders',
   `http_method`        VARCHAR(10)  NOT NULL DEFAULT 'GET',
   `post_body_template` TEXT         DEFAULT NULL,
@@ -343,6 +344,7 @@ CREATE TABLE IF NOT EXISTS `email_accounts` (
   `secure`             TINYINT(1)   NOT NULL DEFAULT 1 COMMENT '1 = SSL, 0 = TLS',
   `daily_limit`        INT          NOT NULL DEFAULT 500,
   `sent_today`         INT          NOT NULL DEFAULT 0,
+  `last_reset_at`      TIMESTAMP    NULL DEFAULT NULL COMMENT 'Last time sent_today was reset to 0',
   `is_active`          TINYINT(1)   NOT NULL DEFAULT 1,
   `created_at`         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
