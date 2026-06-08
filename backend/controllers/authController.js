@@ -9,10 +9,13 @@ const TRIAL_DEFAULT_DAYS = parseInt(process.env.TRIAL_DEFAULT_DAYS || '7', 10);
 /**
  * 1. POST /api/check-contact
  * Checks if a contact (phone or email) is registered.
+ * ⚠️  SECURITY: Device-binding gatekeeper runs FIRST.
+ *     Even if the contact is not found, a bound device gets
+ *     TRIAL_EXPIRED_FOR_DEVICE — never a plain { exists: false }.
  */
 async function checkContact(req, res) {
   try {
-    const { contact } = req.body;
+    const { contact, deviceId, androidId, hardwareFingerprint, simSlotIds } = req.body;
     if (!contact) {
       return res.status(400).json({ error: 'Contact field is required' });
     }
@@ -22,6 +25,26 @@ async function checkContact(req, res) {
       return res.json({ exists: true });
     }
 
+    // ── DEVICE-BINDING GATEKEEPER (সবার আগে) ─────────────────────────────
+    // deviceId পাঠালেই এই চেকটি রান হবে। যদি ডিভাইসটি বাউন্ড থাকে,
+    // তাহলে contact DB-তে থাকুক বা না থাকুক — সরাসরি 403 ফেরত দেব।
+    if (deviceId) {
+      const { abused, userId: abuseUserId } = await isTrialAbused(
+        deviceId, androidId, hardwareFingerprint, simSlotIds
+      );
+      if (abused) {
+        const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
+        return res.status(403).json({
+          success: false,
+          action:  'TRIAL_EXPIRED_FOR_DEVICE',
+          message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।',
+          boundPhones,
+          boundEmails
+        });
+      }
+    }
+
+    // ── Contact DB Lookup ──────────────────────────────────────────────────
     const users = await query(
       'SELECT id FROM users WHERE phone = ? OR email = ? LIMIT 1',
       [cleanedContact, cleanedContact]

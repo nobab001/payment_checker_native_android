@@ -82,38 +82,121 @@ class LoginViewModel : ViewModel() {
             return
         }
 
-        val deviceId = DeviceIdHelper.getHashedAndroidId(context)
+        val deviceId          = DeviceIdHelper.getHashedAndroidId(context)
+        val fingerprint       = DeviceIdHelper.getHashedFingerprint()
+        val androidId         = DeviceIdHelper.getAndroidId(context)
+        val hardwareFingerprint = DeviceIdHelper.getBuildFingerprint()
+        val simSlotIds        = DeviceIdHelper.getSimSlotIds(context)
 
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
         viewModelScope.launch {
             try {
-                // 1. Check contact existence
-                val checkResponse = apiService.checkContact(CheckContactRequest(contact))
+                // ══════════════════════════════════════════════════════════
+                // STEP 0 — DEVICE-BINDING GATEKEEPER (সবার আগে চলবে)
+                // কন্টাক্ট চেক বা ডায়ালগ দেখানোর আগে এই গেট পার করতে হবে।
+                // ══════════════════════════════════════════════════════════
+                if (!isAdminBypass) {
+                    val trialResponse = apiService.checkDeviceTrial(
+                        CheckDeviceTrialRequest(
+                            deviceId            = deviceId,
+                            fingerprint         = fingerprint,
+                            androidId           = androidId,
+                            hardwareFingerprint = hardwareFingerprint,
+                            simSlotIds          = simSlotIds
+                        )
+                    )
+
+                    if (trialResponse.code() == 403) {
+                        // ডিভাইস বাউন্ড — DEVICE_BOUND / TRIAL_EXPIRED_FOR_DEVICE
+                        val errorBody = trialResponse.errorBody()?.string()
+                        val (phones, emails) = parseBoundCredentials(errorBody)
+                        _uiState.update {
+                            it.copy(
+                                isLoading            = false,
+                                showRegisterDialog   = false, // "নতুন অ্যাকাউন্ট" ডায়ালগ নিষিদ্ধ
+                                showTrialExpiredDialog = true,
+                                boundPhones          = phones,
+                                boundEmails          = emails
+                            )
+                        }
+                        return@launch // ← সম্পূর্ণ বন্ধ; নিচের কিছুই চলবে না
+                    }
+
+                    if (!trialResponse.isSuccessful) {
+                        // সার্ভার কোনো কারণে রেসপন্ড করেনি — নিরাপদ পথ: ব্লক করো
+                        _uiState.update {
+                            it.copy(
+                                isLoading    = false,
+                                errorMessage = "ডিভাইস যাচাই করা সম্ভব হয়নি। অনুগ্রহ করে আবার চেষ্টা করুন।"
+                            )
+                        }
+                        return@launch
+                    }
+
+                    val trialBody = trialResponse.body()
+                    if (trialBody != null && (!trialBody.trialAllowed || trialBody.isLocked)) {
+                        _uiState.update {
+                            it.copy(
+                                isLoading              = false,
+                                showRegisterDialog     = false,
+                                showTrialExpiredDialog = true
+                            )
+                        }
+                        return@launch
+                    }
+                }
+                // ── ডিভাইস ক্লিন — পরবর্তী ধাপে যাওয়া যাবে ──────────────
+
+                // STEP 1 — কন্টাক্ট ডাটাবেজে আছে কি না চেক (Backend Double-Check সহ)
+                val checkResponse = apiService.checkContact(
+                    CheckContactRequest(
+                        contact             = contact,
+                        deviceId            = deviceId,
+                        fingerprint         = fingerprint,
+                        androidId           = androidId,
+                        hardwareFingerprint = hardwareFingerprint,
+                        simSlotIds          = simSlotIds
+                    )
+                )
                 if (checkResponse.isSuccessful && checkResponse.body() != null) {
                     val exists = checkResponse.body()!!.exists
                     _uiState.update { it.copy(isNewUser = !exists) }
 
                     if (!exists) {
-                        // User does not exist (New User / Signup flow) -> Show custom register dialog
+                        // নতুন ইউজার → "নতুন অ্যাকাউন্ট তৈরি করুন" ডায়ালগ
                         _uiState.update {
                             it.copy(
-                                isLoading = false,
+                                isLoading          = false,
                                 showRegisterDialog = true
                             )
                         }
                     } else {
-                        // User exists (Login flow)
+                        // পুরনো ইউজার → OTP পাঠাও
                         sendOtpApi(contact, deviceId, isNew = false)
+                    }
+                } else if (checkResponse.code() == 403) {
+                    // Backend double-check: ডিভাইস বাউন্ড থাকলে এখানেও ব্লক
+                    val errorBody = checkResponse.errorBody()?.string()
+                    val (phones, emails) = parseBoundCredentials(errorBody)
+                    _uiState.update {
+                        it.copy(
+                            isLoading              = false,
+                            showRegisterDialog     = false, // "নতুন অ্যাকাউন্ট" ডায়ালগ নিষিদ্ধ
+                            showTrialExpiredDialog = true,
+                            boundPhones            = phones,
+                            boundEmails            = emails
+                        )
                     }
                 } else {
                     _uiState.update {
                         it.copy(isLoading = false, errorMessage = "সার্ভার রেসপন্স করছে না। অনুগ্রহ করে পরে চেষ্টা করুন।")
                     }
                 }
+
             } catch (e: Exception) {
                 _uiState.update {
-                    it.copy(isLoading = false, errorMessage = "নেটওয়ার্ক ত্রুটি: ${e.localizedMessage ?: "সংযোগ ব্যর্থ"}")
+                    it.copy(isLoading = false, errorMessage = "নেটওয়ার্ক ত্রুটি: ${e.localizedMessage ?: "সংযোগ ব্যর্থ"}")
                 }
             }
         }

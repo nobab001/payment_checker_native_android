@@ -3,7 +3,13 @@ package online.paychek.app.data.remote.dto
 import online.paychek.app.domain.model.DeviceStatus
 
 data class CheckContactRequest(
-    val contact: String
+    val contact: String,
+    // Device hardware signature — sent for server-side device-binding gatekeeper
+    val deviceId: String? = null,
+    val fingerprint: String? = null,
+    val androidId: String? = null,
+    val hardwareFingerprint: String? = null,
+    val simSlotIds: String? = null
 )
 
 data class CheckContactResponse(
