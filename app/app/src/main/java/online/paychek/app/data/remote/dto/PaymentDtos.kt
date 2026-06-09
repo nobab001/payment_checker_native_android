@@ -109,6 +109,29 @@ data class DashboardStats(
     @SerializedName("active_devices")
     val activeDevices: Int,             // সক্রিয় ডিভাইস সংখ্যা
 
+    @SerializedName("wallet_credits")
+    val walletCredits: Double = 0.0,    // ওয়ালেট ব্যালেন্স (নেগেটিভ হতে পারে)
+
     @SerializedName("recent_transactions")
     val recentTransactions: List<TransactionItem>  // সর্বশেষ ৫টি ট্রানজেকশন
+)
+
+data class RechargeRequest(
+    val amount: Double
+)
+
+data class RechargeResponse(
+    val success: Boolean,
+    val message: String?,
+    @SerializedName("wallet_credits")
+    val walletCredits: Double?
+)
+
+data class FcmTokenRequest(
+    val token: String?
+)
+
+data class FcmTokenResponse(
+    val success: Boolean,
+    val message: String?
 )

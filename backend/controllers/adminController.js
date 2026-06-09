@@ -302,7 +302,7 @@ async function listUsers(req, res) {
   try {
     // 1. Fetch all users
     const users = await query(
-      `SELECT id, name, phone, email, role, balance, blocked, profile_complete, created_at FROM users`
+      `SELECT id, name, phone, email, role, balance, wallet_credits, custom_daily_rate, blocked, profile_complete, created_at FROM users`
     );
 
     // 2. Fetch all registered devices
@@ -425,6 +425,126 @@ async function updateOtpFormat(req, res) {
   }
 }
 
+// 7. Resource Consumption Negative-Billing functions
+const crypto = require('crypto');
+
+async function addSite(req, res) {
+  try {
+    const userId = req.user.userId;
+    const { site_name, site_url } = req.body;
+
+    if (!site_name || !site_url) {
+      return res.status(400).json({ success: false, error: 'Site name and Site URL are required' });
+    }
+
+    // Fetch site fee from global_billing_settings
+    const feeSettings = await query(
+      "SELECT setting_value FROM global_billing_settings WHERE setting_key = 'one_time_site_fee' LIMIT 1"
+    );
+    const siteFee = feeSettings.length > 0 ? parseFloat(feeSettings[0].setting_value) : 10.00;
+
+    // Deduct from user wallet
+    await query(
+      "UPDATE users SET wallet_credits = wallet_credits - ? WHERE id = ?",
+      [siteFee, userId]
+    );
+
+    // Generate keys
+    const apiKey = 'pk_' + crypto.randomBytes(16).toString('hex');
+    const apiSecret = 'sk_' + crypto.randomBytes(24).toString('hex');
+
+    // Insert into gateway_layouts
+    const result = await query(
+      `INSERT INTO gateway_layouts 
+        (user_id, site_name, site_url, api_key, api_secret, layout_config, is_active) 
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [userId, site_name, site_url, apiKey, apiSecret, JSON.stringify({}), 1]
+    );
+
+    // Retrieve updated credits
+    const users = await query('SELECT wallet_credits FROM users WHERE id = ? LIMIT 1', [userId]);
+    const updatedCredits = parseFloat(users[0].wallet_credits || '0.00');
+
+    console.log(`[Billing] User ${userId} registered site ${site_name}. Deducted ${siteFee}. Remaining: ${updatedCredits}`);
+
+    return res.json({
+      success: true,
+      message: 'ওয়েবসাইট সফলভাবে যুক্ত হয়েছে।',
+      apiKey,
+      apiSecret,
+      wallet_credits: updatedCredits,
+      site: {
+        id: result.insertId,
+        user_id: userId,
+        site_name,
+        site_url,
+        is_active: 1
+      }
+    });
+
+  } catch (error) {
+    console.error('[Billing] addSite error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function getBillingSettings(req, res) {
+  try {
+    const settings = await query('SELECT * FROM global_billing_settings');
+    return res.json({ success: true, settings });
+  } catch (err) {
+    console.error('[Admin Billing] getBillingSettings error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+async function updateBillingSettings(req, res) {
+  try {
+    const { settings } = req.body;
+    if (!settings || !Array.isArray(settings)) {
+      return res.status(400).json({ error: 'Invalid settings format. Array required.' });
+    }
+
+    for (const setting of settings) {
+      await query(
+        'INSERT INTO global_billing_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?',
+        [setting.setting_key, String(setting.setting_value), String(setting.setting_value)]
+      );
+    }
+
+    return res.json({ success: true, message: 'Global billing settings updated successfully.' });
+  } catch (err) {
+    console.error('[Admin Billing] updateBillingSettings error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+async function updateUserCustomDailyRate(req, res) {
+  try {
+    const { id } = req.params;
+    const { custom_daily_rate } = req.body;
+
+    let rateValue = null;
+    if (custom_daily_rate !== undefined && custom_daily_rate !== null) {
+      rateValue = parseFloat(custom_daily_rate);
+      if (isNaN(rateValue) || rateValue < 0) {
+        return res.status(400).json({ error: 'Invalid custom daily rate value.' });
+      }
+    }
+
+    await query('UPDATE users SET custom_daily_rate = ? WHERE id = ?', [rateValue, id]);
+
+    return res.json({
+      success: true,
+      message: 'ব্যবহারকারীর কাস্টম ডেইলি রেট সফলভাবে আপডেট করা হয়েছে।',
+      custom_daily_rate: rateValue
+    });
+  } catch (err) {
+    console.error('[Admin Billing] updateUserCustomDailyRate error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   verifyAdmin,
   getConfigs,
@@ -446,5 +566,9 @@ module.exports = {
   toggleUserBlock,
   updateDeviceTrial,
   getOtpFormat,
-  updateOtpFormat
+  updateOtpFormat,
+  addSite,
+  getBillingSettings,
+  updateBillingSettings,
+  updateUserCustomDailyRate
 };

@@ -101,6 +101,8 @@ data class AdminUserDto(
     @SerializedName("email") val email: String?,
     @SerializedName("role") val role: String,
     @SerializedName("balance") val balance: Double,
+    @SerializedName("wallet_credits") val walletCredits: Double = 0.0,
+    @SerializedName("custom_daily_rate") val customDailyRate: Double? = null,
     @SerializedName("blocked") val blocked: Boolean,
     @SerializedName("profile_complete") val profileComplete: Boolean,
     @SerializedName("created_at") val createdAt: String,
@@ -129,4 +131,24 @@ data class OtpFormatResponse(
 
 data class UpdateOtpFormatRequest(
     @SerializedName("template") val template: String
+)
+
+data class BillingSettingDto(
+    @SerializedName("id") val id: Int? = null,
+    @SerializedName("setting_key") val settingKey: String,
+    @SerializedName("setting_value") val settingValue: String,
+    @SerializedName("description") val description: String? = null
+)
+
+data class BillingSettingsResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("settings") val settings: List<BillingSettingDto>
+)
+
+data class UpdateBillingSettingsRequest(
+    @SerializedName("settings") val settings: List<BillingSettingDto>
+)
+
+data class UpdateCustomRateRequest(
+    @SerializedName("custom_daily_rate") val customDailyRate: Double?
 )

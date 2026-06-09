@@ -159,4 +159,19 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
     }
+
+    fun rechargeWallet(amount: Double, onResult: (Result<Double>) -> Unit) {
+        viewModelScope.launch {
+            val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
+            if (token.isEmpty()) {
+                onResult(Result.failure(Exception("লগইন সেশন পাওয়া যায়নি।")))
+                return@launch
+            }
+            val result = repository.rechargeWallet(token, amount)
+            result.onSuccess {
+                loadDashboardStats()
+            }
+            onResult(result)
+        }
+    }
 }

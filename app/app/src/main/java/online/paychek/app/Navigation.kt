@@ -14,6 +14,7 @@ import online.paychek.app.ui.screen.auth.signup.SignupScreen
 import online.paychek.app.ui.screen.home.HomeScreen
 import online.paychek.app.ui.screen.apicenter.CheckoutDesignerScreen
 import online.paychek.app.ui.screen.admin.AdminDashboardScreen
+import online.paychek.app.ui.screen.admin.BillingConfigScreen
 import online.paychek.app.ui.screen.profile.ProfileSettingsScreen
 import online.paychek.app.utils.SecurePreferences
 
@@ -113,6 +114,13 @@ fun MainNavigation() {
                         SecurePreferences.remove(context, "pcu_contact")
                         backStack.add(NavKey.Login)
                     }
+                )
+            }
+
+            entry<NavKey.AdminBillingConfig> {
+                BillingConfigScreen(
+                    viewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+                    modifier = Modifier.fillMaxSize()
                 )
             }
         },

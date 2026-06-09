@@ -1,9 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const admin = require('../controllers/adminController');
+const authenticateToken = require('../middleware/auth');
+
+// Website creation route for standard users (uses standard JWT authentication)
+router.post('/sites/add', authenticateToken, admin.addSite);
 
 // Force verifyAdmin middleware on all subroutes
 router.use(admin.verifyAdmin);
+
+// Admin Billing configurations
+router.get('/billing-settings', admin.getBillingSettings);
+router.post('/billing-settings', admin.updateBillingSettings);
+router.post('/users/:id/custom-rate', admin.updateUserCustomDailyRate);
 
 // 1. App Configs (global_config)
 router.get('/config', admin.getConfigs);

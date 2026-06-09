@@ -210,6 +210,13 @@ async function getDashboardStats(req, res) {
       [userId]
     );
 
+    // ── ওয়ালেট ব্যালেন্স (Wallet Credits) ──────────────────────────────────
+    const [userRow] = await query(
+      `SELECT wallet_credits FROM users WHERE id = ? LIMIT 1`,
+      [userId]
+    );
+    const walletCredits = userRow ? parseFloat(userRow.wallet_credits || '0.00') : 0.00;
+
     // ── সর্বশেষ ৫টি ট্রানজেকশন ─────────────────────────────────────────────
     const recentRows = await query(
       `SELECT id, provider_tag, amount, trx_id, sender_number,
@@ -221,7 +228,7 @@ async function getDashboardStats(req, res) {
       [userId]
     );
 
-    console.log(`[STATS] Dashboard loaded for user: ${userId} | Today: ${todayDate}`);
+    console.log(`[STATS] Dashboard loaded for user: ${userId} | Today: ${todayDate} | Wallet: ৳${walletCredits}`);
 
     return res.json({
       success: true,
@@ -233,6 +240,7 @@ async function getDashboardStats(req, res) {
         unused_count:        totalRow.unused_count        || 0,
         soldout_count:       totalRow.soldout_count       || 0,
         active_devices:      deviceRow.active_devices     || 0,
+        wallet_credits:      walletCredits,
         recent_transactions: recentRows
       }
     });

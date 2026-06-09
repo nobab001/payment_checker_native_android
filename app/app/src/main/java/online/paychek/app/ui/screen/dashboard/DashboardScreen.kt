@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalContext
 import online.paychek.app.data.remote.dto.DashboardStats
 import online.paychek.app.data.remote.dto.TransactionItem
 import online.paychek.app.ui.theme.*
@@ -70,6 +71,27 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = viewModel()
 ) {
     val screenState by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var showRechargeDialog by remember { mutableStateOf(false) }
+
+    if (showRechargeDialog) {
+        RechargeDialog(
+            onDismiss = { showRechargeDialog = false },
+            onConfirm = { amount ->
+                showRechargeDialog = false
+                viewModel.rechargeWallet(amount) { result ->
+                    result.fold(
+                        onSuccess = {
+                            android.widget.Toast.makeText(context, "রিচার্জ সফলভাবে সম্পন্ন হয়েছে।", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        onFailure = { error ->
+                            android.widget.Toast.makeText(context, error.message ?: "রিচার্জ ব্যর্থ হয়েছে।", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    )
+                }
+            }
+        )
+    }
 
     PullToRefreshBox(
         isRefreshing = screenState.isRefreshing,
@@ -87,6 +109,28 @@ fun DashboardScreen(
             // ─── ১. হেডার গ্রেডিয়েন্ট কার্ড ───────────────────────────────
             item {
                 HeaderWelcomeCard(userName = screenState.userName)
+            }
+
+            // ─── Warning Banner (for negative balance) ───────────────────
+            val successStats = (screenState.uiState as? DashboardUiState.Success)?.stats
+            if (successStats != null && successStats.walletCredits < 0.0) {
+                item {
+                    WarningBanner(
+                        message = "আপনার অ্যাকাউন্টে বকেয়া বিল রয়েছে। ওটিপি এবং ট্র্যাকিং সচল রাখতে দ্রুত রিচার্জ করুন।",
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
+            }
+
+            // ─── Wallet Balance Card ──────────────────────────────────────
+            if (successStats != null) {
+                item {
+                    WalletBalanceCard(
+                        balance = successStats.walletCredits,
+                        onRechargeClick = { showRechargeDialog = true },
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
             }
 
             // ─── ২. SMS Monitor Toggle কার্ড ────────────────────────────────
@@ -681,4 +725,190 @@ private fun formatTimestamp(raw: String): String {
     } catch (e: Exception) {
         raw.take(16)
     }
+}
+
+@Composable
+private fun WalletBalanceCard(
+    balance: Double,
+    onRechargeClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isNegative = balance < 0.0
+    val statusColor = if (isNegative) Color(0xFFEF4444) else AccentGreen
+    val statusLabel = if (isNegative) "বকেয়া বিল" else "চলতি ব্যালেন্স"
+    val fmt = DecimalFormat("#,##0.00")
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = DashCard),
+        shape = RoundedCornerShape(16.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(statusColor)
+                    )
+                    Text(
+                        text = statusLabel,
+                        color = TextMuted,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                Text(
+                    text = "৳ ${fmt.format(balance)}",
+                    color = statusColor,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(
+                    text = "ইউনিক ওয়ালেট আইডেন্টিফায়ার",
+                    color = TextMuted.copy(alpha = 0.6f),
+                    fontSize = 10.sp
+                )
+            }
+
+            Button(
+                onClick = onRechargeClick,
+                colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CreditCard,
+                    contentDescription = "Recharge",
+                    tint = Color(0xFF0F172A),
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "রিচার্জ",
+                    color = Color(0xFF0F172A),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WarningBanner(
+    message: String,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF7F1D1D)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = "Alert",
+                tint = Color(0xFFFCA5A5),
+                modifier = Modifier.size(20.dp)
+            )
+            Text(
+                text = message,
+                color = Color(0xFFFEE2E2),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RechargeDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (Double) -> Unit
+) {
+    var amountText by remember { mutableStateOf("") }
+    var errorText by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = DashCard,
+        title = {
+            Text(
+                text = "ওয়ালেট রিচার্জ",
+                color = TextWhite,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "রিচার্জ করার জন্য টাকার পরিমাণ লিখুন (সর্বনিম্ন ৫০ টাকা):",
+                    color = TextMuted,
+                    fontSize = 13.sp
+                )
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = {
+                        amountText = it
+                        errorText = null
+                    },
+                    placeholder = { Text("৳ পরিমাণ লিখুন", color = TextMuted.copy(alpha = 0.5f)) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = AccentCyan,
+                        unfocusedBorderColor = ToggleOff,
+                        focusedTextColor = TextWhite,
+                        unfocusedTextColor = TextWhite
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                errorText?.let {
+                    Text(
+                        text = it,
+                        color = Color(0xFFEF4444),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val amt = amountText.toDoubleOrNull()
+                    if (amt == null || amt <= 0.0) {
+                        errorText = "সঠিক পরিমাণ প্রবেশ করান।"
+                    } else if (amt < 50.0) {
+                        errorText = "সর্বনিম্ন রিচার্জ ৫০ টাকা।"
+                    } else {
+                        onConfirm(amt)
+                    }
+                }
+            ) {
+                Text("নিশ্চিত করুন", color = AccentCyan, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("বাতিল", color = TextMuted)
+            }
+        }
+    )
 }

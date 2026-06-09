@@ -22,4 +22,5 @@ sealed interface NavKey : androidx.navigation3.runtime.NavKey {
     @Serializable data object Sync       : NavKey
     @Serializable data object ApiCenter  : NavKey
     @Serializable data object AdminDashboard : NavKey
+    @Serializable data object AdminBillingConfig : NavKey
 }

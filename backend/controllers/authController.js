@@ -369,9 +369,23 @@ async function verifyOtp(req, res) {
     let user = await findUserByContact(cleanedContact);
     if (!user) {
       const isEmail = cleanedContact.includes('@');
+      
+      // Read default signup bonus
+      let signupBonus = 30.00;
+      try {
+        const bonusSettings = await query(
+          "SELECT setting_value FROM global_billing_settings WHERE setting_key = 'default_signup_bonus' LIMIT 1"
+        );
+        if (bonusSettings.length > 0) {
+          signupBonus = parseFloat(bonusSettings[0].setting_value);
+        }
+      } catch (err) {
+        console.error('[Billing] Failed to read default_signup_bonus:', err);
+      }
+
       const insertResult = await query(
-        'INSERT INTO users (name, phone, email, role, profile_complete) VALUES (?, ?, ?, ?, ?)',
-        ['', isEmail ? null : cleanedContact, isEmail ? cleanedContact : null, 'user', 0]
+        'INSERT INTO users (name, phone, email, role, profile_complete, wallet_credits) VALUES (?, ?, ?, ?, ?, ?)',
+        ['', isEmail ? null : cleanedContact, isEmail ? cleanedContact : null, 'user', 0, signupBonus]
       );
 
       const newUserId = insertResult.insertId;
@@ -434,6 +448,23 @@ async function verifyOtp(req, res) {
           0
         ]
       );
+
+      // Deduct one-time child device fee if this is not the parent device
+      if (!isParent) {
+        try {
+          const feeSettings = await query(
+            "SELECT setting_value FROM global_billing_settings WHERE setting_key = 'one_time_device_fee' LIMIT 1"
+          );
+          const deviceFee = feeSettings.length > 0 ? parseFloat(feeSettings[0].setting_value) : 5.00;
+          await query(
+            "UPDATE users SET wallet_credits = wallet_credits - ? WHERE id = ?",
+            [deviceFee, user.id]
+          );
+          console.log(`[Billing] Deducted child device fee: ${deviceFee} from user: ${user.id}`);
+        } catch (billingErr) {
+          console.error('[Billing] Failed to deduct device fee:', billingErr);
+        }
+      }
 
       // Device trial logs insertion removed from verifyOtp. Will be recorded on completeProfile.
 

@@ -11,6 +11,7 @@ const gatewayRoutes     = require('./routes/gatewayRoutes');
 const adminRoutes       = require('./routes/adminRoutes');
 const credentialRoutes  = require('./routes/credentialRoutes');
 const pinRoutes         = require('./routes/pinRoutes');
+const billingRoutes     = require('./routes/billingRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -43,6 +44,7 @@ app.use('/api', gatewayRoutes);
 app.use('/api', credentialRoutes);
 app.use('/api', pinRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/v1', billingRoutes);
 
 // General 404 Route handler
 app.use((req, res) => {
@@ -62,6 +64,46 @@ cron.schedule('0 0 * * *', async () => {
     console.log('[CRON] Reset daily email send limits successfully.');
   } catch (err) {
     console.error('[CRON] Error resetting daily email limits:', err);
+  }
+});
+
+// 12:01 AM Cron: Deduct daily maintenance rates (global or custom user rate) from active users
+cron.schedule('1 0 * * *', async () => {
+  try {
+    // Fetch global daily rate first
+    const defaultRateSettings = await query(
+      "SELECT setting_value FROM global_billing_settings WHERE setting_key = 'daily_maintenance_rate' LIMIT 1"
+    );
+    const globalDailyRate = defaultRateSettings.length > 0 ? parseFloat(defaultRateSettings[0].setting_value) : 0.50;
+
+    // Deduct custom_daily_rate if not null, otherwise globalDailyRate
+    await query(`
+      UPDATE users 
+      SET wallet_credits = wallet_credits - COALESCE(custom_daily_rate, ?) 
+      WHERE blocked = 0 AND profile_complete = 1
+    `, [globalDailyRate]);
+
+    console.log('[CRON] Deducted daily maintenance rates for active users.');
+  } catch (err) {
+    console.error('[CRON] Error in midnight maintenance deduction:', err);
+  }
+});
+
+// 11:00 AM Cron: Notify users with credits < ৳10 using Mock Firebase push alerts
+cron.schedule('0 11 * * *', async () => {
+  try {
+    const lowBalanceUsers = await query(
+      `SELECT id, name, wallet_credits, fcm_token FROM users 
+       WHERE blocked = 0 AND profile_complete = 1 AND wallet_credits < 10.00 AND fcm_token IS NOT NULL AND fcm_token != ''`
+    );
+
+    for (const u of lowBalanceUsers) {
+      console.log(`[Mock FCM Notification] Sent to user ${u.id} (Token: ${u.fcm_token.substring(0, 15)}...): ` +
+        `"আপনার ওয়ালেট ব্যালেন্স ৳${u.wallet_credits}। ওটিপি এবং ট্র্যাকিং সার্ভিস সচল রাখতে অনুগ্রহ করে রিচার্জ সম্পন্ন করুন।"`);
+    }
+    console.log(`[CRON] Dispatched low balance push alerts to ${lowBalanceUsers.length} users.`);
+  } catch (err) {
+    console.error('[CRON] Error in morning low balance alert:', err);
   }
 });
 
@@ -112,6 +154,50 @@ app.listen(PORT, async () => {
       WHERE email IS NOT NULL AND email != '' AND email NOT IN (SELECT value FROM user_credentials)
     `);
     console.log('[DB] Synced existing users to user_credentials.');
+
+    // Initialize global_billing_settings table
+    await query(`
+      CREATE TABLE IF NOT EXISTS \`global_billing_settings\` (
+        \`id\`           INT          NOT NULL AUTO_INCREMENT,
+        \`setting_key\`   VARCHAR(255) NOT NULL,
+        \`setting_value\` VARCHAR(255) NOT NULL,
+        \`description\`   VARCHAR(255) DEFAULT NULL,
+        PRIMARY KEY (\`id\`),
+        UNIQUE KEY \`uniq_setting_key\` (\`setting_key\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    const defaultSettings = [
+      { key: 'default_signup_bonus', val: '30.00', desc: 'Default signup bonus credits for new users' },
+      { key: 'daily_maintenance_rate', val: '0.50', desc: 'Global daily maintenance cost deducted at midnight' },
+      { key: 'one_time_site_fee', val: '10.00', desc: 'One-time cost to add a website/layout' },
+      { key: 'one_time_device_fee', val: '5.00', desc: 'One-time cost to add a child device' }
+    ];
+
+    for (const setting of defaultSettings) {
+      await query(
+        'INSERT INTO global_billing_settings (setting_key, setting_value, description) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE description = VALUES(description)',
+        [setting.key, setting.val, setting.desc]
+      );
+    }
+    console.log('[DB] global_billing_settings verified and populated.');
+
+    // Add wallet_credits and custom_daily_rate columns to users table if they don't exist
+    const userWalletCol = await query("SHOW COLUMNS FROM `users` LIKE 'wallet_credits'");
+    if (userWalletCol.length === 0) {
+      await query("ALTER TABLE `users` ADD COLUMN `wallet_credits` DECIMAL(10,2) DEFAULT 0.00 AFTER `balance`");
+      console.log('[DB] Added wallet_credits column to users.');
+    }
+    const userCustomRateCol = await query("SHOW COLUMNS FROM `users` LIKE 'custom_daily_rate'");
+    if (userCustomRateCol.length === 0) {
+      await query("ALTER TABLE `users` ADD COLUMN `custom_daily_rate` DECIMAL(10,2) NULL DEFAULT NULL AFTER `wallet_credits`");
+      console.log('[DB] Added custom_daily_rate column to users.');
+    }
+    const userFcmCol = await query("SHOW COLUMNS FROM `users` LIKE 'fcm_token'");
+    if (userFcmCol.length === 0) {
+      await query("ALTER TABLE `users` ADD COLUMN `fcm_token` VARCHAR(512) DEFAULT NULL AFTER `gmail_enabled`");
+      console.log('[DB] Added fcm_token column to users.');
+    }
   } catch (dbErr) {
     console.error('[DB] Failed to initialize database setup:', dbErr);
   }

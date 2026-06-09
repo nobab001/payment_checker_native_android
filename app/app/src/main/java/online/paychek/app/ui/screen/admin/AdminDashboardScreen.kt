@@ -110,6 +110,12 @@ fun AdminDashboardScreen(
                     text = { Text("অ্যাপ সেটিংস", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                     icon = { Icon(Icons.Default.Settings, "Config") }
                 )
+                Tab(
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
+                    text = { Text("বিলিং সেটিংস", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                    icon = { Icon(Icons.Default.CreditCard, "Billing") }
+                )
             }
         },
         modifier = modifier
@@ -144,6 +150,10 @@ fun AdminDashboardScreen(
                     2 -> GlobalSettingsTab(
                         uiState = uiState,
                         onUpdateConfig = { key, valStr -> viewModel.updateConfig(key, valStr) }
+                    )
+                    3 -> BillingConfigScreen(
+                        viewModel = viewModel,
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
             }
@@ -205,6 +215,10 @@ fun AdminDashboardScreen(
             },
             onUpdateTrial = { devId, expires, locked, reason ->
                 viewModel.updateDeviceTrial(devId, expires, locked, reason)
+                showUserDialog = null
+            },
+            onUpdateCustomRate = { customRate ->
+                viewModel.updateUserCustomDailyRate(user.id, customRate)
                 showUserDialog = null
             }
         )
@@ -902,8 +916,11 @@ private fun UserDetailAndTrialDialog(
     user: AdminUserDto,
     onDismiss: () -> Unit,
     onToggleBlock: (Boolean) -> Unit,
-    onUpdateTrial: (Int, String?, Boolean, String?) -> Unit
+    onUpdateTrial: (Int, String?, Boolean, String?) -> Unit,
+    onUpdateCustomRate: (Double?) -> Unit
 ) {
+    var customRateText by remember { mutableStateOf(user.customDailyRate?.toString() ?: "") }
+
     Dialog(onDismissRequest = onDismiss) {
         Card(
             colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -925,7 +942,35 @@ private fun UserDetailAndTrialDialog(
                     Text("ফোন: ${user.phone ?: "None"}")
                     Text("ইমেইল: ${user.email ?: "None"}")
                     Text("রোল: ${user.role}")
-                    Text("ব্যালেন্স: ${user.balance} Tk")
+                    Text("ওয়ালেট ক্রেডিট: ${user.walletCredits} Tk", fontWeight = FontWeight.Bold)
+                    Text("কাস্টম ডেইলি রেট: ${user.customDailyRate ?: "গ্লোবাল রেট প্রজোয্য"}")
+                }
+
+                HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                Text("কাস্টম ডেইলি রেট সেট করুন:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = customRateText,
+                        onValueChange = { customRateText = it },
+                        placeholder = { Text("রেট লিখুন বা খালি রাখুন") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Button(
+                        onClick = {
+                            val rate = customRateText.toDoubleOrNull()
+                            onUpdateCustomRate(rate)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("সেট", color = Color.White)
+                    }
                 }
 
                 HorizontalDivider(color = Color(0xFFE2E8F0))

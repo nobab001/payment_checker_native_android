@@ -108,4 +108,22 @@ interface AdminApiService {
         @Header("Authorization") token: String,
         @Body request: UpdateOtpFormatRequest
     ): Response<AdminGenericResponse>
+
+    @GET("admin/billing-settings")
+    suspend fun getBillingSettings(
+        @Header("Authorization") token: String
+    ): Response<BillingSettingsResponse>
+
+    @POST("admin/billing-settings")
+    suspend fun updateBillingSettings(
+        @Header("Authorization") token: String,
+        @Body request: UpdateBillingSettingsRequest
+    ): Response<AdminGenericResponse>
+
+    @POST("admin/users/{id}/custom-rate")
+    suspend fun updateUserCustomDailyRate(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Body request: UpdateCustomRateRequest
+    ): Response<AdminGenericResponse>
 }
