@@ -40,6 +40,7 @@ fun SignupScreen(
     val uiState by viewModel.uiState.collectAsState()
     val scrollState = rememberScrollState()
     val focusManager = LocalFocusManager.current
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     // Initialize verified credentials from login/OTP
     LaunchedEffect(contact, token) {
@@ -237,7 +238,7 @@ fun SignupScreen(
                 keyboardActions = KeyboardActions(
                     onDone = {
                         focusManager.clearFocus()
-                        viewModel.submitSignup(onSignupComplete)
+                        viewModel.submitSignup(context, onSignupComplete)
                     }
                 ),
                 visualTransformation = PasswordVisualTransformation(),
@@ -266,7 +267,7 @@ fun SignupScreen(
                 Button(
                     onClick = {
                         focusManager.clearFocus()
-                        viewModel.submitSignup(onSignupComplete)
+                        viewModel.submitSignup(context, onSignupComplete)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
                     shape = RoundedCornerShape(12.dp),

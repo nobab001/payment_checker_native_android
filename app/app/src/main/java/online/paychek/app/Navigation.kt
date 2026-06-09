@@ -20,8 +20,30 @@ import online.paychek.app.utils.SecurePreferences
 @Composable
 fun MainNavigation() {
     val context = androidx.compose.ui.platform.LocalContext.current
-    // Start at Login screen by default
-    val backStack = rememberNavBackStack(NavKey.Login)
+    
+    // Dynamically determine the start destination based on saved session state
+    val startDestination = androidx.compose.runtime.remember(context) {
+        val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
+        val profileComplete = SecurePreferences.decrypt(context, "pcu_profile_complete")
+        val contact = SecurePreferences.decrypt(context, "pcu_contact")
+        val role = SecurePreferences.decrypt(context, "pcu_user_role")
+        
+        if (token.isNotEmpty()) {
+            if (profileComplete == "false") {
+                NavKey.Signup(contact, token)
+            } else {
+                if (role == "admin") {
+                    NavKey.AdminDashboard
+                } else {
+                    NavKey.Home
+                }
+            }
+        } else {
+            NavKey.Login
+        }
+    }
+    
+    val backStack = rememberNavBackStack(startDestination)
 
     NavDisplay(
         backStack = backStack,
@@ -34,10 +56,12 @@ fun MainNavigation() {
                     },
                     onNavigateToHome = { token ->
                         SecurePreferences.encrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN, token)
+                        SecurePreferences.encrypt(context, "pcu_profile_complete", "true")
                         backStack.add(NavKey.Home)
                     },
                     onNavigateToAdminDashboard = { token ->
                         SecurePreferences.encrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN, token)
+                        SecurePreferences.encrypt(context, "pcu_profile_complete", "true")
                         backStack.add(NavKey.AdminDashboard)
                     },
                     modifier = Modifier.fillMaxSize()
@@ -50,6 +74,7 @@ fun MainNavigation() {
                     token = key.token,
                     onSignupComplete = {
                         SecurePreferences.encrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN, key.token)
+                        SecurePreferences.encrypt(context, "pcu_profile_complete", "true")
                         backStack.add(NavKey.Home)
                     },
                     modifier = Modifier.fillMaxSize()
@@ -83,6 +108,9 @@ fun MainNavigation() {
                 AdminDashboardScreen(
                     onLogout = {
                         SecurePreferences.remove(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
+                        SecurePreferences.remove(context, "pcu_user_role")
+                        SecurePreferences.remove(context, "pcu_profile_complete")
+                        SecurePreferences.remove(context, "pcu_contact")
                         backStack.add(NavKey.Login)
                     }
                 )

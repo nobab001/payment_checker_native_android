@@ -52,7 +52,12 @@ data class CompleteProfileRequest(
     val name: String,
     val pin: String,
     val phone: String?,
-    val email: String?
+    val email: String?,
+    val deviceId: String? = null,
+    val androidId: String? = null,
+    val hardwareFingerprint: String? = null,
+    val simSlotIds: String? = null,
+    val fingerprint: String? = null
 )
 
 data class CompleteProfileResponse(

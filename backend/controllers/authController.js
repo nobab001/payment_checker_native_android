@@ -39,10 +39,19 @@ async function checkContact(req, res) {
   try {
     const { contact, deviceId, androidId, hardwareFingerprint, simSlotIds } = req.body;
 
+    const cleanedContact = contact ? contact.trim() : '';
+    let targetUserId = null;
+    if (cleanedContact && cleanedContact !== 'admin') {
+      const userRecord = await findUserByContact(cleanedContact);
+      if (userRecord) {
+        targetUserId = userRecord.id;
+      }
+    }
+
     // ── DEVICE-BINDING GATEKEEPER (সবার আগে প্রায়োরিটি) ─────────────────
     if (deviceId) {
       const { abused, userId: abuseUserId } = await isTrialAbused(
-        deviceId, androidId, hardwareFingerprint, simSlotIds
+        deviceId, androidId, hardwareFingerprint, simSlotIds, targetUserId
       );
       if (abused) {
         const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
@@ -70,7 +79,6 @@ async function checkContact(req, res) {
       return res.status(400).json({ error: 'Contact field is required' });
     }
 
-    const cleanedContact = contact.trim();
     if (cleanedContact === 'admin') {
       return res.json({ exists: true });
     }
@@ -93,13 +101,23 @@ async function sendOtp(req, res) {
   try {
     const { contact, deviceId, androidId, hardwareFingerprint, simSlotIds } = req.body;
 
+    const cleanedContact = contact ? contact.trim() : '';
+    let targetUserId = null;
+    if (cleanedContact && cleanedContact !== 'admin') {
+      const userRecord = await findUserByContact(cleanedContact);
+      if (userRecord) {
+        targetUserId = userRecord.id;
+      }
+    }
+
     // ── DEVICE-BINDING GATEKEEPER (সবার আগে প্রায়োরিটি) ─────────────────
     if (deviceId) {
       const { abused, userId: abuseUserId } = await isTrialAbused(
         deviceId,
         androidId,
         hardwareFingerprint,
-        simSlotIds
+        simSlotIds,
+        targetUserId
       );
       if (abused) {
         const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
@@ -117,7 +135,6 @@ async function sendOtp(req, res) {
       return res.status(400).json({ error: 'Contact is required' });
     }
 
-    const cleanedContact = contact.trim();
     if (cleanedContact === 'admin') {
       return res.json({ success: true, message: 'এডমিন ওটিপি বাইপাস সক্রিয়। অনুগ্রহ করে পাসওয়ার্ড দিন।' });
     }
@@ -174,9 +191,18 @@ async function registerSendOtp(req, res) {
   try {
     const { contact, deviceId, androidId, hardwareFingerprint, simSlotIds } = req.body;
 
+    const cleanedContact = contact ? contact.trim() : '';
+    let targetUserId = null;
+    if (cleanedContact) {
+      const userRecord = await findUserByContact(cleanedContact);
+      if (userRecord) {
+        targetUserId = userRecord.id;
+      }
+    }
+
     // ── DEVICE-BINDING GATEKEEPER (সবার আগে প্রায়োরিটি) ─────────────────
     if (deviceId) {
-      const { abused, userId: abuseUserId } = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds);
+      const { abused, userId: abuseUserId } = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds, targetUserId);
       if (abused) {
         const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
         return res.status(403).json({
@@ -193,7 +219,6 @@ async function registerSendOtp(req, res) {
       return res.status(400).json({ error: 'Contact is required' });
     }
 
-    const cleanedContact = contact.trim();
     // Ensure contact is NOT already registered
     const userRecord = await findUserByContact(cleanedContact);
 
@@ -257,8 +282,17 @@ async function verifyOtp(req, res) {
       return res.status(400).json({ error: 'Missing required deviceId field' });
     }
 
+    const cleanedContact = contact ? contact.trim() : '';
+    let targetUserId = null;
+    if (cleanedContact && cleanedContact !== 'admin') {
+      const userRecord = await findUserByContact(cleanedContact);
+      if (userRecord) {
+        targetUserId = userRecord.id;
+      }
+    }
+
     // ── DEVICE-BINDING GATEKEEPER (সবার আগে প্রায়োরিটি) ─────────────────
-    const { abused, userId: abuseUserId } = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds);
+    const { abused, userId: abuseUserId } = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds, targetUserId);
     if (abused) {
       const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
       return res.status(403).json({
@@ -274,7 +308,6 @@ async function verifyOtp(req, res) {
       return res.status(400).json({ error: 'Missing required contact or code fields' });
     }
 
-    const cleanedContact = contact.trim();
     const cleanedCode = code.trim();
 
     if (cleanedContact === 'admin') {
@@ -402,21 +435,7 @@ async function verifyOtp(req, res) {
         ]
       );
 
-      // Record device trial logs
-      try {
-        const logAndroidId = androidId || deviceId;
-        const logFingerprint = hardwareFingerprint || fingerprint || 'unknown_fingerprint';
-        const logSimSlots = simSlotIds || 'no_sim';
-        await query(
-          `INSERT INTO device_trial_logs (android_id, hardware_fingerprint, sim_slot_ids, has_used_trial) 
-           VALUES (?, ?, ?, 1)
-           ON DUPLICATE KEY UPDATE has_used_trial = 1`,
-          [logAndroidId, logFingerprint, logSimSlots]
-        );
-        console.log(`[DB] Recorded device trial log for device: ${logAndroidId}`);
-      } catch (logErr) {
-        console.error('[DB] Failed to insert device trial log:', logErr);
-      }
+      // Device trial logs insertion removed from verifyOtp. Will be recorded on completeProfile.
 
       const freshDevices = await query('SELECT * FROM registered_devices WHERE id = ?', [insertDeviceResult.insertId]);
       device = freshDevices[0];
@@ -487,7 +506,7 @@ async function verifyOtp(req, res) {
  */
 async function completeProfile(req, res) {
   try {
-    const { name, pin, phone, email } = req.body;
+    const { name, pin, phone, email, deviceId, androidId, hardwareFingerprint, simSlotIds, fingerprint } = req.body;
     const userId = req.user.userId; // Populated by JWT authentication middleware
 
     if (!name || !pin) {
@@ -579,6 +598,24 @@ async function completeProfile(req, res) {
     const updatedUsers = await query('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
     const updatedUser = updatedUsers[0];
 
+    // Record device trial logs on completion of profile
+    if (androidId || deviceId || hardwareFingerprint || fingerprint) {
+      try {
+        const logAndroidId = androidId || deviceId || 'unknown_android_id';
+        const logFingerprint = hardwareFingerprint || fingerprint || 'unknown_fingerprint';
+        const logSimSlots = simSlotIds || 'no_sim';
+        await query(
+          `INSERT INTO device_trial_logs (user_id, android_id, hardware_fingerprint, sim_slot_ids, has_used_trial) 
+           VALUES (?, ?, ?, ?, 1)
+           ON DUPLICATE KEY UPDATE user_id = ?, has_used_trial = 1`,
+          [userId, logAndroidId, logFingerprint, logSimSlots, userId]
+        );
+        console.log(`[DB] Recorded device trial log in completeProfile for user: ${userId}`);
+      } catch (logErr) {
+        console.error('[DB] Failed to insert device trial log in completeProfile:', logErr);
+      }
+    }
+
     return res.json({
       success: true,
       user: {
@@ -605,7 +642,7 @@ async function completeProfile(req, res) {
  * or if it is logged in device_trial_logs as having consumed a trial.
  * Returns: { abused: Boolean, userId: Number|null }
  */
-async function isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds) {
+async function isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds, targetUserId = null) {
   try {
     const safeDeviceId = deviceId || '';
     const safeAndroidId = androidId || '';
@@ -622,7 +659,12 @@ async function isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotId
         const dev = devices[0];
         const expired = dev.trial_expires_at && new Date(dev.trial_expires_at) < new Date();
         if (dev.is_trial_locked || expired) {
-          return { abused: true, userId: dev.user_id || null };
+          // If this is the owner logging back into their own account, exempt them from the lock block
+          if (targetUserId !== null && dev.user_id === targetUserId) {
+            // Owner bypasses the block
+          } else {
+            return { abused: true, userId: dev.user_id || null };
+          }
         }
       }
     }
@@ -656,7 +698,13 @@ async function isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotId
       const queryStr = `SELECT id, user_id FROM device_trial_logs WHERE (${checkFields.join(' OR ')}) AND has_used_trial = 1 LIMIT 1`;
       const logs = await query(queryStr, checkParams);
       if (logs && logs.length > 0) {
-        return { abused: true, userId: logs[0].user_id || null };
+        const matchedUserId = logs[0].user_id || null;
+        // If this is the owner logging back into their own account, exempt them from the lock block
+        if (targetUserId !== null && matchedUserId === targetUserId) {
+          // Owner bypasses the block
+        } else {
+          return { abused: true, userId: matchedUserId };
+        }
       }
     }
 

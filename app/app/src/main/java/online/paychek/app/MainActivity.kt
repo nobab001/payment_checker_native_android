@@ -24,9 +24,10 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Lock the app on start if a token exists
+        // Lock the app on start if a token exists and profile is complete
         val hasToken = SecurePreferences.decrypt(this, AppConfig.KEY_AUTH_TOKEN).isNotEmpty()
-        if (hasToken) {
+        val isProfileComplete = SecurePreferences.decrypt(this, "pcu_profile_complete") != "false"
+        if (hasToken && isProfileComplete) {
             isAppLocked = true
         }
 
@@ -57,7 +58,8 @@ class MainActivity : FragmentActivity() {
     override fun onStart() {
         super.onStart()
         val hasToken = SecurePreferences.decrypt(this, AppConfig.KEY_AUTH_TOKEN).isNotEmpty()
-        if (hasToken && wasStopped) {
+        val isProfileComplete = SecurePreferences.decrypt(this, "pcu_profile_complete") != "false"
+        if (hasToken && isProfileComplete && wasStopped) {
             isAppLocked = true
         }
         wasStopped = false

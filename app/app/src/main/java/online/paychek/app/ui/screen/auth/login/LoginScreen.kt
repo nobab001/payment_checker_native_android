@@ -68,11 +68,29 @@ fun LoginScreen(
 
     LaunchedEffect(verificationResult) {
         verificationResult?.let { res ->
+            online.paychek.app.utils.SecurePreferences.encrypt(
+                context,
+                online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN,
+                res.token
+            )
+            online.paychek.app.utils.SecurePreferences.encrypt(
+                context,
+                "pcu_user_role",
+                res.user.role
+            )
+            online.paychek.app.utils.SecurePreferences.encrypt(
+                context,
+                "pcu_contact",
+                uiState.contact
+            )
             if (res.user.role == "admin") {
+                online.paychek.app.utils.SecurePreferences.encrypt(context, "pcu_profile_complete", "true")
                 onNavigateToAdminDashboard(res.token)
             } else if (!res.user.profileComplete) {
+                online.paychek.app.utils.SecurePreferences.encrypt(context, "pcu_profile_complete", "false")
                 onNavigateToSignup(uiState.contact, res.token)
             } else {
+                online.paychek.app.utils.SecurePreferences.encrypt(context, "pcu_profile_complete", "true")
                 onNavigateToHome(res.token)
             }
         }

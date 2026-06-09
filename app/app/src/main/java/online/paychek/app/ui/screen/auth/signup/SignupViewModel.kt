@@ -75,7 +75,7 @@ class SignupViewModel : ViewModel() {
         _uiState.update { it.copy(errorMessage = null) }
     }
 
-    fun submitSignup(onSuccess: () -> Unit) {
+    fun submitSignup(context: android.content.Context, onSuccess: () -> Unit) {
         val state = _uiState.value
         val name = state.name.trim()
         val pin = state.pin.trim()
@@ -122,11 +122,22 @@ class SignupViewModel : ViewModel() {
 
         viewModelScope.launch {
             try {
+                val deviceId = online.paychek.app.utils.DeviceIdHelper.getHashedAndroidId(context)
+                val fingerprint = online.paychek.app.utils.DeviceIdHelper.getHashedFingerprint()
+                val androidId = online.paychek.app.utils.DeviceIdHelper.getAndroidId(context)
+                val hardwareFingerprint = online.paychek.app.utils.DeviceIdHelper.getBuildFingerprint()
+                val simSlotIds = online.paychek.app.utils.DeviceIdHelper.getSimSlotIds(context)
+
                 val request = CompleteProfileRequest(
                     name = name,
                     pin = pin,
                     phone = if (phone.isNullOrEmpty()) null else phone,
-                    email = if (email.isNullOrEmpty()) null else email
+                    email = if (email.isNullOrEmpty()) null else email,
+                    deviceId = deviceId,
+                    androidId = androidId,
+                    hardwareFingerprint = hardwareFingerprint,
+                    simSlotIds = simSlotIds,
+                    fingerprint = fingerprint
                 )
 
                 // Auth Header value should format as "Bearer <token>"
