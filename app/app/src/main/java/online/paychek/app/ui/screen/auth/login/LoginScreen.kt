@@ -3,6 +3,12 @@ package online.paychek.app.ui.screen.auth.login
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.vectorResource
+import online.paychek.app.R
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -560,33 +566,102 @@ fun LoginScreen(
                     )
 
                     val isBypass = uiState.contact == "admin"
-                    OutlinedTextField(
-                        value = uiState.otpCode,
-                        onValueChange = { viewModel.onOtpChanged(it) },
-                        placeholder = { Text(if (isBypass) "এডমিন পাসওয়ার্ড লিখুন" else "৬-ডিজিটের ওটিপি কোড (OTP)") },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = if (isBypass) KeyboardType.Password else KeyboardType.Number,
-                            imeAction = ImeAction.Done
-                        ),
-                        visualTransformation = if (isBypass) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-                        keyboardActions = KeyboardActions(
-                            onDone = {
-                                focusManager.clearFocus()
-                                viewModel.verifyOtp(context) { res ->
-                                    verificationResult = res
+                    if (isBypass) {
+                        OutlinedTextField(
+                            value = uiState.otpCode,
+                            onValueChange = { viewModel.onOtpChanged(it) },
+                            placeholder = { Text("এডমিন পাসওয়ার্ড লিখুন") },
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Password,
+                                imeAction = ImeAction.Done
+                            ),
+                            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    focusManager.clearFocus()
+                                    viewModel.verifyOtp(context) { res ->
+                                        verificationResult = res
+                                    }
+                                }
+                            ),
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color(0xFFFBFBFC),
+                                focusedBorderColor = RoyalIndigo,
+                                unfocusedBorderColor = Color(0xFFE2E8F0)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        // Custom 6-digit OTP input boxes (centered text, auto-paste, backspace traversal built-in via hidden field)
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            // Hidden BasicTextField capturing keyboard & clipboard actions
+                            BasicTextField(
+                                value = uiState.otpCode,
+                                onValueChange = { newValue ->
+                                    if (newValue.length <= 6 && newValue.all { it.isDigit() }) {
+                                        viewModel.onOtpChanged(newValue)
+                                    }
+                                },
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done
+                                ),
+                                keyboardActions = KeyboardActions(
+                                    onDone = {
+                                        focusManager.clearFocus()
+                                        viewModel.verifyOtp(context) { res ->
+                                            verificationResult = res
+                                        }
+                                    }
+                                ),
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.Transparent),
+                                cursorBrush = SolidColor(Color.Transparent),
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .alpha(0.01f)
+                            )
+
+                            // Visual OTP Boxes
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                for (i in 0 until 6) {
+                                    val char = uiState.otpCode.getOrNull(i)?.toString() ?: ""
+                                    val isFocused = uiState.otpCode.length == i || (i == 5 && uiState.otpCode.length == 6)
+
+                                    Box(
+                                        modifier = Modifier
+                                            .size(width = 44.dp, height = 52.dp)
+                                            .background(
+                                                color = if (char.isNotEmpty()) Color.White else Color(0xFFFBFBFC),
+                                                shape = RoundedCornerShape(12.dp)
+                                            )
+                                            .border(
+                                                width = if (isFocused) 2.dp else 1.dp,
+                                                color = if (isFocused) RoyalIndigo else Color(0xFFE2E8F0),
+                                                shape = RoundedCornerShape(12.dp)
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = char,
+                                            fontSize = 20.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = RoyalIndigo,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
                                 }
                             }
-                        ),
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color.White,
-                            unfocusedContainerColor = Color(0xFFFBFBFC),
-                            focusedBorderColor = RoyalIndigo,
-                            unfocusedBorderColor = Color(0xFFE2E8F0)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                        }
+                    }
 
                     // Timer & Resend Row
                     Row(
@@ -653,8 +728,6 @@ fun LoginScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
             // 4. Social / Support divider
             Row(
                 modifier = Modifier
@@ -678,8 +751,6 @@ fun LoginScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -692,7 +763,7 @@ fun LoginScreen(
                         name = "WhatsApp",
                         iconColor = Color(0xFF25D366),
                         iconBg = Color(0xFFE8F9EE),
-                        icon = Icons.Default.Support,
+                        icon = ImageVector.vectorResource(id = R.drawable.ic_whatsapp),
                         onClick = {
                             val rawLink = waLink.trim()
                             val finalUrl = when {
