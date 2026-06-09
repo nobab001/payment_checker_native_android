@@ -9,6 +9,26 @@ const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_98765
 const TRIAL_DEFAULT_DAYS = parseInt(process.env.TRIAL_DEFAULT_DAYS || '7', 10);
 
 /**
+ * Helper: findUserByContact
+ * Queries unified user_credentials table for any phone or email contact.
+ * Returns user record from users table if found, otherwise null.
+ */
+async function findUserByContact(contact) {
+  const cleaned = contact.trim();
+  // Lookup exclusively in user_credentials
+  const cred = await query(
+    'SELECT user_id FROM user_credentials WHERE value = ? LIMIT 1',
+    [cleaned]
+  );
+  if (cred.length > 0) {
+    const userId = cred[0].user_id;
+    const users = await query('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
+    return users.length > 0 ? users[0] : null;
+  }
+  return null;
+}
+
+/**
  * 1. POST /api/check-contact
  * Checks if a contact (phone or email) is registered.
  * ⚠️  SECURITY: Device-binding gatekeeper runs FIRST.
@@ -18,18 +38,8 @@ const TRIAL_DEFAULT_DAYS = parseInt(process.env.TRIAL_DEFAULT_DAYS || '7', 10);
 async function checkContact(req, res) {
   try {
     const { contact, deviceId, androidId, hardwareFingerprint, simSlotIds } = req.body;
-    if (!contact) {
-      return res.status(400).json({ error: 'Contact field is required' });
-    }
 
-    const cleanedContact = contact.trim();
-    if (cleanedContact === 'admin') {
-      return res.json({ exists: true });
-    }
-
-    // ── DEVICE-BINDING GATEKEEPER (সবার আগে) ─────────────────────────────
-    // deviceId পাঠালেই এই চেকটি রান হবে। যদি ডিভাইসটি বাউন্ড থাকে,
-    // তাহলে contact DB-তে থাকুক বা না থাকুক — সরাসরি 403 ফেরত দেব।
+    // ── DEVICE-BINDING GATEKEEPER (সবার আগে প্রায়োরিটি) ─────────────────
     if (deviceId) {
       const { abused, userId: abuseUserId } = await isTrialAbused(
         deviceId, androidId, hardwareFingerprint, simSlotIds
@@ -56,13 +66,18 @@ async function checkContact(req, res) {
       }
     }
 
-    // ── Contact DB Lookup ──────────────────────────────────────────────────
-    const users = await query(
-      'SELECT id FROM users WHERE phone = ? OR email = ? LIMIT 1',
-      [cleanedContact, cleanedContact]
-    );
+    if (!contact) {
+      return res.status(400).json({ error: 'Contact field is required' });
+    }
 
-    return res.json({ exists: users.length > 0 });
+    const cleanedContact = contact.trim();
+    if (cleanedContact === 'admin') {
+      return res.json({ exists: true });
+    }
+
+    // ── Contact DB Lookup ──────────────────────────────────────────────────
+    const userRecord = await findUserByContact(cleanedContact);
+    return res.json({ exists: userRecord !== null });
   } catch (error) {
     console.error('Error checking contact:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
@@ -75,27 +90,29 @@ async function checkContact(req, res) {
  * Returns HTTP 404 with action SHOW_NOT_FOUND_DIALOG if account is missing.
  */
 async function sendOtp(req, res) {
-  // ── DEVICE-BINDING GATEKEEPER (সবার আগে) ─────────────────────────────
-  if (req.body.deviceId) {
-    const { abused, userId: abuseUserId } = await isTrialAbused(
-      req.body.deviceId,
-      req.body.androidId,
-      req.body.hardwareFingerprint,
-      req.body.simSlotIds
-    );
-    if (abused) {
-      const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
-      return res.status(403).json({
-        success: false,
-        action:  'TRIAL_EXPIRED_FOR_DEVICE',
-        message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন.',
-        boundPhones,
-        boundEmails
-      });
-    }
-  }
   try {
-    const { contact } = req.body;
+    const { contact, deviceId, androidId, hardwareFingerprint, simSlotIds } = req.body;
+
+    // ── DEVICE-BINDING GATEKEEPER (সবার আগে প্রায়োরিটি) ─────────────────
+    if (deviceId) {
+      const { abused, userId: abuseUserId } = await isTrialAbused(
+        deviceId,
+        androidId,
+        hardwareFingerprint,
+        simSlotIds
+      );
+      if (abused) {
+        const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
+        return res.status(403).json({
+          success: false,
+          action:  'TRIAL_EXPIRED_FOR_DEVICE',
+          message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।',
+          boundPhones,
+          boundEmails
+        });
+      }
+    }
+
     if (!contact) {
       return res.status(400).json({ error: 'Contact is required' });
     }
@@ -156,11 +173,8 @@ async function sendOtp(req, res) {
 async function registerSendOtp(req, res) {
   try {
     const { contact, deviceId, androidId, hardwareFingerprint, simSlotIds } = req.body;
-    if (!contact) {
-      return res.status(400).json({ error: 'Contact is required' });
-    }
 
-    // Trial abuse prevention check
+    // ── DEVICE-BINDING GATEKEEPER (সবার আগে প্রায়োরিটি) ─────────────────
     if (deviceId) {
       const { abused, userId: abuseUserId } = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds);
       if (abused) {
@@ -175,14 +189,15 @@ async function registerSendOtp(req, res) {
       }
     }
 
+    if (!contact) {
+      return res.status(400).json({ error: 'Contact is required' });
+    }
+
     const cleanedContact = contact.trim();
     // Ensure contact is NOT already registered
-    const users = await query(
-      'SELECT id FROM users WHERE phone = ? OR email = ? LIMIT 1',
-      [cleanedContact, cleanedContact]
-    );
+    const userRecord = await findUserByContact(cleanedContact);
 
-    if (users.length > 0) {
+    if (userRecord) {
       return res.status(400).json({
         success: false,
         message: 'এই মোবাইল বা ইমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট খোলা হয়েছে।'
@@ -238,8 +253,25 @@ async function sendOtpNew(req, res) {
 async function verifyOtp(req, res) {
   try {
     const { contact, code, deviceId, deviceModel, androidVersion, fingerprint, androidId, hardwareFingerprint, simSlotIds } = req.body;
-    if (!contact || !code || !deviceId) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    if (!deviceId) {
+      return res.status(400).json({ error: 'Missing required deviceId field' });
+    }
+
+    // ── DEVICE-BINDING GATEKEEPER (সবার আগে প্রায়োরিটি) ─────────────────
+    const { abused, userId: abuseUserId } = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds);
+    if (abused) {
+      const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
+      return res.status(403).json({
+        success: false,
+        action: 'TRIAL_EXPIRED_FOR_DEVICE',
+        message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।',
+        boundPhones,
+        boundEmails
+      });
+    }
+
+    if (!contact || !code) {
+      return res.status(400).json({ error: 'Missing required contact or code fields' });
     }
 
     const cleanedContact = contact.trim();
@@ -300,52 +332,9 @@ async function verifyOtp(req, res) {
     // Mark OTP as used
     await query('UPDATE otps SET used_at = NOW() WHERE id = ?', [otps[0].id]);
 
-// ---------- New Helper: findUserByContact ----------
-// Queries unified user_credentials table for any phone or email contact.
-// Returns user record from users table if found, otherwise null.
-async function findUserByContact(contact) {
-  const cleaned = contact.trim();
-  // First lookup in user_credentials
-  const cred = await query(
-    'SELECT user_id FROM user_credentials WHERE value = ? LIMIT 1',
-    [cleaned]
-  );
-  if (cred.length > 0) {
-    const userId = cred[0].user_id;
-    const users = await query('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
-    return users.length > 0 ? users[0] : null;
-  }
-  // Fallback to legacy users table (for backward compatibility)
-  const usersLegacy = await query(
-    'SELECT * FROM users WHERE phone = ? OR email = ? LIMIT 1',
-    [cleaned, cleaned]
-  );
-  return usersLegacy.length > 0 ? usersLegacy[0] : null;
-}
-
     // Check if user exists, if not, create new pending user
-    let user;
-    const existingUsers = await query(
-      'SELECT * FROM users WHERE phone = ? OR email = ? LIMIT 1',
-      [cleanedContact, cleanedContact]
-    );
-
-    // If it's a new registration flow, verify that they are not using a device that consumed trial
-    if (existingUsers.length === 0) {
-      const { abused, userId: abuseUserId } = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds);
-      if (abused) {
-        const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
-        return res.status(403).json({
-          success: false,
-          action: 'TRIAL_EXPIRED_FOR_DEVICE',
-          message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।',
-          boundPhones,
-          boundEmails
-        });
-      }
-    }
-
-    if (existingUsers.length === 0) {
+    let user = await findUserByContact(cleanedContact);
+    if (!user) {
       const isEmail = cleanedContact.includes('@');
       const insertResult = await query(
         'INSERT INTO users (name, phone, email, role, profile_complete) VALUES (?, ?, ?, ?, ?)',
@@ -353,10 +342,14 @@ async function findUserByContact(contact) {
       );
 
       const newUserId = insertResult.insertId;
-      const newUsers = await query('SELECT * FROM users WHERE id = ?', [newUserId]);
+      // Sync verified contact to user_credentials
+      await query(
+        'INSERT INTO user_credentials (user_id, type, value, verified_at) VALUES (?, ?, ?, NOW())',
+        [newUserId, isEmail ? 'email' : 'phone', cleanedContact]
+      );
+
+      const newUsers = await query('SELECT * FROM users WHERE id = ? LIMIT 1', [newUserId]);
       user = newUsers[0];
-    } else {
-      user = existingUsers[0];
     }
 
     // Check blocked status

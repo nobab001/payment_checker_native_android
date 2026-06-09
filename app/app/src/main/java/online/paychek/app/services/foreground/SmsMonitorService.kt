@@ -18,6 +18,7 @@ import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.data.remote.dto.PaymentIngestRequest
 import online.paychek.app.services.sms.SmsReceiver
+import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.utils.SmsParser
 import org.json.JSONArray
 import org.json.JSONObject
@@ -154,8 +155,7 @@ class SmsMonitorService : Service() {
     // ─────────────────────────────────────────────────────────────────────────
     private suspend fun attemptUpload(parsed: SmsParser.ParsedPayment): Boolean {
         return try {
-            val sharedPrefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
-            val token = sharedPrefs.getString(AppConfig.KEY_AUTH_TOKEN, "") ?: ""
+            val token = SecurePreferences.decrypt(this, AppConfig.KEY_AUTH_TOKEN)
 
             if (token.isEmpty()) {
                 Log.w(TAG, "Auth Token নেই — upload করা যাচ্ছে না")
@@ -276,7 +276,7 @@ class SmsMonitorService : Service() {
     private suspend fun syncGatewayMethods() {
         try {
             val sharedPrefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
-            val token = sharedPrefs.getString(AppConfig.KEY_AUTH_TOKEN, "") ?: ""
+            val token = SecurePreferences.decrypt(this, AppConfig.KEY_AUTH_TOKEN)
             if (token.isEmpty()) return
 
             val response = RetrofitClient.gatewayApiService.getGatewayMethods("Bearer $token")

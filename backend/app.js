@@ -78,6 +78,7 @@ app.listen(PORT, async () => {
     await query(`
       CREATE TABLE IF NOT EXISTS \`device_trial_logs\` (
         \`id\`                   INT           NOT NULL AUTO_INCREMENT,
+        \`user_id\`              INT           DEFAULT NULL,
         \`android_id\`           VARCHAR(255)  NOT NULL,
         \`hardware_fingerprint\` VARCHAR(255)  NOT NULL,
         \`sim_slot_ids\`         VARCHAR(255)  NOT NULL,
@@ -90,9 +91,29 @@ app.listen(PORT, async () => {
         INDEX \`idx_sim_slots\` (\`sim_slot_ids\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
+    // Add user_id column if it does not exist
+    const cols = await query("SHOW COLUMNS FROM `device_trial_logs` LIKE 'user_id'");
+    if (cols.length === 0) {
+      await query("ALTER TABLE `device_trial_logs` ADD COLUMN `user_id` INT DEFAULT NULL AFTER `id`");
+      console.log('[DB] Added user_id column to device_trial_logs.');
+    }
     console.log('[DB] device_trial_logs table verified/created.');
+
+    // Sync primary phone & email from users to user_credentials
+    await query(`
+      INSERT INTO user_credentials (user_id, type, value, verified_at)
+      SELECT id, 'phone', phone, NOW() FROM users 
+      WHERE phone IS NOT NULL AND phone != '' AND phone NOT IN (SELECT value FROM user_credentials)
+    `);
+    await query(`
+      INSERT INTO user_credentials (user_id, type, value, verified_at)
+      SELECT id, 'email', email, NOW() FROM users 
+      WHERE email IS NOT NULL AND email != '' AND email NOT IN (SELECT value FROM user_credentials)
+    `);
+    console.log('[DB] Synced existing users to user_credentials.');
   } catch (dbErr) {
-    console.error('[DB] Failed to initialize device_trial_logs table:', dbErr);
+    console.error('[DB] Failed to initialize database setup:', dbErr);
   }
 });
 

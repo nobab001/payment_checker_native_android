@@ -47,4 +47,10 @@ interface AuthApiService {
     suspend fun checkDeviceTrial(
         @Body request: CheckDeviceTrialRequest
     ): Response<CheckDeviceTrialResponse>
+
+    @POST("pin/verify")
+    suspend fun verifyPin(
+        @Header("Authorization") token: String,
+        @Body request: VerifyPinRequest
+    ): Response<VerifyPinResponse>
 }

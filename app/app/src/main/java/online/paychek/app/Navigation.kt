@@ -15,6 +15,7 @@ import online.paychek.app.ui.screen.home.HomeScreen
 import online.paychek.app.ui.screen.apicenter.CheckoutDesignerScreen
 import online.paychek.app.ui.screen.admin.AdminDashboardScreen
 import online.paychek.app.ui.screen.profile.ProfileSettingsScreen
+import online.paychek.app.utils.SecurePreferences
 
 @Composable
 fun MainNavigation() {
@@ -32,13 +33,11 @@ fun MainNavigation() {
                         backStack.add(NavKey.Signup(contact, token))
                     },
                     onNavigateToHome = { token ->
-                        val sharedPrefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
-                        sharedPrefs.edit().putString(online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN, token).apply()
+                        SecurePreferences.encrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN, token)
                         backStack.add(NavKey.Home)
                     },
                     onNavigateToAdminDashboard = { token ->
-                        val sharedPrefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
-                        sharedPrefs.edit().putString(online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN, token).apply()
+                        SecurePreferences.encrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN, token)
                         backStack.add(NavKey.AdminDashboard)
                     },
                     modifier = Modifier.fillMaxSize()
@@ -50,8 +49,7 @@ fun MainNavigation() {
                     contact = key.contact,
                     token = key.token,
                     onSignupComplete = {
-                        val sharedPrefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
-                        sharedPrefs.edit().putString(online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN, key.token).apply()
+                        SecurePreferences.encrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN, key.token)
                         backStack.add(NavKey.Home)
                     },
                     modifier = Modifier.fillMaxSize()
@@ -84,8 +82,7 @@ fun MainNavigation() {
             entry<NavKey.AdminDashboard> {
                 AdminDashboardScreen(
                     onLogout = {
-                        val sharedPrefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
-                        sharedPrefs.edit().remove(online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN).apply()
+                        SecurePreferences.remove(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
                         backStack.add(NavKey.Login)
                     }
                 )

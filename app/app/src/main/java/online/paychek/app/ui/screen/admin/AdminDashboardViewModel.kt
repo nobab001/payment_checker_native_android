@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.data.remote.dto.*
+import online.paychek.app.utils.SecurePreferences
 
 data class AdminUiState(
     val configs: Map<String, String> = emptyMap(),
@@ -40,7 +41,7 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
     }
 
     private fun getToken(): String {
-        return prefs.getString(AppConfig.KEY_AUTH_TOKEN, "") ?: ""
+        return SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
     }
 
     fun loadAllData() {

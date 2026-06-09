@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.dto.TransactionItem
 import online.paychek.app.data.repository.PaymentRepository
+import online.paychek.app.utils.SecurePreferences
 
 // =============================================================================
 // Provider Filter Options
@@ -144,7 +145,7 @@ class TransactionHistoryViewModel(application: Application) : AndroidViewModel(a
     // ─────────────────────────────────────────────────────────────────────────
     private fun fetchPage(page: Int) {
         viewModelScope.launch {
-            val token = prefs.getString(AppConfig.KEY_AUTH_TOKEN, "") ?: ""
+            val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
             if (token.isEmpty()) {
                 _state.update {
                     it.copy(

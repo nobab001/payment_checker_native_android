@@ -92,4 +92,7 @@ dependencies {
 
   // Drag & Drop Reordering (Gateway Customizer)
   implementation(libs.sh.calvin.reorderable)
+
+  // Biometric authentication
+  implementation(libs.androidx.biometric)
 }

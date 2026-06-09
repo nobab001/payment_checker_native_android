@@ -167,4 +167,40 @@ async function resetPinVerify(req, res) {
   }
 }
 
-module.exports = { changePin, resetPinSendOtp, resetPinVerify };
+/**
+ * POST /api/pin/verify
+ * Verifies the user security PIN.
+ * Body: { pin: String }
+ */
+async function verifyPin(req, res) {
+  try {
+    const userId = req.user.userId;
+    const { pin } = req.body;
+
+    if (!pin) {
+      return res.status(400).json({ error: 'PIN প্রয়োজন।' });
+    }
+
+    const users = await query('SELECT pin FROM users WHERE id = ? LIMIT 1', [userId]);
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'ইউজার খুঁজে পাওয়া যায়নি।' });
+    }
+
+    const currentHash = users[0].pin;
+    if (!currentHash) {
+      return res.status(400).json({ error: 'ইউজারের কোনো PIN সেট করা নেই।' });
+    }
+
+    const isMatch = await bcrypt.compare(pin, currentHash);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, error: 'ভুল পিন নম্বর।' });
+    }
+
+    return res.json({ success: true, message: 'পিন সফলভাবে যাচাই করা হয়েছে।' });
+  } catch (err) {
+    console.error('[PinController] verifyPin error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+module.exports = { changePin, resetPinSendOtp, resetPinVerify, verifyPin };

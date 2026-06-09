@@ -7,6 +7,7 @@ import android.os.Build
 import android.util.Log
 import online.paychek.app.config.AppConfig
 import online.paychek.app.services.foreground.SmsMonitorService
+import online.paychek.app.utils.SecurePreferences
 
 /**
  * BootReceiver — ফোন রিস্টার্টের পর SMS Monitoring Service স্বয়ংক্রিয়ভাবে চালু করে।
@@ -38,7 +39,7 @@ class BootReceiver : BroadcastReceiver() {
         // SharedPreferences থেকে চেক — ব্যবহারকারী কি সার্ভিস চালু রেখেছিলেন?
         val prefs      = context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
         val isEnabled  = prefs.getBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, false)
-        val hasToken   = prefs.getString(AppConfig.KEY_AUTH_TOKEN, "")?.isNotEmpty() == true
+        val hasToken   = SecurePreferences.decrypt(context, AppConfig.KEY_AUTH_TOKEN).isNotEmpty()
 
         if (!isEnabled) {
             Log.i(TAG, "SMS Service বন্ধ ছিল — boot-এ চালু করা হচ্ছে না")

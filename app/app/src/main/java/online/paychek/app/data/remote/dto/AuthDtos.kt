@@ -102,3 +102,12 @@ data class DeviceDto(
     val trialExpiresAt: String?,
     val lockReason: String?
 )
+
+data class VerifyPinRequest(
+    val pin: String
+)
+
+data class VerifyPinResponse(
+    val success: Boolean,
+    val message: String?
+)

@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.data.remote.dto.*
+import online.paychek.app.utils.SecurePreferences
 
 // =============================================================================
 // UI State
@@ -77,7 +78,7 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
     }
 
     private fun bearerToken(): String {
-        val token = prefs.getString(AppConfig.KEY_AUTH_TOKEN, "") ?: ""
+        val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
         return if (token.startsWith("Bearer ")) token else "Bearer $token"
     }
 

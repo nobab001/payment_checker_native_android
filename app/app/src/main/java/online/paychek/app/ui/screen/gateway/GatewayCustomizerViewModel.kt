@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.data.remote.dto.*
+import online.paychek.app.utils.SecurePreferences
 
 // =============================================================================
 // UI State
@@ -256,8 +257,8 @@ class GatewayCustomizerViewModel(application: Application) : AndroidViewModel(ap
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────
     private fun getToken(): String? {
-        val token = prefs.getString(AppConfig.KEY_AUTH_TOKEN, "")
-        return token?.ifEmpty { null }
+        val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
+        return token.ifEmpty { null }
     }
 
     private fun setError(msg: String) {

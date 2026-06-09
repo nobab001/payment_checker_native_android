@@ -12,4 +12,7 @@ router.post('/pin/reset-send-otp',  pin.resetPinSendOtp);
 // POST /api/pin/reset-verify     → OTP যাচাই করে নতুন PIN সেট করো (no auth)
 router.post('/pin/reset-verify',    pin.resetPinVerify);
 
+// POST /api/pin/verify           → PIN যাচাই করো (auth required)
+router.post('/pin/verify',          auth, pin.verifyPin);
+
 module.exports = router;

@@ -300,46 +300,44 @@ async function resetAllEmailCounters(req, res) {
 // 6. User and Device Listing
 async function listUsers(req, res) {
   try {
+    // 1. Fetch all users
     const users = await query(
-      `SELECT u.id, u.name, u.phone, u.email, u.role, u.balance, u.blocked, u.profile_complete, u.created_at,
-              JSON_ARRAYAGG(
-                JSON_OBJECT(
-                  'id', rd.id,
-                  'deviceId', rd.device_id,
-                  'deviceName', rd.device_name,
-                  'customName', rd.custom_name,
-                  'deviceModel', rd.device_model,
-                  'androidVersion', rd.android_version,
-                  'status', rd.status,
-                  'isParent', rd.is_parent,
-                  'lastSeenAt', rd.last_seen_at,
-                  'lastBatteryPercent', rd.last_battery_percent,
-                  'trialExpiresAt', rd.trial_expires_at,
-                  'isTrialLocked', rd.is_trial_locked,
-                  'lockReason', rd.lock_reason
-                )
-              ) AS devices
-       FROM users u
-       LEFT JOIN registered_devices rd ON u.id = rd.user_id
-       GROUP BY u.id`
+      `SELECT id, name, phone, email, role, balance, blocked, profile_complete, created_at FROM users`
     );
 
-    const result = users.map(u => {
-      let parsedDevices = [];
-      try {
-        parsedDevices = typeof u.devices === 'string' ? JSON.parse(u.devices) : u.devices;
-        if (parsedDevices.length === 1 && parsedDevices[0].id === null) {
-          parsedDevices = [];
-        }
-      } catch (e) {
-        parsedDevices = [];
+    // 2. Fetch all registered devices
+    const devices = await query(
+      `SELECT id, user_id, device_id AS deviceId, device_name AS deviceName, custom_name AS customName, 
+              device_model AS deviceModel, android_version AS androidVersion, status, is_parent AS isParent, 
+              last_seen_at AS lastSeenAt, last_battery_percent AS lastBatteryPercent, 
+              trial_expires_at AS trialExpiresAt, is_trial_locked AS isTrialLocked, lock_reason AS lockReason 
+       FROM registered_devices`
+    );
+
+    // 3. Group devices by user_id
+    const devicesByUserId = {};
+    devices.forEach(d => {
+      const userId = d.user_id;
+      const deviceObj = { ...d };
+      delete deviceObj.user_id;
+      
+      if (!devicesByUserId[userId]) {
+        devicesByUserId[userId] = [];
       }
-      return { ...u, devices: parsedDevices };
+      devicesByUserId[userId].push(deviceObj);
+    });
+
+    // 4. Map devices to their respective users
+    const result = users.map(u => {
+      return {
+        ...u,
+        devices: devicesByUserId[u.id] || []
+      };
     });
 
     return res.json({ success: true, users: result });
   } catch (err) {
-    console.error(err);
+    console.error('listUsers error:', err);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 }

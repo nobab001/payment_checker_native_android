@@ -194,7 +194,14 @@ class LoginViewModel : ViewModel() {
                         }
                     } else {
                         // পুরনো ইউজার → OTP পাঠাও
-                        sendOtpApi(contact, deviceId, isNew = false)
+                        sendOtpApi(
+                            contact = contact,
+                            deviceId = deviceId,
+                            isNew = false,
+                            androidId = androidId,
+                            hardwareFingerprint = hardwareFingerprint,
+                            simSlotIds = simSlotIds
+                        )
                     }
                 } else if (checkResponse.code() == 403) {
                     // Backend double-check: ডিভাইস বাউন্ড থাকলে এখানেও ব্লক

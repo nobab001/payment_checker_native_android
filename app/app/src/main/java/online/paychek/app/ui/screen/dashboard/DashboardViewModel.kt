@@ -16,6 +16,7 @@ import online.paychek.app.data.remote.dto.DashboardStats
 import online.paychek.app.data.remote.dto.TransactionItem
 import online.paychek.app.data.repository.PaymentRepository
 import online.paychek.app.services.foreground.SmsMonitorService
+import online.paychek.app.utils.SecurePreferences
 
 // =============================================================================
 // UI State — Dashboard স্ক্রিনের সম্পূর্ণ অবস্থা
@@ -69,7 +70,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _state.update { it.copy(uiState = DashboardUiState.Loading) }
 
-            val token = prefs.getString(AppConfig.KEY_AUTH_TOKEN, "") ?: ""
+            val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
             if (token.isEmpty()) {
                 _state.update {
                     it.copy(uiState = DashboardUiState.Error("লগইন সেশন পাওয়া যায়নি। পুনরায় লগইন করুন।"))
