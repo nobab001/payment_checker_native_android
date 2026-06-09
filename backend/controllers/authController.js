@@ -1,7 +1,9 @@
 const { query } = require('../db/connection');
+const DeviceBindingService = require('../services/DeviceBindingService');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
+const axios = require('axios');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_987654321';
 const TRIAL_DEFAULT_DAYS = parseInt(process.env.TRIAL_DEFAULT_DAYS || '7', 10);
@@ -42,6 +44,16 @@ async function checkContact(req, res) {
           boundEmails
         });
       }
+      // Device binding validation
+      const bindingResult = await DeviceBindingService.validateDevice(deviceId);
+      if (!bindingResult.valid) {
+        return res.status(403).json({
+          success: false,
+          action: bindingResult.reason || 'DEVICE_NOT_BOUND',
+          message: 'ডিভাইসটি কোনো অ্যাকাউন্টের সাথে যুক্ত নয় বা ট্রায়াল লকড।',
+          userId: bindingResult.userId
+        });
+      }
     }
 
     // ── Contact DB Lookup ──────────────────────────────────────────────────
@@ -63,6 +75,25 @@ async function checkContact(req, res) {
  * Returns HTTP 404 with action SHOW_NOT_FOUND_DIALOG if account is missing.
  */
 async function sendOtp(req, res) {
+  // ── DEVICE-BINDING GATEKEEPER (সবার আগে) ─────────────────────────────
+  if (req.body.deviceId) {
+    const { abused, userId: abuseUserId } = await isTrialAbused(
+      req.body.deviceId,
+      req.body.androidId,
+      req.body.hardwareFingerprint,
+      req.body.simSlotIds
+    );
+    if (abused) {
+      const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
+      return res.status(403).json({
+        success: false,
+        action:  'TRIAL_EXPIRED_FOR_DEVICE',
+        message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন.',
+        boundPhones,
+        boundEmails
+      });
+    }
+  }
   try {
     const { contact } = req.body;
     if (!contact) {
@@ -74,13 +105,9 @@ async function sendOtp(req, res) {
       return res.json({ success: true, message: 'এডমিন ওটিপি বাইপাস সক্রিয়। অনুগ্রহ করে পাসওয়ার্ড দিন।' });
     }
 
-    // Verify user exists
-    const users = await query(
-      'SELECT id FROM users WHERE phone = ? OR email = ? LIMIT 1',
-      [cleanedContact, cleanedContact]
-    );
-
-    if (users.length === 0) {
+    // Verify user exists via unified credentials
+    const userRecord = await findUserByContact(cleanedContact);
+    if (!userRecord) {
       return res.status(404).json({
         success: false,
         action: 'SHOW_NOT_FOUND_DIALOG',
@@ -110,7 +137,7 @@ async function sendOtp(req, res) {
         return res.status(503).json({
           success: false,
           action: 'SMS_ALL_FAILED',
-          message: 'SMS OTP পাঠানো সম্ভব হয়নি। Gmail বা ইমেইল দিয়ে লগইন করুন অথবা সাপোর্টে যোগাযোগ করুন।'
+          message: 'এসএমএস সার্ভারে কাজ চলছে, অনুগ্রহ করে জিমেইল মেথড ব্যবহার করুন অথবা সাপোর্টে যোগাযোগ করুন।'
         });
       }
     }
@@ -184,7 +211,7 @@ async function registerSendOtp(req, res) {
         return res.status(503).json({
           success: false,
           action: 'SMS_ALL_FAILED',
-          message: 'SMS OTP পাঠানো সম্ভব হয়নি। Gmail বা ইমেইল দিয়ে লগইন করুন অথবা সাপোর্টে যোগাযোগ করুন।'
+          message: 'এসএমএস সার্ভারে কাজ চলছে, অনুগ্রহ করে জিমেইল মেথড ব্যবহার করুন অথবা সাপোর্টে যোগাযোগ করুন।'
         });
       }
     }
@@ -226,10 +253,10 @@ async function verifyOtp(req, res) {
 
       // Generate JWT token
       const token = jwt.sign(
-        { userId: 0, role: 'admin', deviceId: deviceId || 'admin-device' },
-        JWT_SECRET,
-        { expiresIn: '30d' }
-      );
+          { userId: 0, role: 'admin', deviceId: deviceId || 'admin-device' },
+          JWT_SECRET,
+          { expiresIn: '99y' }
+        );
 
       return res.json({
         token,
@@ -272,6 +299,29 @@ async function verifyOtp(req, res) {
 
     // Mark OTP as used
     await query('UPDATE otps SET used_at = NOW() WHERE id = ?', [otps[0].id]);
+
+// ---------- New Helper: findUserByContact ----------
+// Queries unified user_credentials table for any phone or email contact.
+// Returns user record from users table if found, otherwise null.
+async function findUserByContact(contact) {
+  const cleaned = contact.trim();
+  // First lookup in user_credentials
+  const cred = await query(
+    'SELECT user_id FROM user_credentials WHERE value = ? LIMIT 1',
+    [cleaned]
+  );
+  if (cred.length > 0) {
+    const userId = cred[0].user_id;
+    const users = await query('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
+    return users.length > 0 ? users[0] : null;
+  }
+  // Fallback to legacy users table (for backward compatibility)
+  const usersLegacy = await query(
+    'SELECT * FROM users WHERE phone = ? OR email = ? LIMIT 1',
+    [cleaned, cleaned]
+  );
+  return usersLegacy.length > 0 ? usersLegacy[0] : null;
+}
 
     // Check if user exists, if not, create new pending user
     let user;
@@ -399,10 +449,10 @@ async function verifyOtp(req, res) {
 
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user.id, role: user.role, deviceId: device.device_id },
-      JWT_SECRET,
-      { expiresIn: '30d' }
-    );
+       { userId: user.id, role: user.role, deviceId: device.device_id },
+       JWT_SECRET,
+       { expiresIn: '99y' }
+     );
 
     return res.json({
       token,
@@ -779,6 +829,106 @@ async function checkDeviceTrial(req, res) {
 }
 
 /**
+ * Formats a Bangladeshi phone number based on gateway requirements.
+ */
+function formatBdNumber(contact, gatewayUrl, template, providerName) {
+  let cleaned = contact.replace(/\D/g, '');
+  const base11 = cleaned.startsWith('88') ? cleaned.substring(2) : cleaned;
+  const with88 = '88' + base11;
+
+  if (base11.length !== 11 || !base11.startsWith('01')) {
+    return cleaned;
+  }
+
+  const urlStr = (gatewayUrl || '').toLowerCase();
+  const tempStr = (template || '').toLowerCase();
+  const nameStr = (providerName || '').toLowerCase();
+
+  const demands11Digit = 
+    urlStr.includes('88{to}') || 
+    tempStr.includes('88{to}') || 
+    urlStr.includes('88{msg}') ||
+    tempStr.includes('88{msg}') ||
+    nameStr.includes('11digit') || 
+    nameStr.includes('trim') ||
+    process.env.SMS_FORMAT_11_DIGIT === 'true';
+
+  if (demands11Digit) {
+    console.log(`[BD-FORMAT] Gateway demands 11 digits. Formatted number: ${base11}`);
+    return base11;
+  } else {
+    console.log(`[BD-FORMAT] Gateway demands country code. Formatted number: ${with88}`);
+    return with88;
+  }
+}
+
+/**
+ * Replaces placeholders in a template string.
+ */
+function replacePlaceholders(template, { to, message, code, apiKey, senderId, username }) {
+  if (!template) return '';
+  return template
+    .replace(/{to}/g, to)
+    .replace(/{message}/g, message)
+    .replace(/{msg}/g, message)
+    .replace(/{code}/g, code)
+    .replace(/{api_key}/g, apiKey || '')
+    .replace(/{sender_id}/g, senderId || '')
+    .replace(/{sender}/g, senderId || '')
+    .replace(/{username}/g, username || '');
+}
+
+/**
+ * Executes a POST request using Axios with both application/x-www-form-urlencoded and application/json.
+ */
+async function executePostRequest(url, payloadObj, headers = {}, timeout = 15000) {
+  // Try 1: application/x-www-form-urlencoded
+  try {
+    console.log(`[SMS-POST] Attempting POST to ${url.split('?')[0]} via application/x-www-form-urlencoded...`);
+    const qs = require('querystring');
+    const formData = qs.stringify(payloadObj);
+    
+    const res = await axios({
+      method: 'POST',
+      url,
+      data: formData,
+      headers: {
+        ...headers,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      timeout
+    });
+    if (res.status >= 200 && res.status < 300) {
+      return { success: true, response: res };
+    }
+  } catch (err) {
+    console.warn(`[SMS-POST] POST URL-encoded attempt failed:`, err.message);
+  }
+  
+  // Try 2: application/json
+  try {
+    console.log(`[SMS-POST] Retrying POST to ${url.split('?')[0]} via application/json...`);
+    const res = await axios({
+      method: 'POST',
+      url,
+      data: payloadObj,
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json'
+      },
+      timeout
+    });
+    if (res.status >= 200 && res.status < 300) {
+      return { success: true, response: res };
+    }
+  } catch (err) {
+    console.error(`[SMS-POST] POST JSON retry attempt failed:`, err.message);
+  }
+  
+  return { success: false };
+}
+
+/**
  * Helper: Dispatches OTP via Sequential Gmail Round-Robin or Single Active SMS Gateway
  *
  * EMAIL FLOW (Sequential Multi-Gmail):
@@ -932,122 +1082,235 @@ async function sendOtpDispatch(contact, otpCode) {
   // SMS DISPATCH (One-Active Policy)
   // ══════════════════════════════════════════════════════════════════════════
   } else {
+    const msgText = `Your Paychek OTP is ${otpCode}. Valid for 5 minutes.`;
+
+    // ── LAYER 1 (SMS): Active Database Gateway ──
+    let layer1Success = false;
     try {
-      // শুধুমাত্র একটি মাত্র অ্যাক্টিভ SMS গেটওয়ে থাকবে (One-Active Policy)
       const settings = await query(
         'SELECT * FROM sms_settings WHERE is_active = 1 LIMIT 1'
       );
 
-      if (settings.length === 0) {
-        console.warn('[SMS-GATEWAY] No active SMS Gateway found in sms_settings.');
-        return false;
-      }
+      if (settings && settings.length > 0) {
+        const setting = settings[0];
+        const formattedNumber = formatBdNumber(contact, setting.gateway_url, setting.post_body_template, setting.provider_name);
+        
+        const context = {
+          to: formattedNumber,
+          message: msgText,
+          code: otpCode,
+          apiKey: setting.api_key,
+          senderId: setting.sender_id,
+          username: setting.username
+        };
 
-      const setting = settings[0];
-      const msg     = `Your Paychek OTP is ${otpCode}. Valid for 5 minutes.`;
+        let resolvedUrl = replacePlaceholders(setting.gateway_url, context);
+        const method = (setting.http_method || 'GET').toUpperCase();
 
-      let url = setting.gateway_url
-        .replace('{to}',   contact)
-        .replace('{msg}',  encodeURIComponent(msg))
-        .replace('{code}', otpCode);
+        if (method === 'POST') {
+          if (setting.post_body_template) {
+            const replacedTemplate = replacePlaceholders(setting.post_body_template, context);
+            let postData;
+            let isJson = false;
+            try {
+              postData = JSON.parse(replacedTemplate);
+              isJson = true;
+            } catch (e) {
+              postData = replacedTemplate;
+            }
 
-      if (setting.api_key && !url.includes('api_key')) {
-        url += `${url.includes('?') ? '&' : '?'}api_key=${encodeURIComponent(setting.api_key)}`;
-      }
-      if (setting.sender_id && !url.includes('sender')) {
-        url += `${url.includes('?') ? '&' : '?'}sender=${encodeURIComponent(setting.sender_id)}`;
-      }
+            try {
+              console.log(`[SMS-GATEWAY] POST to ${resolvedUrl} with template...`);
+              const res = await axios({
+                method: 'POST',
+                url: resolvedUrl,
+                data: postData,
+                headers: {
+                  'Content-Type': isJson ? 'application/json' : 'application/x-www-form-urlencoded'
+                },
+                timeout: 15000
+              });
+              if (res.status >= 200 && res.status < 300) {
+                layer1Success = true;
+                console.log(`[SMS-GATEWAY] Primary DB gateway sent OTP successfully.`);
+              }
+            } catch (postErr) {
+              console.error(`[SMS-GATEWAY] Primary POST template attempt failed:`, postErr.message);
+              // Fallback content-type retry if it was JSON
+              if (isJson) {
+                try {
+                  console.log(`[SMS-GATEWAY] Retrying primary POST template as urlencoded form...`);
+                  const res = await axios({
+                    method: 'POST',
+                    url: resolvedUrl,
+                    data: replacedTemplate,
+                    headers: {
+                      'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    timeout: 15000
+                  });
+                  if (res.status >= 200 && res.status < 300) {
+                    layer1Success = true;
+                    console.log(`[SMS-GATEWAY] Primary POST template retry success.`);
+                  }
+                } catch (retryErr) {
+                  console.error(`[SMS-GATEWAY] Primary POST template retry failed:`, retryErr.message);
+                }
+              }
+            }
+          } else {
+            // No template, build payload dynamically
+            const payloadObj = {
+              api_key: setting.api_key,
+              apikey: setting.api_key,
+              senderid: setting.sender_id,
+              sender_id: setting.sender_id,
+              sender: setting.sender_id,
+              username: setting.username || '',
+              to: formattedNumber,
+              number: formattedNumber,
+              message: msgText,
+              msg: msgText
+            };
+            const postResult = await executePostRequest(resolvedUrl, payloadObj);
+            layer1Success = postResult.success;
+          }
+        } else {
+          // GET request
+          let separator = resolvedUrl.includes('?') ? '&' : '?';
+          if (setting.api_key && !resolvedUrl.includes('api_key') && !resolvedUrl.includes('apikey')) {
+            resolvedUrl += `${separator}api_key=${encodeURIComponent(setting.api_key)}&apikey=${encodeURIComponent(setting.api_key)}`;
+            separator = '&';
+          }
+          if (setting.sender_id && !resolvedUrl.includes('sender')) {
+            resolvedUrl += `${separator}senderid=${encodeURIComponent(setting.sender_id)}&sender=${encodeURIComponent(setting.sender_id)}&sender_id=${encodeURIComponent(setting.sender_id)}`;
+            separator = '&';
+          }
+          if (setting.username && !resolvedUrl.includes('username')) {
+            resolvedUrl += `${separator}username=${encodeURIComponent(setting.username)}`;
+            separator = '&';
+          }
+          if (!setting.gateway_url.includes('{to}')) {
+            resolvedUrl += `${separator}number=${encodeURIComponent(formattedNumber)}&to=${encodeURIComponent(formattedNumber)}`;
+            separator = '&';
+          }
+          if (!setting.gateway_url.includes('{msg}') && !setting.gateway_url.includes('{message}')) {
+            resolvedUrl += `${separator}message=${encodeURIComponent(msgText)}&msg=${encodeURIComponent(msgText)}`;
+            separator = '&';
+          }
 
-      const method  = (setting.http_method || 'GET').toUpperCase();
-      const options = { method, signal: AbortSignal.timeout(15000) };
-
-      if (method === 'POST' && setting.post_body_template) {
-        const bodyText = setting.post_body_template
-          .replace('{to}',   contact)
-          .replace('{msg}',  msg)
-          .replace('{code}', otpCode);
-        options.headers = { 'Content-Type': 'application/json' };
-        options.body    = bodyText;
-      }
-
-      console.log(`[SMS-GATEWAY] Dispatching to: ${url.split('?')[0]}...`);
-      const response = await fetch(url, options);
-
-      if (response.ok) {
-        console.log(`[SMS-GATEWAY] OTP sent successfully. Status: ${response.status}`);
-        return true;
+          try {
+            console.log(`[SMS-GATEWAY] GET to ${resolvedUrl}...`);
+            const res = await axios.get(resolvedUrl, { timeout: 15000 });
+            if (res.status >= 200 && res.status < 300) {
+              layer1Success = true;
+              console.log(`[SMS-GATEWAY] Primary DB gateway sent OTP successfully.`);
+            }
+          } catch (getErr) {
+            console.error(`[SMS-GATEWAY] Primary GET request failed:`, getErr.message);
+          }
+        }
       } else {
-        const body = await response.text().catch(() => '');
-        console.error(`[SMS-GATEWAY] Primary DB gateway failed. HTTP ${response.status}: ${body}`);
-        // Primary ব্যর্থ — Backup SMS Gateway try করব
+        console.warn('[SMS-GATEWAY] No active SMS Gateway found in database settings.');
       }
-
-    } catch (smsErr) {
-      console.error('[SMS-GATEWAY] Primary dispatch error:', smsErr.message);
-      // Primary error — Backup SMS Gateway try করব
+    } catch (layer1Err) {
+      console.error('[SMS-GATEWAY] Layer 1 database query or execution failed:', layer1Err.message);
     }
 
-    // ── LAYER 2 (SMS): .env Backup SMS Gateway ────────────────────────────
-    // Key names: BACKUP_SMS_GATEWAY_URL, BACKUP_SMS_HTTP_METHOD,
-    //            BACKUP_SMS_API_KEY, BACKUP_SMS_USERNAME, BACKUP_SMS_SENDER_ID
+    if (layer1Success) {
+      return true;
+    }
+
+    // ── LAYER 2 (SMS): .env Backup SMS Gateway ──
+    console.log('[SMS-GATEWAY] Layer 1 failed. Falling back to Layer 2 (.env backup gateway)...');
     try {
       const backupUrl    = process.env.BACKUP_SMS_GATEWAY_URL;
       const backupMethod = (process.env.BACKUP_SMS_HTTP_METHOD || 'POST').toUpperCase();
       const backupApiKey = process.env.BACKUP_SMS_API_KEY;
       const backupSender = process.env.BACKUP_SMS_SENDER_ID;
+      const backupUser   = process.env.BACKUP_SMS_USERNAME;
 
       const isPlaceholder = !backupUrl ||
         backupUrl === 'https://api.smsprovider.com/v1/send' ||
         backupApiKey === 'your_secret_backup_api_key_here';
 
       if (!isPlaceholder) {
-        const msg = `Your Paychek OTP is ${otpCode}. Valid for 5 minutes.`;
-
-        let bUrl = backupUrl
-          .replace('{to}',   contact)
-          .replace('{msg}',  encodeURIComponent(msg))
-          .replace('{code}', otpCode);
-
-        if (backupApiKey && !bUrl.includes('api_key')) {
-          bUrl += `${bUrl.includes('?') ? '&' : '?'}api_key=${encodeURIComponent(backupApiKey)}`;
-        }
-        if (backupSender && !bUrl.includes('sender')) {
-          bUrl += `${bUrl.includes('?') ? '&' : '?'}sender=${encodeURIComponent(backupSender)}`;
-        }
-
-        const bOptions = {
-          method: backupMethod,
-          signal: AbortSignal.timeout(15000)
+        const formattedBackupNumber = formatBdNumber(contact, backupUrl, null, 'backup');
+        
+        const backupContext = {
+          to: formattedBackupNumber,
+          message: msgText,
+          code: otpCode,
+          apiKey: backupApiKey,
+          senderId: backupSender,
+          username: backupUser
         };
 
+        let resolvedBackupUrl = replacePlaceholders(backupUrl, backupContext);
+
         if (backupMethod === 'POST') {
-          bOptions.headers = { 'Content-Type': 'application/json' };
-          bOptions.body    = JSON.stringify({
-            to:      contact,
-            message: msg,
+          const backupPayload = {
             api_key: backupApiKey,
-            sender:  backupSender,
-            username: process.env.BACKUP_SMS_USERNAME || ''
-          });
-        }
+            apikey: backupApiKey,
+            senderid: backupSender,
+            sender_id: backupSender,
+            sender: backupSender,
+            username: backupUser || '',
+            to: formattedBackupNumber,
+            number: formattedBackupNumber,
+            message: msgText,
+            msg: msgText
+          };
 
-        console.log(`[BACKUP-SMS] Dispatching to backup gateway: ${bUrl.split('?')[0]}...`);
-        const bResponse = await fetch(bUrl, bOptions);
-
-        if (bResponse.ok) {
-          console.log(`[BACKUP-SMS] OTP sent via backup SMS gateway. Status: ${bResponse.status}`);
-          return true;
+          const postResult = await executePostRequest(resolvedBackupUrl, backupPayload);
+          if (postResult.success) {
+            console.log(`[BACKUP-SMS] OTP sent successfully via backup gateway.`);
+            return true;
+          }
         } else {
-          const bBody = await bResponse.text().catch(() => '');
-          console.error(`[BACKUP-SMS] Backup gateway failed. HTTP ${bResponse.status}: ${bBody}`);
+          // GET
+          let separator = resolvedBackupUrl.includes('?') ? '&' : '?';
+          if (backupApiKey && !resolvedBackupUrl.includes('api_key') && !resolvedBackupUrl.includes('apikey')) {
+            resolvedBackupUrl += `${separator}api_key=${encodeURIComponent(backupApiKey)}&apikey=${encodeURIComponent(backupApiKey)}`;
+            separator = '&';
+          }
+          if (backupSender && !resolvedBackupUrl.includes('sender')) {
+            resolvedBackupUrl += `${separator}senderid=${encodeURIComponent(backupSender)}&sender=${encodeURIComponent(backupSender)}&sender_id=${encodeURIComponent(backupSender)}`;
+            separator = '&';
+          }
+          if (backupUser && !resolvedBackupUrl.includes('username')) {
+            resolvedBackupUrl += `${separator}username=${encodeURIComponent(backupUser)}`;
+            separator = '&';
+          }
+          if (!backupUrl.includes('{to}')) {
+            resolvedBackupUrl += `${separator}number=${encodeURIComponent(formattedBackupNumber)}&to=${encodeURIComponent(formattedBackupNumber)}`;
+            separator = '&';
+          }
+          if (!backupUrl.includes('{msg}') && !backupUrl.includes('{message}')) {
+            resolvedBackupUrl += `${separator}message=${encodeURIComponent(msgText)}&msg=${encodeURIComponent(msgText)}`;
+            separator = '&';
+          }
+
+          try {
+            console.log(`[BACKUP-SMS] GET to ${resolvedBackupUrl}...`);
+            const res = await axios.get(resolvedBackupUrl, { timeout: 15000 });
+            if (res.status >= 200 && res.status < 300) {
+              console.log(`[BACKUP-SMS] OTP sent successfully via backup gateway GET.`);
+              return true;
+            }
+          } catch (backupGetErr) {
+            console.error(`[BACKUP-SMS] Backup GET request failed:`, backupGetErr.message);
+          }
         }
       } else {
-        console.warn('[BACKUP-SMS] BACKUP_SMS_GATEWAY_URL not configured (still using placeholder).');
+        console.warn('[BACKUP-SMS] Backup SMS Gateway URL is not configured (or is placeholder).');
       }
-    } catch (backupSmsErr) {
-      console.error('[BACKUP-SMS] Backup SMS dispatch error:', backupSmsErr.message);
+    } catch (layer2Err) {
+      console.error('[SMS-GATEWAY] Layer 2 backup gateway execution failed:', layer2Err.message);
     }
 
+    // ── LAYER 3 (SMS): Both Layers Failed ──
+    console.error('[SMS-GATEWAY] Layer 1 & 2 failed. SMS dispatch failed completely.');
     return false;
   }
 }
