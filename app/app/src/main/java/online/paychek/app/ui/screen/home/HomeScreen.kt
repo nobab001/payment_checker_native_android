@@ -6,9 +6,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,10 +27,18 @@ import online.paychek.app.ui.screen.gateway.GatewayCustomizerScreen
 import online.paychek.app.ui.screen.profile.ProfileSettingsScreen
 import online.paychek.app.ui.screen.transactions.TransactionHistoryScreen
 import online.paychek.app.ui.theme.RoyalIndigo
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ArrowBackIosNew
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.core.EaseOut
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateDp
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.navigationBarsPadding
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bottom Navigation Tab সংজ্ঞা
@@ -37,11 +47,81 @@ private enum class HomeTab(
     val icon: ImageVector,
     val label: String
 ) {
-    DASHBOARD(Icons.Default.Dashboard, "ড্যাশবোর্ড"),
-    HISTORY  (Icons.Default.History,   "ট্রানজেকশন"),
-    SETTINGS (Icons.Default.Settings,  "সেটিংস")
+    HOME(Icons.Default.Home, "Home"),
+    DEVICE(Icons.Default.Build, "Device"),
+    SEARCH(Icons.Default.Search, "Search"),
+    API(Icons.Default.Code, "API"),
+    PROFILE(Icons.Default.Person, "Profile")
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+@Composable
+private fun CustomBottomBar(
+    selectedTab: HomeTab,
+    onTabSelect: (HomeTab) -> Unit
+) {
+    val transition = updateTransition(targetState = selectedTab, label = "TabTransition")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .navigationBarsPadding()
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        HomeTab.entries.forEach { tab ->
+            val isSelected = tab == selectedTab
+            val scale by transition.animateFloat(
+                transitionSpec = { tween(250, easing = EaseOut) },
+                label = "Scale"
+            ) { if (it == tab) 1.1f else 1f }
+            val offsetY by transition.animateDp(
+                transitionSpec = { tween(250, easing = EaseOut) },
+                label = "Offset"
+            ) { if (it == tab) (-6).dp else 0.dp }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onTabSelect(tab) }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isSelected) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                    )
+                }
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            translationY = offsetY.toPx()
+                        }
+                ) {
+                    Icon(
+                        imageVector = tab.icon,
+                        contentDescription = tab.label,
+                        tint = if (isSelected) Color.White else Color(0xFF94A3B8)
+                    )
+                    Text(
+                        text = tab.label,
+                        fontSize = 10.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isSelected) Color.White else Color(0xFF94A3B8)
+                    )
+                }
+            }
+        }
+    }
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // HomeScreen — Bottom Navigation Hub
 // ─────────────────────────────────────────────────────────────────────────────
@@ -51,49 +131,18 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val onNavigateToApiCenter: () -> Unit = { onNavigate(AppNavKey.ApiCenter) }
-    var selectedTab by remember { mutableStateOf(HomeTab.DASHBOARD) }
-    var currentSettingsSubPage by remember { mutableStateOf(SettingsSubPage.MENU) }
+    var selectedTab by remember { mutableStateOf(HomeTab.HOME) }
+
 
     Scaffold(
         containerColor = Color(0xFF0F172A), // Dashboard dark bg
         bottomBar = {
-            NavigationBar(
-                containerColor = Color(0xFF1E293B),
-                contentColor   = Color.White
-            ) {
-                HomeTab.entries.forEach { tab ->
-                    NavigationBarItem(
-                        selected     = selectedTab == tab,
-                        onClick      = {
-                            if (tab == HomeTab.SETTINGS && selectedTab == HomeTab.SETTINGS) {
-                                // Reset settings sub-page to menu if settings tab is clicked again
-                                currentSettingsSubPage = SettingsSubPage.MENU
-                            }
-                            selectedTab = tab
-                        },
-                        icon  = {
-                            Icon(
-                                imageVector     = tab.icon,
-                                contentDescription = tab.label
-                            )
-                        },
-                        label = {
-                            Text(
-                                text       = tab.label,
-                                fontSize   = 10.sp,
-                                fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor   = Color(0xFF22D3EE),
-                            selectedTextColor   = Color(0xFF22D3EE),
-                            unselectedIconColor = Color(0xFF94A3B8),
-                            unselectedTextColor = Color(0xFF94A3B8),
-                            indicatorColor      = Color(0xFF22D3EE).copy(alpha = 0.12f)
-                        )
-                    )
+            CustomBottomBar(
+                selectedTab = selectedTab,
+                onTabSelect = { tab ->
+                    selectedTab = tab
                 }
-            }
+            )
         }
     ) { innerPadding ->
         Box(
@@ -102,31 +151,29 @@ fun HomeScreen(
                 .padding(innerPadding)
         ) {
             when (selectedTab) {
-                HomeTab.DASHBOARD -> DashboardScreen(
-                    onNavigateToHistory = { selectedTab = HomeTab.HISTORY },
-                    modifier            = Modifier.fillMaxSize()
-                )
-                HomeTab.HISTORY   -> TransactionHistoryScreen(
+                HomeTab.HOME -> DashboardScreen(
+                    onNavigateToHistory = { /* Handle history navigation */ },
                     modifier = Modifier.fillMaxSize()
                 )
-                HomeTab.SETTINGS  -> {
-                    when (currentSettingsSubPage) {
-                        SettingsSubPage.MENU -> SettingsMenuScreen(
-                            onNavigateToGateway = { currentSettingsSubPage = SettingsSubPage.GATEWAY },
-                            onNavigateToProfile = { currentSettingsSubPage = SettingsSubPage.PROFILE },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                        SettingsSubPage.GATEWAY -> GatewayCustomizerScreen(
-                            onNavigateToApiCenter = onNavigateToApiCenter,
-                            onNavigateBack = { currentSettingsSubPage = SettingsSubPage.MENU },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                        SettingsSubPage.PROFILE -> ProfileSettingsScreen(
-                            onNavigateBack = { currentSettingsSubPage = SettingsSubPage.MENU },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+                HomeTab.DEVICE -> GatewayCustomizerScreen(
+                    onNavigateToApiCenter = onNavigateToApiCenter,
+                    onNavigateBack = { selectedTab = HomeTab.HOME },
+                    modifier = Modifier.fillMaxSize()
+                )
+                HomeTab.SEARCH -> Box(
+                    modifier = Modifier.fillMaxSize().background(Color(0xFF0F172A)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "Search Screen", color = Color.White, fontSize = 18.sp)
                 }
+                HomeTab.API -> {
+                    // Navigate to API Center screen via NavController
+                    onNavigateToApiCenter()
+                }
+                HomeTab.PROFILE -> ProfileSettingsScreen(
+                    onNavigateBack = { selectedTab = HomeTab.HOME },
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
     }
@@ -171,11 +218,7 @@ private fun HistoryPlaceholderScreen() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Settings Sub-page Navigation State
 // ─────────────────────────────────────────────────────────────────────────────
-private enum class SettingsSubPage {
-    MENU,
-    GATEWAY,
-    PROFILE
-}
+// SettingsSubPage enum removed as SETTINGS tab is no longer used
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SettingsMenuScreen — Settings Select Menu

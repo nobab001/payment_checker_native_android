@@ -121,3 +121,12 @@ data class UpdateDeviceTrialRequest(
     @SerializedName("is_trial_locked") val isTrialLocked: Boolean?,
     @SerializedName("lock_reason") val lockReason: String?
 )
+
+data class OtpFormatResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("template") val template: String
+)
+
+data class UpdateOtpFormatRequest(
+    @SerializedName("template") val template: String
+)

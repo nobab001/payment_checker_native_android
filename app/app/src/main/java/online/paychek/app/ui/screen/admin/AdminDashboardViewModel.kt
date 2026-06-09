@@ -20,6 +20,7 @@ data class AdminUiState(
     val emailAccounts: List<EmailAccountDto> = emptyList(),
     val smsSettings: List<SmsSettingsDto> = emptyList(),
     val users: List<AdminUserDto> = emptyList(),
+    val otpFormatTemplate: String = "",
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
@@ -72,6 +73,10 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 val usersRes = api.getUsers(token)
                 val users = if (usersRes.isSuccessful) usersRes.body()?.users ?: emptyList() else emptyList()
 
+                // Fetch OTP format
+                val otpFormatRes = api.getOtpFormat(token)
+                val otpFormat = if (otpFormatRes.isSuccessful) otpFormatRes.body()?.template ?: "" else ""
+
                 _state.update {
                     it.copy(
                         configs = configs,
@@ -80,6 +85,7 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                         emailAccounts = emails,
                         smsSettings = smsSettings,
                         users = users,
+                        otpFormatTemplate = otpFormat,
                         isLoading = false
                     )
                 }
@@ -106,6 +112,29 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                     }
                 } else {
                     _state.update { it.copy(isSaving = false, errorMessage = "আপডেট ব্যর্থ হয়েছে।") }
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isSaving = false, errorMessage = "নেটওয়ার্ক এরর: ${e.localizedMessage}") }
+            }
+        }
+    }
+
+    fun updateOtpFormat(template: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val response = api.updateOtpFormat(token, UpdateOtpFormatRequest(template))
+                if (response.isSuccessful && response.body()?.success == true) {
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            otpFormatTemplate = template,
+                            successMessage = "OTP মেসেজ ফরম্যাট আপডেট সফল হয়েছে।"
+                        )
+                    }
+                } else {
+                    _state.update { it.copy(isSaving = false, errorMessage = "OTP ফরম্যাট আপডেট ব্যর্থ হয়েছে।") }
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(isSaving = false, errorMessage = "নেটওয়ার্ক এরর: ${e.localizedMessage}") }

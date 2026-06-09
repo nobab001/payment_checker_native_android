@@ -946,6 +946,21 @@ async function sendOtpDispatch(contact, otpCode) {
   // ── Log locally always ───────────────────────────────────────────────────
   console.log(`[OTP] To: ${contact} | Code: ${otpCode}`);
 
+  // ── LOAD DYNAMIC OTP FORMAT TEMPLATE FROM DATABASE ────────────────────────
+  let otpTemplate = "আপনার প্রিয় পে-চেক অ্যাপ ভেরিফিকেশন কোড হলো: {otp}। কোডটি গোপন রাখুন।";
+  try {
+    const systemSettings = await query(
+      "SELECT setting_value FROM system_settings WHERE setting_key = 'otp_format_template' LIMIT 1"
+    );
+    if (systemSettings && systemSettings.length > 0 && systemSettings[0].setting_value) {
+      otpTemplate = systemSettings[0].setting_value;
+    }
+  } catch (dbErr) {
+    console.error('[sendOtpDispatch] Error reading otp_format_template:', dbErr.message);
+  }
+
+  const customMessage = otpTemplate.replace(/{otp}/g, otpCode);
+
   // ══════════════════════════════════════════════════════════════════════════
   // EMAIL DISPATCH
   // ══════════════════════════════════════════════════════════════════════════
@@ -1000,7 +1015,7 @@ async function sendOtpDispatch(contact, otpCode) {
             from:    `"Paychek" <${acc.email}>`,
             to:      contact,
             subject: 'Paychek Verification Code',
-            text:    `আপনার Paychek যাচাই কোড: ${otpCode}\n\nএটি ৫ মিনিট পর্যন্ত বৈধ।\n\nYour Paychek verification code is: ${otpCode}\nValid for 5 minutes only.`
+            text:    customMessage
           });
 
           // সফলভাবে পাঠানো হয়েছে — sent_today বাড়াই
@@ -1062,7 +1077,7 @@ async function sendOtpDispatch(contact, otpCode) {
           from:    `"Paychek" <${envUser}>`,
           to:      contact,
           subject: 'Paychek Verification Code',
-          text:    `আপনার Paychek যাচাই কোড: ${otpCode}\n\nএটি ৫ মিনিট পর্যন্ত বৈধ।\n\nYour Paychek verification code is: ${otpCode}\nValid for 5 minutes only.`
+          text:    customMessage
         });
 
         console.log(`[BACKUP-EMAIL] OTP sent successfully via .env backup account.`);
@@ -1082,7 +1097,7 @@ async function sendOtpDispatch(contact, otpCode) {
   // SMS DISPATCH (One-Active Policy)
   // ══════════════════════════════════════════════════════════════════════════
   } else {
-    const msgText = `Your Paychek OTP is ${otpCode}. Valid for 5 minutes.`;
+    const msgText = customMessage;
 
     // ── LAYER 1 (SMS): Active Database Gateway ──
     let layer1Success = false;

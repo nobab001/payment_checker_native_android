@@ -397,6 +397,36 @@ async function updateDeviceTrial(req, res) {
   }
 }
 
+async function getOtpFormat(req, res) {
+  try {
+    const rows = await query(
+      "SELECT setting_value FROM system_settings WHERE setting_key = 'otp_format_template' LIMIT 1"
+    );
+    const template = rows.length > 0 ? rows[0].setting_value : "আপনার প্রিয় পে-চেক অ্যাপ ভেরিফিকেশন কোড হলো: {otp}। কোডটি গোপন রাখুন।";
+    return res.json({ success: true, template });
+  } catch (err) {
+    console.error('getOtpFormat error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+async function updateOtpFormat(req, res) {
+  try {
+    const { template } = req.body;
+    if (template === undefined || template === null) {
+      return res.status(400).json({ error: 'template value is required' });
+    }
+    await query(
+      "INSERT INTO system_settings (setting_key, setting_value) VALUES ('otp_format_template', ?) ON DUPLICATE KEY UPDATE setting_value = ?",
+      [template, template]
+    );
+    return res.json({ success: true, message: 'OTP format template updated successfully.' });
+  } catch (err) {
+    console.error('updateOtpFormat error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   verifyAdmin,
   getConfigs,
@@ -416,5 +446,7 @@ module.exports = {
   resetAllEmailCounters,
   listUsers,
   toggleUserBlock,
-  updateDeviceTrial
+  updateDeviceTrial,
+  getOtpFormat,
+  updateOtpFormat
 };

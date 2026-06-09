@@ -32,6 +32,10 @@ router.delete('/sms-settings/:id', admin.deleteSmsSettings);   // ← NEW: delet
 router.post('/email-accounts/:id/reset', admin.resetEmailCounter);       // ← NEW: reset one counter
 router.post('/email-accounts/reset-all', admin.resetAllEmailCounters);   // ← NEW: reset all counters
 
+// 5c. OTP Message Format Manager
+router.get('/otp-format', admin.getOtpFormat);
+router.post('/otp-format/update', admin.updateOtpFormat);
+
 // 6. User and Device management list and toggle endpoints
 router.get('/users', admin.listUsers);
 router.post('/users/:id/block', admin.toggleUserBlock);

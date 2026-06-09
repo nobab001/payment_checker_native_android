@@ -134,7 +134,8 @@ fun AdminDashboardScreen(
                         onEditGateway = { showGatewayDialog = it },
                         onEditCheckout = { showCheckoutDialog = it },
                         onDeleteTemplate = { viewModel.deleteSmsTemplate(it) },
-                        onDeleteEmail = { viewModel.deleteEmailAccount(it) }
+                        onDeleteEmail = { viewModel.deleteEmailAccount(it) },
+                        onUpdateOtpFormat = { viewModel.updateOtpFormat(it) }
                     )
                     1 -> UsersAndDevicesTab(
                         uiState = uiState,
@@ -218,7 +219,8 @@ private fun GatewaysAndTemplatesTab(
     onEditGateway: (SmsSettingsDto) -> Unit,
     onEditCheckout: (CheckoutTemplateDto) -> Unit,
     onDeleteTemplate: (Int) -> Unit,
-    onDeleteEmail: (Int) -> Unit
+    onDeleteEmail: (Int) -> Unit,
+    onUpdateOtpFormat: (String) -> Unit
 ) {
     val scrollState = rememberScrollState()
     Column(
@@ -310,6 +312,95 @@ private fun GatewaysAndTemplatesTab(
                             }
                             Icon(Icons.Default.Edit, "Edit", tint = RoyalIndigo)
                         }
+                    }
+                }
+            }
+        }
+
+        // Section: OTP Message Format Manager
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "OTP Message Format Manager",
+                    fontWeight = FontWeight.Bold,
+                    color = RoyalIndigo,
+                    fontSize = 16.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    text = "ওটিপি মেসেজের ফরম্যাট কাস্টমাইজ করুন। ওটিপি কোড বসাতে {otp} প্লেসহোল্ডারটি ব্যবহার করুন।",
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                var otpText by remember(uiState.otpFormatTemplate) { mutableStateOf(uiState.otpFormatTemplate) }
+
+                val hasUnicode = otpText.any { it.code > 127 }
+                val length = otpText.length
+                val (limit, divisor) = if (hasUnicode) {
+                    70 to 67.0
+                } else {
+                    160 to 153.0
+                }
+                
+                val smsCount = if (length <= limit) {
+                    1
+                } else {
+                    Math.ceil(length / divisor).toInt()
+                }
+                
+                val counterText = "Character: $length/$limit ($smsCount SMS)"
+                val counterColor = when {
+                    length >= limit -> StatusRed
+                    length >= (limit * 0.8) -> Color(0xFFF57C00) // Amber/Orange
+                    else -> TextSecondary
+                }
+
+                OutlinedTextField(
+                    value = otpText,
+                    onValueChange = { otpText = it },
+                    placeholder = { Text("আপনার ওটিপি ফরম্যাট লিখুন") },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = counterText,
+                        fontSize = 11.sp,
+                        color = counterColor,
+                        fontWeight = FontWeight.Medium
+                    )
+
+                    Button(
+                        onClick = { onUpdateOtpFormat(otpText) },
+                        colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.height(36.dp)
+                    ) {
+                        Text(
+                            text = "ফরম্যাট আপডেট করুন",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
                     }
                 }
             }

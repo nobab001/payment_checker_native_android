@@ -97,4 +97,15 @@ interface AdminApiService {
         @Path("id") id: Int,
         @Body request: UpdateDeviceTrialRequest
     ): Response<AdminGenericResponse>
+
+    @GET("admin/otp-format")
+    suspend fun getOtpFormat(
+        @Header("Authorization") token: String
+    ): Response<OtpFormatResponse>
+
+    @POST("admin/otp-format/update")
+    suspend fun updateOtpFormat(
+        @Header("Authorization") token: String,
+        @Body request: UpdateOtpFormatRequest
+    ): Response<AdminGenericResponse>
 }
