@@ -21,6 +21,16 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import online.paychek.app.data.remote.dto.CredentialItem
 import online.paychek.app.data.repository.CredentialRepository
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+
 
 // Local color copies matching theme
 private val PsCard     = Color(0xFF1E293B)
@@ -213,21 +223,99 @@ fun ProfileCredentialsCard(
                             fontSize = 13.sp,
                             modifier = Modifier.padding(bottom = 12.dp)
                         )
-                        OutlinedTextField(
-                            value = otpValue,
-                            onValueChange = { otpValue = it },
-                            label = { Text("ওটিপি কোড", color = TextM) },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = TextW,
-                                unfocusedTextColor = TextW,
-                                focusedBorderColor = PsCyan,
-                                unfocusedBorderColor = TextM,
-                                cursorColor = PsCyan
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        val clipboardManager = LocalClipboardManager.current
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            BasicTextField(
+                                value = otpValue,
+                                onValueChange = { newValue ->
+                                    val sanitized = newValue.filter { it.isDigit() }.take(6)
+                                    otpValue = sanitized
+                                    if (sanitized.length == 6) {
+                                        viewModel.verifyAndLinkCredential(inputValue, inputType, sanitized) {
+                                            showAddDialog = false
+                                            Toast.makeText(context, "ক্রেডেনশিয়াল সফলভাবে লিঙ্ক করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done
+                                ),
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.Transparent),
+                                cursorBrush = SolidColor(Color.Transparent),
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .alpha(0.01f)
+                            )
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                                    modifier = Modifier.weight(1f, fill = false)
+                                ) {
+                                    for (i in 0 until 6) {
+                                        val char = otpValue.getOrNull(i)?.toString() ?: ""
+                                        val isFocused = otpValue.length == i || (i == 5 && otpValue.length == 6)
+
+                                        Box(
+                                            modifier = Modifier
+                                                .size(width = 40.dp, height = 48.dp)
+                                                .background(
+                                                    color = if (char.isNotEmpty()) Color.White.copy(0.05f) else PsCardAlt,
+                                                    shape = RoundedCornerShape(10.dp)
+                                                )
+                                                .border(
+                                                    width = if (isFocused) 2.dp else 1.dp,
+                                                    color = if (isFocused) PsCyan else PsCardAlt,
+                                                    shape = RoundedCornerShape(10.dp)
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = char,
+                                                fontSize = 18.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = TextW,
+                                                textAlign = TextAlign.Center
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                IconButton(
+                                    onClick = {
+                                        clipboardManager.getText()?.text?.let { clipboardText ->
+                                            val digits = clipboardText.filter { it.isDigit() }.take(6)
+                                            if (digits.length == 6) {
+                                                otpValue = digits
+                                                viewModel.verifyAndLinkCredential(inputValue, inputType, digits) {
+                                                    showAddDialog = false
+                                                    Toast.makeText(context, "ক্রেডেনশিয়াল সফলভাবে লিঙ্ক করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .background(PsCyan.copy(alpha = 0.1f), CircleShape)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentPaste,
+                                        contentDescription = "Paste OTP",
+                                        tint = PsCyan
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     viewModel.errorMessage?.let { error ->

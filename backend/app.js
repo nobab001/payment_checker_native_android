@@ -1,3 +1,6 @@
+// Force the process timezone to Bangladesh Standard Time
+process.env.TZ = 'Asia/Dhaka';
+
 const express = require('express');
 const cors = require('cors');
 const cron = require('node-cron');
@@ -25,9 +28,17 @@ app.use(express.static('public'));
 // Parse incoming JSON body payloads
 app.use(express.json());
 
-// Log incoming REST API requests
+// Helper to get formatted Bangladesh Standard Time (BST) timestamp
+const getBdTimestamp = () => {
+  const options = { timeZone: 'Asia/Dhaka', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+  const formatter = new Intl.DateTimeFormat('en-US', options);
+  const [{ value: m }, , { value: d }, , { value: y }, , { value: h }, , { value: min }, , { value: s }] = formatter.formatToParts(new Date());
+  return `${y}-${m}-${d} ${h}:${min}:${s}`;
+};
+
+// Log incoming REST API requests with Bangladesh Time (BST)
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  console.log(`[${getBdTimestamp()}] ${req.method} ${req.url}`);
   next();
 });
 

@@ -32,6 +32,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import online.paychek.app.data.remote.dto.CredentialItem
 import online.paychek.app.ui.theme.RoyalIndigo
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.ImeAction
 
 // =============================================================================
 // Design Tokens (matches Dark Gateway theme)
@@ -427,14 +434,93 @@ private fun AddCredentialDialog(
 
                     // OTP input (visible after send)
                     AnimatedVisibility(visible = state.addCredentialOtpSent) {
-                        PsTextField(
-                            value       = state.addCredentialOtpCode,
-                            onValueChange = { viewModel.onAddCredentialOtpChange(it) },
-                            label       = "৬-সংখ্যার OTP কোড",
-                            icon        = Icons.Default.Pin,
-                            keyType     = KeyboardType.NumberPassword,
-                            accent      = accent
-                        )
+                        val clipboardManager = LocalClipboardManager.current
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            BasicTextField(
+                                value = state.addCredentialOtpCode,
+                                onValueChange = { newValue ->
+                                    val sanitized = newValue.filter { it.isDigit() }.take(6)
+                                    viewModel.onAddCredentialOtpChange(sanitized)
+                                    if (sanitized.length == 6) {
+                                        viewModel.verifyCredential()
+                                    }
+                                },
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done
+                                ),
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.Transparent),
+                                cursorBrush = SolidColor(Color.Transparent),
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .alpha(0.01f)
+                            )
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                                    modifier = Modifier.weight(1f, fill = false)
+                                ) {
+                                    for (i in 0 until 6) {
+                                        val char = state.addCredentialOtpCode.getOrNull(i)?.toString() ?: ""
+                                        val isFocused = state.addCredentialOtpCode.length == i || (i == 5 && state.addCredentialOtpCode.length == 6)
+
+                                        Box(
+                                            modifier = Modifier
+                                                .size(width = 40.dp, height = 48.dp)
+                                                .background(
+                                                    color = if (char.isNotEmpty()) Color.White.copy(0.05f) else PsCardAlt,
+                                                    shape = RoundedCornerShape(10.dp)
+                                                )
+                                                .border(
+                                                    width = if (isFocused) 2.dp else 1.dp,
+                                                    color = if (isFocused) accent else PsCardAlt,
+                                                    shape = RoundedCornerShape(10.dp)
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = char,
+                                                fontSize = 18.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = TextW,
+                                                textAlign = TextAlign.Center
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                IconButton(
+                                    onClick = {
+                                        clipboardManager.getText()?.text?.let { clipboardText ->
+                                            val digits = clipboardText.filter { it.isDigit() }.take(6)
+                                            if (digits.length == 6) {
+                                                viewModel.onAddCredentialOtpChange(digits)
+                                                viewModel.verifyCredential()
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .background(accent.copy(alpha = 0.1f), CircleShape)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentPaste,
+                                        contentDescription = "Paste OTP",
+                                        tint = accent
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     // Timer / Resend
@@ -583,14 +669,93 @@ private fun ResetPinDialog(
 
                     AnimatedVisibility(visible = state.resetPinOtpSent) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            PsTextField(
-                                value         = state.resetPinOtpCode,
-                                onValueChange = { viewModel.onResetPinOtpChange(it) },
-                                label         = "৬-সংখ্যার OTP কোড",
-                                icon          = Icons.Default.Pin,
-                                keyType       = KeyboardType.NumberPassword,
-                                accent        = PsGreen
-                            )
+                            val clipboardManager = LocalClipboardManager.current
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                BasicTextField(
+                                    value = state.resetPinOtpCode,
+                                    onValueChange = { newValue ->
+                                        val sanitized = newValue.filter { it.isDigit() }.take(6)
+                                        viewModel.onResetPinOtpChange(sanitized)
+                                        if (sanitized.length == 6) {
+                                            viewModel.submitResetPin()
+                                        }
+                                    },
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Number,
+                                        imeAction = ImeAction.Done
+                                    ),
+                                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.Transparent),
+                                    cursorBrush = SolidColor(Color.Transparent),
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .alpha(0.01f)
+                                )
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    ) {
+                                        for (i in 0 until 6) {
+                                            val char = state.resetPinOtpCode.getOrNull(i)?.toString() ?: ""
+                                            val isFocused = state.resetPinOtpCode.length == i || (i == 5 && state.resetPinOtpCode.length == 6)
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(width = 40.dp, height = 48.dp)
+                                                    .background(
+                                                        color = if (char.isNotEmpty()) Color.White.copy(0.05f) else PsCardAlt,
+                                                        shape = RoundedCornerShape(10.dp)
+                                                    )
+                                                    .border(
+                                                        width = if (isFocused) 2.dp else 1.dp,
+                                                        color = if (isFocused) PsGreen else PsCardAlt,
+                                                        shape = RoundedCornerShape(10.dp)
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = char,
+                                                    fontSize = 18.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TextW,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    IconButton(
+                                        onClick = {
+                                            clipboardManager.getText()?.text?.let { clipboardText ->
+                                                val digits = clipboardText.filter { it.isDigit() }.take(6)
+                                                if (digits.length == 6) {
+                                                    viewModel.onResetPinOtpChange(digits)
+                                                    viewModel.submitResetPin()
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .background(PsGreen.copy(alpha = 0.1f), CircleShape)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentPaste,
+                                            contentDescription = "Paste OTP",
+                                            tint = PsGreen
+                                        )
+                                    }
+                                }
+                            }
                             PinField("নতুন PIN (৬-ডিজিট)", state.resetPinNewPin, viewModel::onResetPinNewPinChange)
                         }
                     }
