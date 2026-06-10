@@ -67,28 +67,8 @@ cron.schedule('0 0 * * *', async () => {
   }
 });
 
-// 12:01 AM Cron: Deduct daily maintenance rate (1 credit) from active non-free subscription tier users
-cron.schedule('1 0 * * *', async () => {
-  try {
-    // 1. Deduct 1 credit from all users who have account_level != 'FREE_LEVEL' and are active
-    await query(`
-      UPDATE users 
-      SET wallet_credits = wallet_credits - 1 
-      WHERE blocked = 0 AND profile_complete = 1 AND account_level != 'FREE_LEVEL'
-    `);
-
-    // 2. Auto-Downgrade Engine: For any user whose wallet_credits <= 0, reset to FREE_LEVEL and zero credits
-    await query(`
-      UPDATE users
-      SET account_level = 'FREE_LEVEL', wallet_credits = 0
-      WHERE blocked = 0 AND profile_complete = 1 AND account_level != 'FREE_LEVEL' AND wallet_credits <= 0
-    `);
-
-    console.log('[CRON] SaaS Unified Credit Aging Engine: Deducted 1 credit and ran auto-downgrade engine.');
-  } catch (err) {
-    console.error('[CRON] Error in midnight SaaS credit aging cron job:', err);
-  }
-});
+// Mount Distributed Self-Healing Subscription Billing Engine Scheduler
+require('./cron/billingScheduler');
 
 // 11:00 AM Cron: Notify users with credits < ৳10 using Mock Firebase push alerts
 cron.schedule('0 11 * * *', async () => {
@@ -182,6 +162,19 @@ app.listen(PORT, async () => {
       );
     }
     console.log('[DB] global_billing_settings verified and populated.');
+
+// Initialize credit_deduction_ledger table
+    await query(`
+      CREATE TABLE IF NOT EXISTS \`credit_deduction_ledger\` (
+        \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+        \`user_id\` INT NOT NULL,
+        \`deducted_date\` DATE NOT NULL,
+        \`credits_deducted\` INT DEFAULT 1,
+        \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY \`idx_user_date\` (\`user_id\`, \`deducted_date\`),
+        FOREIGN KEY (\`user_id\`) REFERENCES \`users\`(\`id\`) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
 
     // Initialize subscription_plans table
     await query(`
