@@ -4,12 +4,7 @@ package online.paychek.app.data.remote.dto
 // Profile / Credentials DTOs
 // ─────────────────────────────────────────────────────────────────
 
-data class CredentialItem(
-    val id: Int,
-    val type: String,          // "phone" or "email"
-    val value: String,
-    val verifiedAt: String?
-)
+
 
 data class ListCredentialsResponse(
     val success: Boolean,

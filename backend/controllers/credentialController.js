@@ -2,8 +2,8 @@
 
 const { query } = require('../db/connection');
 
-// Max credentials per user (phones + emails combined)
-const MAX_CREDENTIALS = 5;
+// Max credentials per user per type (phones & emails separately)
+const MAX_PER_TYPE = 5;
 
 /**
  * GET /api/credentials
@@ -24,16 +24,20 @@ async function listCredentials(req, res) {
       [userId]
     );
 
+    const mappedCreds = creds.map(c => ({
+      id: c.id,
+      type: c.type,
+      value: c.value,
+      verifiedAt: c.verified_at
+    }));
+
     return res.json({
       success: true,
       primaryPhone,
       primaryEmail,
-      credentials: creds.map(c => ({
-        id: c.id,
-        type: c.type,
-        value: c.value,
-        verifiedAt: c.verified_at
-      }))
+      credentials: mappedCreds,
+      phones: mappedCreds.filter(c => c.type === 'phone'),
+      emails: mappedCreds.filter(c => c.type === 'email')
     });
   } catch (err) {
     console.error('[CredentialController] listCredentials error:', err);
@@ -44,38 +48,36 @@ async function listCredentials(req, res) {
 /**
  * POST /api/credentials/send-otp
  * Sends OTP to a new phone/email before adding it as a credential.
- * Body: { contact: String }
+ * Body: { value: String, type: String } (Supports fallback { contact: String })
  */
 async function sendCredentialOtp(req, res) {
   try {
     const userId = req.user.userId;
-    const { contact } = req.body;
+    const contact = req.body.value || req.body.contact;
 
     if (!contact || contact.trim() === '') {
       return res.status(400).json({ error: 'Contact is required' });
     }
     const cleanContact = contact.trim();
+    const isEmail = cleanContact.includes('@');
+    const resolvedType = req.body.type || (isEmail ? 'email' : 'phone');
 
-    // Count existing verified credentials (primary + user_credentials)
-    const userRows = await query('SELECT phone, email FROM users WHERE id = ? LIMIT 1', [userId]);
-    const existingCreds = await query(
-      "SELECT id FROM user_credentials WHERE user_id = ? AND verified_at IS NOT NULL",
-      [userId]
+    // Count existing credentials of this resolvedType
+    const countRows = await query(
+      "SELECT COUNT(*) as cnt FROM user_credentials WHERE user_id = ? AND type = ?",
+      [userId, resolvedType]
     );
-    let total = existingCreds.length;
-    if (userRows[0]?.phone) total++;
-    if (userRows[0]?.email) total++;
+    const total = countRows[0].cnt;
 
-    if (total >= MAX_CREDENTIALS) {
+    if (total >= MAX_PER_TYPE) {
       return res.status(400).json({
         success: false,
         action: 'LIMIT_REACHED',
-        message: `সর্বোচ্চ ${MAX_CREDENTIALS}টি credential যোগ করা যায়। কোনোটি সরিয়ে নতুন যোগ করুন।`
+        message: `দুঃখিত ভাই! সর্বোচ্চ ৫টি ${resolvedType === 'phone' ? 'মোবাইল নম্বর' : 'জিমেইল'} লিঙ্ক করা সম্ভব।`
       });
     }
 
     // Global uniqueness check — contact must not exist anywhere
-    const isEmail = cleanContact.includes('@');
     const existsInUsers = await query(
       isEmail
         ? 'SELECT id FROM users WHERE email = ? LIMIT 1'
@@ -105,7 +107,7 @@ async function sendCredentialOtp(req, res) {
     // Insert a pending (unverified) credential record
     await query(
       "INSERT INTO user_credentials (user_id, type, value, verified_at) VALUES (?, ?, ?, NULL) ON DUPLICATE KEY UPDATE verified_at = NULL",
-      [userId, isEmail ? 'email' : 'phone', cleanContact]
+      [userId, resolvedType, cleanContact]
     );
 
     // Dispatch OTP (reuse existing dispatcher from authController)
@@ -129,12 +131,13 @@ async function sendCredentialOtp(req, res) {
 /**
  * POST /api/credentials/verify
  * Verifies OTP and marks credential as verified.
- * Body: { contact: String, code: String }
+ * Body: { value: String, type: String, otp: String } (Supports fallback { contact: String, code: String })
  */
 async function verifyCredential(req, res) {
   try {
     const userId = req.user.userId;
-    const { contact, code } = req.body;
+    const contact = req.body.value || req.body.contact;
+    const code = req.body.otp || req.body.code;
 
     if (!contact || !code) {
       return res.status(400).json({ error: 'Contact and code are required' });

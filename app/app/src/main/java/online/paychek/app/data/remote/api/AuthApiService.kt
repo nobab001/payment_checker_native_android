@@ -6,6 +6,8 @@ import retrofit2.http.Body
 import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.GET
+import retrofit2.http.DELETE
+import retrofit2.http.Path
 
 interface AuthApiService {
 
@@ -53,4 +55,28 @@ interface AuthApiService {
         @Header("Authorization") token: String,
         @Body request: VerifyPinRequest
     ): Response<VerifyPinResponse>
+
+    // ── Multi-Credential Association ─────────────────────────────────
+    @GET("credentials")
+    suspend fun listCredentials(
+        @Header("Authorization") token: String
+    ): Response<LinkedCredentialsResponse>
+
+    @POST("credentials/send-otp")
+    suspend fun sendLinkOtp(
+        @Header("Authorization") token: String,
+        @Body request: LinkCredentialOtpRequest
+    ): Response<okhttp3.ResponseBody>
+
+    @POST("credentials/verify")
+    suspend fun verifyLinkCredential(
+        @Header("Authorization") token: String,
+        @Body request: VerifyLinkCredentialRequest
+    ): Response<okhttp3.ResponseBody>
+
+    @DELETE("credentials/{id}")
+    suspend fun removeCredential(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int
+    ): Response<okhttp3.ResponseBody>
 }
