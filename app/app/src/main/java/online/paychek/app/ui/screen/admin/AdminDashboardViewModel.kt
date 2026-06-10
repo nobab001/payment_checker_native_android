@@ -23,6 +23,7 @@ data class AdminUiState(
     val users: List<AdminUserDto> = emptyList(),
     val otpFormatTemplate: String = "",
     val billingSettings: List<BillingSettingDto> = emptyList(),
+    val plans: List<SubscriptionPlanDto> = emptyList(),
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
@@ -83,6 +84,10 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 val billingSettingsRes = api.getBillingSettings(token)
                 val billingSettings = if (billingSettingsRes.isSuccessful) billingSettingsRes.body()?.settings ?: emptyList() else emptyList()
 
+                // Fetch plans
+                val plansRes = api.getPlans(token)
+                val plans = if (plansRes.isSuccessful) plansRes.body()?.plans ?: emptyList() else emptyList()
+
                 _state.update {
                     it.copy(
                         configs = configs,
@@ -93,6 +98,7 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                         users = users,
                         otpFormatTemplate = otpFormat,
                         billingSettings = billingSettings,
+                        plans = plans,
                         isLoading = false
                     )
                 }
@@ -373,21 +379,53 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    fun updateUserCustomDailyRate(userId: Int, customDailyRate: Double?) {
+    fun giveManualGrace(userId: Int, credits: Int) {
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true) }
             try {
                 val token = "Bearer ${getToken()}"
-                val response = api.updateUserCustomDailyRate(token, userId, UpdateCustomRateRequest(customDailyRate))
+                val response = api.updateUserManualGrace(token, userId, ManualGraceRequest(credits))
                 if (response.isSuccessful && response.body()?.success == true) {
-                    _state.update { it.copy(successMessage = "ইউজারের কাস্টম ডেইলি রেট সফলভাবে পরিবর্তিত হয়েছে।") }
+                    _state.update { it.copy(successMessage = "ব্যবহারকারীকে সফলভাবে ${credits} দিনের ট্রায়াল প্রদান করা হয়েছে।") }
                     refreshUsers()
                 } else {
-                    _state.update { it.copy(isSaving = false, errorMessage = "কাস্টম ডেইলি রেট আপডেট ব্যর্থ হয়েছে।") }
+                    _state.update { it.copy(isSaving = false, errorMessage = "ম্যানুয়াল ট্রায়াল প্রদান ব্যর্থ হয়েছে।") }
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }
             }
+        }
+    }
+
+    fun savePlan(plan: SubscriptionPlanDto) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val response = api.savePlan(token, plan)
+                if (response.isSuccessful && response.body()?.success == true) {
+                    _state.update { it.copy(successMessage = "প্ল্যান সফলভাবে সংরক্ষিত হয়েছে।") }
+                    refreshPlans()
+                } else {
+                    _state.update { it.copy(isSaving = false, errorMessage = "প্ল্যান সেভ ব্যর্থ হয়েছে।") }
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }
+            }
+        }
+    }
+
+    private suspend fun refreshPlans() {
+        try {
+            val token = "Bearer ${getToken()}"
+            val res = api.getPlans(token)
+            if (res.isSuccessful) {
+                _state.update { it.copy(plans = res.body()?.plans ?: emptyList(), isSaving = false) }
+            } else {
+                _state.update { it.copy(isSaving = false) }
+            }
+        } catch (e: Exception) {
+            _state.update { it.copy(isSaving = false) }
         }
     }
 

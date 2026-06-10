@@ -12,8 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import online.paychek.app.config.AppConfig
-import online.paychek.app.data.remote.dto.DashboardStats
-import online.paychek.app.data.remote.dto.TransactionItem
+import online.paychek.app.data.remote.dto.*
 import online.paychek.app.data.repository.PaymentRepository
 import online.paychek.app.services.foreground.SmsMonitorService
 import online.paychek.app.utils.SecurePreferences
@@ -38,7 +37,10 @@ data class DashboardScreenState(
     val uiState: DashboardUiState      = DashboardUiState.Loading,
     val isServiceActive: Boolean       = false,   // SMS Monitor চালু আছে কিনা
     val isRefreshing: Boolean          = false,   // Pull-to-refresh indicator
-    val userName: String               = ""       // Header-এ দেখানোর জন্য
+    val userName: String               = "",      // Header-এ দেখানোর জন্য
+    val plans: List<SubscriptionPlanDto> = emptyList(),
+    val showPurchaseDialog: Boolean    = false,
+    val purchaseLoading: Boolean       = false
 )
 
 // =============================================================================
@@ -60,6 +62,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         _state.update { it.copy(isServiceActive = isActive, userName = userName) }
 
         loadDashboardStats()
+        loadPlans()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -170,6 +173,42 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             val result = repository.rechargeWallet(token, amount)
             result.onSuccess {
                 loadDashboardStats()
+            }
+            onResult(result)
+        }
+    }
+
+    fun loadPlans() {
+        viewModelScope.launch {
+            val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
+            if (token.isEmpty()) return@launch
+            repository.getPlans(token).onSuccess { plansList ->
+                _state.update { it.copy(plans = plansList) }
+            }.onFailure {
+                // Silently ignore
+            }
+        }
+    }
+
+    fun setShowPurchaseDialog(show: Boolean) {
+        _state.update { it.copy(showPurchaseDialog = show) }
+    }
+
+    fun purchaseSubscription(planName: String, onResult: (Result<PurchaseSubscriptionResponse>) -> Unit) {
+        viewModelScope.launch {
+            _state.update { it.copy(purchaseLoading = true) }
+            val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
+            if (token.isEmpty()) {
+                onResult(Result.failure(Exception("লগইন সেশন পাওয়া যায়নি।")))
+                _state.update { it.copy(purchaseLoading = false) }
+                return@launch
+            }
+            val result = repository.purchaseSubscription(token, planName)
+            result.onSuccess {
+                loadDashboardStats()
+                _state.update { it.copy(purchaseLoading = false, showPurchaseDialog = false) }
+            }.onFailure {
+                _state.update { it.copy(purchaseLoading = false) }
             }
             onResult(result)
         }

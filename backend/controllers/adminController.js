@@ -302,7 +302,7 @@ async function listUsers(req, res) {
   try {
     // 1. Fetch all users
     const users = await query(
-      `SELECT id, name, phone, email, role, balance, wallet_credits, custom_daily_rate, blocked, profile_complete, created_at FROM users`
+      `SELECT id, name, phone, email, role, balance, wallet_credits, account_level, blocked, profile_complete, created_at FROM users`
     );
 
     // 2. Fetch all registered devices
@@ -437,17 +437,37 @@ async function addSite(req, res) {
       return res.status(400).json({ success: false, error: 'Site name and Site URL are required' });
     }
 
-    // Fetch site fee from global_billing_settings
-    const feeSettings = await query(
-      "SELECT setting_value FROM global_billing_settings WHERE setting_key = 'one_time_site_fee' LIMIT 1"
-    );
-    const siteFee = feeSettings.length > 0 ? parseFloat(feeSettings[0].setting_value) : 10.00;
+    const users = await query('SELECT account_level, wallet_credits FROM users WHERE id = ? LIMIT 1', [userId]);
+    if (users.length === 0) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+    const user = users[0];
 
-    // Deduct from user wallet
-    await query(
-      "UPDATE users SET wallet_credits = wallet_credits - ? WHERE id = ?",
-      [siteFee, userId]
-    );
+    if (user.account_level === 'FREE_LEVEL') {
+      return res.status(400).json({
+        success: false,
+        error: 'SUBSCRIPTION_REQUIRED',
+        message: 'সাইট বা ডিভাইস হোস্ট করতে দয়া করে একটি সাবস্ক্রিপশন প্যাকেজ কিনুন।'
+      });
+    }
+
+    // Check limits
+    const plans = await query('SELECT max_sites FROM subscription_plans WHERE plan_name = ? LIMIT 1', [user.account_level]);
+    if (plans.length === 0) {
+      return res.status(400).json({ success: false, error: 'Subscription plan not found' });
+    }
+    const plan = plans[0];
+
+    const currentSitesRows = await query('SELECT COUNT(*) as cnt FROM gateway_layouts WHERE user_id = ?', [userId]);
+    const currentSites = currentSitesRows[0].cnt;
+
+    if (currentSites >= plan.max_sites) {
+      return res.status(400).json({
+        success: false,
+        error: 'LIMIT_EXCEEDED',
+        message: `আপনার বর্তমান প্ল্যানে সর্বোচ্চ ${plan.max_sites}টি ওয়েবসাইট হোস্ট করা সম্ভব। দয়া করে প্ল্যানটি আপগ্রেড করুন।`
+      });
+    }
 
     // Generate keys
     const apiKey = 'pk_' + crypto.randomBytes(16).toString('hex');
@@ -461,11 +481,9 @@ async function addSite(req, res) {
       [userId, site_name, site_url, apiKey, apiSecret, JSON.stringify({}), 1]
     );
 
-    // Retrieve updated credits
-    const users = await query('SELECT wallet_credits FROM users WHERE id = ? LIMIT 1', [userId]);
-    const updatedCredits = parseFloat(users[0].wallet_credits || '0.00');
+    const updatedCredits = user.wallet_credits;
 
-    console.log(`[Billing] User ${userId} registered site ${site_name}. Deducted ${siteFee}. Remaining: ${updatedCredits}`);
+    console.log(`[Billing] User ${userId} registered site ${site_name}. Current Level: ${user.account_level}. Layout count: ${currentSites + 1}`);
 
     return res.json({
       success: true,
@@ -519,28 +537,29 @@ async function updateBillingSettings(req, res) {
   }
 }
 
-async function updateUserCustomDailyRate(req, res) {
+async function manualGrace(req, res) {
   try {
     const { id } = req.params;
-    const { custom_daily_rate } = req.body;
+    let { credits } = req.body;
 
-    let rateValue = null;
-    if (custom_daily_rate !== undefined && custom_daily_rate !== null) {
-      rateValue = parseFloat(custom_daily_rate);
-      if (isNaN(rateValue) || rateValue < 0) {
-        return res.status(400).json({ error: 'Invalid custom daily rate value.' });
-      }
+    let creditsValue = parseInt(credits, 10);
+    if (isNaN(creditsValue) || creditsValue < 0) {
+      creditsValue = 7;
     }
 
-    await query('UPDATE users SET custom_daily_rate = ? WHERE id = ?', [rateValue, id]);
+    await query(
+      "UPDATE users SET account_level = 'Basic', wallet_credits = wallet_credits + ? WHERE id = ?",
+      [creditsValue, id]
+    );
 
     return res.json({
       success: true,
-      message: 'ব্যবহারকারীর কাস্টম ডেইলি রেট সফলভাবে আপডেট করা হয়েছে।',
-      custom_daily_rate: rateValue
+      message: `ব্যবহারকারীকে সফলভাবে ${creditsValue} দিনের ট্রায়াল প্রদান করা হয়েছে।`,
+      account_level: 'Basic',
+      credits_added: creditsValue
     });
   } catch (err) {
-    console.error('[Admin Billing] updateUserCustomDailyRate error:', err);
+    console.error('[Admin Billing] manualGrace error:', err);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 }
@@ -570,5 +589,5 @@ module.exports = {
   addSite,
   getBillingSettings,
   updateBillingSettings,
-  updateUserCustomDailyRate
+  manualGrace
 };

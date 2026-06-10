@@ -112,6 +112,9 @@ data class DashboardStats(
     @SerializedName("wallet_credits")
     val walletCredits: Double = 0.0,    // ওয়ালেট ব্যালেন্স (নেগেটিভ হতে পারে)
 
+    @SerializedName("account_level")
+    val accountLevel: String? = null,
+
     @SerializedName("recent_transactions")
     val recentTransactions: List<TransactionItem>  // সর্বশেষ ৫টি ট্রানজেকশন
 )
@@ -134,4 +137,15 @@ data class FcmTokenRequest(
 data class FcmTokenResponse(
     val success: Boolean,
     val message: String?
+)
+
+data class PurchaseSubscriptionRequest(
+    @SerializedName("planName") val planName: String
+)
+
+data class PurchaseSubscriptionResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("message") val message: String?,
+    @SerializedName("account_level") val accountLevel: String?,
+    @SerializedName("wallet_credits") val walletCredits: Double?
 )

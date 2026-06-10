@@ -102,7 +102,7 @@ data class AdminUserDto(
     @SerializedName("role") val role: String,
     @SerializedName("balance") val balance: Double,
     @SerializedName("wallet_credits") val walletCredits: Double = 0.0,
-    @SerializedName("custom_daily_rate") val customDailyRate: Double? = null,
+    @SerializedName("account_level") val accountLevel: String? = null,
     @SerializedName("blocked") val blocked: Boolean,
     @SerializedName("profile_complete") val profileComplete: Boolean,
     @SerializedName("created_at") val createdAt: String,
@@ -149,6 +149,20 @@ data class UpdateBillingSettingsRequest(
     @SerializedName("settings") val settings: List<BillingSettingDto>
 )
 
-data class UpdateCustomRateRequest(
-    @SerializedName("custom_daily_rate") val customDailyRate: Double?
+data class ManualGraceRequest(
+    @SerializedName("credits") val credits: Int
+)
+
+data class SubscriptionPlanDto(
+    @SerializedName("id") val id: Int? = null,
+    @SerializedName("plan_name") val planName: String,
+    @SerializedName("price") val price: Double,
+    @SerializedName("max_sites") val maxSites: Int,
+    @SerializedName("max_devices") val maxDevices: Int,
+    @SerializedName("credits_given") val creditsGiven: Int = 365
+)
+
+data class SubscriptionPlansResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("plans") val plans: List<SubscriptionPlanDto>
 )

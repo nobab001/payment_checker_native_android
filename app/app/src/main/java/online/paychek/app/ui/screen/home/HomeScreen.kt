@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
 import online.paychek.app.NavKey as AppNavKey
+import kotlinx.coroutines.launch
 import online.paychek.app.ui.screen.dashboard.DashboardScreen
 import online.paychek.app.ui.screen.gateway.GatewayCustomizerScreen
 import online.paychek.app.ui.screen.profile.ProfileSettingsScreen
@@ -39,6 +40,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateDp
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.navigationBarsPadding
+import online.paychek.app.utils.SecurePreferences
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bottom Navigation Tab সংজ্ঞা
@@ -130,9 +132,61 @@ fun HomeScreen(
     onNavigate: (NavKey) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val onNavigateToApiCenter: () -> Unit = { onNavigate(AppNavKey.ApiCenter) }
-    var selectedTab by remember { mutableStateOf(HomeTab.HOME) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember(context) { context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE) }
+    
+    val coroutineScope = rememberCoroutineScope()
+    var showPurchaseDialog by remember { mutableStateOf(false) }
+    var plansList by remember { mutableStateOf<List<online.paychek.app.data.remote.dto.SubscriptionPlanDto>>(emptyList()) }
+    var purchaseLoading by remember { mutableStateOf(false) }
 
+    LaunchedEffect(showPurchaseDialog) {
+        if (showPurchaseDialog && plansList.isEmpty()) {
+            val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
+            if (token.isNotEmpty()) {
+                online.paychek.app.data.repository.PaymentRepository().getPlans(token).onSuccess {
+                    plansList = it
+                }
+            }
+        }
+    }
+
+    if (showPurchaseDialog) {
+        online.paychek.app.ui.screen.dashboard.SubscriptionPurchaseDialog(
+            plans = plansList,
+            isLoading = purchaseLoading,
+            onDismiss = { showPurchaseDialog = false },
+            onPurchase = { planName ->
+                coroutineScope.launch {
+                    purchaseLoading = true
+                    val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
+                    val result = online.paychek.app.data.repository.PaymentRepository().purchaseSubscription(token, planName)
+                    result.fold(
+                        onSuccess = {
+                            prefs.edit().putString("pcu_account_level", planName).apply()
+                            android.widget.Toast.makeText(context, "${planName} প্যাকেজ সক্রিয় হয়েছে।", android.widget.Toast.LENGTH_SHORT).show()
+                            showPurchaseDialog = false
+                            onNavigate(AppNavKey.ApiCenter)
+                        },
+                        onFailure = { error ->
+                            android.widget.Toast.makeText(context, error.message ?: "প্যাকেজ ক্রয় ব্যর্থ হয়েছে।", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    )
+                    purchaseLoading = false
+                }
+            }
+        )
+    }
+
+    val onNavigateToApiCenter: () -> Unit = {
+        val accountLevel = prefs.getString("pcu_account_level", "FREE_LEVEL") ?: "FREE_LEVEL"
+        if (accountLevel == "FREE_LEVEL") {
+            showPurchaseDialog = true
+        } else {
+            onNavigate(AppNavKey.ApiCenter)
+        }
+    }
+    var selectedTab by remember { mutableStateOf(HomeTab.HOME) }
 
     Scaffold(
         containerColor = Color(0xFF0F172A), // Dashboard dark bg
@@ -140,7 +194,16 @@ fun HomeScreen(
             CustomBottomBar(
                 selectedTab = selectedTab,
                 onTabSelect = { tab ->
-                    selectedTab = tab
+                    if (tab == HomeTab.API) {
+                        val accountLevel = prefs.getString("pcu_account_level", "FREE_LEVEL") ?: "FREE_LEVEL"
+                        if (accountLevel == "FREE_LEVEL") {
+                            showPurchaseDialog = true
+                        } else {
+                            selectedTab = tab
+                        }
+                    } else {
+                        selectedTab = tab
+                    }
                 }
             )
         }

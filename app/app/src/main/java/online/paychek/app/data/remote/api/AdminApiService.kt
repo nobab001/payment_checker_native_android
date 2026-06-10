@@ -120,10 +120,21 @@ interface AdminApiService {
         @Body request: UpdateBillingSettingsRequest
     ): Response<AdminGenericResponse>
 
-    @POST("admin/users/{id}/custom-rate")
-    suspend fun updateUserCustomDailyRate(
+    @POST("admin/users/{id}/manual-grace")
+    suspend fun updateUserManualGrace(
         @Header("Authorization") token: String,
         @Path("id") id: Int,
-        @Body request: UpdateCustomRateRequest
+        @Body request: ManualGraceRequest
+    ): Response<AdminGenericResponse>
+
+    @GET("admin/plans")
+    suspend fun getPlans(
+        @Header("Authorization") token: String
+    ): Response<SubscriptionPlansResponse>
+
+    @POST("admin/plans")
+    suspend fun savePlan(
+        @Header("Authorization") token: String,
+        @Body request: SubscriptionPlanDto
     ): Response<AdminGenericResponse>
 }

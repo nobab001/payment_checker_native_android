@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -76,6 +77,26 @@ fun DashboardScreen(
     val context = LocalContext.current
     var showRechargeDialog by remember { mutableStateOf(false) }
 
+    if (screenState.showPurchaseDialog) {
+        SubscriptionPurchaseDialog(
+            plans = screenState.plans,
+            isLoading = screenState.purchaseLoading,
+            onDismiss = { viewModel.setShowPurchaseDialog(false) },
+            onPurchase = { planName ->
+                viewModel.purchaseSubscription(planName) { result ->
+                    result.fold(
+                        onSuccess = {
+                            android.widget.Toast.makeText(context, "${planName} প্যাকেজ সক্রিয় হয়েছে।", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        onFailure = { error ->
+                            android.widget.Toast.makeText(context, error.message ?: "প্যাকেজ ক্রয় ব্যর্থ হয়েছে।", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    )
+                }
+            }
+        )
+    }
+
     if (showRechargeDialog) {
         RechargeDialog(
             onDismiss = { showRechargeDialog = false },
@@ -110,7 +131,11 @@ fun DashboardScreen(
 
             // ─── ১. হেডার গ্রেডিয়েন্ট কার্ড ───────────────────────────────
             item {
-                HeaderWelcomeCard(userName = screenState.userName)
+                val successStats = (screenState.uiState as? DashboardUiState.Success)?.stats
+                HeaderWelcomeCard(
+                    userName = screenState.userName,
+                    accountLevel = successStats?.accountLevel ?: "FREE_LEVEL"
+                )
             }
 
             // ─── Warning Banner (for negative balance) ───────────────────
@@ -137,6 +162,9 @@ fun DashboardScreen(
                             } catch (e: Exception) {
                                 android.widget.Toast.makeText(context, "ব্রাউজার ওপেন করা সম্ভব হয়নি।", android.widget.Toast.LENGTH_SHORT).show()
                             }
+                        },
+                        onPurchasePackageClick = {
+                            viewModel.setShowPurchaseDialog(true)
                         },
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
@@ -194,7 +222,7 @@ fun DashboardScreen(
 // =============================================================================
 
 @Composable
-private fun HeaderWelcomeCard(userName: String) {
+private fun HeaderWelcomeCard(userName: String, accountLevel: String) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -222,12 +250,37 @@ private fun HeaderWelcomeCard(userName: String) {
             }
 
             Column {
-                Text(
-                    text       = "স্বাগতম, $userName",
-                    color      = Color.White,
-                    fontSize   = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text       = "স্বাগতম, $userName",
+                        color      = Color.White,
+                        fontSize   = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    
+                    // Subscription Tier Badge
+                    Surface(
+                        color = when (accountLevel) {
+                            "Premium" -> Color(0xFFFFD700) // Gold
+                            "Standard" -> Color(0xFFC0C0C0) // Silver
+                            "Basic" -> Color(0xFFCD7F32) // Bronze
+                            else -> Color.White.copy(alpha = 0.2f) // FREE_LEVEL
+                        },
+                        contentColor = if (accountLevel == "FREE_LEVEL") Color.White else Color.Black,
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        Text(
+                            text = accountLevel,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
                 Text(
                     text     = "Paychek Payment Gateway",
                     color    = Color.White.copy(alpha = 0.75f),
@@ -741,6 +794,7 @@ private fun formatTimestamp(raw: String): String {
 private fun WalletBalanceCard(
     balance: Double,
     onRechargeClick: () -> Unit,
+    onPurchasePackageClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isNegative = balance < 0.0
@@ -791,25 +845,51 @@ private fun WalletBalanceCard(
                 )
             }
 
-            Button(
-                onClick = onRechargeClick,
-                colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
-                shape = RoundedCornerShape(10.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.CreditCard,
-                    contentDescription = "Recharge",
-                    tint = Color(0xFF0F172A),
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Add Balance",
-                    color = Color(0xFF0F172A),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
-                )
+                Button(
+                    onClick = onRechargeClick,
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CreditCard,
+                        contentDescription = "Recharge",
+                        tint = Color(0xFF0F172A),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Add Balance",
+                        color = Color(0xFF0F172A),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+
+                Button(
+                    onClick = onPurchasePackageClick,
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ShoppingCart,
+                        contentDescription = "Buy Plan",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Buy Plan",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
             }
         }
     }
@@ -920,5 +1000,94 @@ private fun RechargeDialog(
                 Text("বাতিল", color = TextMuted)
             }
         }
+    )
+}
+
+@Composable
+fun SubscriptionPurchaseDialog(
+    plans: List<online.paychek.app.data.remote.dto.SubscriptionPlanDto>,
+    isLoading: Boolean,
+    onDismiss: () -> Unit,
+    onPurchase: (String) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                "সাবস্ক্রিপশন প্যাকেজ কিনুন",
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                fontSize = 18.sp
+            )
+        },
+        text = {
+            if (plans.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = AccentCyan)
+                }
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "আপনার পেমেন্ট গেটওয়ে এবং সার্ভিস সচল রাখতে যেকোনো একটি প্যাকেজ বেছে নিন:",
+                        color = TextMuted,
+                        fontSize = 13.sp
+                    )
+                    plans.forEach { plan ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = DashCardAlt),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = !isLoading) { onPurchase(plan.planName) }
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = plan.planName,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        fontSize = 15.sp
+                                    )
+                                    Text(
+                                        text = "৳${plan.price}",
+                                        fontWeight = FontWeight.Bold,
+                                        color = AccentCyan,
+                                        fontSize = 15.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "সীমা: ${plan.maxSites} সাইট | ${plan.maxDevices} ডিভাইস",
+                                    color = TextMuted,
+                                    fontSize = 11.sp
+                                )
+                                Text(
+                                    text = "মেয়াদ: ${plan.creditsGiven} দিন (${plan.creditsGiven} ক্রেডিট)",
+                                    color = AccentGreen,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss, enabled = !isLoading) {
+                Text("বন্ধ করুন", color = TextMuted)
+            }
+        },
+        containerColor = DashCard,
+        shape = RoundedCornerShape(20.dp)
     )
 }

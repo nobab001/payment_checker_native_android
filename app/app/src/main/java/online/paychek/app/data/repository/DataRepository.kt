@@ -1,8 +1,7 @@
 package online.paychek.app.data.repository
 
+import online.paychek.app.data.remote.dto.*
 import online.paychek.app.data.remote.api.RetrofitClient
-import online.paychek.app.data.remote.dto.DashboardStats
-import online.paychek.app.data.remote.dto.TransactionItem
 
 /**
  * PaymentRepository — পেমেন্ট ও Dashboard সংক্রান্ত সকল ডেটা অ্যাক্সেস
@@ -107,6 +106,42 @@ class PaymentRepository {
                     Result.success(Unit)
                 } else {
                     Result.failure(Exception(body?.message ?: "FCM টোকেন আপডেট ব্যর্থ হয়েছে"))
+                }
+            } else {
+                Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
+        }
+    }
+
+    suspend fun getPlans(token: String): Result<List<SubscriptionPlanDto>> {
+        return try {
+            val response = api.getPlans("Bearer $token")
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body?.success == true) {
+                    Result.success(body.plans)
+                } else {
+                    Result.failure(Exception("প্ল্যান লোড ব্যর্থ হয়েছে"))
+                }
+            } else {
+                Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
+        }
+    }
+
+    suspend fun purchaseSubscription(token: String, planName: String): Result<PurchaseSubscriptionResponse> {
+        return try {
+            val response = api.purchaseSubscription("Bearer $token", PurchaseSubscriptionRequest(planName))
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body?.success == true) {
+                    Result.success(body!!)
+                } else {
+                    Result.failure(Exception(body?.message ?: "প্যাকেজ ক্রয় ব্যর্থ হয়েছে"))
                 }
             } else {
                 Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))

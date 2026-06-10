@@ -69,7 +69,98 @@ async function updateFcmToken(req, res) {
   }
 }
 
+async function purchaseSubscription(req, res) {
+  try {
+    const userId = req.user.userId;
+    const { planName } = req.body;
+
+    if (!planName) {
+      return res.status(400).json({ success: false, error: 'Missing planName field.' });
+    }
+
+    const plans = await query('SELECT * FROM subscription_plans WHERE plan_name = ? LIMIT 1', [planName]);
+    if (plans.length === 0) {
+      return res.status(404).json({ success: false, error: 'PLAN_NOT_FOUND', message: 'প্ল্যানটি খুঁজে পাওয়া যায়নি।' });
+    }
+    const plan = plans[0];
+
+    const users = await query('SELECT wallet_credits FROM users WHERE id = ? LIMIT 1', [userId]);
+    const currentCredits = users.length > 0 ? parseFloat(users[0].wallet_credits || '0') : 0;
+
+    if (currentCredits < parseFloat(plan.price)) {
+      return res.status(400).json({
+        success: false,
+        error: 'INSUFFICIENT_CREDITS',
+        message: `দুঃখিত, আপনার পর্যাপ্ত ব্যালেন্স নেই। প্ল্যানটির মূল্য ৳${plan.price}। অনুগ্রহ করে প্রথমে রিচার্জ করুন।`
+      });
+    }
+
+    // Deduct price and add credits_given, update account_level
+    const finalCredits = Math.round(currentCredits - parseFloat(plan.price) + (plan.credits_given || 365));
+    await query(
+      "UPDATE users SET account_level = ?, wallet_credits = ? WHERE id = ?",
+      [plan.plan_name, finalCredits, userId]
+    );
+
+    console.log(`[Subscription] User ${userId} purchased plan ${plan.plan_name}. New credits: ${finalCredits}`);
+
+    return res.json({
+      success: true,
+      message: `${plan.plan_name} প্যাকেজটি সফলভাবে সক্রিয় করা হয়েছে।`,
+      account_level: plan.plan_name,
+      wallet_credits: finalCredits
+    });
+  } catch (error) {
+    console.error('[Billing Controller] purchaseSubscription error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function listPlans(req, res) {
+  try {
+    const plans = await query('SELECT * FROM subscription_plans ORDER BY price ASC');
+    return res.json({
+      success: true,
+      plans
+    });
+  } catch (error) {
+    console.error('[Billing Controller] listPlans error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function createPlan(req, res) {
+  try {
+    const { plan_name, price, max_sites, max_devices, credits_given } = req.body;
+
+    if (!plan_name || price === undefined || max_sites === undefined || max_devices === undefined) {
+      return res.status(400).json({ success: false, error: 'Missing required plan fields.' });
+    }
+
+    const existing = await query('SELECT id FROM subscription_plans WHERE plan_name = ? LIMIT 1', [plan_name]);
+    if (existing.length > 0) {
+      await query(
+        'UPDATE subscription_plans SET price = ?, max_sites = ?, max_devices = ?, credits_given = ? WHERE plan_name = ?',
+        [price, max_sites, max_devices, credits_given || 365, plan_name]
+      );
+    } else {
+      await query(
+        'INSERT INTO subscription_plans (plan_name, price, max_sites, max_devices, credits_given) VALUES (?, ?, ?, ?, ?)',
+        [plan_name, price, max_sites, max_devices, credits_given || 365]
+      );
+    }
+
+    return res.json({ success: true, message: 'প্ল্যান সফলভাবে তৈরি/আপডেট করা হয়েছে।' });
+  } catch (error) {
+    console.error('[Billing Controller] createPlan error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   recharge,
-  updateFcmToken
+  updateFcmToken,
+  purchaseSubscription,
+  listPlans,
+  createPlan
 };

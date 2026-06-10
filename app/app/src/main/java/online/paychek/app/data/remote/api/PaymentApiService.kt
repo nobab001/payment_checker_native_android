@@ -58,4 +58,15 @@ interface PaymentApiService {
         @Header("Authorization") token: String,
         @Body request: FcmTokenRequest
     ): Response<FcmTokenResponse>
+
+    @GET("v1/plans")
+    suspend fun getPlans(
+        @Header("Authorization") token: String
+    ): Response<SubscriptionPlansResponse>
+
+    @POST("v1/subscription/purchase")
+    suspend fun purchaseSubscription(
+        @Header("Authorization") token: String,
+        @Body request: PurchaseSubscriptionRequest
+    ): Response<PurchaseSubscriptionResponse>
 }

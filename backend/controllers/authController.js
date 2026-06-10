@@ -425,6 +425,25 @@ async function verifyOtp(req, res) {
       );
       
       const isParent = userDevicesCount[0].count === 0 ? 1 : 0;
+
+      // Plan limit check for child devices
+      if (isParent === 0) {
+        if (!user.account_level || user.account_level === 'FREE_LEVEL') {
+          return res.status(403).json({ error: 'ফ্রি লেভেলের ব্যবহারকারীদের জন্য অতিরিক্ত চাইল্ড ডিভাইস যুক্ত করা অনুমোদিত নয়। অনুগ্রহ করে সাবস্ক্রিপশন প্ল্যান আপগ্রেড করুন।' });
+        }
+        
+        // Fetch plan limits
+        const plans = await query(
+          "SELECT max_devices FROM subscription_plans WHERE plan_name = ? LIMIT 1",
+          [user.account_level]
+        );
+        const maxDevices = plans.length > 0 ? plans[0].max_devices : 1;
+        
+        if (userDevicesCount[0].count >= maxDevices) {
+          return res.status(403).json({ error: `আপনার কারেন্ট প্যাকেজ (${user.account_level}) এ সর্বোচ্চ ${maxDevices}টি ডিভাইস যুক্ত করতে পারবেন। অনুগ্রহ করে প্যাকেজ আপগ্রেড করুন।` });
+        }
+      }
+
       const initialStatus = isParent ? 'active' : 'pending';
 
       const trialStartedAt = new Date();
@@ -448,23 +467,6 @@ async function verifyOtp(req, res) {
           0
         ]
       );
-
-      // Deduct one-time child device fee if this is not the parent device
-      if (!isParent) {
-        try {
-          const feeSettings = await query(
-            "SELECT setting_value FROM global_billing_settings WHERE setting_key = 'one_time_device_fee' LIMIT 1"
-          );
-          const deviceFee = feeSettings.length > 0 ? parseFloat(feeSettings[0].setting_value) : 5.00;
-          await query(
-            "UPDATE users SET wallet_credits = wallet_credits - ? WHERE id = ?",
-            [deviceFee, user.id]
-          );
-          console.log(`[Billing] Deducted child device fee: ${deviceFee} from user: ${user.id}`);
-        } catch (billingErr) {
-          console.error('[Billing] Failed to deduct device fee:', billingErr);
-        }
-      }
 
       // Device trial logs insertion removed from verifyOtp. Will be recorded on completeProfile.
 

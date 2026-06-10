@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const admin = require('../controllers/adminController');
 const authenticateToken = require('../middleware/auth');
+const billingController = require('../controllers/billingController');
 
 // Website creation route for standard users (uses standard JWT authentication)
 router.post('/sites/add', authenticateToken, admin.addSite);
@@ -12,7 +13,9 @@ router.use(admin.verifyAdmin);
 // Admin Billing configurations
 router.get('/billing-settings', admin.getBillingSettings);
 router.post('/billing-settings', admin.updateBillingSettings);
-router.post('/users/:id/custom-rate', admin.updateUserCustomDailyRate);
+router.post('/users/:id/manual-grace', admin.manualGrace);
+router.post('/plans', billingController.createPlan);
+router.get('/plans', billingController.listPlans);
 
 // 1. App Configs (global_config)
 router.get('/config', admin.getConfigs);

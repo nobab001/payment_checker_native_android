@@ -56,21 +56,6 @@ async function bindDevice(userId, deviceId, deviceName = 'My Phone') {
     [userId, deviceId, deviceName]
   );
 
-  // Deduct child device fee
-  try {
-    const feeSettings = await query(
-      "SELECT setting_value FROM global_billing_settings WHERE setting_key = 'one_time_device_fee' LIMIT 1"
-    );
-    const deviceFee = feeSettings.length > 0 ? parseFloat(feeSettings[0].setting_value) : 5.00;
-    await query(
-      "UPDATE users SET wallet_credits = wallet_credits - ? WHERE id = ?",
-      [deviceFee, userId]
-    );
-    console.log(`[Billing] Deducted child device fee inside bindDevice: ${deviceFee} from user: ${userId}`);
-  } catch (billingErr) {
-    console.error('[Billing] Failed to deduct device fee inside bindDevice:', billingErr);
-  }
-
   return { inserted: true };
 }
 

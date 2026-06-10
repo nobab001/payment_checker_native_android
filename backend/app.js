@@ -67,25 +67,26 @@ cron.schedule('0 0 * * *', async () => {
   }
 });
 
-// 12:01 AM Cron: Deduct daily maintenance rates (global or custom user rate) from active users
+// 12:01 AM Cron: Deduct daily maintenance rate (1 credit) from active non-free subscription tier users
 cron.schedule('1 0 * * *', async () => {
   try {
-    // Fetch global daily rate first
-    const defaultRateSettings = await query(
-      "SELECT setting_value FROM global_billing_settings WHERE setting_key = 'daily_maintenance_rate' LIMIT 1"
-    );
-    const globalDailyRate = defaultRateSettings.length > 0 ? parseFloat(defaultRateSettings[0].setting_value) : 0.50;
-
-    // Deduct custom_daily_rate if not null, otherwise globalDailyRate
+    // 1. Deduct 1 credit from all users who have account_level != 'FREE_LEVEL' and are active
     await query(`
       UPDATE users 
-      SET wallet_credits = wallet_credits - COALESCE(custom_daily_rate, ?) 
-      WHERE blocked = 0 AND profile_complete = 1
-    `, [globalDailyRate]);
+      SET wallet_credits = wallet_credits - 1 
+      WHERE blocked = 0 AND profile_complete = 1 AND account_level != 'FREE_LEVEL'
+    `);
 
-    console.log('[CRON] Deducted daily maintenance rates for active users.');
+    // 2. Auto-Downgrade Engine: For any user whose wallet_credits <= 0, reset to FREE_LEVEL and zero credits
+    await query(`
+      UPDATE users
+      SET account_level = 'FREE_LEVEL', wallet_credits = 0
+      WHERE blocked = 0 AND profile_complete = 1 AND account_level != 'FREE_LEVEL' AND wallet_credits <= 0
+    `);
+
+    console.log('[CRON] SaaS Unified Credit Aging Engine: Deducted 1 credit and ran auto-downgrade engine.');
   } catch (err) {
-    console.error('[CRON] Error in midnight maintenance deduction:', err);
+    console.error('[CRON] Error in midnight SaaS credit aging cron job:', err);
   }
 });
 
@@ -182,16 +183,52 @@ app.listen(PORT, async () => {
     }
     console.log('[DB] global_billing_settings verified and populated.');
 
-    // Add wallet_credits and custom_daily_rate columns to users table if they don't exist
+    // Initialize subscription_plans table
+    await query(`
+      CREATE TABLE IF NOT EXISTS \`subscription_plans\` (
+        \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+        \`plan_name\` VARCHAR(50) NOT NULL UNIQUE,
+        \`price\` DECIMAL(10,2) NOT NULL,
+        \`max_sites\` INT NOT NULL,
+        \`max_devices\` INT NOT NULL,
+        \`credits_given\` INT DEFAULT 365,
+        \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    const defaultPlans = [
+      { name: 'Basic', price: 100.00, sites: 1, devices: 1, credits: 365 },
+      { name: 'Standard', price: 200.00, sites: 3, devices: 3, credits: 365 },
+      { name: 'Premium', price: 500.00, sites: 999, devices: 10, credits: 365 }
+    ];
+    for (const plan of defaultPlans) {
+      await query(
+        'INSERT INTO subscription_plans (plan_name, price, max_sites, max_devices, credits_given) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE price = VALUES(price), max_sites = VALUES(max_sites), max_devices = VALUES(max_devices), credits_given = VALUES(credits_given)',
+        [plan.name, plan.price, plan.sites, plan.devices, plan.credits]
+      );
+    }
+    console.log('[DB] Seeded default subscription plans.');
+
+    // Add account_level and wallet_credits columns to users table if they don't exist
+    const userLevelCol = await query("SHOW COLUMNS FROM `users` LIKE 'account_level'");
+    if (userLevelCol.length === 0) {
+      await query("ALTER TABLE `users` ADD COLUMN `account_level` VARCHAR(30) DEFAULT 'FREE_LEVEL' AFTER `role`");
+      console.log('[DB] Added account_level column to users.');
+    }
     const userWalletCol = await query("SHOW COLUMNS FROM `users` LIKE 'wallet_credits'");
     if (userWalletCol.length === 0) {
-      await query("ALTER TABLE `users` ADD COLUMN `wallet_credits` DECIMAL(10,2) DEFAULT 0.00 AFTER `balance`");
+      await query("ALTER TABLE `users` ADD COLUMN `wallet_credits` INT DEFAULT 0 AFTER `account_level`");
       console.log('[DB] Added wallet_credits column to users.');
+    } else {
+      if (userWalletCol[0].Type.toLowerCase() !== 'int') {
+        await query("ALTER TABLE `users` MODIFY COLUMN `wallet_credits` INT DEFAULT 0");
+        console.log('[DB] Altered wallet_credits column in users to INT.');
+      }
     }
     const userCustomRateCol = await query("SHOW COLUMNS FROM `users` LIKE 'custom_daily_rate'");
-    if (userCustomRateCol.length === 0) {
-      await query("ALTER TABLE `users` ADD COLUMN `custom_daily_rate` DECIMAL(10,2) NULL DEFAULT NULL AFTER `wallet_credits`");
-      console.log('[DB] Added custom_daily_rate column to users.');
+    if (userCustomRateCol.length > 0) {
+      await query("ALTER TABLE `users` DROP COLUMN `custom_daily_rate`");
+      console.log('[DB] Dropped custom_daily_rate column from users.');
     }
     const userFcmCol = await query("SHOW COLUMNS FROM `users` LIKE 'fcm_token'");
     if (userFcmCol.length === 0) {

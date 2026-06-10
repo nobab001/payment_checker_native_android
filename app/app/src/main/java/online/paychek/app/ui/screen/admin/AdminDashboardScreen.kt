@@ -217,8 +217,8 @@ fun AdminDashboardScreen(
                 viewModel.updateDeviceTrial(devId, expires, locked, reason)
                 showUserDialog = null
             },
-            onUpdateCustomRate = { customRate ->
-                viewModel.updateUserCustomDailyRate(user.id, customRate)
+            onGiveManualGrace = { credits ->
+                viewModel.giveManualGrace(user.id, credits)
                 showUserDialog = null
             }
         )
@@ -917,10 +917,8 @@ private fun UserDetailAndTrialDialog(
     onDismiss: () -> Unit,
     onToggleBlock: (Boolean) -> Unit,
     onUpdateTrial: (Int, String?, Boolean, String?) -> Unit,
-    onUpdateCustomRate: (Double?) -> Unit
+    onGiveManualGrace: (Int) -> Unit
 ) {
-    var customRateText by remember { mutableStateOf(user.customDailyRate?.toString() ?: "") }
-
     Dialog(onDismissRequest = onDismiss) {
         Card(
             colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -943,34 +941,26 @@ private fun UserDetailAndTrialDialog(
                     Text("ইমেইল: ${user.email ?: "None"}")
                     Text("রোল: ${user.role}")
                     Text("ওয়ালেট ক্রেডিট: ${user.walletCredits} Tk", fontWeight = FontWeight.Bold)
-                    Text("কাস্টম ডেইলি রেট: ${user.customDailyRate ?: "গ্লোবাল রেট প্রজোয্য"}")
+                    Text("প্যাকেজ লেভেল: ${user.accountLevel ?: "FREE_LEVEL"}", fontWeight = FontWeight.Bold)
                 }
 
                 HorizontalDivider(color = Color(0xFFE2E8F0))
 
-                Text("কাস্টম ডেইলি রেট সেট করুন:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Text("অ্যাসাইন অ্যাকশন:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Button(
+                    onClick = { onGiveManualGrace(7) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    OutlinedTextField(
-                        value = customRateText,
-                        onValueChange = { customRateText = it },
-                        placeholder = { Text("রেট লিখুন বা খালি রাখুন") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f)
+                    Icon(
+                        imageVector = Icons.Default.Star,
+                        contentDescription = "Trial",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
                     )
-                    Button(
-                        onClick = {
-                            val rate = customRateText.toDoubleOrNull()
-                            onUpdateCustomRate(rate)
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("সেট", color = Color.White)
-                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Give 7 Days Free Trial", color = Color.White, fontWeight = FontWeight.Bold)
                 }
 
                 HorizontalDivider(color = Color(0xFFE2E8F0))

@@ -2,10 +2,9 @@ const { query } = require('../db/connection');
 
 /**
  * Middleware: checkBillingStatus
- * Enforces resource-consumption negative-billing account locks.
- * - Under-30 days: Free trial remains active, negative balances are permitted.
- * - Older than 30 days: If wallet_credits <= 0, service is LOCKED (HTTP 402).
- * Admin role (userId: 0 or role: admin) is exempted.
+ * Enforces SaaS subscription level locks.
+ * - If account_level is 'FREE_LEVEL', the account is LOCKED (HTTP 402).
+ * - Admin role is exempted.
  */
 async function checkBillingStatus(req, res, next) {
   try {
@@ -15,7 +14,7 @@ async function checkBillingStatus(req, res, next) {
       return next();
     }
 
-    const users = await query('SELECT created_at, wallet_credits, role FROM users WHERE id = ? LIMIT 1', [userId]);
+    const users = await query('SELECT account_level, role FROM users WHERE id = ? LIMIT 1', [userId]);
     if (users.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -25,18 +24,11 @@ async function checkBillingStatus(req, res, next) {
       return next();
     }
 
-    const createdTime = new Date(user.created_at);
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const walletCredits = parseFloat(user.wallet_credits || '0.00');
-
-    // Suspension check: user created more than 30 days ago AND has zero/negative balance
-    if (createdTime < thirtyDaysAgo && walletCredits <= 0.00) {
+    if (user.account_level === 'FREE_LEVEL') {
       return res.status(402).json({
         success: false,
         error: 'ACCOUNT_SUSPENDED',
-        message: 'আপনার অ্যাকাউন্টে বকেয়া বিল রয়েছে এবং ফ্রি ট্রায়াল পিরিয়ড শেষ হয়েছে। ওটিপি এবং ট্র্যাকিং সার্ভিস সচল রাখতে অনুগ্রহ করে সর্বনিম্ন ৳৫০ রিচার্জ সম্পন্ন করুন।'
+        message: 'অনুগ্রহ করে যেকোনো একটি সাবস্ক্রিপশন প্ল্যান কিনে আপনার সেবা সচল করুন।'
       });
     }
 
