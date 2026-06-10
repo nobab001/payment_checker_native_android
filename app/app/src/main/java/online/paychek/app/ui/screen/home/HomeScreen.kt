@@ -18,6 +18,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,13 +38,6 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ArrowBackIosNew
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.updateTransition
-import androidx.compose.animation.core.EaseOut
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateDp
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.foundation.layout.navigationBarsPadding
 import online.paychek.app.utils.SecurePreferences
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -64,65 +60,40 @@ private fun CustomBottomBar(
     selectedTab: HomeTab,
     onTabSelect: (HomeTab) -> Unit
 ) {
-    val transition = updateTransition(targetState = selectedTab, label = "TabTransition")
-    Row(
+    NavigationBar(
+        containerColor = Color(0xFF1E293B), // Slate container color matching GwCard
+        tonalElevation = 8.dp,
         modifier = Modifier
             .fillMaxWidth()
-            .height(64.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .navigationBarsPadding()
-            .padding(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .windowInsetsPadding(WindowInsets.navigationBars)
     ) {
         HomeTab.entries.forEach { tab ->
             val isSelected = tab == selectedTab
-            val scale by transition.animateFloat(
-                transitionSpec = { tween(250, easing = EaseOut) },
-                label = "Scale"
-            ) { if (it == tab) 1.1f else 1f }
-            val offsetY by transition.animateDp(
-                transitionSpec = { tween(250, easing = EaseOut) },
-                label = "Offset"
-            ) { if (it == tab) (-6).dp else 0.dp }
-
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable { onTabSelect(tab) }
-                    .padding(vertical = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                if (isSelected) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(MaterialTheme.colorScheme.primary)
-                    )
-                }
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .graphicsLayer {
-                            scaleX = scale
-                            scaleY = scale
-                            translationY = offsetY.toPx()
-                        }
-                ) {
+            NavigationBarItem(
+                selected = isSelected,
+                onClick = { onTabSelect(tab) },
+                icon = {
                     Icon(
                         imageVector = tab.icon,
-                        contentDescription = tab.label,
-                        tint = if (isSelected) Color.White else Color(0xFF94A3B8)
+                        contentDescription = tab.label
                     )
+                },
+                label = {
                     Text(
                         text = tab.label,
-                        fontSize = 10.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) Color.White else Color(0xFF94A3B8)
+                        fontSize = 11.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                     )
-                }
-            }
+                },
+                alwaysShowLabel = true,
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = Color.White,
+                    unselectedIconColor = Color(0xFF94A3B8),
+                    selectedTextColor = Color.White,
+                    unselectedTextColor = Color(0xFF94A3B8),
+                    indicatorColor = RoyalIndigo.copy(alpha = 0.35f) // Premium indicator pill tint
+                )
+            )
         }
     }
 }
