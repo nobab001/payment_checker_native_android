@@ -118,6 +118,13 @@ app.listen(PORT, async () => {
     }
     console.log('[DB] device_trial_logs table verified/created.');
 
+    // Add avatar column to users table if it does not exist
+    const userCols = await query("SHOW COLUMNS FROM `users` LIKE 'avatar'");
+    if (userCols.length === 0) {
+      await query("ALTER TABLE `users` ADD COLUMN `avatar` VARCHAR(255) DEFAULT NULL AFTER `name`");
+      console.log('[DB] Added avatar column to users table.');
+    }
+
     // Sync primary phone & email from users to user_credentials
     await query(`
       INSERT INTO user_credentials (user_id, type, value, verified_at)

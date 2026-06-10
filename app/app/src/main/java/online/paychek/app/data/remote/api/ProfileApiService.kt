@@ -46,4 +46,15 @@ interface ProfileApiService {
     suspend fun resetPinVerify(
         @Body request: ResetPinVerifyRequest
     ): Response<PinActionResponse>
+
+    @GET("v1/profile")
+    suspend fun getProfile(
+        @Header("Authorization") token: String
+    ): Response<ProfileResponse>
+
+    @POST("v1/profile/upload-avatar")
+    suspend fun uploadAvatar(
+        @Header("Authorization") token: String,
+        @Body request: UploadAvatarRequest
+    ): Response<UploadAvatarResponse>
 }

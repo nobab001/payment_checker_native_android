@@ -187,6 +187,27 @@ async function removeCredential(req, res) {
       return res.status(400).json({ error: 'Invalid credential ID' });
     }
 
+    const pin = req.query.pin || req.body.pin;
+    if (!pin) {
+      return res.status(400).json({ error: 'নিরাপত্তা PIN প্রদান করা আবশ্যক।' });
+    }
+
+    const users = await query('SELECT pin FROM users WHERE id = ? LIMIT 1', [userId]);
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'ইউজার খুঁজে পাওয়া যায়নি।' });
+    }
+
+    const currentHash = users[0].pin;
+    if (!currentHash) {
+      return res.status(400).json({ error: 'ইউজারের কোনো PIN সেট করা নেই।' });
+    }
+
+    const bcrypt = require('bcryptjs');
+    const isMatch = await bcrypt.compare(pin, currentHash);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'ভুল পিন নম্বর।' });
+    }
+
     const result = await query(
       'DELETE FROM user_credentials WHERE id = ? AND user_id = ?',
       [credId, userId]

@@ -78,12 +78,13 @@ class CredentialViewModel(private val repository: CredentialRepository) : ViewMo
     }
 
     // ক্রেডেনশিয়াল রিমুভ রিকোয়েস্ট
-    fun removeCredential(id: Int) {
+    fun removeCredential(id: Int, pin: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
-            val response = repository.removeCredential(id)
+            val response = repository.removeCredential(id, pin)
             if (response.isSuccessful) {
                 errorMessage = null
                 loadCredentials()
+                onSuccess()
             } else {
                 val errBody = response.errorBody()?.string() ?: ""
                 errorMessage = parseErrorMessage(errBody, "ক্রেডেনশিয়াল রিমুভ করা সম্ভব হয়নি")

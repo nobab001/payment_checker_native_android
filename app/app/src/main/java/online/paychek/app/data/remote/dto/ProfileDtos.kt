@@ -50,3 +50,18 @@ data class PinActionResponse(
     val success: Boolean,
     val message: String?
 )
+
+data class ProfileResponse(
+    val success: Boolean,
+    val user: UserDto
+)
+
+data class UploadAvatarRequest(
+    val avatarData: String
+)
+
+data class UploadAvatarResponse(
+    val success: Boolean,
+    val message: String?,
+    val avatar: String?
+)

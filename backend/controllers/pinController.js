@@ -18,8 +18,8 @@ async function changePin(req, res) {
     if (!oldPin || !newPin) {
       return res.status(400).json({ error: 'oldPin এবং newPin উভয়ই প্রয়োজন।' });
     }
-    if (newPin.length !== 6 || !/^\d{6}$/.test(newPin)) {
-      return res.status(400).json({ error: 'নতুন PIN অবশ্যই ৬-ডিজিটের সংখ্যা হতে হবে।' });
+    if (newPin.length < 4 || newPin.length > 6 || !/^\d{4,6}$/.test(newPin)) {
+      return res.status(400).json({ error: 'নতুন PIN অবশ্যই ৪ থেকে ৬-ডিজিটের সংখ্যা হতে হবে।' });
     }
 
     // Fetch current PIN hash
@@ -121,8 +121,8 @@ async function resetPinVerify(req, res) {
     if (!contact || !code || !newPin) {
       return res.status(400).json({ error: 'contact, code এবং newPin প্রয়োজন।' });
     }
-    if (newPin.length !== 6 || !/^\d{6}$/.test(newPin)) {
-      return res.status(400).json({ error: 'নতুন PIN অবশ্যই ৬-ডিজিটের সংখ্যা হতে হবে।' });
+    if (newPin.length < 4 || newPin.length > 6 || !/^\d{4,6}$/.test(newPin)) {
+      return res.status(400).json({ error: 'নতুন PIN অবশ্যই ৪ থেকে ৬-ডিজিটের সংখ্যা হতে হবে।' });
     }
 
     const cleanContact = contact.trim();

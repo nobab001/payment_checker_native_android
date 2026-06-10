@@ -49,6 +49,9 @@ data class ProfileSettingsState(
     val changePinNew: String              = "",
     val changePinConfirm: String          = "",
 
+    // ── Avatar ────────────────────────────────────────────────────
+    val avatarUrl: String?                = null,
+
     // ── Global feedback ───────────────────────────────────────────
     val isLoading: Boolean                = false,
     val successMessage: String?           = null,
@@ -251,8 +254,8 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
 
     fun submitChangePin() {
         val s = _state.value
-        if (s.changePinNew.length != 6) {
-            _state.update { it.copy(errorMessage = "নতুন PIN ৬ সংখ্যার হতে হবে।") }; return
+        if (s.changePinNew.length < 4 || s.changePinNew.length > 6) {
+            _state.update { it.copy(errorMessage = "নতুন PIN ৪ থেকে ৬ সংখ্যার হতে হবে।") }; return
         }
         if (s.changePinNew != s.changePinConfirm) {
             _state.update { it.copy(errorMessage = "নতুন PIN দুটি মিলছে না।") }; return
@@ -322,7 +325,7 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
     fun submitResetPin() {
         val s = _state.value
         if (s.resetPinOtpCode.length != 6) { _state.update { it.copy(errorMessage = "৬ সংখ্যার OTP দিন।") }; return }
-        if (s.resetPinNewPin.length != 6)  { _state.update { it.copy(errorMessage = "নতুন PIN ৬ সংখ্যার হতে হবে।") }; return }
+        if (s.resetPinNewPin.length < 4 || s.resetPinNewPin.length > 6)  { _state.update { it.copy(errorMessage = "নতুন PIN ৪ থেকে ৬ সংখ্যার হতে হবে।") }; return }
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, errorMessage = null) }
             try {
@@ -337,6 +340,72 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(isLoading = false, errorMessage = "নেটওয়ার্ক সমস্যা।") }
+            }
+        }
+    }
+
+    fun fetchProfile() {
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = true, errorMessage = null) }
+            try {
+                val response = api.getProfile(bearerToken())
+                if (response.isSuccessful) {
+                    val body = response.body()
+                    if (body != null && body.success) {
+                        val user = body.user
+                        prefs.edit().apply {
+                            putString("pcu_user_name", user.name)
+                            putString("pcu_user_role", user.role)
+                            putString("pcu_subscription_type", user.activePlanName ?: "trial")
+                            apply()
+                        }
+                        _state.update {
+                            it.copy(
+                                isLoading = false,
+                                userName = user.name,
+                                userRole = user.role,
+                                subscriptionType = user.activePlanName ?: "trial",
+                                primaryPhone = user.phone,
+                                primaryEmail = user.email,
+                                avatarUrl = user.avatar
+                            )
+                        }
+                    } else {
+                        _state.update { it.copy(isLoading = false, errorMessage = "প্রোফাইল তথ্য লোড করতে ব্যর্থ হয়েছে।") }
+                    }
+                } else {
+                    _state.update { it.copy(isLoading = false, errorMessage = "প্রোফাইল তথ্য লোড করতে ব্যর্থ হয়েছে।") }
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isLoading = false, errorMessage = "নেটওয়ার্ক এরর। প্রোফাইল লোড করতে সমস্যা হচ্ছে।") }
+            }
+        }
+    }
+
+    fun uploadAvatar(base64Data: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = true, errorMessage = null) }
+            try {
+                val response = api.uploadAvatar(bearerToken(), UploadAvatarRequest(base64Data))
+                if (response.isSuccessful) {
+                    val body = response.body()
+                    if (body != null && body.success) {
+                        _state.update {
+                            it.copy(
+                                isLoading = false,
+                                avatarUrl = body.avatar,
+                                successMessage = "প্রোফাইল ছবি সফলভাবে পরিবর্তন করা হয়েছে!"
+                            )
+                        }
+                    } else {
+                        _state.update { it.copy(isLoading = false, errorMessage = body?.message ?: "ছবি আপলোড করতে ব্যর্থ হয়েছে।") }
+                    }
+                } else {
+                    val errBody = response.errorBody()?.string() ?: ""
+                    _state.update { it.copy(isLoading = false, errorMessage = parseErrorMessage(errBody, "ছবি আপলোড করতে ব্যর্থ হয়েছে।")) }
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isLoading = false, errorMessage = "নেটওয়ার্ক এরর। ছবি আপলোড করা সম্ভব হয়নি।") }
             }
         }
     }

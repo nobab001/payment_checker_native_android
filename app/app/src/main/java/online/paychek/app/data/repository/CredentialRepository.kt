@@ -43,8 +43,8 @@ class CredentialRepository(private val context: Context) {
         return api.verifyLinkCredential(getBearerToken(), request)
     }
 
-    suspend fun removeCredential(id: Int): Response<okhttp3.ResponseBody> {
-        return api.removeCredential(getBearerToken(), id)
+    suspend fun removeCredential(id: Int, pin: String): Response<okhttp3.ResponseBody> {
+        return api.removeCredential(getBearerToken(), id, pin)
     }
 
     private fun parseError(response: Response<*>): String {

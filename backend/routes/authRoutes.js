@@ -21,4 +21,8 @@ router.get('/v1/devices', authenticateToken, authController.getChildDevices);
 router.post('/v1/devices/remote-update', authenticateToken, authController.remoteUpdateDevice);
 router.get('/v1/devices/my-config', authenticateToken, authController.getMyDeviceConfig);
 
+// Profile Endpoints
+router.get('/v1/profile', authenticateToken, authController.getProfile);
+router.post('/v1/profile/upload-avatar', authenticateToken, authController.uploadAvatar);
+
 module.exports = router;

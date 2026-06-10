@@ -95,7 +95,11 @@ data class UserDto(
     @SerializedName("blocked") val blocked: Boolean = false,
     @SerializedName(value = "profileComplete", alternate = ["profile_complete"]) val profileComplete: Boolean = false,
     @SerializedName(value = "smsEnabled", alternate = ["sms_enabled"]) val smsEnabled: Boolean = false,
-    @SerializedName(value = "gmailEnabled", alternate = ["gmail_enabled"]) val gmailEnabled: Boolean = false
+    @SerializedName(value = "gmailEnabled", alternate = ["gmail_enabled"]) val gmailEnabled: Boolean = false,
+    @SerializedName(value = "isPaid", alternate = ["is_paid"]) val isPaid: Boolean = false,
+    @SerializedName(value = "activePlanName", alternate = ["active_plan_name"]) val activePlanName: String? = null,
+    @SerializedName(value = "expiryDate", alternate = ["expiry_date"]) val expiryDate: String? = null,
+    @SerializedName("avatar") val avatar: String? = null
 )
 
 data class DeviceDto(

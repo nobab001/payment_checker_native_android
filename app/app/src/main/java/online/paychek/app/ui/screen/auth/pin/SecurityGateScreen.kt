@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -123,7 +124,7 @@ fun SecurityGateScreen(
                 )
 
                 Text(
-                    text = "আপনার ৬-ডিজিটের পিন দিয়ে অ্যাপটি আনলক করুন",
+                    text = "আপনার নিরাপত্তা পিন দিয়ে অ্যাপটি আনলক করুন",
                     fontSize = 14.sp,
                     color = Color(0xFF94A3B8),
                     textAlign = TextAlign.Center
@@ -222,7 +223,22 @@ fun SecurityGateScreen(
                             ) {
                                 when (item) {
                                     "biometric" -> {
-                                        if (activity != null && isBiometricEnrolled(activity)) {
+                                        if (uiState.pin.length >= 4) {
+                                            IconButton(
+                                                onClick = { viewModel.verifyPin(context, onUnlockSuccess) },
+                                                modifier = Modifier
+                                                    .size(64.dp)
+                                                    .background(Color(0xFF10B981), shape = CircleShape)
+                                                    .border(1.dp, Color(0xFF059669), shape = CircleShape)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = "Confirm",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(28.dp)
+                                                )
+                                            }
+                                        } else if (activity != null && isBiometricEnrolled(activity)) {
                                             IconButton(
                                                 onClick = {
                                                     showBiometricPrompt(

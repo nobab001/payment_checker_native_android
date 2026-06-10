@@ -77,6 +77,7 @@ interface AuthApiService {
     @DELETE("credentials/{id}")
     suspend fun removeCredential(
         @Header("Authorization") token: String,
-        @Path("id") id: Int
+        @Path("id") id: Int,
+        @retrofit2.http.Query("pin") pin: String
     ): Response<okhttp3.ResponseBody>
 }

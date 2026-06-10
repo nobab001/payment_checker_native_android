@@ -522,7 +522,7 @@ fun DeviceScreen(
 @Composable
 private fun DeviceTopBar(isSaving: Boolean, onNavigateBack: (() -> Unit)? = null) {
     TopAppBar(
-        modifier = Modifier.height(56.dp),
+        modifier = Modifier.height(62.dp),
         windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
         title = {
             Column {

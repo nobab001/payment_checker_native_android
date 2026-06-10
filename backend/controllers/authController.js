@@ -1588,6 +1588,79 @@ async function getMyDeviceConfig(req, res) {
   }
 }
 
+async function getProfile(req, res) {
+  try {
+    const userId = req.user.userId;
+    const users = await query(
+      'SELECT id, name, phone, email, role, is_paid, active_plan_name, expiry_date, avatar FROM users WHERE id = ? LIMIT 1',
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'ইউজার খুঁজে পাওয়া যায়নি।' });
+    }
+
+    return res.json({
+      success: true,
+      user: {
+        id: users[0].id,
+        name: users[0].name,
+        phone: users[0].phone,
+        email: users[0].email,
+        role: users[0].role,
+        isPaid: users[0].is_paid,
+        activePlanName: users[0].active_plan_name,
+        expiryDate: users[0].expiry_date,
+        avatar: users[0].avatar
+      }
+    });
+  } catch (err) {
+    console.error('[AuthController] getProfile error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+async function uploadAvatar(req, res) {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const userId = req.user.userId;
+    const { avatarData } = req.body;
+
+    if (!avatarData) {
+      return res.status(400).json({ error: 'Avatar data (base64 string) is required.' });
+    }
+
+    let base64Image = avatarData;
+    if (avatarData.includes(';base64,')) {
+      base64Image = avatarData.split(';base64,').pop();
+    }
+
+    const buffer = Buffer.from(base64Image, 'base64');
+    const dir = path.join(__dirname, '..', 'public', 'uploads', 'avatars');
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    const fileName = `avatar_${userId}.jpg`;
+    const filePath = path.join(dir, fileName);
+    fs.writeFileSync(filePath, buffer);
+
+    const relativePath = `uploads/avatars/${fileName}`;
+
+    await query('UPDATE users SET avatar = ? WHERE id = ?', [relativePath, userId]);
+
+    return res.json({
+      success: true,
+      message: 'প্রোফাইল ছবি সফলভাবে আপলোড হয়েছে।',
+      avatar: relativePath
+    });
+  } catch (err) {
+    console.error('[AuthController] uploadAvatar error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   checkContact,
   sendOtp,
@@ -1600,6 +1673,8 @@ module.exports = {
   getChildDevices,
   remoteUpdateDevice,
   getMyDeviceConfig,
+  getProfile,
+  uploadAvatar,
   sendOtpDispatch   // exported for reuse by credentialController & pinController
 };
 

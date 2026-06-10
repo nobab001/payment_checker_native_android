@@ -1,9 +1,12 @@
 package online.paychek.app.ui.screen.profile
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -19,7 +22,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -30,6 +35,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.dto.CredentialItem
 import online.paychek.app.ui.theme.RoyalIndigo
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -73,6 +81,30 @@ fun ProfileSettingsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scroll = rememberScrollState()
+    val context = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        viewModel.fetchProfile()
+        viewModel.loadCredentials()
+    }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val bytes = inputStream?.readBytes()
+                inputStream?.close()
+                if (bytes != null) {
+                    val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                    viewModel.uploadAvatar(base64)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
 
     // Global Snackbar
     val snackbarHost = remember { SnackbarHostState() }
@@ -115,6 +147,8 @@ fun ProfileSettingsScreen(
                     primaryPhone     = state.primaryPhone,
                     primaryEmail     = state.primaryEmail,
                     subscriptionType = state.subscriptionType,
+                    avatarUrl        = state.avatarUrl,
+                    onAvatarClick    = { imagePickerLauncher.launch("image/*") },
                     modifier         = Modifier.padding(horizontal = 16.dp)
                 )
 
@@ -203,6 +237,8 @@ private fun ProfileHeaderCard(
     primaryPhone: String?,
     primaryEmail: String?,
     subscriptionType: String,
+    avatarUrl: String?,
+    onAvatarClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val (badgeLabel, badgeColor) = when (subscriptionType.lowercase()) {
@@ -226,21 +262,36 @@ private fun ProfileHeaderCard(
                 verticalAlignment    = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Avatar
+                // Avatar (Image Picker clickable Box)
                 Box(
                     modifier = Modifier
                         .size(64.dp)
                         .clip(CircleShape)
                         .background(Color.White.copy(alpha = 0.15f))
-                        .border(2.dp, PsCyan, CircleShape),
+                        .border(2.dp, PsCyan, CircleShape)
+                        .clickable { onAvatarClick() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text     = if (userName.isNotEmpty()) userName.first().uppercase() else "M",
-                        color    = Color.White,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (!avatarUrl.isNullOrEmpty()) {
+                        val fullUrl = if (avatarUrl.startsWith("http")) avatarUrl else "${AppConfig.BASE_URL}${avatarUrl.trimStart('/')}"
+                        AsyncImageLoader(
+                            url = fullUrl,
+                            contentDescription = "Avatar",
+                            modifier = Modifier.fillMaxSize(),
+                            placeholder = {
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(color = PsCyan, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                }
+                            }
+                        )
+                    } else {
+                        Text(
+                            text     = if (userName.isNotEmpty()) userName.first().uppercase() else "M",
+                            color    = Color.White,
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -250,6 +301,15 @@ private fun ProfileHeaderCard(
                         fontSize   = 20.sp,
                         fontWeight = FontWeight.Bold
                     )
+                    
+                    // Show dynamic subscription plan name below the user's name
+                    Text(
+                        text       = "Plan: ${subscriptionType.replaceFirstChar { it.uppercase() }}",
+                        color      = PsCyan,
+                        fontSize   = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
                     // Badge
                     Box(
                         modifier = Modifier
@@ -264,12 +324,21 @@ private fun ProfileHeaderCard(
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    // Primary contact
-                    val contact = primaryPhone ?: primaryEmail ?: ""
-                    if (contact.isNotEmpty()) {
+
+                    // Display primary phone contact
+                    if (!primaryPhone.isNullOrEmpty()) {
                         Text(
-                            text     = contact,
+                            text     = primaryPhone,
                             color    = TextW.copy(alpha = 0.75f),
+                            fontSize = 13.sp
+                        )
+                    }
+
+                    // Display primary email right below primary phone in header card
+                    if (!primaryEmail.isNullOrEmpty()) {
+                        Text(
+                            text     = primaryEmail,
+                            color    = TextW.copy(alpha = 0.60f),
                             fontSize = 13.sp
                         )
                     }
@@ -580,8 +649,8 @@ private fun ChangePinDialog(
                 }
 
                 Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    PinField("পুরানো PIN (৬-ডিজিট)", state.changePinOld, viewModel::onChangePinOldChange)
-                    PinField("নতুন PIN (৬-ডিজিট)", state.changePinNew, viewModel::onChangePinNewChange)
+                    PinField("পুরানো PIN (৪-৬ ডিজিট)", state.changePinOld, viewModel::onChangePinOldChange)
+                    PinField("নতুন PIN (৪-৬ ডিজিট)", state.changePinNew, viewModel::onChangePinNewChange)
                     PinField("নতুন PIN নিশ্চিত করুন", state.changePinConfirm, viewModel::onChangePinConfirmChange)
 
                     state.errorMessage?.let { Text(it, color = PsRed, fontSize = 12.sp) }
@@ -704,7 +773,7 @@ private fun ResetPinDialog(
                                     }
                                 }
                             }
-                            PinField("নতুন PIN (৬-ডিজিট)", state.resetPinNewPin, viewModel::onResetPinNewPinChange)
+                            PinField("নতুন PIN (৪-৬ ডিজিট)", state.resetPinNewPin, viewModel::onResetPinNewPinChange)
                         }
                     }
 
@@ -815,4 +884,50 @@ private fun PinField(
             .semantics { contentDescription = label }
             .disableAutofill()
     )
+}
+
+@Composable
+private fun AsyncImageLoader(
+    url: String,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    placeholder: @Composable () -> Unit = {}
+) {
+    var bitmap by remember(url) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var isLoading by remember(url) { mutableStateOf(true) }
+
+    LaunchedEffect(url) {
+        if (url.isEmpty()) {
+            isLoading = false
+            return@LaunchedEffect
+        }
+        isLoading = true
+        withContext(Dispatchers.IO) {
+            try {
+                val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                connection.doInput = true
+                connection.connect()
+                val input = connection.inputStream
+                val bmp = android.graphics.BitmapFactory.decodeStream(input)
+                input.close()
+                bitmap = bmp
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                isLoading = false
+            }
+        }
+    }
+
+    val bmp = bitmap
+    if (bmp != null) {
+        androidx.compose.foundation.Image(
+            bitmap = bmp.asImageBitmap(),
+            contentDescription = contentDescription,
+            modifier = modifier,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+        )
+    } else {
+        placeholder()
+    }
 }

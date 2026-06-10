@@ -44,9 +44,13 @@ class SecurityGateViewModel : ViewModel() {
         _uiState.update { it.copy(pin = "", errorMessage = null) }
     }
 
+    fun verifyPin(context: Context, onUnlockSuccess: () -> Unit) {
+        verifyPinOnBackend(context, onUnlockSuccess)
+    }
+
     private fun verifyPinOnBackend(context: Context, onUnlockSuccess: () -> Unit) {
         val pinCode = _uiState.value.pin
-        if (pinCode.length != 6) return
+        if (pinCode.length < 4 || pinCode.length > 6) return
 
         val token = SecurePreferences.decrypt(context, AppConfig.KEY_AUTH_TOKEN)
         if (token.isEmpty()) {

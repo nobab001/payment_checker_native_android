@@ -57,6 +57,10 @@ fun ProfileCredentialsCard(
     var inputValue by remember { mutableStateOf("") }
     var otpValue by remember { mutableStateOf("") }
 
+    var showPinDeleteDialog by remember { mutableStateOf(false) }
+    var credentialIdToDelete by remember { mutableStateOf<Int?>(null) }
+    var deletePinValue by remember { mutableStateOf("") }
+
     // Show error toast if any error is set outside dialog, or clear it
     LaunchedEffect(viewModel.errorMessage) {
         viewModel.errorMessage?.let { msg ->
@@ -75,7 +79,7 @@ fun ProfileCredentialsCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "লগইন ক্রেডেনশিয়াল সমূহ (${viewModel.linkedPhones.size + viewModel.linkedEmails.size}/১০)",
+                text = "Login Credentials (${viewModel.linkedPhones.size + viewModel.linkedEmails.size}/10)",
                 fontWeight = FontWeight.Bold,
                 color = TextW,
                 fontSize = 16.sp
@@ -121,7 +125,11 @@ fun ProfileCredentialsCard(
                     CredentialItemRow(
                         item = item,
                         icon = Icons.Default.PhoneAndroid,
-                        onRemove = { viewModel.removeCredential(item.id) }
+                        onRemove = {
+                            credentialIdToDelete = item.id
+                            deletePinValue = ""
+                            showPinDeleteDialog = true
+                        }
                     )
                 }
             }
@@ -169,7 +177,11 @@ fun ProfileCredentialsCard(
                     CredentialItemRow(
                         item = item,
                         icon = Icons.Default.Email,
-                        onRemove = { viewModel.removeCredential(item.id) }
+                        onRemove = {
+                            credentialIdToDelete = item.id
+                            deletePinValue = ""
+                            showPinDeleteDialog = true
+                        }
                     )
                 }
             }
@@ -334,6 +346,99 @@ fun ProfileCredentialsCard(
             }
         }
     }
+    if (showPinDeleteDialog) {
+        Dialog(onDismissRequest = {
+            showPinDeleteDialog = false
+            viewModel.clearError()
+        }) {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = PsCardAlt),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Enter Security PIN",
+                        fontWeight = FontWeight.Bold,
+                        color = TextW,
+                        fontSize = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = deletePinValue,
+                        onValueChange = { newValue ->
+                            if (newValue.length <= 6 && newValue.all { it.isDigit() }) {
+                                deletePinValue = newValue
+                            }
+                        },
+                        label = { Text("Security PIN", color = TextM) },
+                        singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.NumberPassword
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextW,
+                            unfocusedTextColor = TextW,
+                            focusedBorderColor = PsCyan,
+                            unfocusedBorderColor = TextM,
+                            cursorColor = PsCyan
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    viewModel.errorMessage?.let { error ->
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = error,
+                            color = PsRed,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = {
+                            showPinDeleteDialog = false
+                            viewModel.clearError()
+                        }) {
+                            Text("বাতিল", color = TextM)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                credentialIdToDelete?.let { id ->
+                                    viewModel.removeCredential(id, deletePinValue) {
+                                        showPinDeleteDialog = false
+                                        Toast.makeText(context, "ক্রেডেনশিয়াল সফলভাবে মুছে ফেলা হয়েছে!", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = PsCyan)
+                        ) {
+                            Text(
+                                text = "নিশ্চিত করুন",
+                                color = PsCard
+                            )
+                        }
+                    }
+                }
+            }
+    }
+}
+
 }
 
 @Composable
