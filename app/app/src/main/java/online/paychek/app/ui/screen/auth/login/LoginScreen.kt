@@ -272,9 +272,8 @@ fun LoginScreen(
         modifier = modifier
             .fillMaxSize()
             .background(AppBackground)
-            .imePadding()
-            .padding(24.dp),
-        contentAlignment = Alignment.Center
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        contentAlignment = Alignment.TopCenter
     ) {
         Column(
             modifier = Modifier
@@ -282,6 +281,7 @@ fun LoginScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Spacer(modifier = Modifier.height(50.dp))
             // 1. Maintenance Banner
             if (uiState.isMaintenanceMode) {
                 Card(
