@@ -167,20 +167,23 @@ fun ProfileSettingsScreen(
 @Composable
 private fun ProfileTopBar(onNavigateBack: () -> Unit) {
     TopAppBar(
+        modifier = Modifier.height(56.dp),
+        windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
         title = {
             Text(
                 "প্রোফাইল সেটিংস",
                 color      = TextW,
                 fontWeight = FontWeight.Bold,
-                fontSize   = 18.sp
+                fontSize   = 16.sp
             )
         },
         navigationIcon = {
-            IconButton(onClick = onNavigateBack) {
+            IconButton(onClick = onNavigateBack, modifier = Modifier.size(36.dp)) {
                 Icon(
                     imageVector        = Icons.Default.ArrowBackIosNew,
                     contentDescription = "Back",
-                    tint               = PsCyan
+                    tint               = PsCyan,
+                    modifier           = Modifier.size(16.dp)
                 )
             }
         },

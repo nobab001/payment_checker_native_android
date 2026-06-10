@@ -57,13 +57,16 @@ fun CheckoutDesignerScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("গেটওয়ে কাস্টমাইজার", fontWeight = FontWeight.Bold, color = Color.White) },
+                modifier = Modifier.height(56.dp),
+                windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
+                title = { Text("গেটওয়ে কাস্টমাইজার", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 16.sp) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = onNavigateBack, modifier = Modifier.size(36.dp)) {
                         Icon(
                             imageVector = Icons.Default.DragHandle, // Mock menu/back
                             contentDescription = "Back",
-                            tint = Color.White
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 },
@@ -74,11 +77,12 @@ fun CheckoutDesignerScreen(
                         tempSim2Method = uiState.sim2Method
                         tempSim2Number = uiState.sim2Number
                         showSettingsDialog = true
-                    }) {
+                    }, modifier = Modifier.size(36.dp)) {
                         Icon(
                             imageVector = Icons.Default.Settings,
                             contentDescription = "Sim Slot Settings",
-                            tint = Color.White
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 },

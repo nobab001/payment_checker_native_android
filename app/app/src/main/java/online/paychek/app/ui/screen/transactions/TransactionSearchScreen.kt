@@ -204,44 +204,48 @@ fun TransactionSearchScreen(
 // =============================================================================
 // Component 1 — Top Bar
 // =============================================================================
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SearchTopBar() {
-    Row(
-        modifier             = Modifier
-            .fillMaxWidth()
-            .background(HistBg)
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalAlignment    = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(AccentCyan.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector     = Icons.Default.Search,
-                contentDescription = "Search",
-                tint            = AccentCyan,
-                modifier        = Modifier.size(20.dp)
-            )
-        }
-        Column {
-            Text(
-                text       = "ট্রানজেকশন সার্চ",
-                color      = TextWhite,
-                fontSize   = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text     = "পেমেন্ট রেকর্ড খুঁজুন",
-                color    = TextMuted,
-                fontSize = 12.sp
-            )
-        }
-    }
+    TopAppBar(
+        modifier = Modifier.height(56.dp),
+        windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
+        title = {
+            Column {
+                Text(
+                    text       = "ট্রানজেকশন সার্চ",
+                    color      = TextWhite,
+                    fontSize   = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text     = "পেমেন্ট রেকর্ড খুঁজুন",
+                    color    = TextMuted,
+                    fontSize = 10.sp
+                )
+            }
+        },
+        navigationIcon = {
+            Box(
+                modifier = Modifier
+                    .padding(start = 12.dp)
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(AccentCyan.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector     = Icons.Default.Search,
+                    contentDescription = "Search",
+                    tint            = AccentCyan,
+                    modifier        = Modifier.size(16.dp)
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = HistBg
+        )
+    )
 }
 
 // =============================================================================

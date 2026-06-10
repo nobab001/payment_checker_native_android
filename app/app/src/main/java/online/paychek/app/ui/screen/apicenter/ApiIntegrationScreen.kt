@@ -65,20 +65,22 @@ fun ApiIntegrationScreen(
         containerColor = ApiBg,
         topBar = {
             TopAppBar(
+                modifier = Modifier.height(56.dp),
+                windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
                 title = {
                     Text(
                         "API ইন্টিগ্রেশন ড্যাশবোর্ড",
                         color = TextWhite,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
+                        fontSize = 16.sp
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = ApiCard),
                 actions = {
                     IconButton(onClick = {
                         Toast.makeText(context, "ড্যাশবোর্ড রিফ্রেশ করা হয়েছে।", Toast.LENGTH_SHORT).show()
-                    }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = AccentCyan)
+                    }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = AccentCyan, modifier = Modifier.size(20.dp))
                     }
                 }
             )

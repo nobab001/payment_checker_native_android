@@ -60,12 +60,15 @@ private fun CustomBottomBar(
     selectedTab: HomeTab,
     onTabSelect: (HomeTab) -> Unit
 ) {
+    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     NavigationBar(
         containerColor = Color(0xFF1E293B), // Slate container color matching GwCard
         tonalElevation = 8.dp,
+        windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.navigationBars)
+            .height(68.dp + bottomPadding)
+            .padding(bottom = bottomPadding)
     ) {
         HomeTab.entries.forEach { tab ->
             val isSelected = tab == selectedTab
@@ -75,13 +78,14 @@ private fun CustomBottomBar(
                 icon = {
                     Icon(
                         imageVector = tab.icon,
-                        contentDescription = tab.label
+                        contentDescription = tab.label,
+                        modifier = Modifier.size(20.dp)
                     )
                 },
                 label = {
                     Text(
                         text = tab.label,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                     )
                 },
@@ -92,7 +96,8 @@ private fun CustomBottomBar(
                     selectedTextColor = Color.White,
                     unselectedTextColor = Color(0xFF94A3B8),
                     indicatorColor = RoyalIndigo.copy(alpha = 0.35f) // Premium indicator pill tint
-                )
+                ),
+                modifier = Modifier.fillMaxHeight()
             )
         }
     }

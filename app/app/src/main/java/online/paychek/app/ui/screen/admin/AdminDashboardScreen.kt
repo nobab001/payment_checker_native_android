@@ -58,28 +58,33 @@ fun AdminDashboardScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
+                modifier = Modifier.height(56.dp),
+                windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
                 title = {
                     Text(
                         "Admin Panel Console",
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = Color.White,
+                        fontSize = 16.sp
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onLogout) {
+                    IconButton(onClick = onLogout, modifier = Modifier.size(36.dp)) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ExitToApp,
                             contentDescription = "Logout",
-                            tint = Color.White
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.loadAllData() }) {
+                    IconButton(onClick = { viewModel.loadAllData() }, modifier = Modifier.size(36.dp)) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Refresh",
-                            tint = Color.White
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 },

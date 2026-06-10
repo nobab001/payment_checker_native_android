@@ -518,71 +518,78 @@ fun DeviceScreen(
 // =============================================================================
 // Component 1 — Top Bar
 // =============================================================================
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DeviceTopBar(isSaving: Boolean, onNavigateBack: (() -> Unit)? = null) {
-    Row(
-        modifier             = Modifier
-            .fillMaxWidth()
-            .background(GwBg)
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalAlignment    = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        if (onNavigateBack != null) {
-            IconButton(
-                onClick = onNavigateBack,
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    imageVector        = Icons.Default.ArrowBackIosNew,
-                    contentDescription = "Back",
-                    tint               = AccentCyan,
-                    modifier           = Modifier.size(20.dp)
+    TopAppBar(
+        modifier = Modifier.height(56.dp),
+        windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
+        title = {
+            Column {
+                Text(
+                    "ডিভাইস সেটিংস",
+                    color      = TextWhite,
+                    fontSize   = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "সিম স্লট ১/২ কনফিগার ও সাজান",
+                    color    = TextMuted,
+                    fontSize = 10.sp
                 )
             }
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(AccentCyan.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector     = Icons.Default.Tune,
-                    contentDescription = null,
-                    tint            = AccentCyan,
-                    modifier        = Modifier.size(20.dp)
-                )
+        },
+        navigationIcon = {
+            if (onNavigateBack != null) {
+                IconButton(
+                    onClick = onNavigateBack,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector        = Icons.Default.ArrowBackIosNew,
+                        contentDescription = "Back",
+                        tint               = AccentCyan,
+                        modifier           = Modifier.size(16.dp)
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .padding(start = 12.dp)
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(AccentCyan.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector     = Icons.Default.Tune,
+                        contentDescription = null,
+                        tint            = AccentCyan,
+                        modifier        = Modifier.size(16.dp)
+                    )
+                }
             }
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                "ডিভাইস সেটিংস",
-                color      = TextWhite,
-                fontSize   = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                "সিম স্লট ১/২ কনফিগার করুন ও সাজান",
-                color    = TextMuted,
-                fontSize = 12.sp
-            )
-        }
-        if (isSaving) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                CircularProgressIndicator(
-                    color       = AccentCyan,
-                    modifier    = Modifier.size(14.dp),
-                    strokeWidth = 2.dp
-                )
-                Text("সেভ হচ্ছে...", color = AccentCyan, fontSize = 11.sp)
+        },
+        actions = {
+            if (isSaving) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.padding(end = 12.dp)
+                ) {
+                    CircularProgressIndicator(
+                        color       = AccentCyan,
+                        modifier    = Modifier.size(12.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Text("সেভ হচ্ছে...", color = AccentCyan, fontSize = 10.sp)
+                }
             }
-        }
-    }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = GwBg
+        )
+    )
 }
 
 // =============================================================================
