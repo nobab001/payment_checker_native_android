@@ -269,9 +269,11 @@ app.listen(PORT, async () => {
     // ─────────────────────────────────────────────────────────────────────────
     // SCHEMA MIGRATION: Parent-Child Remote Control Hub for registered_devices
     // ─────────────────────────────────────────────────────────────────────────
+    const columnsResult = await query("SHOW COLUMNS FROM `registered_devices`");
+    const existingColumns = columnsResult.map(c => c.Field);
+
     const addRegisteredDeviceColumn = async (colName, colDefinition) => {
-      const cols = await query("SHOW COLUMNS FROM `registered_devices` LIKE ?", [colName]);
-      if (cols.length === 0) {
+      if (!existingColumns.includes(colName)) {
         await query(`ALTER TABLE \`registered_devices\` ADD COLUMN \`${colName}\` ${colDefinition}`);
         console.log(`[DB] ✅ Added ${colName} column to registered_devices table.`);
       }
@@ -284,8 +286,8 @@ app.listen(PORT, async () => {
     await addRegisteredDeviceColumn('sim_two_active', "TINYINT(1) DEFAULT 1");
     await addRegisteredDeviceColumn('is_app_active', "TINYINT(1) DEFAULT 1");
 
-    // Copy device_name / custom_name to custom_device_name where custom_device_name is empty
-    await query("UPDATE `registered_devices` SET `custom_device_name` = IFNULL(NULLIF(custom_name, ''), device_name) WHERE `custom_device_name` = ''");
+    // Copy device_name / custom_name to custom_device_name where custom_device_name is empty or null
+    await query("UPDATE `registered_devices` SET `custom_device_name` = IFNULL(NULLIF(custom_name, ''), device_name) WHERE `custom_device_name` = '' OR `custom_device_name` IS NULL");
     console.log('[DB] ✅ Parent-Child Hub Schema Migration Complete!');
 
 

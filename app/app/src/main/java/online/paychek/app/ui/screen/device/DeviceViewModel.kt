@@ -241,7 +241,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setSubTab(index: Int) {
-        _state.update { it.copy(selectedSubTab = index) }
+        _state.update { it.copy(selectedSubTab = index, errorMessage = null) }
         if (index == 1) {
             loadChildDevices()
         }

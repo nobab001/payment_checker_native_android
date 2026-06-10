@@ -119,23 +119,6 @@ fun DeviceScreen(
                 item { SuccessToast(message = msg) }
             }
 
-            // ─── Error Card ───────────────────────────────────────────────────
-            state.errorMessage?.let { msg ->
-                item {
-                    ErrorBanner(
-                        message = msg,
-                        onRetry = {
-                            if (state.selectedSubTab == 0) {
-                                viewModel.loadGatewayMethods()
-                            } else {
-                                viewModel.loadChildDevices()
-                            }
-                        },
-                        modifier = Modifier.padding(16.dp)
-                    )
-                }
-            }
-
             // ─── Tab Row ─────────────────────────────────────────────────────
             item {
                 TabRow(
@@ -183,72 +166,38 @@ fun DeviceScreen(
             }
 
             if (!state.isLoading && state.selectedSubTab == 0) {
-                // ─── SIM ১ Section ────────────────────────────────────────────
-                item {
-                    SimSectionHeader(
-                        simSlot   = 1,
-                        isEnabled = state.sim1Enabled,
-                        onToggle  = { viewModel.toggleSim(1) }
-                    )
-                }
-                items(
-                    items = sim1Methods,
-                    key   = { it.id }
-                ) { method ->
-                    ReorderableItem(
-                        state   = sim1ListState,
-                        key     = method.id
-                    ) { isDragging ->
-                        GatewayMethodCard(
-                            method      = method,
-                            simEnabled  = state.sim1Enabled,
-                            isDragging  = isDragging,
-                            onToggle    = { viewModel.toggleMethod(method) },
-                            onEdit      = { viewModel.openEditSheet(method) },
-                            dragHandle  = {
-                                Icon(
-                                    imageVector        = Icons.Default.DragHandle,
-                                    contentDescription = "Drag",
-                                    tint               = TextMuted,
-                                    modifier           = Modifier
-                                        .size(22.dp)
-                                        .draggableHandle(
-                                            onDragStarted = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            }
-                                        )
-                                )
-                            },
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                if (state.errorMessage != null) {
+                    item {
+                        ErrorBanner(
+                            message = state.errorMessage!!,
+                            onRetry = { viewModel.loadGatewayMethods() },
+                            modifier = Modifier.padding(16.dp)
                         )
                     }
-                }
-
-                // ─── SIM ২ Section ────────────────────────────────────────────
-                if (sim2Methods.isNotEmpty()) {
+                } else {
+                    // ─── SIM ১ Section ────────────────────────────────────────────
                     item {
                         SimSectionHeader(
-                            simSlot   = 2,
-                            isEnabled = state.sim2Enabled,
-                            onToggle  = { viewModel.toggleSim(2) },
-                            modifier  = Modifier.padding(top = 12.dp)
+                            simSlot   = 1,
+                            isEnabled = state.sim1Enabled,
+                            onToggle  = { viewModel.toggleSim(1) }
                         )
                     }
                     items(
-                        items = sim2Methods,
+                        items = sim1Methods,
                         key   = { it.id }
                     ) { method ->
                         ReorderableItem(
-                            state  = sim2ListState,
-                            key    = method.id
+                            state   = sim1ListState,
+                            key     = method.id
                         ) { isDragging ->
                             GatewayMethodCard(
-                                method     = method,
-                                simEnabled = state.sim2Enabled,
-                                isDragging = isDragging,
-                                onToggle   = { viewModel.toggleMethod(method) },
-                                onEdit     = { viewModel.openEditSheet(method) },
-                                dragHandle = {
+                                method      = method,
+                                simEnabled  = state.sim1Enabled,
+                                isDragging  = isDragging,
+                                onToggle    = { viewModel.toggleMethod(method) },
+                                onEdit      = { viewModel.openEditSheet(method) },
+                                dragHandle  = {
                                     Icon(
                                         imageVector        = Icons.Default.DragHandle,
                                         contentDescription = "Drag",
@@ -266,28 +215,72 @@ fun DeviceScreen(
                             )
                         }
                     }
-                }
 
-                // ─── Empty state ──────────────────────────────────────────────
-                if (state.methods.isEmpty() && state.errorMessage == null) {
-                    item {
-                        Column(
-                            modifier            = Modifier.fillMaxWidth().padding(48.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Icon(
-                                imageVector     = Icons.Default.PhoneAndroid,
-                                contentDescription = null,
-                                tint            = TextMuted.copy(alpha = 0.4f),
-                                modifier        = Modifier.size(56.dp)
+                    // ─── SIM ২ Section ────────────────────────────────────────────
+                    if (sim2Methods.isNotEmpty()) {
+                        item {
+                            SimSectionHeader(
+                                simSlot   = 2,
+                                isEnabled = state.sim2Enabled,
+                                onToggle  = { viewModel.toggleSim(2) },
+                                modifier  = Modifier.padding(top = 12.dp)
                             )
-                            Text(
-                                "কোনো গেটওয়ে মেথড পাওয়া যায়নি",
-                                color    = TextMuted,
-                                fontSize = 14.sp,
-                                textAlign = TextAlign.Center
-                            )
+                        }
+                        items(
+                            items = sim2Methods,
+                            key   = { it.id }
+                        ) { method ->
+                            ReorderableItem(
+                                state  = sim2ListState,
+                                key    = method.id
+                            ) { isDragging ->
+                                GatewayMethodCard(
+                                    method     = method,
+                                    simEnabled = state.sim2Enabled,
+                                    isDragging = isDragging,
+                                    onToggle   = { viewModel.toggleMethod(method) },
+                                    onEdit     = { viewModel.openEditSheet(method) },
+                                    dragHandle = {
+                                        Icon(
+                                            imageVector        = Icons.Default.DragHandle,
+                                            contentDescription = "Drag",
+                                            tint               = TextMuted,
+                                            modifier           = Modifier
+                                                .size(22.dp)
+                                                .draggableHandle(
+                                                    onDragStarted = {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    }
+                                                )
+                                        )
+                                    },
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // ─── Empty state ──────────────────────────────────────────────
+                    if (state.methods.isEmpty()) {
+                        item {
+                            Column(
+                                modifier            = Modifier.fillMaxWidth().padding(48.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector     = Icons.Default.PhoneAndroid,
+                                    contentDescription = null,
+                                    tint            = TextMuted.copy(alpha = 0.4f),
+                                    modifier        = Modifier.size(56.dp)
+                                )
+                                Text(
+                                    "কোনো গেটওয়ে মেথড পাওয়া যায়নি",
+                                    color    = TextMuted,
+                                    fontSize = 14.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
                     }
                 }
@@ -297,6 +290,14 @@ fun DeviceScreen(
                 // ─── Others Device Sub-Tab ─────────────────────────────────────────
                 if (state.isChildDevicesLoading) {
                     items(3) { DeviceSkeletonCard() }
+                } else if (state.errorMessage != null) {
+                    item {
+                        ErrorBanner(
+                            message = state.errorMessage!!,
+                            onRetry = { viewModel.loadChildDevices() },
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
                 } else if (state.childDevices.isEmpty()) {
                     item {
                         Column(
