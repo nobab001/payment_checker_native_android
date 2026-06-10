@@ -434,7 +434,6 @@ private fun AddCredentialDialog(
 
                     // OTP input (visible after send)
                     AnimatedVisibility(visible = state.addCredentialOtpSent) {
-                        val clipboardManager = LocalClipboardManager.current
                         Box(
                             modifier = Modifier.fillMaxWidth(),
                             contentAlignment = Alignment.Center
@@ -444,9 +443,6 @@ private fun AddCredentialDialog(
                                 onValueChange = { newValue ->
                                     val sanitized = newValue.filter { it.isDigit() }.take(6)
                                     viewModel.onAddCredentialOtpChange(sanitized)
-                                    if (sanitized.length == 6) {
-                                        viewModel.verifyCredential()
-                                    }
                                 },
                                 keyboardOptions = KeyboardOptions(
                                     keyboardType = KeyboardType.Number,
@@ -460,64 +456,36 @@ private fun AddCredentialDialog(
                             )
 
                             Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                                    modifier = Modifier.weight(1f, fill = false)
-                                ) {
-                                    for (i in 0 until 6) {
-                                        val char = state.addCredentialOtpCode.getOrNull(i)?.toString() ?: ""
-                                        val isFocused = state.addCredentialOtpCode.length == i || (i == 5 && state.addCredentialOtpCode.length == 6)
+                                for (i in 0 until 6) {
+                                    val char = state.addCredentialOtpCode.getOrNull(i)?.toString() ?: ""
+                                    val isFocused = state.addCredentialOtpCode.length == i || (i == 5 && state.addCredentialOtpCode.length == 6)
 
-                                        Box(
-                                            modifier = Modifier
-                                                .size(width = 40.dp, height = 48.dp)
-                                                .background(
-                                                    color = if (char.isNotEmpty()) Color.White.copy(0.05f) else PsCardAlt,
-                                                    shape = RoundedCornerShape(10.dp)
-                                                )
-                                                .border(
-                                                    width = if (isFocused) 2.dp else 1.dp,
-                                                    color = if (isFocused) accent else PsCardAlt,
-                                                    shape = RoundedCornerShape(10.dp)
-                                                ),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = char,
-                                                fontSize = 18.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = TextW,
-                                                textAlign = TextAlign.Center
+                                    Box(
+                                        modifier = Modifier
+                                            .size(width = 40.dp, height = 48.dp)
+                                            .background(
+                                                color = if (char.isNotEmpty()) Color.White.copy(0.05f) else PsCardAlt,
+                                                shape = RoundedCornerShape(10.dp)
                                             )
-                                        }
+                                            .border(
+                                                width = if (isFocused) 2.dp else 1.dp,
+                                                color = if (isFocused) accent else PsCardAlt,
+                                                shape = RoundedCornerShape(10.dp)
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = char,
+                                            fontSize = 18.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextW,
+                                            textAlign = TextAlign.Center
+                                        )
                                     }
-                                }
-
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                IconButton(
-                                    onClick = {
-                                        clipboardManager.getText()?.text?.let { clipboardText ->
-                                            val digits = clipboardText.filter { it.isDigit() }.take(6)
-                                            if (digits.length == 6) {
-                                                viewModel.onAddCredentialOtpChange(digits)
-                                                viewModel.verifyCredential()
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .background(accent.copy(alpha = 0.1f), CircleShape)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ContentPaste,
-                                        contentDescription = "Paste OTP",
-                                        tint = accent
-                                    )
                                 }
                             }
                         }
@@ -669,7 +637,6 @@ private fun ResetPinDialog(
 
                     AnimatedVisibility(visible = state.resetPinOtpSent) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            val clipboardManager = LocalClipboardManager.current
                             Box(
                                 modifier = Modifier.fillMaxWidth(),
                                 contentAlignment = Alignment.Center
@@ -679,9 +646,6 @@ private fun ResetPinDialog(
                                     onValueChange = { newValue ->
                                         val sanitized = newValue.filter { it.isDigit() }.take(6)
                                         viewModel.onResetPinOtpChange(sanitized)
-                                        if (sanitized.length == 6) {
-                                            viewModel.submitResetPin()
-                                        }
                                     },
                                     keyboardOptions = KeyboardOptions(
                                         keyboardType = KeyboardType.Number,
@@ -695,64 +659,36 @@ private fun ResetPinDialog(
                                 )
 
                                 Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                                        modifier = Modifier.weight(1f, fill = false)
-                                    ) {
-                                        for (i in 0 until 6) {
-                                            val char = state.resetPinOtpCode.getOrNull(i)?.toString() ?: ""
-                                            val isFocused = state.resetPinOtpCode.length == i || (i == 5 && state.resetPinOtpCode.length == 6)
+                                    for (i in 0 until 6) {
+                                        val char = state.resetPinOtpCode.getOrNull(i)?.toString() ?: ""
+                                        val isFocused = state.resetPinOtpCode.length == i || (i == 5 && state.resetPinOtpCode.length == 6)
 
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(width = 40.dp, height = 48.dp)
-                                                    .background(
-                                                        color = if (char.isNotEmpty()) Color.White.copy(0.05f) else PsCardAlt,
-                                                        shape = RoundedCornerShape(10.dp)
-                                                    )
-                                                    .border(
-                                                        width = if (isFocused) 2.dp else 1.dp,
-                                                        color = if (isFocused) PsGreen else PsCardAlt,
-                                                        shape = RoundedCornerShape(10.dp)
-                                                    ),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = char,
-                                                    fontSize = 18.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = TextW,
-                                                    textAlign = TextAlign.Center
+                                        Box(
+                                            modifier = Modifier
+                                                .size(width = 40.dp, height = 48.dp)
+                                                .background(
+                                                    color = if (char.isNotEmpty()) Color.White.copy(0.05f) else PsCardAlt,
+                                                    shape = RoundedCornerShape(10.dp)
                                                 )
-                                            }
+                                                .border(
+                                                    width = if (isFocused) 2.dp else 1.dp,
+                                                    color = if (isFocused) PsGreen else PsCardAlt,
+                                                    shape = RoundedCornerShape(10.dp)
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = char,
+                                                fontSize = 18.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = TextW,
+                                                textAlign = TextAlign.Center
+                                            )
                                         }
-                                    }
-
-                                    Spacer(modifier = Modifier.width(8.dp))
-
-                                    IconButton(
-                                        onClick = {
-                                            clipboardManager.getText()?.text?.let { clipboardText ->
-                                                val digits = clipboardText.filter { it.isDigit() }.take(6)
-                                                if (digits.length == 6) {
-                                                    viewModel.onResetPinOtpChange(digits)
-                                                    viewModel.submitResetPin()
-                                                }
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .background(PsGreen.copy(alpha = 0.1f), CircleShape)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.ContentPaste,
-                                            contentDescription = "Paste OTP",
-                                            tint = PsGreen
-                                        )
                                     }
                                 }
                             }

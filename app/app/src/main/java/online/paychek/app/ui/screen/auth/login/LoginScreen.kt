@@ -484,75 +484,38 @@ fun LoginScreen(
                                     .alpha(0.01f)
                             )
 
-                            // Visual OTP Boxes and Paste Button
+                            // Visual OTP Boxes
                             Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                                    modifier = Modifier.weight(1f, fill = false)
-                                ) {
-                                    for (i in 0 until 6) {
-                                        val char = uiState.otpCode.getOrNull(i)?.toString() ?: ""
-                                        val isFocused = uiState.otpCode.length == i || (i == 5 && uiState.otpCode.length == 6)
+                                for (i in 0 until 6) {
+                                    val char = uiState.otpCode.getOrNull(i)?.toString() ?: ""
+                                    val isFocused = uiState.otpCode.length == i || (i == 5 && uiState.otpCode.length == 6)
 
-                                        Box(
-                                            modifier = Modifier
-                                                .size(width = 44.dp, height = 52.dp)
-                                                .background(
-                                                    color = if (char.isNotEmpty()) Color.White else Color(0xFFFBFBFC),
-                                                    shape = RoundedCornerShape(12.dp)
-                                                )
-                                                .border(
-                                                    width = if (isFocused) 2.dp else 1.dp,
-                                                    color = if (isFocused) RoyalIndigo else Color(0xFFE2E8F0),
-                                                    shape = RoundedCornerShape(12.dp)
-                                                ),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = char,
-                                                fontSize = 20.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = RoyalIndigo,
-                                                textAlign = TextAlign.Center
+                                    Box(
+                                        modifier = Modifier
+                                            .size(width = 44.dp, height = 52.dp)
+                                            .background(
+                                                color = if (char.isNotEmpty()) Color.White else Color(0xFFFBFBFC),
+                                                shape = RoundedCornerShape(12.dp)
                                             )
-                                        }
+                                            .border(
+                                                width = if (isFocused) 2.dp else 1.dp,
+                                                color = if (isFocused) RoyalIndigo else Color(0xFFE2E8F0),
+                                                shape = RoundedCornerShape(12.dp)
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = char,
+                                            fontSize = 20.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = RoyalIndigo,
+                                            textAlign = TextAlign.Center
+                                        )
                                     }
-                                }
-
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                IconButton(
-                                    onClick = {
-                                        clipboardManager.getText()?.text?.let { clipboardText ->
-                                            val digits = clipboardText.filter { it.isDigit() }.take(6)
-                                            if (digits.length == 6) {
-                                                viewModel.onOtpChanged(digits)
-                                                focusManager.clearFocus()
-                                                viewModel.verifyOtp(context) { res ->
-                                                    verificationResult = res
-                                                }
-                                            } else {
-                                                android.widget.Toast.makeText(
-                                                    context,
-                                                    "ক্লিপবোর্ডে কোনো ৬-ডিজিটের ওটিপি পাওয়া যায়নি।",
-                                                    android.widget.Toast.LENGTH_SHORT
-                                                ).show()
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .background(RoyalIndigo.copy(alpha = 0.1f), CircleShape)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ContentPaste,
-                                        contentDescription = "Paste OTP",
-                                        tint = RoyalIndigo
-                                    )
                                 }
                             }
                         }
