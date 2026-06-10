@@ -75,7 +75,20 @@ fun DashboardScreen(
 ) {
     val screenState by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var showRechargeDialog by remember { mutableStateOf(false) }
+    var hasShownReminder by remember { mutableStateOf(false) }
+    var showExpiryReminderDialog by remember { mutableStateOf(false) }
+
+    val successStats = (screenState.uiState as? DashboardUiState.Success)?.stats
+    val isPaid = successStats?.isPaid ?: false
+    val daysRemaining = remember(successStats?.expiryDate) {
+        calculateDaysRemaining(successStats?.expiryDate)
+    }
+
+    LaunchedEffect(isPaid, daysRemaining) {
+        if (isPaid && daysRemaining in 0..30 && !hasShownReminder) {
+            showExpiryReminderDialog = true
+        }
+    }
 
     if (screenState.showPurchaseDialog) {
         SubscriptionPurchaseDialog(
@@ -97,21 +110,17 @@ fun DashboardScreen(
         )
     }
 
-    if (showRechargeDialog) {
-        RechargeDialog(
-            onDismiss = { showRechargeDialog = false },
-            onConfirm = { amount ->
-                showRechargeDialog = false
-                viewModel.rechargeWallet(amount) { result ->
-                    result.fold(
-                        onSuccess = {
-                            android.widget.Toast.makeText(context, "রিচার্জ সফলভাবে সম্পন্ন হয়েছে।", android.widget.Toast.LENGTH_SHORT).show()
-                        },
-                        onFailure = { error ->
-                            android.widget.Toast.makeText(context, error.message ?: "রিচার্জ ব্যর্থ হয়েছে।", android.widget.Toast.LENGTH_LONG).show()
-                        }
-                    )
-                }
+    if (showExpiryReminderDialog) {
+        ExpiryReminderDialog(
+            daysRemaining = daysRemaining,
+            onDismiss = {
+                showExpiryReminderDialog = false
+                hasShownReminder = true
+            },
+            onBuyPlanClick = {
+                showExpiryReminderDialog = false
+                hasShownReminder = true
+                viewModel.setShowPurchaseDialog(true)
             }
         )
     }
@@ -131,41 +140,22 @@ fun DashboardScreen(
 
             // ─── ১. হেডার গ্রেডিয়েন্ট কার্ড ───────────────────────────────
             item {
-                val successStats = (screenState.uiState as? DashboardUiState.Success)?.stats
                 HeaderWelcomeCard(
                     userName = screenState.userName,
-                    accountLevel = successStats?.accountLevel ?: "FREE_LEVEL"
+                    activePlanName = successStats?.activePlanName ?: "FREE_LEVEL",
+                    expiryDate = successStats?.expiryDate,
+                    isPaid = isPaid
                 )
             }
 
-            // ─── Warning Banner (for negative balance) ───────────────────
-            val successStats = (screenState.uiState as? DashboardUiState.Success)?.stats
-            if (successStats != null && successStats.walletCredits < 0.0) {
-                item {
-                    WarningBanner(
-                        message = "আপনার অ্যাকাউন্টে বকেয়া বিল রয়েছে। ওটিপি এবং ট্র্যাকিং সচল রাখতে দ্রুত রিচার্জ করুন।",
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-                }
-            }
-
-            // ─── Wallet Balance Card ──────────────────────────────────────
-            if (successStats != null) {
-                item {
-                    WalletBalanceCard(
-                        balance = successStats.walletCredits,
-                        onRechargeClick = {
-                            try {
-                                val url = "${online.paychek.app.config.AppConfig.BASE_URL}checkout_gateway.html?apiKey=test_merchant_key&amount=50.00"
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                android.widget.Toast.makeText(context, "ব্রাউজার ওপেন করা সম্ভব হয়নি।", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        onPurchasePackageClick = {
-                            viewModel.setShowPurchaseDialog(true)
-                        },
+            // ─── Subscribed Plan Info / Purchase Banner ─────────────────
+            item {
+                if (successStats != null) {
+                    PlanStatusCard(
+                        isPaid = isPaid,
+                        activePlanName = successStats.activePlanName,
+                        expiryDate = successStats.expiryDate,
+                        onBuyPlanClick = { viewModel.setShowPurchaseDialog(true) },
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
@@ -175,7 +165,26 @@ fun DashboardScreen(
             item {
                 SmsMonitorToggleCard(
                     isActive    = screenState.isServiceActive,
-                    onToggle    = { viewModel.toggleSmsService(it) },
+                    onToggle    = { enable ->
+                        if (enable) {
+                            if (!isPaid) {
+                                viewModel.setShowPurchaseDialog(true)
+                            } else {
+                                val simStatus = online.paychek.app.utils.DeviceIdHelper.getSimSlotIds(context)
+                                if (simStatus == "no_sims" || simStatus == "permission_denied") {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "সক্রিয় সিম কার্ড এবং প্রয়োজনীয় পারমিশন ছাড়া মনিটরিং চালু করা সম্ভব নয়।",
+                                        android.widget.Toast.LENGTH_LONG
+                                    ).show()
+                                } else {
+                                    viewModel.toggleSmsService(true)
+                                }
+                            }
+                        } else {
+                            viewModel.toggleSmsService(false)
+                        }
+                    },
                     modifier    = Modifier.padding(horizontal = 16.dp)
                 )
             }
@@ -222,12 +231,17 @@ fun DashboardScreen(
 // =============================================================================
 
 @Composable
-private fun HeaderWelcomeCard(userName: String, accountLevel: String) {
+private fun HeaderWelcomeCard(
+    userName: String,
+    activePlanName: String,
+    expiryDate: String?,
+    isPaid: Boolean
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(GradientHeader)
-            .padding(horizontal = 20.dp, vertical = 28.dp)
+            .padding(horizontal = 20.dp, vertical = 24.dp)
     ) {
         Row(
             verticalAlignment    = Alignment.CenterVertically,
@@ -249,7 +263,7 @@ private fun HeaderWelcomeCard(userName: String, accountLevel: String) {
                 )
             }
 
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -263,29 +277,50 @@ private fun HeaderWelcomeCard(userName: String, accountLevel: String) {
                     
                     // Subscription Tier Badge
                     Surface(
-                        color = when (accountLevel) {
+                        color = when (activePlanName) {
                             "Premium" -> Color(0xFFFFD700) // Gold
                             "Standard" -> Color(0xFFC0C0C0) // Silver
                             "Basic" -> Color(0xFFCD7F32) // Bronze
                             else -> Color.White.copy(alpha = 0.2f) // FREE_LEVEL
                         },
-                        contentColor = if (accountLevel == "FREE_LEVEL") Color.White else Color.Black,
-                        shape = RoundedCornerShape(4.dp),
-                        modifier = Modifier.padding(top = 2.dp)
+                        contentColor = if (activePlanName == "FREE_LEVEL") Color.White else Color.Black,
+                        shape = RoundedCornerShape(4.dp)
                     ) {
                         Text(
-                            text = accountLevel,
+                            text = activePlanName,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
                 }
-                Text(
-                    text     = "Paychek Payment Gateway",
-                    color    = Color.White.copy(alpha = 0.75f),
-                    fontSize = 13.sp
-                )
+                
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text     = "Paychek Payment Gateway",
+                        color    = Color.White.copy(alpha = 0.75f),
+                        fontSize = 13.sp
+                    )
+                    
+                    if (isPaid && !expiryDate.isNullOrEmpty()) {
+                        val banglaDate = formatExpiryDateToBangla(expiryDate)
+                        Surface(
+                            color = Color(0xFF10B981).copy(alpha = 0.2f),
+                            contentColor = Color(0xFF34D399),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                text = "মেয়াদ: $banglaDate",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -790,217 +825,159 @@ private fun formatTimestamp(raw: String): String {
     }
 }
 
+private fun formatExpiryDateToBangla(dateStr: String?): String {
+    if (dateStr.isNullOrEmpty()) return ""
+    return try {
+        val inputFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val date = inputFormat.parse(dateStr) ?: return dateStr
+        val outputFormat = SimpleDateFormat("dd MMMM, yyyy", Locale("bn", "BD"))
+        outputFormat.format(date)
+    } catch (e: Exception) {
+        dateStr
+    }
+}
+
+private fun calculateDaysRemaining(expiryDateStr: String?): Long {
+    if (expiryDateStr.isNullOrEmpty()) return -1L
+    return try {
+        val format = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val expiryDate = format.parse(expiryDateStr) ?: return -1L
+        val today = Date()
+        val diffMs = expiryDate.time - today.time
+        val days = diffMs / (1000 * 60 * 60 * 24)
+        if (days < 0) 0 else days
+    } catch (e: Exception) {
+        -1L
+    }
+}
+
 @Composable
-private fun WalletBalanceCard(
-    balance: Double,
-    onRechargeClick: () -> Unit,
-    onPurchasePackageClick: () -> Unit,
+private fun ExpiryReminderDialog(
+    daysRemaining: Long,
+    onDismiss: () -> Unit,
+    onBuyPlanClick: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "⚠️ সাবস্ক্রিপশন মেয়াদ শেষ হচ্ছে",
+                color = AccentAmber,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp
+            )
+        },
+        text = {
+            Text(
+                text = "আপনার বর্তমান সাবস্ক্রিপশন মেয়াদের আর মাত্র $daysRemaining দিন বাকি আছে। সার্ভিস সচল রাখতে এবং পেমেন্ট মনিটরিং অব্যাহত রাখতে অনুগ্রহ করে আপনার প্যাকেজটি রিনিউ করুন।",
+                color = TextWhite,
+                fontSize = 14.sp
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onDismiss()
+                    onBuyPlanClick()
+                }
+            ) {
+                Text("রিনিউ করুন", color = AccentCyan, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("পরে করুন", color = TextMuted)
+            }
+        },
+        containerColor = DashCard,
+        shape = RoundedCornerShape(20.dp)
+    )
+}
+
+@Composable
+private fun PlanStatusCard(
+    isPaid: Boolean,
+    activePlanName: String,
+    expiryDate: String?,
+    onBuyPlanClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isNegative = balance < 0.0
-    val statusColor = if (isNegative) Color(0xFFEF4444) else AccentGreen
-    val statusLabel = if (isNegative) "বকেয়া বিল" else "চলতি ব্যালেন্স"
-    val fmt = DecimalFormat("#,##0.00")
+    val fmt = formatExpiryDateToBangla(expiryDate)
+    val daysRemaining = calculateDaysRemaining(expiryDate)
 
     Card(
         colors = CardDefaults.cardColors(containerColor = DashCard),
         shape = RoundedCornerShape(16.dp),
         modifier = modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(statusColor)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = if (isPaid) "🔒 সক্রিয় সাবস্ক্রিপশন" else "🔓 ফ্রি মেম্বারশিপ",
+                        color = TextWhite,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = statusLabel,
-                        color = TextMuted,
+                        text = if (isPaid) "প্যাকেজ: $activePlanName" else "কোনো সক্রিয় প্যাকেজ নেই",
+                        color = if (isPaid) AccentGreen else AccentAmber,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
-                Text(
-                    text = "৳ ${fmt.format(balance)}",
-                    color = statusColor,
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-                Text(
-                    text = "ইউনিক ওয়ালেট আইডেন্টিফায়ার",
-                    color = TextMuted.copy(alpha = 0.6f),
-                    fontSize = 10.sp
-                )
-            }
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
                 Button(
-                    onClick = onRechargeClick,
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                    onClick = onBuyPlanClick,
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isPaid) AccentCyan else AccentAmber),
                     shape = RoundedCornerShape(10.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.CreditCard,
-                        contentDescription = "Recharge",
-                        tint = Color(0xFF0F172A),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Add Balance",
+                        text = if (isPaid) "রিনিউ করুন" else "প্যাকেজ কিনুন",
                         color = Color(0xFF0F172A),
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp
                     )
                 }
+            }
 
-                Button(
-                    onClick = onPurchasePackageClick,
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
-                    shape = RoundedCornerShape(10.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            if (isPaid && !expiryDate.isNullOrEmpty()) {
+                HorizontalDivider(color = ToggleOff.copy(alpha = 0.3f))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.ShoppingCart,
-                        contentDescription = "Buy Plan",
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Buy Plan",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
+                        text = "মেয়াদ শেষ হবে:",
+                        color = TextMuted,
                         fontSize = 12.sp
                     )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun WarningBanner(
-    message: String,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF7F1D1D)),
-        shape = RoundedCornerShape(12.dp),
-        modifier = modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Warning,
-                contentDescription = "Alert",
-                tint = Color(0xFFFCA5A5),
-                modifier = Modifier.size(20.dp)
-            )
-            Text(
-                text = message,
-                color = Color(0xFFFEE2E2),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun RechargeDialog(
-    onDismiss: () -> Unit,
-    onConfirm: (Double) -> Unit
-) {
-    var amountText by remember { mutableStateOf("") }
-    var errorText by remember { mutableStateOf<String?>(null) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = DashCard,
-        title = {
-            Text(
-                text = "ওয়ালেট রিচার্জ",
-                color = TextWhite,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "রিচার্জ করার জন্য টাকার পরিমাণ লিখুন (সর্বনিম্ন ৫০ টাকা):",
-                    color = TextMuted,
-                    fontSize = 13.sp
-                )
-                OutlinedTextField(
-                    value = amountText,
-                    onValueChange = {
-                        amountText = it
-                        errorText = null
-                    },
-                    placeholder = { Text("৳ পরিমাণ লিখুন", color = TextMuted.copy(alpha = 0.5f)) },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentCyan,
-                        unfocusedBorderColor = ToggleOff,
-                        focusedTextColor = TextWhite,
-                        unfocusedTextColor = TextWhite
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                errorText?.let {
                     Text(
-                        text = it,
-                        color = Color(0xFFEF4444),
+                        text = "$fmt (${daysRemaining} দিন বাকি)",
+                        color = TextWhite,
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val amt = amountText.toDoubleOrNull()
-                    if (amt == null || amt <= 0.0) {
-                        errorText = "সঠিক পরিমাণ প্রবেশ করান।"
-                    } else if (amt < 50.0) {
-                        errorText = "সর্বনিম্ন রিচার্জ ৫০ টাকা।"
-                    } else {
-                        onConfirm(amt)
-                    }
-                }
-            ) {
-                Text("নিশ্চিত করুন", color = AccentCyan, fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("বাতিল", color = TextMuted)
+            } else if (!isPaid) {
+                HorizontalDivider(color = ToggleOff.copy(alpha = 0.3f))
+                Text(
+                    text = "সাইট বা ডিভাইস হোস্ট করতে দয়া করে একটি সাবস্ক্রিপশন প্যাকেজ কিনুন।",
+                    color = TextMuted,
+                    fontSize = 11.sp
+                )
             }
         }
-    )
+    }
 }
 
 @Composable
@@ -1072,7 +1049,7 @@ fun SubscriptionPurchaseDialog(
                                     fontSize = 11.sp
                                 )
                                 Text(
-                                    text = "মেয়াদ: ${plan.creditsGiven} দিন (${plan.creditsGiven} ক্রেডিট)",
+                                    text = "মেয়াদ: ${plan.durationDays} দিন",
                                     color = AccentGreen,
                                     fontSize = 11.sp
                                 )

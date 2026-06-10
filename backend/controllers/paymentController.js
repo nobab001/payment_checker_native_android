@@ -210,12 +210,14 @@ async function getDashboardStats(req, res) {
       [userId]
     );
 
-    // ── ওয়ালেট ব্যালেন্স (Wallet Credits) ──────────────────────────────────
+    // ── সাবস্ক্রিপশন স্ট্যাটাস (Subscription Status) ───────────────────────
     const [userRow] = await query(
-      `SELECT wallet_credits FROM users WHERE id = ? LIMIT 1`,
+      `SELECT is_paid, active_plan_name, expiry_date FROM users WHERE id = ? LIMIT 1`,
       [userId]
     );
-    const walletCredits = userRow ? parseFloat(userRow.wallet_credits || '0.00') : 0.00;
+    const isPaid = userRow ? userRow.is_paid : 0;
+    const activePlanName = userRow ? userRow.active_plan_name : 'FREE_LEVEL';
+    const expiryDate = userRow ? userRow.expiry_date : null;
 
     // ── সর্বশেষ ৫টি ট্রানজেকশন ─────────────────────────────────────────────
     const recentRows = await query(
@@ -228,7 +230,7 @@ async function getDashboardStats(req, res) {
       [userId]
     );
 
-    console.log(`[STATS] Dashboard loaded for user: ${userId} | Today: ${todayDate} | Wallet: ৳${walletCredits}`);
+    console.log(`[STATS] Dashboard loaded for user: ${userId} | Today: ${todayDate} | Paid: ${isPaid} | Plan: ${activePlanName}`);
 
     return res.json({
       success: true,
@@ -240,7 +242,9 @@ async function getDashboardStats(req, res) {
         unused_count:        totalRow.unused_count        || 0,
         soldout_count:       totalRow.soldout_count       || 0,
         active_devices:      deviceRow.active_devices     || 0,
-        wallet_credits:      walletCredits,
+        is_paid:             !!isPaid,
+        active_plan_name:    activePlanName,
+        expiry_date:         expiryDate,
         recent_transactions: recentRows
       }
     });

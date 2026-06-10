@@ -370,22 +370,9 @@ async function verifyOtp(req, res) {
     if (!user) {
       const isEmail = cleanedContact.includes('@');
       
-      // Read default signup bonus
-      let signupBonus = 30.00;
-      try {
-        const bonusSettings = await query(
-          "SELECT setting_value FROM global_billing_settings WHERE setting_key = 'default_signup_bonus' LIMIT 1"
-        );
-        if (bonusSettings.length > 0) {
-          signupBonus = parseFloat(bonusSettings[0].setting_value);
-        }
-      } catch (err) {
-        console.error('[Billing] Failed to read default_signup_bonus:', err);
-      }
-
       const insertResult = await query(
-        'INSERT INTO users (name, phone, email, role, profile_complete, wallet_credits) VALUES (?, ?, ?, ?, ?, ?)',
-        ['', isEmail ? null : cleanedContact, isEmail ? cleanedContact : null, 'user', 0, signupBonus]
+        'INSERT INTO users (name, phone, email, role, profile_complete, is_paid, active_plan_name, expiry_date) VALUES (?, ?, ?, ?, ?, 0, \'FREE_LEVEL\', NULL)',
+        ['', isEmail ? null : cleanedContact, isEmail ? cleanedContact : null, 'user', 0]
       );
 
       const newUserId = insertResult.insertId;
@@ -428,19 +415,19 @@ async function verifyOtp(req, res) {
 
       // Plan limit check for child devices
       if (isParent === 0) {
-        if (!user.account_level || user.account_level === 'FREE_LEVEL') {
+        if (user.is_paid === 0 || user.active_plan_name === 'FREE_LEVEL') {
           return res.status(403).json({ error: 'ফ্রি লেভেলের ব্যবহারকারীদের জন্য অতিরিক্ত চাইল্ড ডিভাইস যুক্ত করা অনুমোদিত নয়। অনুগ্রহ করে সাবস্ক্রিপশন প্ল্যান আপগ্রেড করুন।' });
         }
         
         // Fetch plan limits
         const plans = await query(
           "SELECT max_devices FROM subscription_plans WHERE plan_name = ? LIMIT 1",
-          [user.account_level]
+          [user.active_plan_name]
         );
         const maxDevices = plans.length > 0 ? plans[0].max_devices : 1;
         
         if (userDevicesCount[0].count >= maxDevices) {
-          return res.status(403).json({ error: `আপনার কারেন্ট প্যাকেজ (${user.account_level}) এ সর্বোচ্চ ${maxDevices}টি ডিভাইস যুক্ত করতে পারবেন। অনুগ্রহ করে প্যাকেজ আপগ্রেড করুন।` });
+          return res.status(403).json({ error: `আপনার কারেন্ট প্যাকেজ (${user.active_plan_name}) এ সর্বোচ্চ ${maxDevices}টি ডিভাইস যুক্ত করতে পারবেন। অনুগ্রহ করে প্যাকেজ আপগ্রেড করুন।` });
         }
       }
 
@@ -508,7 +495,9 @@ async function verifyOtp(req, res) {
         phone: user.phone,
         email: user.email,
         role: user.role,
-        balance: parseFloat(user.balance),
+        is_paid: !!user.is_paid,
+        active_plan_name: user.active_plan_name,
+        expiry_date: user.expiry_date,
         blocked: !!user.blocked,
         profileComplete: !!user.profile_complete,
         smsEnabled: !!user.sms_enabled,
@@ -657,7 +646,9 @@ async function completeProfile(req, res) {
         phone: updatedUser.phone,
         email: updatedUser.email,
         role: updatedUser.role,
-        balance: parseFloat(updatedUser.balance),
+        is_paid: !!updatedUser.is_paid,
+        active_plan_name: updatedUser.active_plan_name,
+        expiry_date: updatedUser.expiry_date,
         blocked: !!updatedUser.blocked,
         profileComplete: !!updatedUser.profile_complete,
         smsEnabled: !!updatedUser.sms_enabled,

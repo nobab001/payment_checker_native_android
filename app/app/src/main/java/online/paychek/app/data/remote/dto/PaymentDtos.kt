@@ -109,26 +109,20 @@ data class DashboardStats(
     @SerializedName("active_devices")
     val activeDevices: Int,             // সক্রিয় ডিভাইস সংখ্যা
 
-    @SerializedName("wallet_credits")
-    val walletCredits: Double = 0.0,    // ওয়ালেট ব্যালেন্স (নেগেটিভ হতে পারে)
+    @SerializedName("is_paid")
+    val isPaid: Boolean,
 
-    @SerializedName("account_level")
-    val accountLevel: String? = null,
+    @SerializedName("active_plan_name")
+    val activePlanName: String,
+
+    @SerializedName("expiry_date")
+    val expiryDate: String?,
 
     @SerializedName("recent_transactions")
     val recentTransactions: List<TransactionItem>  // সর্বশেষ ৫টি ট্রানজেকশন
 )
 
-data class RechargeRequest(
-    val amount: Double
-)
 
-data class RechargeResponse(
-    val success: Boolean,
-    val message: String?,
-    @SerializedName("wallet_credits")
-    val walletCredits: Double?
-)
 
 data class FcmTokenRequest(
     val token: String?
@@ -146,6 +140,7 @@ data class PurchaseSubscriptionRequest(
 data class PurchaseSubscriptionResponse(
     @SerializedName("success") val success: Boolean,
     @SerializedName("message") val message: String?,
-    @SerializedName("account_level") val accountLevel: String?,
-    @SerializedName("wallet_credits") val walletCredits: Double?
+    @SerializedName("is_paid") val isPaid: Boolean,
+    @SerializedName("active_plan_name") val activePlanName: String?,
+    @SerializedName("expiry_date") val expiryDate: String?
 )

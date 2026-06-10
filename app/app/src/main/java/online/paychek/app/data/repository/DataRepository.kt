@@ -79,23 +79,6 @@ class PaymentRepository {
         }
     }
 
-    suspend fun rechargeWallet(token: String, amount: Double): Result<Double> {
-        return try {
-            val response = api.rechargeWallet("Bearer $token", online.paychek.app.data.remote.dto.RechargeRequest(amount))
-            if (response.isSuccessful) {
-                val body = response.body()
-                if (body?.success == true && body.walletCredits != null) {
-                    Result.success(body.walletCredits)
-                } else {
-                    Result.failure(Exception(body?.message ?: "রিচার্জ ব্যর্থ হয়েছে"))
-                }
-            } else {
-                Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))
-            }
-        } catch (e: Exception) {
-            Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
-        }
-    }
 
     suspend fun updateFcmToken(token: String, fcmToken: String?): Result<Unit> {
         return try {

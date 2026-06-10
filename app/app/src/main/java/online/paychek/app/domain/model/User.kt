@@ -10,7 +10,9 @@ data class User(
     val phone: String?,
     val email: String?,
     val role: String,               // "user" | "admin"
-    val balance: Double,
+    val isPaid: Boolean,
+    val activePlanName: String,
+    val expiryDate: String?,
     val isBlocked: Boolean,
     val profileComplete: Boolean,   // false = পুনরায় signup screen দেখাবে
     val smsTrackingEnabled: Boolean = true,

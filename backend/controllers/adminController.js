@@ -302,7 +302,7 @@ async function listUsers(req, res) {
   try {
     // 1. Fetch all users
     const users = await query(
-      `SELECT id, name, phone, email, role, balance, wallet_credits, account_level, blocked, profile_complete, created_at FROM users`
+      `SELECT id, name, phone, email, role, is_paid, active_plan_name, expiry_date, blocked, profile_complete, created_at FROM users`
     );
 
     // 2. Fetch all registered devices
@@ -437,13 +437,13 @@ async function addSite(req, res) {
       return res.status(400).json({ success: false, error: 'Site name and Site URL are required' });
     }
 
-    const users = await query('SELECT account_level, wallet_credits FROM users WHERE id = ? LIMIT 1', [userId]);
+    const users = await query('SELECT is_paid, active_plan_name, expiry_date FROM users WHERE id = ? LIMIT 1', [userId]);
     if (users.length === 0) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
     const user = users[0];
 
-    if (user.account_level === 'FREE_LEVEL') {
+    if (user.is_paid === 0 || user.active_plan_name === 'FREE_LEVEL') {
       return res.status(400).json({
         success: false,
         error: 'SUBSCRIPTION_REQUIRED',
@@ -452,7 +452,7 @@ async function addSite(req, res) {
     }
 
     // Check limits
-    const plans = await query('SELECT max_sites FROM subscription_plans WHERE plan_name = ? LIMIT 1', [user.account_level]);
+    const plans = await query('SELECT max_sites FROM subscription_plans WHERE plan_name = ? LIMIT 1', [user.active_plan_name]);
     if (plans.length === 0) {
       return res.status(400).json({ success: false, error: 'Subscription plan not found' });
     }
@@ -481,16 +481,16 @@ async function addSite(req, res) {
       [userId, site_name, site_url, apiKey, apiSecret, JSON.stringify({}), 1]
     );
 
-    const updatedCredits = user.wallet_credits;
-
-    console.log(`[Billing] User ${userId} registered site ${site_name}. Current Level: ${user.account_level}. Layout count: ${currentSites + 1}`);
+    console.log(`[Billing] User ${userId} registered site ${site_name}. Current Level: ${user.active_plan_name}. Layout count: ${currentSites + 1}`);
 
     return res.json({
       success: true,
       message: 'ওয়েবসাইট সফলভাবে যুক্ত হয়েছে।',
       apiKey,
       apiSecret,
-      wallet_credits: updatedCredits,
+      is_paid: !!user.is_paid,
+      active_plan_name: user.active_plan_name,
+      expiry_date: user.expiry_date,
       site: {
         id: result.insertId,
         user_id: userId,
@@ -542,21 +542,39 @@ async function manualGrace(req, res) {
     const { id } = req.params;
     let { credits } = req.body;
 
-    let creditsValue = parseInt(credits, 10);
-    if (isNaN(creditsValue) || creditsValue < 0) {
-      creditsValue = 7;
+    let daysValue = parseInt(credits, 10);
+    if (isNaN(daysValue) || daysValue < 0) {
+      daysValue = 7;
     }
 
+    const rows = await query("SELECT expiry_date, is_paid FROM users WHERE id = ?", [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const user = rows[0];
+
+    let baseDate = new Date();
+    if (user.is_paid === 1 && user.expiry_date && new Date(user.expiry_date) > new Date()) {
+      baseDate = new Date(user.expiry_date);
+    }
+
+    baseDate.setDate(baseDate.getDate() + daysValue);
+    const year = baseDate.getFullYear();
+    const month = String(baseDate.getMonth() + 1).padStart(2, '0');
+    const day = String(baseDate.getDate()).padStart(2, '0');
+    const formattedExpiry = `${year}-${month}-${day}`;
+
     await query(
-      "UPDATE users SET account_level = 'Basic', wallet_credits = wallet_credits + ? WHERE id = ?",
-      [creditsValue, id]
+      "UPDATE users SET is_paid = 1, active_plan_name = 'Basic', expiry_date = ? WHERE id = ?",
+      [formattedExpiry, id]
     );
 
     return res.json({
       success: true,
-      message: `ব্যবহারকারীকে সফলভাবে ${creditsValue} দিনের ট্রায়াল প্রদান করা হয়েছে।`,
-      account_level: 'Basic',
-      credits_added: creditsValue
+      message: `ব্যবহারকারীকে সফলভাবে ${daysValue} দিনের সাবস্ক্রিপশন মেয়াদ প্রদান করা হয়েছে।`,
+      is_paid: true,
+      active_plan_name: 'Basic',
+      expiry_date: formattedExpiry
     });
   } catch (err) {
     console.error('[Admin Billing] manualGrace error:', err);

@@ -67,26 +67,8 @@ cron.schedule('0 0 * * *', async () => {
   }
 });
 
-// Mount Distributed Self-Healing Subscription Billing Engine Scheduler
+// Mount Calendar-Based Subscription Expiry Guard & FCM Reminder Scheduler
 require('./cron/billingScheduler');
-
-// 11:00 AM Cron: Notify users with credits < ৳10 using Mock Firebase push alerts
-cron.schedule('0 11 * * *', async () => {
-  try {
-    const lowBalanceUsers = await query(
-      `SELECT id, name, wallet_credits, fcm_token FROM users 
-       WHERE blocked = 0 AND profile_complete = 1 AND wallet_credits < 10.00 AND fcm_token IS NOT NULL AND fcm_token != ''`
-    );
-
-    for (const u of lowBalanceUsers) {
-      console.log(`[Mock FCM Notification] Sent to user ${u.id} (Token: ${u.fcm_token.substring(0, 15)}...): ` +
-        `"আপনার ওয়ালেট ব্যালেন্স ৳${u.wallet_credits}। ওটিপি এবং ট্র্যাকিং সার্ভিস সচল রাখতে অনুগ্রহ করে রিচার্জ সম্পন্ন করুন।"`);
-    }
-    console.log(`[CRON] Dispatched low balance push alerts to ${lowBalanceUsers.length} users.`);
-  } catch (err) {
-    console.error('[CRON] Error in morning low balance alert:', err);
-  }
-});
 
 // Start listening for connections
 app.listen(PORT, async () => {
@@ -96,8 +78,10 @@ app.listen(PORT, async () => {
   console.log(` Database Name  : ${process.env.DB_NAME}`);
   console.log(`=============================================`);
 
-  // Initialize anti-abuse table
   try {
+    // ─────────────────────────────────────────────────────────────────────────
+    // Initialize anti-abuse table
+    // ─────────────────────────────────────────────────────────────────────────
     await query(`
       CREATE TABLE IF NOT EXISTS \`device_trial_logs\` (
         \`id\`                   INT           NOT NULL AUTO_INCREMENT,
@@ -136,7 +120,9 @@ app.listen(PORT, async () => {
     `);
     console.log('[DB] Synced existing users to user_credentials.');
 
-    // Initialize global_billing_settings table
+    // ─────────────────────────────────────────────────────────────────────────
+    // Initialize global_billing_settings table (kept for admin config)
+    // ─────────────────────────────────────────────────────────────────────────
     await query(`
       CREATE TABLE IF NOT EXISTS \`global_billing_settings\` (
         \`id\`           INT          NOT NULL AUTO_INCREMENT,
@@ -147,36 +133,17 @@ app.listen(PORT, async () => {
         UNIQUE KEY \`uniq_setting_key\` (\`setting_key\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+    console.log('[DB] global_billing_settings table verified.');
 
-    const defaultSettings = [
-      { key: 'default_signup_bonus', val: '30.00', desc: 'Default signup bonus credits for new users' },
-      { key: 'daily_maintenance_rate', val: '0.50', desc: 'Global daily maintenance cost deducted at midnight' },
-      { key: 'one_time_site_fee', val: '10.00', desc: 'One-time cost to add a website/layout' },
-      { key: 'one_time_device_fee', val: '5.00', desc: 'One-time cost to add a child device' }
-    ];
+    // ─────────────────────────────────────────────────────────────────────────
+    // DROP deprecated credit_deduction_ledger table
+    // ─────────────────────────────────────────────────────────────────────────
+    await query(`DROP TABLE IF EXISTS \`credit_deduction_ledger\``);
+    console.log('[DB] Dropped deprecated credit_deduction_ledger table (if existed).');
 
-    for (const setting of defaultSettings) {
-      await query(
-        'INSERT INTO global_billing_settings (setting_key, setting_value, description) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE description = VALUES(description)',
-        [setting.key, setting.val, setting.desc]
-      );
-    }
-    console.log('[DB] global_billing_settings verified and populated.');
-
-// Initialize credit_deduction_ledger table
-    await query(`
-      CREATE TABLE IF NOT EXISTS \`credit_deduction_ledger\` (
-        \`id\` INT AUTO_INCREMENT PRIMARY KEY,
-        \`user_id\` INT NOT NULL,
-        \`deducted_date\` DATE NOT NULL,
-        \`credits_deducted\` INT DEFAULT 1,
-        \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY \`idx_user_date\` (\`user_id\`, \`deducted_date\`),
-        FOREIGN KEY (\`user_id\`) REFERENCES \`users\`(\`id\`) ON DELETE CASCADE
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    `);
-
-    // Initialize subscription_plans table
+    // ─────────────────────────────────────────────────────────────────────────
+    // Initialize subscription_plans table with duration_days (not credits_given)
+    // ─────────────────────────────────────────────────────────────────────────
     await query(`
       CREATE TABLE IF NOT EXISTS \`subscription_plans\` (
         \`id\` INT AUTO_INCREMENT PRIMARY KEY,
@@ -184,52 +151,111 @@ app.listen(PORT, async () => {
         \`price\` DECIMAL(10,2) NOT NULL,
         \`max_sites\` INT NOT NULL,
         \`max_devices\` INT NOT NULL,
-        \`credits_given\` INT DEFAULT 365,
+        \`duration_days\` INT DEFAULT 365,
         \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+    // Migrate credits_given → duration_days if old column exists
+    const creditsCol = await query("SHOW COLUMNS FROM `subscription_plans` LIKE 'credits_given'");
+    if (creditsCol.length > 0) {
+      // Add duration_days if it doesn't exist yet
+      const durationCol = await query("SHOW COLUMNS FROM `subscription_plans` LIKE 'duration_days'");
+      if (durationCol.length === 0) {
+        await query("ALTER TABLE `subscription_plans` ADD COLUMN `duration_days` INT DEFAULT 365 AFTER `max_devices`");
+      }
+      // Copy values from credits_given to duration_days
+      await query("UPDATE `subscription_plans` SET `duration_days` = `credits_given` WHERE `duration_days` IS NULL OR `duration_days` = 365");
+      // Drop old column
+      await query("ALTER TABLE `subscription_plans` DROP COLUMN `credits_given`");
+      console.log('[DB] Migrated credits_given → duration_days in subscription_plans.');
+    }
+
+    // Seed default subscription plans
     const defaultPlans = [
-      { name: 'Basic', price: 100.00, sites: 1, devices: 1, credits: 365 },
-      { name: 'Standard', price: 200.00, sites: 3, devices: 3, credits: 365 },
-      { name: 'Premium', price: 500.00, sites: 999, devices: 10, credits: 365 }
+      { name: 'Basic', price: 100.00, sites: 1, devices: 1, days: 365 },
+      { name: 'Standard', price: 200.00, sites: 3, devices: 3, days: 365 },
+      { name: 'Premium', price: 500.00, sites: 999, devices: 10, days: 365 }
     ];
     for (const plan of defaultPlans) {
       await query(
-        'INSERT INTO subscription_plans (plan_name, price, max_sites, max_devices, credits_given) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE price = VALUES(price), max_sites = VALUES(max_sites), max_devices = VALUES(max_devices), credits_given = VALUES(credits_given)',
-        [plan.name, plan.price, plan.sites, plan.devices, plan.credits]
+        'INSERT INTO subscription_plans (plan_name, price, max_sites, max_devices, duration_days) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE price = VALUES(price), max_sites = VALUES(max_sites), max_devices = VALUES(max_devices), duration_days = VALUES(duration_days)',
+        [plan.name, plan.price, plan.sites, plan.devices, plan.days]
       );
     }
-    console.log('[DB] Seeded default subscription plans.');
+    console.log('[DB] Seeded default subscription plans (duration_days).');
 
-    // Add account_level and wallet_credits columns to users table if they don't exist
-    const userLevelCol = await query("SHOW COLUMNS FROM `users` LIKE 'account_level'");
-    if (userLevelCol.length === 0) {
-      await query("ALTER TABLE `users` ADD COLUMN `account_level` VARCHAR(30) DEFAULT 'FREE_LEVEL' AFTER `role`");
-      console.log('[DB] Added account_level column to users.');
+    // ─────────────────────────────────────────────────────────────────────────
+    // SCHEMA MIGRATION: Boolean Paid-Gate & Dynamic Plan Name Architecture
+    // Drop: wallet_credits, account_level
+    // Add:  is_paid, active_plan_name, expiry_date
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Step 1: Add new columns defensively (is_paid, active_plan_name, expiry_date)
+    const isPaidCol = await query("SHOW COLUMNS FROM `users` LIKE 'is_paid'");
+    if (isPaidCol.length === 0) {
+      await query("ALTER TABLE `users` ADD COLUMN `is_paid` TINYINT(1) DEFAULT 0 AFTER `role`");
+      console.log('[DB] ✅ Added is_paid column to users.');
     }
-    const userWalletCol = await query("SHOW COLUMNS FROM `users` LIKE 'wallet_credits'");
-    if (userWalletCol.length === 0) {
-      await query("ALTER TABLE `users` ADD COLUMN `wallet_credits` INT DEFAULT 0 AFTER `account_level`");
-      console.log('[DB] Added wallet_credits column to users.');
-    } else {
-      if (userWalletCol[0].Type.toLowerCase() !== 'int') {
-        await query("ALTER TABLE `users` MODIFY COLUMN `wallet_credits` INT DEFAULT 0");
-        console.log('[DB] Altered wallet_credits column in users to INT.');
-      }
+
+    const activePlanCol = await query("SHOW COLUMNS FROM `users` LIKE 'active_plan_name'");
+    if (activePlanCol.length === 0) {
+      await query("ALTER TABLE `users` ADD COLUMN `active_plan_name` VARCHAR(50) DEFAULT 'FREE_LEVEL' AFTER `is_paid`");
+      console.log('[DB] ✅ Added active_plan_name column to users.');
     }
+
+    const expiryDateCol = await query("SHOW COLUMNS FROM `users` LIKE 'expiry_date'");
+    if (expiryDateCol.length === 0) {
+      await query("ALTER TABLE `users` ADD COLUMN `expiry_date` DATE DEFAULT NULL AFTER `active_plan_name`");
+      console.log('[DB] ✅ Added expiry_date column to users.');
+    }
+
+    // Step 2: Migrate existing data from old columns to new columns (one-time)
+    const oldAccountLevelCol = await query("SHOW COLUMNS FROM `users` LIKE 'account_level'");
+    const oldWalletCreditsCol = await query("SHOW COLUMNS FROM `users` LIKE 'wallet_credits'");
+
+    if (oldAccountLevelCol.length > 0 && oldWalletCreditsCol.length > 0) {
+      // Migrate paid users: if account_level != FREE_LEVEL → is_paid=1, active_plan_name=account_level, expiry_date=today+wallet_credits days
+      await query(`
+        UPDATE users 
+        SET is_paid = 1, 
+            active_plan_name = account_level, 
+            expiry_date = DATE_ADD(CURRENT_DATE(), INTERVAL GREATEST(CAST(wallet_credits AS SIGNED), 1) DAY)
+        WHERE account_level IS NOT NULL AND account_level != 'FREE_LEVEL' AND wallet_credits > 0
+      `);
+      console.log('[DB] ✅ Migrated existing paid users (account_level + wallet_credits → is_paid + active_plan_name + expiry_date).');
+    }
+
+    // Step 3: Drop deprecated columns safely
+    if (oldWalletCreditsCol.length > 0) {
+      await query("ALTER TABLE `users` DROP COLUMN `wallet_credits`");
+      console.log('[DB] ✅ Dropped deprecated wallet_credits column from users.');
+    }
+
+    if (oldAccountLevelCol.length > 0) {
+      await query("ALTER TABLE `users` DROP COLUMN `account_level`");
+      console.log('[DB] ✅ Dropped deprecated account_level column from users.');
+    }
+
+    // Drop custom_daily_rate if it still exists
     const userCustomRateCol = await query("SHOW COLUMNS FROM `users` LIKE 'custom_daily_rate'");
     if (userCustomRateCol.length > 0) {
       await query("ALTER TABLE `users` DROP COLUMN `custom_daily_rate`");
       console.log('[DB] Dropped custom_daily_rate column from users.');
     }
+
+    // Ensure fcm_token column exists
     const userFcmCol = await query("SHOW COLUMNS FROM `users` LIKE 'fcm_token'");
     if (userFcmCol.length === 0) {
       await query("ALTER TABLE `users` ADD COLUMN `fcm_token` VARCHAR(512) DEFAULT NULL AFTER `gmail_enabled`");
       console.log('[DB] Added fcm_token column to users.');
     }
+
+    console.log('[DB] ═══════════════════════════════════════════');
+    console.log('[DB] ✅ Boolean Paid-Gate Schema Migration Complete!');
+    console.log('[DB] ═══════════════════════════════════════════');
+
   } catch (dbErr) {
     console.error('[DB] Failed to initialize database setup:', dbErr);
   }
 });
-

@@ -92,22 +92,21 @@ async function runTests() {
     { expiresIn: '1h' }
   );
 
-  // 1. Verify Global Billing Settings Seeds
-  console.log('\n--- 1. Verifying Global Billing Settings Seeds ---');
-  const settings = await query('SELECT * FROM global_billing_settings');
-  console.log(`Found ${settings.length} global billing settings seeds.`);
-  const keys = settings.map(s => s.setting_key);
-  const requiredKeys = ['default_signup_bonus', 'daily_maintenance_rate', 'one_time_site_fee', 'one_time_device_fee'];
-  for (const rk of requiredKeys) {
-    if (!keys.includes(rk)) {
-      console.error(`❌ FAILED: Missing seed key ${rk}`);
-      process.exit(1);
-    }
+  // 1. Verify Global Billing Settings (FCM reminder/settings check)
+  console.log('\n--- 1. Verifying Global Billing Settings and subscription_plans Schema ---');
+  const plans = await query('SELECT * FROM subscription_plans');
+  console.log(`Found ${plans.length} subscription plans seeded.`);
+  
+  const columns = await query('SHOW COLUMNS FROM subscription_plans');
+  const colNames = columns.map(c => c.Field);
+  if (!colNames.includes('duration_days') || colNames.includes('credits_given')) {
+    console.error('❌ FAILED: subscription_plans has incorrect columns. duration_days is required, credits_given should be dropped.');
+    process.exit(1);
   }
-  console.log('✅ SUCCESS: All required global billing settings are seeded.');
+  console.log('✅ SUCCESS: subscription_plans schema verified.');
 
-  // 2. Signup Flow & Bonus Award Verification
-  console.log('\n--- 2. Registering New User & Checking Signup Bonus ---');
+  // 2. Register New User & Check Free Status
+  console.log('\n--- 2. Registering New User & Verifying Free Level ---');
   // Simulate OTP registration flow
   const sendOtpRes = await postJson('/api/auth/register-send-otp', {
     contact: testPhone,
@@ -138,17 +137,17 @@ async function runTests() {
   const testUserId = verifyOtpRes.body.user.id;
   const userToken = verifyOtpRes.body.token;
 
-  // Retrieve user balance from db
-  const [userRow] = await query('SELECT wallet_credits FROM users WHERE id = ?', [testUserId]);
-  console.log(`Initial wallet_credits: ৳${userRow.wallet_credits}`);
-  if (parseFloat(userRow.wallet_credits) !== 30.00) {
-    console.error(`❌ FAILED: Expected signup bonus of 30.00, got ${userRow.wallet_credits}`);
+  // Retrieve user from db
+  const [userRow] = await query('SELECT is_paid, active_plan_name, expiry_date FROM users WHERE id = ?', [testUserId]);
+  console.log(`Initial User Status: is_paid=${userRow.is_paid}, active_plan_name=${userRow.active_plan_name}, expiry_date=${userRow.expiry_date}`);
+  if (userRow.is_paid !== 0 || userRow.active_plan_name !== 'FREE_LEVEL' || userRow.expiry_date !== null) {
+    console.error(`❌ FAILED: Expected clean free user (is_paid=0, FREE_LEVEL, expiry_date=null)`);
     process.exit(1);
   }
-  console.log('✅ SUCCESS: Default signup bonus of ৳30.00 credited.');
+  console.log('✅ SUCCESS: New user registered as FREE_LEVEL with no credits or active plan.');
 
-  // 3. Child Device Fee Deduction
-  console.log('\n--- 3. Registering a Child Device & Checking Fee Deduction ---');
+  // 3. Child Device Block for Free Level
+  console.log('\n--- 3. Testing Child Device Block for Free Level ---');
   const childOtpCode = '999999';
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
   await query(
@@ -167,35 +166,105 @@ async function runTests() {
     androidVersion: '13'
   });
 
-  const [userRowAfterChild] = await query('SELECT wallet_credits FROM users WHERE id = ?', [testUserId]);
-  console.log(`Wallet credits after child device addition: ৳${userRowAfterChild.wallet_credits}`);
-  if (parseFloat(userRowAfterChild.wallet_credits) !== 25.00) {
-    console.error(`❌ FAILED: Expected balance 25.00 after 5.00 child fee, got ${userRowAfterChild.wallet_credits}`);
+  console.log(`Child device registration status (Expected 403): ${childVerifyOtpRes.status}`);
+  if (childVerifyOtpRes.status !== 403) {
+    console.error('❌ FAILED: Child device addition was not blocked for Free Level user.');
     process.exit(1);
   }
-  console.log('✅ SUCCESS: Child device fee of ৳5.00 deducted.');
+  console.log('✅ SUCCESS: Child device registration correctly blocked for Free user.');
 
-  // 4. Recharge Endpoints (Enforces Minimum ৳50 limit validation)
-  console.log('\n--- 4. Testing Recharge Endpoint Validation ---');
-  const rechargeFail = await postJson('/api/v1/subscription/recharge', { amount: 49.99 }, userToken);
-  console.log(`Recharging ৳49.99 Status (Expected 400): ${rechargeFail.status}`);
-  if (rechargeFail.status !== 400) {
-    console.error('❌ FAILED: Recharge under ৳50 was not blocked.');
+  // 4. Website Block for Free Level
+  console.log('\n--- 4. Testing Website Registration Block for Free Level ---');
+  const siteRes = await postJson('/api/admin/sites/add', {
+    site_name: 'Test Store',
+    site_url: 'https://teststore.com'
+  }, userToken);
+
+  console.log(`Site creation status (Expected 400 or 402): ${siteRes.status}`);
+  if (siteRes.status !== 400 && siteRes.status !== 402) {
+    console.error('❌ FAILED: Website creation was not blocked for Free Level user.');
     process.exit(1);
   }
-  console.log('✅ SUCCESS: Under ৳50 recharge blocked.');
+  console.log('✅ SUCCESS: Website creation correctly blocked for Free user.');
 
-  const rechargePass = await postJson('/api/v1/subscription/recharge', { amount: 50.00 }, userToken);
-  console.log(`Recharging ৳50.00 Status (Expected 200): ${rechargePass.status}`);
-  console.log(`New balance returned: ৳${rechargePass.body.wallet_credits}`);
-  if (rechargePass.status !== 200 || parseFloat(rechargePass.body.wallet_credits) !== 75.00) {
-    console.error(`❌ FAILED: Recharge ৳50.00 failed or incorrect balance returned.`);
+  // 5. Subscription Purchase (Standard Plan)
+  console.log('\n--- 5. Purchasing Subscription (Standard Plan) ---');
+  // Get plan details
+  const [stdPlan] = await query("SELECT price, duration_days FROM subscription_plans WHERE plan_name = 'Standard' LIMIT 1");
+  const purchaseRes = await postJson('/api/v1/subscription/purchase', { plan_name: 'Standard' }, userToken);
+  
+  console.log(`Purchase status (Expected 200): ${purchaseRes.status}`);
+  if (purchaseRes.status !== 200) {
+    console.error('❌ FAILED: Subscription purchase failed.');
     process.exit(1);
   }
-  console.log('✅ SUCCESS: ৳50.00 recharge successful.');
 
-  // 5. FCM Token update verification
-  console.log('\n--- 5. Testing FCM Token Registration ---');
+  const [userRowPaid] = await query('SELECT is_paid, active_plan_name, expiry_date FROM users WHERE id = ?', [testUserId]);
+  console.log(`Paid User Status: is_paid=${userRowPaid.is_paid}, active_plan_name=${userRowPaid.active_plan_name}, expiry_date=${userRowPaid.expiry_date}`);
+  
+  if (userRowPaid.is_paid !== 1 || userRowPaid.active_plan_name !== 'Standard' || !userRowPaid.expiry_date) {
+    console.error('❌ FAILED: User was not activated or expiry_date is null.');
+    process.exit(1);
+  }
+  console.log('✅ SUCCESS: Subscription purchased and plan splayed.');
+
+  // Test stacking: purchase again
+  const secondPurchaseRes = await postJson('/api/v1/subscription/purchase', { plan_name: 'Standard' }, userToken);
+  console.log(`Second Purchase status (Expected 200): ${secondPurchaseRes.status}`);
+  const [userRowStacked] = await query('SELECT expiry_date FROM users WHERE id = ?', [testUserId]);
+  console.log(`Stacked Expiry Date: ${userRowStacked.expiry_date}`);
+
+  const diffMs = new Date(userRowStacked.expiry_date) - new Date(userRowPaid.expiry_date);
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+  console.log(`Difference in days: ${diffDays}`);
+  if (diffDays !== stdPlan.duration_days) {
+    console.error(`❌ FAILED: Expiry date was not stacked correctly. Difference must be ${stdPlan.duration_days} days, got ${diffDays}`);
+    process.exit(1);
+  }
+  console.log('✅ SUCCESS: Date stacking verified successfully.');
+
+  // 6. Child Device & Site Addition Allowed after Subscribed
+  console.log('\n--- 6. Testing Child Device and Site Addition under Paid Subscription ---');
+  
+  // Insert a new OTP for the second verification attempt
+  const childOtpCode2 = '888888';
+  const expiresAt2 = new Date(Date.now() + 5 * 60 * 1000);
+  await query(
+    'INSERT INTO otps (contact, code, expires_at) VALUES (?, ?, ?)',
+    [testPhone, childOtpCode2, expiresAt2]
+  );
+
+  // Add child device
+  const childVerifyOtpResPaid = await postJson('/api/verify-otp', {
+    contact: testPhone,
+    code: childOtpCode2,
+    deviceId: 'device_test_9992', 
+    androidId: 'android_test_9992',
+    hardwareFingerprint: 'fingerprint_test_9992',
+    simSlotIds: 'sim_test_9992',
+    deviceModel: 'Test Device 2',
+    androidVersion: '13'
+  });
+  console.log(`Child Device status (Expected 200): ${childVerifyOtpResPaid.status}`);
+  if (childVerifyOtpResPaid.status !== 200) {
+    console.error('❌ FAILED: Child device addition failed under paid plan.');
+    process.exit(1);
+  }
+
+  // Add site
+  const siteResPaid = await postJson('/api/admin/sites/add', {
+    site_name: 'Test Store 2',
+    site_url: 'https://teststore2.com'
+  }, userToken);
+  console.log(`Site status (Expected 200): ${siteResPaid.status}`);
+  if (siteResPaid.status !== 200) {
+    console.error('❌ FAILED: Site registration failed under paid plan.');
+    process.exit(1);
+  }
+  console.log('✅ SUCCESS: Child device and Site added successfully under subscription.');
+
+  // 7. FCM Token Registration
+  console.log('\n--- 7. Testing FCM Token Registration ---');
   const fcmRes = await postJson('/api/v1/subscription/fcm-token', { token: 'mock_firebase_push_token_xyz_123' }, userToken);
   console.log(`FCM Update Status (Expected 200): ${fcmRes.status}`);
   const [fcmUserRow] = await query('SELECT fcm_token FROM users WHERE id = ?', [testUserId]);
@@ -206,49 +275,30 @@ async function runTests() {
   }
   console.log('✅ SUCCESS: FCM token registered successfully.');
 
-  // 6. One-time website creation fee deduction
-  console.log('\n--- 6. Registering Site Layout & Checking Fee Deduction ---');
-  const siteRes = await postJson('/api/admin/sites/add', {
-    site_name: 'Test Store',
-    site_url: 'https://teststore.com'
-  }, userToken);
-
-  console.log(`Site creation status (Expected 200): ${siteRes.status}`);
-  console.log(`Deducted site fee. Remaining credits returned: ৳${siteRes.body.wallet_credits}`);
-  if (siteRes.status !== 200 || parseFloat(siteRes.body.wallet_credits) !== 65.00) {
-    console.error(`❌ FAILED: Website creation failed or incorrect fee deducted.`);
+  // 8. Admin manualGrace extension
+  console.log('\n--- 8. Testing Admin manualGrace extension ---');
+  const graceRes = await postJson(`/api/admin/users/${testUserId}/manual-grace`, { credits: 15 }, adminToken);
+  console.log(`Grace Extension Status (Expected 200): ${graceRes.status}`);
+  const [userRowGrace] = await query('SELECT expiry_date FROM users WHERE id = ?', [testUserId]);
+  console.log(`Grace Expiry Date: ${userRowGrace.expiry_date}`);
+  const diffGraceMs = new Date(userRowGrace.expiry_date) - new Date(userRowStacked.expiry_date);
+  const diffGraceDays = Math.round(diffGraceMs / (1000 * 60 * 60 * 24));
+  console.log(`Grace difference in days: ${diffGraceDays}`);
+  if (diffGraceDays !== 15) {
+    console.error(`❌ FAILED: manualGrace did not add exactly 15 days.`);
     process.exit(1);
   }
-  console.log('✅ SUCCESS: Website created, ৳10.00 fee deducted.');
+  console.log('✅ SUCCESS: Admin manual grace extension working.');
 
-  // 7. Admin Endpoint - Custom Rate & Settings
-  console.log('\n--- 7. Testing Admin Billing Config Endpoints ---');
-  const getBillingRes = await getJson('/api/admin/billing-settings', adminToken);
-  console.log(`Admin GET billing settings status (Expected 200): ${getBillingRes.status}`);
-
-  const updateCustomRateRes = await postJson(`/api/admin/users/${testUserId}/custom-rate`, {
-    custom_daily_rate: 1.50
-  }, adminToken);
-  console.log(`Admin POST user custom rate status (Expected 200): ${updateCustomRateRes.status}`);
-  const [customRateRow] = await query('SELECT custom_daily_rate FROM users WHERE id = ?', [testUserId]);
-  console.log(`User custom rate in DB: ${customRateRow.custom_daily_rate}`);
-  if (parseFloat(customRateRow.custom_daily_rate) !== 1.50) {
-    console.error('❌ FAILED: Admin custom daily rate was not set in DB.');
-    process.exit(1);
-  }
-  console.log('✅ SUCCESS: Custom user rate set by admin.');
-
-  // 8. Billing Lock Middleware (HTTP 402)
-  console.log('\n--- 8. Testing Billing Lock Guard (HTTP 402) ---');
-  // First, complete the user profile so they are a standard active user
+  // 9. Billing Lock Middleware (HTTP 402)
+  console.log('\n--- 9. Testing Billing Lock Guard (HTTP 402) ---');
+  // Complete profile so standard operations work
   await query('UPDATE users SET profile_complete = 1 WHERE id = ?', [testUserId]);
 
-  // Set user credits to 0.00 and set creation date to 31 days ago (forces lock)
-  const thirtyOneDaysAgo = new Date();
-  thirtyOneDaysAgo.setDate(thirtyOneDaysAgo.getDate() - 31);
+  // Set user to expired/unpaid
   await query(
-    'UPDATE users SET created_at = ?, wallet_credits = 0.00 WHERE id = ?',
-    [thirtyOneDaysAgo, testUserId]
+    "UPDATE users SET is_paid = 0, expiry_date = NULL, active_plan_name = 'FREE_LEVEL' WHERE id = ?",
+    [testUserId]
   );
 
   // Call stats route (guarded by billing status check)
@@ -256,20 +306,20 @@ async function runTests() {
   console.log(`Guarded Endpoint response status for locked user (Expected 402): ${lockedRes.status}`);
   console.log(`Response body error (Expected ACCOUNT_SUSPENDED):`, lockedRes.body.error);
   if (lockedRes.status !== 402 || lockedRes.body.error !== 'ACCOUNT_SUSPENDED') {
-    console.error('❌ FAILED: Billing lock guard failed to lock suspended user with HTTP 402.');
+    console.error('❌ FAILED: Billing lock guard failed to lock unpaid user with HTTP 402.');
     process.exit(1);
   }
   console.log('✅ SUCCESS: User locked with HTTP 402 ACCOUNT_SUSPENDED.');
 
-  // Restore credits, call again, should be unlocked
-  await query('UPDATE users SET wallet_credits = 5.00 WHERE id = ?', [testUserId]);
+  // Restore paid status, call stats again, should succeed
+  await query("UPDATE users SET is_paid = 1, active_plan_name = 'Basic', expiry_date = DATE_ADD(CURRENT_DATE(), INTERVAL 5 DAY) WHERE id = ?", [testUserId]);
   const unlockedRes = await getJson('/api/dashboard/stats', userToken);
-  console.log(`Guarded Endpoint response status after credit restoration (Expected 200): ${unlockedRes.status}`);
+  console.log(`Guarded Endpoint response status after plan restoration (Expected 200): ${unlockedRes.status}`);
   if (unlockedRes.status !== 200) {
-    console.error('❌ FAILED: User remains locked after credits restored.');
+    console.error('❌ FAILED: User remains locked after subscription restored.');
     process.exit(1);
   }
-  console.log('✅ SUCCESS: User unlocked after recharging.');
+  console.log('✅ SUCCESS: User unlocked after subscription restoration.');
 
   console.log('\n🎉 ALL BILLING ENGINE VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉');
   process.exit(0);

@@ -9,9 +9,6 @@ router.get('/plans', billingController.listPlans);
 // All subscription operations require JWT token validation
 router.use(authenticateToken);
 
-// POST /api/v1/subscription/recharge → Wallet recharge
-router.post('/subscription/recharge', billingController.recharge);
-
 // POST /api/v1/subscription/fcm-token → Register FCM token
 router.post('/subscription/fcm-token', billingController.updateFcmToken);
 

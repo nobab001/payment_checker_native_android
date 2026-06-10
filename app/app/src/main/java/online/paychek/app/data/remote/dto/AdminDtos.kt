@@ -100,9 +100,9 @@ data class AdminUserDto(
     @SerializedName("phone") val phone: String?,
     @SerializedName("email") val email: String?,
     @SerializedName("role") val role: String,
-    @SerializedName("balance") val balance: Double,
-    @SerializedName("wallet_credits") val walletCredits: Double = 0.0,
-    @SerializedName("account_level") val accountLevel: String? = null,
+    @SerializedName("is_paid") val isPaid: Boolean,
+    @SerializedName("active_plan_name") val activePlanName: String,
+    @SerializedName("expiry_date") val expiryDate: String? = null,
     @SerializedName("blocked") val blocked: Boolean,
     @SerializedName("profile_complete") val profileComplete: Boolean,
     @SerializedName("created_at") val createdAt: String,
@@ -159,7 +159,7 @@ data class SubscriptionPlanDto(
     @SerializedName("price") val price: Double,
     @SerializedName("max_sites") val maxSites: Int,
     @SerializedName("max_devices") val maxDevices: Int,
-    @SerializedName("credits_given") val creditsGiven: Int = 365
+    @SerializedName("duration_days") val durationDays: Int = 365
 )
 
 data class SubscriptionPlansResponse(

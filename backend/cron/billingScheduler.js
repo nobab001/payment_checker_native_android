@@ -1,118 +1,68 @@
 const cron = require('node-cron');
-const { pool, query } = require('../db/connection');
+const { query } = require('../db/connection');
 
-// Global flag to prevent overlapping processes
-let isBillingProcessing = false;
-const BATCH_SIZE = 500;
-
-/**
- * Distributed Billing Batch Processing:
- * Deducts 1 credit from up to 500 active non-free users who haven't paid yet today.
- */
-async function runDistributedBilling() {
-  if (isBillingProcessing) {
-    console.log("[Billing Scheduler] Billing batch is already running. Skipping overlap.");
-    return;
-  }
-
-  isBillingProcessing = true;
-  console.log("[Billing Scheduler] Distributed Billing Batch Processing Triggered...");
-
+// =============================================================================
+// Cron 1: Subscription Expiry Guard — প্রতিদিন রাত ১২:০১ মিনিটে রান হবে
+// যাদের মেয়াদ শেষ → is_paid = 0, active_plan_name = 'FREE_LEVEL', expiry_date = NULL
+// =============================================================================
+cron.schedule('1 0 * * *', async () => {
+  console.log('[Subscription Guard] Running midnight expiry check...');
   try {
-    // 1. Fetch up to 500 users who are not FREE_LEVEL and don't have a deduction ledger entry for today
-    const users = await query(
-      `SELECT id, wallet_credits FROM users 
-       WHERE account_level != 'FREE_LEVEL' 
-       AND blocked = 0 AND profile_complete = 1
-       AND id NOT IN (
-           SELECT user_id FROM credit_deduction_ledger 
-           WHERE deducted_date = CURRENT_DATE()
-       )
-       LIMIT ?`,
-      [BATCH_SIZE]
+    const result = await query(
+      `UPDATE users 
+       SET is_paid = 0, active_plan_name = 'FREE_LEVEL', expiry_date = NULL 
+       WHERE is_paid = 1 AND expiry_date IS NOT NULL AND expiry_date <= CURRENT_DATE()`
     );
 
-    if (!users || users.length === 0) {
-      console.log("[Billing Scheduler] Today's billing is fully processed, or no eligible users remaining.");
-      isBillingProcessing = false;
+    const affected = result.affectedRows || 0;
+    if (affected > 0) {
+      console.log(`[Subscription Guard] ✅ ${affected} expired subscription(s) reset to FREE_LEVEL.`);
+    } else {
+      console.log('[Subscription Guard] ✅ No expired subscriptions found. All clear.');
+    }
+  } catch (err) {
+    console.error('[Subscription Guard] ❌ Cron Expiry Error:', err);
+  }
+});
+
+// =============================================================================
+// Cron 2: FCM Subscription Reminder — প্রতিদিন সকাল ১০:০০ AM
+// ≤ ৩০ দিন বাকি থাকা পেইড ইউজারদের FCM নোটিফিকেশন পাঠানো হবে
+// =============================================================================
+cron.schedule('0 10 * * *', async () => {
+  console.log('[Subscription Reminder] Running 10 AM reminder check...');
+  try {
+    const expiringUsers = await query(
+      `SELECT id, name, expiry_date, fcm_token,
+              DATEDIFF(expiry_date, CURRENT_DATE()) AS days_left
+       FROM users 
+       WHERE is_paid = 1 
+         AND expiry_date IS NOT NULL 
+         AND DATEDIFF(expiry_date, CURRENT_DATE()) <= 30
+         AND DATEDIFF(expiry_date, CURRENT_DATE()) > 0
+         AND fcm_token IS NOT NULL AND fcm_token != ''`
+    );
+
+    if (expiringUsers.length === 0) {
+      console.log('[Subscription Reminder] ✅ No users with ≤30 days remaining. All clear.');
       return;
     }
 
-    console.log(`[Billing Scheduler] Processing credit deductions for ${users.length} users in this batch...`);
-
-    // 2. Loop through the batch and process deductions inside ACID transactions
-    for (let user of users) {
-      const connection = await pool.getConnection();
-      try {
-        await connection.beginTransaction();
-
-        // Deduct 1 credit from wallet
-        await connection.query(
-          "UPDATE users SET wallet_credits = wallet_credits - 1 WHERE id = ?",
-          [user.id]
-        );
-
-        // Record entry in deduction ledger
-        await connection.query(
-          "INSERT INTO credit_deduction_ledger (user_id, deducted_date) VALUES (?, CURRENT_DATE())",
-          [user.id]
-        );
-
-        // If balance drops to 0 or below, automatically downgrade user to FREE_LEVEL
-        if (user.wallet_credits - 1 <= 0) {
-          await connection.query(
-            "UPDATE users SET account_level = 'FREE_LEVEL', wallet_credits = 0 WHERE id = ?",
-            [user.id]
-          );
-          console.log(`[Billing Scheduler] User ID ${user.id} balance is <= 0. Downgraded to FREE_LEVEL.`);
-        }
-
-        await connection.commit();
-      } catch (err) {
-        await connection.rollback();
-        console.error(`[Billing Scheduler] Billing transaction failed and rolled back for user ID ${user.id}:`, err);
-      } finally {
-        connection.release();
-      }
+    for (const u of expiringUsers) {
+      // TODO: Replace with real Firebase Admin SDK send call in production
+      console.log(
+        `[Mock FCM] → User ${u.id} (${u.name || 'Unknown'}) | Token: ${u.fcm_token.substring(0, 15)}... | ` +
+        `Days Left: ${u.days_left} | Expiry: ${u.expiry_date} | ` +
+        `Message: "আপনার সাবস্ক্রিপশনের মেয়াদ আগামী ${u.days_left} দিন পর শেষ হতে যাচ্ছে। সার্ভিস সচল রাখতে অনুগ্রহ করে রিনিউ করুন।"`
+      );
     }
 
-    console.log(`[Billing Scheduler] Successfully completed batch billing for ${users.length} users.`);
-  } catch (globalError) {
-    console.error("[Billing Scheduler] Global billing engine run error:", globalError);
-  } finally {
-    isBillingProcessing = false;
-  }
-}
-
-// Cron 1: Run every 1 minute to process users batch-by-batch
-cron.schedule('*/1 * * * *', async () => {
-  await runDistributedBilling();
-});
-
-// Cron 2: Self-Healing Guard check every 2 hours
-cron.schedule('0 */2 * * *', async () => {
-  console.log("[Billing Scheduler] Self-Healing Guard: Initiating cross-check...");
-  try {
-    const remaining = await query(
-      `SELECT COUNT(*) as total FROM users 
-       WHERE account_level != 'FREE_LEVEL' 
-       AND blocked = 0 AND profile_complete = 1
-       AND id NOT IN (
-           SELECT user_id FROM credit_deduction_ledger 
-           WHERE deducted_date = CURRENT_DATE()
-       )`
-    );
-
-    const totalRemaining = remaining[0] ? remaining[0].total : 0;
-    if (totalRemaining > 0) {
-      console.log(`[Billing Scheduler] ⚠️ ALERT! Self-healing triggered: found ${totalRemaining} users with missing billing records for today. Starting processing...`);
-      await runDistributedBilling();
-    } else {
-      console.log("[Billing Scheduler] Self-Healing Guard: All billing records are settled perfectly today.");
-    }
-  } catch (error) {
-    console.error("[Billing Scheduler] Self-healing guard check error:", error);
+    console.log(`[Subscription Reminder] ✅ Dispatched reminder alerts to ${expiringUsers.length} user(s).`);
+  } catch (err) {
+    console.error('[Subscription Reminder] ❌ FCM Reminder Cron Error:', err);
   }
 });
 
-module.exports = { runDistributedBilling };
+console.log('[Cron] ✅ Subscription Expiry Guard (12:01 AM) & FCM Reminder (10:00 AM) scheduled.');
+
+module.exports = {};

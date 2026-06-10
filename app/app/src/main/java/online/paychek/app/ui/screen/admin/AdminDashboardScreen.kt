@@ -935,13 +935,37 @@ private fun UserDetailAndTrialDialog(
             ) {
                 Text("ব্যবহারকারী ও ডিভাইস তথ্য", fontWeight = FontWeight.Bold, color = RoyalIndigo, fontSize = 17.sp)
                 
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("নাম: ${user.name.ifEmpty { "Pending Profile" }}", fontWeight = FontWeight.Bold)
-                    Text("ফোন: ${user.phone ?: "None"}")
-                    Text("ইমেইল: ${user.email ?: "None"}")
-                    Text("রোল: ${user.role}")
-                    Text("ওয়ালেট ক্রেডিট: ${user.walletCredits} Tk", fontWeight = FontWeight.Bold)
-                    Text("প্যাকেজ লেভেল: ${user.accountLevel ?: "FREE_LEVEL"}", fontWeight = FontWeight.Bold)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("নাম: ${user.name.ifEmpty { "Pending Profile" }}", fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("ফোন: ${user.phone ?: "None"}", color = TextSecondary)
+                    Text("ইমেইল: ${user.email ?: "None"}", color = TextSecondary)
+                    Text("রোল: ${user.role}", color = TextSecondary)
+                    
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("সাবস্ক্রিপশন স্ট্যাটাস:", fontWeight = FontWeight.SemiBold)
+                        val statusText = if (user.isPaid) "PAID" else "FREE"
+                        val statusColor = if (user.isPaid) StatusGreen else Color.Gray
+                        val statusBg = if (user.isPaid) Color(0xFFE8F9EE) else Color(0xFFF1F5F9)
+                        
+                        Box(
+                            modifier = Modifier
+                                .background(statusBg, RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = statusText,
+                                color = statusColor,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Text("সক্রিয় প্যাকেজ: ${user.activePlanName}", fontWeight = FontWeight.Bold, color = RoyalIndigo)
+                    Text("মেয়াদ শেষ: ${user.expiryDate ?: "N/A"}", fontWeight = FontWeight.Bold, color = if (user.isPaid) StatusGreen else StatusRed)
                 }
 
                 HorizontalDivider(color = Color(0xFFE2E8F0))

@@ -37,7 +37,7 @@ fun BillingConfigScreen(
     var planPrice by remember { mutableStateOf("") }
     var planMaxSites by remember { mutableStateOf("") }
     var planMaxDevices by remember { mutableStateOf("") }
-    var planCreditsGiven by remember { mutableStateOf("365") }
+    var planDurationDays by remember { mutableStateOf("365") }
 
     if (showCreatePlanDialog) {
         AlertDialog(
@@ -115,9 +115,9 @@ fun BillingConfigScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
-                        value = planCreditsGiven,
-                        onValueChange = { planCreditsGiven = it },
-                        label = { Text("প্রদানকৃত ক্রেডিট (দিন)") },
+                        value = planDurationDays,
+                        onValueChange = { planDurationDays = it },
+                        label = { Text("প্যাকেজের মেয়াদ (দিন)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
@@ -136,7 +136,7 @@ fun BillingConfigScreen(
                         val p = planPrice.toDoubleOrNull() ?: 0.0
                         val ms = planMaxSites.toIntOrNull() ?: 1
                         val md = planMaxDevices.toIntOrNull() ?: 1
-                        val cg = planCreditsGiven.toIntOrNull() ?: 365
+                        val dd = planDurationDays.toIntOrNull() ?: 365
                         
                         if (planName.isNotEmpty()) {
                             viewModel.savePlan(
@@ -146,7 +146,7 @@ fun BillingConfigScreen(
                                     price = p,
                                     maxSites = ms,
                                     maxDevices = md,
-                                    creditsGiven = cg
+                                    durationDays = dd
                                 )
                             )
                             showCreatePlanDialog = false
@@ -155,7 +155,7 @@ fun BillingConfigScreen(
                             planPrice = ""
                             planMaxSites = ""
                             planMaxDevices = ""
-                            planCreditsGiven = "365"
+                            planDurationDays = "365"
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo)
@@ -172,7 +172,7 @@ fun BillingConfigScreen(
                         planPrice = ""
                         planMaxSites = ""
                         planMaxDevices = ""
-                        planCreditsGiven = "365"
+                        planDurationDays = "365"
                     }
                 ) {
                     Text("বাতিল", color = Color.Gray)
@@ -313,7 +313,7 @@ fun BillingConfigScreen(
                             planPrice = plan.price.toString()
                             planMaxSites = plan.maxSites.toString()
                             planMaxDevices = plan.maxDevices.toString()
-                            planCreditsGiven = plan.creditsGiven.toString()
+                            planDurationDays = plan.durationDays.toString()
                             showCreatePlanDialog = true
                         }
                 ) {
@@ -327,7 +327,7 @@ fun BillingConfigScreen(
                             Text("৳${plan.price}", fontWeight = FontWeight.Bold, color = Color(0xFF22D3EE), fontSize = 15.sp)
                         }
                         Text("সর্বোচ্চ সাইট: ${plan.maxSites} | সর্বোচ্চ ডিভাইস: ${plan.maxDevices}", color = Color.LightGray, fontSize = 12.sp)
-                        Text("ক্রেডিট: ${plan.creditsGiven} দিন (${plan.creditsGiven} ক্রেডিট)", color = Color(0xFF10B981), fontSize = 12.sp)
+                        Text("মেয়াদ: ${plan.durationDays} দিন", color = Color(0xFF10B981), fontSize = 12.sp)
                     }
                 }
             }

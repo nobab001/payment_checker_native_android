@@ -47,11 +47,6 @@ interface PaymentApiService {
         @Header("Authorization") token: String
     ): Response<DashboardStatsResponse>
 
-    @POST("v1/subscription/recharge")
-    suspend fun rechargeWallet(
-        @Header("Authorization") token: String,
-        @Body request: RechargeRequest
-    ): Response<RechargeResponse>
 
     @POST("v1/subscription/fcm-token")
     suspend fun updateFcmToken(

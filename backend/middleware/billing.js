@@ -3,7 +3,7 @@ const { query } = require('../db/connection');
 /**
  * Middleware: checkBillingStatus
  * Enforces SaaS subscription level locks.
- * - If account_level is 'FREE_LEVEL', the account is LOCKED (HTTP 402).
+ * - If is_paid is 0 or active_plan_name is 'FREE_LEVEL', the account is LOCKED (HTTP 402).
  * - Admin role is exempted.
  */
 async function checkBillingStatus(req, res, next) {
@@ -14,7 +14,7 @@ async function checkBillingStatus(req, res, next) {
       return next();
     }
 
-    const users = await query('SELECT account_level, role FROM users WHERE id = ? LIMIT 1', [userId]);
+    const users = await query('SELECT is_paid, active_plan_name, role FROM users WHERE id = ? LIMIT 1', [userId]);
     if (users.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -24,7 +24,7 @@ async function checkBillingStatus(req, res, next) {
       return next();
     }
 
-    if (user.account_level === 'FREE_LEVEL') {
+    if (user.is_paid === 0 || user.active_plan_name === 'FREE_LEVEL') {
       return res.status(402).json({
         success: false,
         error: 'ACCOUNT_SUSPENDED',
