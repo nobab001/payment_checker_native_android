@@ -455,6 +455,12 @@ fun LoginScreen(
                                 onValueChange = { newValue ->
                                     if (newValue.length <= 6 && newValue.all { it.isDigit() }) {
                                         viewModel.onOtpChanged(newValue)
+                                        if (newValue.length == 6) {
+                                            focusManager.clearFocus()
+                                            viewModel.verifyOtp(context) { res ->
+                                                verificationResult = res
+                                            }
+                                        }
                                     }
                                 },
                                 keyboardOptions = KeyboardOptions(
