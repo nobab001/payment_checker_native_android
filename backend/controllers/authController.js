@@ -29,6 +29,36 @@ async function findUserByContact(contact) {
 }
 
 /**
+ * Helper: getRawCredentials
+ * Fetches all unmasked verified credentials (phone/email) for a user.
+ */
+async function getRawCredentials(userId) {
+  if (!userId) return [];
+  const credentials = [];
+  try {
+    const users = await query('SELECT phone, email FROM users WHERE id = ? LIMIT 1', [userId]);
+    if (users.length > 0) {
+      if (users[0].phone) credentials.push(users[0].phone.trim());
+      if (users[0].email) credentials.push(users[0].email.trim());
+    }
+  } catch (_) {}
+
+  try {
+    const creds = await query(
+      'SELECT value FROM user_credentials WHERE user_id = ? AND verified_at IS NOT NULL',
+      [userId]
+    );
+    for (const cred of creds) {
+      if (cred.value) {
+        credentials.push(cred.value.trim());
+      }
+    }
+  } catch (_) {}
+
+  return credentials;
+}
+
+/**
  * 1. POST /api/check-contact
  * Checks if a contact (phone or email) is registered.
  * ⚠️  SECURITY: Device-binding gatekeeper runs FIRST.
@@ -40,37 +70,77 @@ async function checkContact(req, res) {
     const { contact, deviceId, androidId, hardwareFingerprint, simSlotIds } = req.body;
 
     const cleanedContact = contact ? contact.trim() : '';
-    let targetUserId = null;
-    if (cleanedContact && cleanedContact !== 'admin') {
-      const userRecord = await findUserByContact(cleanedContact);
-      if (userRecord) {
-        targetUserId = userRecord.id;
+
+    if (cleanedContact === 'admin') {
+      return res.json({ exists: true });
+    }
+
+    // ১. সবার আগে ডিভাইস ওনারশিপ চেক করো (Device ID Guard)
+    let linkedUserId = null;
+    if (deviceId) {
+      // Check registered_devices
+      const devices = await query(
+        'SELECT user_id FROM registered_devices WHERE device_id = ? LIMIT 1',
+        [deviceId]
+      );
+      if (devices.length > 0 && devices[0].user_id) {
+        linkedUserId = devices[0].user_id;
+      }
+
+      // Check device_trial_logs if not found in registered_devices
+      if (!linkedUserId) {
+        const checkFields = [];
+        const checkParams = [];
+        const safeAndroidId = androidId || '';
+        const safeHardwareFingerprint = hardwareFingerprint || '';
+        const safeSimSlotIds = simSlotIds || '';
+
+        if (safeAndroidId && safeAndroidId !== 'unknown_android_id' && safeAndroidId !== '') {
+          checkFields.push('android_id = ?');
+          checkParams.push(safeAndroidId);
+        }
+        if (safeHardwareFingerprint && safeHardwareFingerprint !== 'unknown_fingerprint' && safeHardwareFingerprint !== '') {
+          checkFields.push('hardware_fingerprint = ?');
+          checkParams.push(safeHardwareFingerprint);
+        }
+
+        const isValidSimSlotId = safeSimSlotIds &&
+                                 safeSimSlotIds !== 'no_sims' &&
+                                 safeSimSlotIds !== 'no_sim' &&
+                                 safeSimSlotIds !== 'permission_denied' &&
+                                 safeSimSlotIds !== 'unknown' &&
+                                 safeSimSlotIds !== '';
+        if (isValidSimSlotId) {
+          checkFields.push('sim_slot_ids = ?');
+          checkParams.push(safeSimSlotIds);
+        }
+
+        if (checkFields.length > 0) {
+          const queryStr = `SELECT user_id FROM device_trial_logs WHERE (${checkFields.join(' OR ')}) AND has_used_trial = 1 LIMIT 1`;
+          const logs = await query(queryStr, checkParams);
+          if (logs && logs.length > 0) {
+            linkedUserId = logs[0].user_id || null;
+          }
+        }
       }
     }
 
-    // ── DEVICE-BINDING GATEKEEPER (সবার আগে প্রায়োরিটি) ─────────────────
-    if (deviceId) {
-      const { abused, userId: abuseUserId } = await isTrialAbused(
-        deviceId, androidId, hardwareFingerprint, simSlotIds, targetUserId
-      );
-      if (abused) {
-        const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
+    // যদি এই deviceId দিয়ে কোনো অ্যাকাউন্ট অলরেডি লিংকড পাওয়া যায়
+    if (linkedUserId) {
+      const rawCreds = await getRawCredentials(linkedUserId);
+      const isOwner = rawCreds.some(c => c.toLowerCase() === cleanedContact.toLowerCase());
+      if (isOwner) {
+        // ওনার নিজের -> গেটওয়ে পাস
+        return res.json({ exists: true });
+      } else {
+        // অন্য বা নতুন -> সরাসরি ব্লক! DEVICE_ALREADY_BOUND রেসপন্স থ্রো করো
+        const { boundPhones, boundEmails } = await getBoundCredentials(linkedUserId);
         return res.status(403).json({
           success: false,
-          action:  'DEVICE_ALREADY_BOUND',
+          action: 'DEVICE_ALREADY_BOUND',
           message: 'ডিভাইস লিংক নোটিশ: নিরাপত্তা ও পলিসিগত কারণে আমাদের সিস্টেমে একটি hardware ডিভাইসের সাথে কেবল একটি মূল অ্যাকাউন্টই যুক্ত রাখা সম্ভব। আপনার এই ডিভাইসটি ইতিমধ্যে নিচের অ্যাকাউন্টটির সাথে নিবন্ধিত ও লিংক করা রয়েছে। অনুগ্রহ করে পূর্বের লিংক করা অ্যাকাউন্টটি ব্যবহার করে লগইন সম্পন্ন করুন। এই ডিভাইসে নতুন কোনো অ্যাকাউন্ট তৈরি বা অন্য অ্যাকাউন্ট ব্যবহার করা যাবে না।',
           boundPhones,
           boundEmails
-        });
-      }
-      // Device binding validation
-      const bindingResult = await DeviceBindingService.validateDevice(deviceId);
-      if (!bindingResult.valid) {
-        return res.status(403).json({
-          success: false,
-          action: bindingResult.reason || 'DEVICE_NOT_BOUND',
-          message: 'ডিভাইসটি কোনো অ্যাকাউন্টের সাথে যুক্ত নয় বা লকড।',
-          userId: bindingResult.userId
         });
       }
     }
@@ -79,11 +149,7 @@ async function checkContact(req, res) {
       return res.status(400).json({ error: 'Contact field is required' });
     }
 
-    if (cleanedContact === 'admin') {
-      return res.json({ exists: true });
-    }
-
-    // ── Contact DB Lookup ──────────────────────────────────────────────────
+    // ২. ডিভাইস সম্পূর্ণ ক্লিন বা ওনার নিজে হলে, এবার চেক করো নম্বর/জিমেইলটি সিস্টেমে আছে কি না
     const userRecord = await findUserByContact(cleanedContact);
     return res.json({ exists: userRecord !== null });
   } catch (error) {

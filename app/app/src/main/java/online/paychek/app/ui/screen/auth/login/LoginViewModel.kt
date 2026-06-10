@@ -241,6 +241,7 @@ class LoginViewModel : ViewModel() {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
+                        showRegisterDialog = false,
                         showDeviceBoundDialog = true,
                         boundPhones = phones,
                         boundEmails = emails
@@ -387,6 +388,7 @@ class LoginViewModel : ViewModel() {
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
+                                showRegisterDialog = false,
                                 showDeviceBoundDialog = true,
                                 boundPhones = phones,
                                 boundEmails = emails

@@ -39,6 +39,11 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.autofill.AutofillType
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import online.paychek.app.utils.autofill
+import online.paychek.app.utils.disableAutofill
 
 // =============================================================================
 // Design Tokens (matches Dark Gateway theme)
@@ -429,7 +434,9 @@ private fun AddCredentialDialog(
                         icon        = icon,
                         enabled     = !state.addCredentialOtpSent,
                         keyType     = if (isPhone) KeyboardType.Phone else KeyboardType.Email,
-                        accent      = accent
+                        accent      = accent,
+                        autofillTypes = if (isPhone) listOf(AutofillType.PhoneNumber) else listOf(AutofillType.EmailAddress),
+                        onFill = { viewModel.onAddCredentialContactChange(it) }
                     )
 
                     // OTP input (visible after send)
@@ -632,7 +639,9 @@ private fun ResetPinDialog(
                         label         = "মোবাইল নম্বর বা Gmail",
                         icon          = Icons.Default.ContactPhone,
                         enabled       = !state.resetPinOtpSent,
-                        accent        = PsGreen
+                        accent        = PsGreen,
+                        autofillTypes = listOf(AutofillType.PhoneNumber, AutofillType.EmailAddress),
+                        onFill = { viewModel.onResetPinContactChange(it) }
                     )
 
                     AnimatedVisibility(visible = state.resetPinOtpSent) {
@@ -732,8 +741,17 @@ private fun PsTextField(
     icon: ImageVector,
     enabled: Boolean = true,
     keyType: KeyboardType = KeyboardType.Text,
-    accent: Color = PsCyan
+    accent: Color = PsCyan,
+    autofillTypes: List<AutofillType>? = null,
+    onFill: ((String) -> Unit)? = null
 ) {
+    val fieldModifier = Modifier.fillMaxWidth().run {
+        if (autofillTypes != null && onFill != null) {
+            autofill(autofillTypes, onFill)
+        } else {
+            this
+        }
+    }
     OutlinedTextField(
         value         = value,
         onValueChange = onValueChange,
@@ -752,7 +770,7 @@ private fun PsTextField(
             cursorColor           = accent
         ),
         shape    = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth()
+        modifier = fieldModifier
     )
 }
 
@@ -789,6 +807,9 @@ private fun PinField(
             cursorColor          = PsAmber
         ),
         shape    = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { contentDescription = label }
+            .disableAutofill()
     )
 }

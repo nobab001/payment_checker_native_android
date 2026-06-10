@@ -27,6 +27,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import online.paychek.app.ui.theme.*
+import androidx.compose.ui.autofill.AutofillType
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import online.paychek.app.utils.autofill
+import online.paychek.app.utils.disableAutofill
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -124,7 +129,12 @@ fun SignupScreen(
                     focusedPlaceholderColor = Color(0xFF94A3B8),
                     unfocusedPlaceholderColor = Color(0xFF94A3B8)
                 ),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .autofill(
+                        autofillTypes = listOf(AutofillType.PersonFullName),
+                        onFill = { viewModel.onNameChanged(it) }
+                    )
             )
 
             // 2. Mobile Phone (Read-Only if prefilled)
@@ -155,7 +165,12 @@ fun SignupScreen(
                     focusedPlaceholderColor = Color(0xFF94A3B8),
                     unfocusedPlaceholderColor = Color(0xFF94A3B8)
                 ),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .autofill(
+                        autofillTypes = listOf(AutofillType.PhoneNumber),
+                        onFill = { viewModel.onPhoneChanged(it) }
+                    )
             )
 
             // 3. Email (Read-Only if prefilled)
@@ -186,7 +201,12 @@ fun SignupScreen(
                     focusedPlaceholderColor = Color(0xFF94A3B8),
                     unfocusedPlaceholderColor = Color(0xFF94A3B8)
                 ),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .autofill(
+                        autofillTypes = listOf(AutofillType.EmailAddress),
+                        onFill = { viewModel.onEmailChanged(it) }
+                    )
             )
 
             // 4. PIN Field (4-6 digits, numeric)
@@ -202,7 +222,7 @@ fun SignupScreen(
                     )
                 },
                 keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number,
+                    keyboardType = KeyboardType.NumberPassword,
                     imeAction = ImeAction.Next
                 ),
                 visualTransformation = PasswordVisualTransformation(),
@@ -216,7 +236,10 @@ fun SignupScreen(
                     focusedPlaceholderColor = Color(0xFF94A3B8),
                     unfocusedPlaceholderColor = Color(0xFF94A3B8)
                 ),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics { contentDescription = "Security PIN" }
+                    .disableAutofill()
             )
 
             // 5. Confirm PIN Field (6-digits, numeric)
@@ -232,7 +255,7 @@ fun SignupScreen(
                     )
                 },
                 keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number,
+                    keyboardType = KeyboardType.NumberPassword,
                     imeAction = ImeAction.Done
                 ),
                 keyboardActions = KeyboardActions(
@@ -252,7 +275,10 @@ fun SignupScreen(
                     focusedPlaceholderColor = Color(0xFF94A3B8),
                     unfocusedPlaceholderColor = Color(0xFF94A3B8)
                 ),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics { contentDescription = "Confirm PIN" }
+                    .disableAutofill()
             )
 
             Spacer(modifier = Modifier.height(8.dp))

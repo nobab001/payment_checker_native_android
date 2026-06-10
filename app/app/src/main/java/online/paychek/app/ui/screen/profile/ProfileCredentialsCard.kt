@@ -29,6 +29,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.border
+import androidx.compose.ui.autofill.AutofillType
+import online.paychek.app.utils.autofill
 import androidx.compose.foundation.shape.CircleShape
 
 
@@ -214,7 +216,12 @@ fun ProfileCredentialsCard(
                                 unfocusedBorderColor = TextM,
                                 cursorColor = PsCyan
                             ),
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .autofill(
+                                    autofillTypes = if (inputType == "phone") listOf(AutofillType.PhoneNumber) else listOf(AutofillType.EmailAddress),
+                                    onFill = { inputValue = it }
+                                )
                         )
                     } else {
                         Text(
