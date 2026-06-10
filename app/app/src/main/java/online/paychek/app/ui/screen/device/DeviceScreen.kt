@@ -1,4 +1,4 @@
-package online.paychek.app.ui.screen.gateway
+package online.paychek.app.ui.screen.device
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -43,14 +43,13 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 // =============================================================================
 private val GwBg       = Color(0xFF0F172A)
 private val GwCard     = Color(0xFF1E293B)
-private val GwCardDrag = Color(0xFF2D3F57)  // Drag করার সময় card color
+private val GwCardDrag = Color(0xFF2D3F57)
 private val AccentCyan = Color(0xFF22D3EE)
 private val AccentGreen= Color(0xFF10B981)
 private val TextWhite  = Color(0xFFF8FAFC)
 private val TextMuted  = Color(0xFF94A3B8)
 private val ToggleOff  = Color(0xFF475569)
 
-// Provider accent color helper
 private fun providerColor(tag: String): Color = when (tag.lowercase()) {
     "bkash"  -> Color(0xFFE2136E)
     "nagad"  -> Color(0xFFEF4123)
@@ -67,29 +66,25 @@ private fun providerEmoji(tag: String): String = when (tag.lowercase()) {
 }
 
 // =============================================================================
-// GatewayCustomizerScreen — Root Composable
+// DeviceScreen — Root Composable
 // =============================================================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GatewayCustomizerScreen(
-    onNavigateToApiCenter: () -> Unit = {},
+fun DeviceScreen(
     onNavigateBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
-    viewModel: GatewayCustomizerViewModel = viewModel()
+    viewModel: DeviceViewModel = viewModel()
 ) {
     val state       by viewModel.state.collectAsStateWithLifecycle()
     val haptic      = LocalHapticFeedback.current
     val sheetState  = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // SIM-অনুযায়ী তালিকা ভাগ
     val sim1Methods = state.methods.filter { it.simSlot == 1 }
     val sim2Methods = state.methods.filter { it.simSlot == 2 }
 
-    // Reorderable state — LazyColumn-এর জন্য
     val sim1ListState   = rememberReorderableLazyListState(
         lazyListState   = androidx.compose.foundation.lazy.rememberLazyListState()
     ) { from, to ->
-        // from/to → পুরো methods list-এ offset প্রয়োগ করতে হবে
         val fromReal = state.methods.indexOfFirst { it.id == sim1Methods[from.index].id }
         val toReal   = state.methods.indexOfFirst { it.id == sim1Methods[to.index].id }
         viewModel.onReorder(fromReal, toReal)
@@ -115,15 +110,7 @@ fun GatewayCustomizerScreen(
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             // ─── Header ──────────────────────────────────────────────────────
-            item { GatewayTopBar(isSaving = state.isSaving, onNavigateBack = onNavigateBack) }
-
-            // ─── API Integration Banner ───────────────────────────────────────
-            item {
-                ApiIntegrationBannerCard(
-                    onClick = onNavigateToApiCenter,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-            }
+            item { DeviceTopBar(isSaving = state.isSaving, onNavigateBack = onNavigateBack) }
 
             // ─── Success Toast ────────────────────────────────────────────────
             state.successMessage?.let { msg ->
@@ -143,7 +130,7 @@ fun GatewayCustomizerScreen(
 
             // ─── Loading Skeleton ─────────────────────────────────────────────
             if (state.isLoading) {
-                items(5) { GatewaySkeletonCard() }
+                items(5) { DeviceSkeletonCard() }
             }
 
             if (!state.isLoading) {
@@ -283,7 +270,7 @@ fun GatewayCustomizerScreen(
 // Component 1 — Top Bar
 // =============================================================================
 @Composable
-private fun GatewayTopBar(isSaving: Boolean, onNavigateBack: (() -> Unit)? = null) {
+private fun DeviceTopBar(isSaving: Boolean, onNavigateBack: (() -> Unit)? = null) {
     Row(
         modifier             = Modifier
             .fillMaxWidth()
@@ -322,18 +309,17 @@ private fun GatewayTopBar(isSaving: Boolean, onNavigateBack: (() -> Unit)? = nul
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                "গেটওয়ে কাস্টমাইজার",
+                "ডিভাইস সেটিংস",
                 color      = TextWhite,
                 fontSize   = 18.sp,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                "ড্র্যাগ করে মেথড সাজান ও চালু/বন্ধ করুন",
+                "সিম স্লট ১/২ কনফিগার করুন ও সাজান",
                 color    = TextMuted,
                 fontSize = 12.sp
             )
         }
-        // Saving indicator
         if (isSaving) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -443,7 +429,6 @@ private fun GatewayMethodCard(
                 .padding(0.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Provider Color Bar
             Box(
                 modifier = Modifier
                     .width(4.dp)
@@ -451,13 +436,11 @@ private fun GatewayMethodCard(
                     .background(if (isActive) pColor else pColor.copy(alpha = 0.25f))
             )
 
-            // Drag Handle
             Box(
                 modifier         = Modifier.padding(horizontal = 10.dp),
                 contentAlignment = Alignment.Center
             ) { dragHandle() }
 
-            // Content
             Column(
                 modifier            = Modifier.weight(1f).padding(vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -492,7 +475,6 @@ private fun GatewayMethodCard(
                 )
             }
 
-            // Toggle + Edit
             Row(
                 verticalAlignment    = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -545,7 +527,6 @@ private fun MethodEditSheet(
             .padding(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Title
         Row(
             verticalAlignment    = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -560,7 +541,6 @@ private fun MethodEditSheet(
         }
         HorizontalDivider(color = TextMuted.copy(0.15f))
 
-        // Number field
         OutlinedTextField(
             value       = number,
             onValueChange = onNumberChange,
@@ -583,7 +563,6 @@ private fun MethodEditSheet(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Display name field
         OutlinedTextField(
             value         = displayName,
             onValueChange = onDisplayNameChange,
@@ -682,7 +661,7 @@ private fun ErrorBanner(message: String, onRetry: () -> Unit, modifier: Modifier
 // Component 7 — Skeleton Loading Card
 // =============================================================================
 @Composable
-private fun GatewaySkeletonCard() {
+private fun DeviceSkeletonCard() {
     Card(
         colors   = CardDefaults.cardColors(containerColor = GwCard),
         shape    = RoundedCornerShape(12.dp),
@@ -698,78 +677,6 @@ private fun GatewaySkeletonCard() {
                 Box(Modifier.fillMaxWidth(0.4f).height(12.dp).clip(RoundedCornerShape(6.dp)).background(TextMuted.copy(0.12f)))
                 Box(Modifier.fillMaxWidth(0.6f).height(10.dp).clip(RoundedCornerShape(6.dp)).background(TextMuted.copy(0.08f)))
             }
-        }
-    }
-}
-
-// =============================================================================
-// Component 8 — API Integration Banner Card
-// =============================================================================
-@Composable
-fun ApiIntegrationBannerCard(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = tween(durationMillis = 120),
-        label = "scale"
-    )
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .graphicsLayer(scaleX = scale, scaleY = scale)
-            .clip(RoundedCornerShape(16.dp))
-            .background(
-                brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
-                    listOf(Color(0xFF4F46E5), Color(0xFF7C3AED))
-                )
-            )
-            .clickable(interactionSource = interactionSource, indication = null) { onClick() }
-            .padding(horizontal = 18.dp, vertical = 14.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.18f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Code,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "API ইন্টিগ্রেশন",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        fontSize = 15.sp
-                    )
-                )
-                Text(
-                    text = "চেকআউট ডিজাইনার ও ডেভেলপার কী",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = Color.White.copy(alpha = 0.80f),
-                        fontSize = 12.sp
-                    )
-                )
-            }
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.85f),
-                modifier = Modifier.size(22.dp)
-            )
         }
     }
 }

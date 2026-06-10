@@ -40,33 +40,29 @@ import java.util.Date
 import java.util.Locale
 
 // =============================================================================
-// Design Tokens (Dashboard-এর সাথে সামঞ্জস্যপূর্ণ)
+// Design Tokens
 // =============================================================================
 private val HistBg       = Color(0xFF0F172A)
 private val HistCard     = Color(0xFF1E293B)
-private val HistCardAlt  = Color(0xFF253349)
 private val AccentCyan   = Color(0xFF22D3EE)
 private val AccentGreen  = Color(0xFF10B981)
 private val AccentRed    = Color(0xFFEF4444)
 private val TextWhite    = Color(0xFFF8FAFC)
 private val TextMuted    = Color(0xFF94A3B8)
-private val ChipSelected = Color(0xFF22D3EE)
 
 // =============================================================================
-// TransactionHistoryScreen — Root Composable
+// TransactionSearchScreen — Root Composable
 // =============================================================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TransactionHistoryScreen(
+fun TransactionSearchScreen(
     modifier: Modifier = Modifier,
-    viewModel: TransactionHistoryViewModel = viewModel()
+    viewModel: TransactionSearchViewModel = viewModel()
 ) {
     val state        by viewModel.state.collectAsStateWithLifecycle()
     val listState    = rememberLazyListState()
     val focusManager = LocalFocusManager.current
 
-    // ── Infinite Scroll Trigger ───────────────────────────────────────────────
-    // displayList-এর শেষ থেকে ৩য় item দেখা গেলে পরের পেজ লোড করে
     val shouldLoadMore = remember {
         derivedStateOf {
             val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -79,7 +75,7 @@ fun TransactionHistoryScreen(
     }
 
     PullToRefreshBox(
-        isRefreshing = false, // isInitialLoading দিয়ে handle হচ্ছে
+        isRefreshing = false,
         onRefresh    = { viewModel.onRefresh() },
         modifier     = modifier
             .fillMaxSize()
@@ -94,7 +90,7 @@ fun TransactionHistoryScreen(
 
             // ─── ১. Top Bar (Title) ────────────────────────────────────────
             item {
-                HistoryTopBar()
+                SearchTopBar()
             }
 
             // ─── ২. Search Box ─────────────────────────────────────────────
@@ -108,11 +104,15 @@ fun TransactionHistoryScreen(
                 )
             }
 
-            // ─── ৩. Filter Chips (LazyRow) ─────────────────────────────────
+            // ─── ৩. M3 Filter Chips Row ────────────────────────────────────
             item {
-                FilterChipsRow(
+                M3FilterChipsRow(
                     selected = state.selectedProvider,
-                    onSelect = { viewModel.onProviderFilterChanged(it) },
+                    onSelect = { provider ->
+                        // If same provider is clicked again, reset filter to ALL (deselected state)
+                        val target = if (state.selectedProvider == provider) ProviderFilter.ALL else provider
+                        viewModel.onProviderFilterChanged(target)
+                    },
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
             }
@@ -129,7 +129,7 @@ fun TransactionHistoryScreen(
                 }
             }
 
-            // ─── ৫. প্রথম লোড — Skeleton ───────────────────────────────────
+            // ─── ৫. Loading / Skeleton ───────────────────────────────────
             if (state.isInitialLoading) {
                 items(6) { SkeletonTransactionCard() }
             }
@@ -205,7 +205,7 @@ fun TransactionHistoryScreen(
 // Component 1 — Top Bar
 // =============================================================================
 @Composable
-private fun HistoryTopBar() {
+private fun SearchTopBar() {
     Row(
         modifier             = Modifier
             .fillMaxWidth()
@@ -222,21 +222,21 @@ private fun HistoryTopBar() {
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector     = Icons.Default.History,
-                contentDescription = "History",
+                imageVector     = Icons.Default.Search,
+                contentDescription = "Search",
                 tint            = AccentCyan,
                 modifier        = Modifier.size(20.dp)
             )
         }
         Column {
             Text(
-                text       = "ট্রানজেকশন হিস্টোরি",
+                text       = "ট্রানজেকশন সার্চ",
                 color      = TextWhite,
                 fontSize   = 18.sp,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text     = "সকল পেমেন্ট রেকর্ড",
+                text     = "পেমেন্ট রেকর্ড খুঁজুন",
                 color    = TextMuted,
                 fontSize = 12.sp
             )
@@ -303,76 +303,61 @@ private fun SearchBox(
 }
 
 // =============================================================================
-// Component 3 — Filter Chips Row (LazyRow)
+// Component 3 — Material 3 Filter Chips
 // =============================================================================
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FilterChipsRow(
+private fun M3FilterChipsRow(
     selected: ProviderFilter,
     onSelect: (ProviderFilter) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val filters = listOf(
+        ProviderFilter.BKASH to "বিকাশ",
+        ProviderFilter.NAGAD to "নগদ",
+        ProviderFilter.ROCKET to "রকেট",
+        ProviderFilter.UPAY to "উপায়"
+    )
+
     LazyRow(
         modifier            = modifier,
         contentPadding      = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(ProviderFilter.entries) { filter ->
-            ProviderChip(
-                filter     = filter,
-                isSelected = selected == filter,
-                onClick    = { onSelect(filter) }
-            )
-        }
-    }
-}
-
-@Composable
-private fun ProviderChip(
-    filter: ProviderFilter,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    val bgColor by animateColorAsState(
-        targetValue   = if (isSelected) ChipSelected.copy(alpha = 0.18f) else HistCard,
-        animationSpec = tween(200),
-        label         = "ChipBg"
-    )
-    val borderColor by animateColorAsState(
-        targetValue   = if (isSelected) ChipSelected else TextMuted.copy(alpha = 0.25f),
-        animationSpec = tween(200),
-        label         = "ChipBorder"
-    )
-    val textColor by animateColorAsState(
-        targetValue   = if (isSelected) ChipSelected else TextMuted,
-        animationSpec = tween(200),
-        label         = "ChipText"
-    )
-
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(bgColor)
-            .border(1.dp, borderColor, RoundedCornerShape(20.dp))
-            .clickable { onClick() }
-            .padding(horizontal = 14.dp, vertical = 8.dp)
-    ) {
-        Row(
-            verticalAlignment     = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(text = filter.emoji, fontSize = 13.sp)
-            Text(
-                text       = filter.label,
-                color      = textColor,
-                fontSize   = 13.sp,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+        items(filters) { (filter, label) ->
+            val isSelected = selected == filter
+            FilterChip(
+                selected = isSelected,
+                onClick = { onSelect(filter) },
+                label = {
+                    Text(
+                        text = "$label ${filter.emoji}",
+                        fontSize = 13.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                    )
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = HistCard,
+                    labelColor = TextMuted,
+                    selectedContainerColor = AccentCyan.copy(alpha = 0.18f),
+                    selectedLabelColor = AccentCyan,
+                    selectedLeadingIconColor = AccentCyan
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    enabled = true,
+                    selected = isSelected,
+                    borderColor = TextMuted.copy(alpha = 0.25f),
+                    selectedBorderColor = AccentCyan,
+                    borderWidth = 1.dp,
+                    selectedBorderWidth = 1.dp
+                )
             )
         }
     }
 }
 
 // =============================================================================
-// Component 4 — Summary Row ("১২৩টি ফলাফল")
+// Component 4 — Summary Row
 // =============================================================================
 @Composable
 private fun SummaryRow(
@@ -397,7 +382,7 @@ private fun SummaryRow(
 }
 
 // =============================================================================
-// Component 5 — Transaction Card (UNUSED / SOLDOUT badge সহ)
+// Component 5 — Transaction Card
 // =============================================================================
 @Composable
 private fun TransactionCard(
@@ -422,19 +407,14 @@ private fun TransactionCard(
     }
 
     Card(
-        colors   = CardDefaults.cardColors(
-            containerColor = if (isSoldOut) HistCard else HistCard
-        ),
+        colors   = CardDefaults.cardColors(containerColor = HistCard),
         shape    = RoundedCornerShape(12.dp),
         modifier = modifier.fillMaxWidth()
     ) {
         Row(
-            modifier             = Modifier
-                .fillMaxWidth()
-                .padding(0.dp),
+            modifier             = Modifier.fillMaxWidth().padding(0.dp),
             verticalAlignment    = Alignment.CenterVertically
         ) {
-            // ── Provider Color Side Bar ──────────────────────────────────────
             Box(
                 modifier = Modifier
                     .width(4.dp)
@@ -445,14 +425,12 @@ private fun TransactionCard(
                     )
             )
 
-            // ── Main Content ─────────────────────────────────────────────────
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Row 1: Provider + SIM slot + Amount
                 Row(
                     modifier             = Modifier.fillMaxWidth(),
                     verticalAlignment    = Alignment.CenterVertically,
@@ -475,15 +453,14 @@ private fun TransactionCard(
                                     .background(TextMuted.copy(alpha = 0.12f))
                                     .padding(horizontal = 5.dp, vertical = 1.dp)
                             ) {
-                                Text(
-                                    text     = "SIM ${item.simSlot}",
-                                    color    = TextMuted,
-                                    fontSize = 10.sp
-                                )
+                                  Text(
+                                      text     = "SIM ${item.simSlot}",
+                                      color    = TextMuted,
+                                      fontSize = 10.sp
+                                  )
                             }
                         }
                     }
-                    // Amount
                     Text(
                         text       = "৳ ${DecimalFormat("#,##0.00").format(item.amount)}",
                         color      = if (isSoldOut) TextMuted else TextWhite,
@@ -492,7 +469,6 @@ private fun TransactionCard(
                     )
                 }
 
-                // Row 2: TrxID + Badge
                 Row(
                     modifier             = Modifier.fillMaxWidth(),
                     verticalAlignment    = Alignment.CenterVertically,
@@ -507,11 +483,9 @@ private fun TransactionCard(
                         modifier = Modifier.weight(1f)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    // ── UNUSED / SOLDOUT Badge ───────────────────────────────
                     StatusBadge(isSoldOut = isSoldOut)
                 }
 
-                // Row 3: From number + Timestamp
                 Row(
                     modifier             = Modifier.fillMaxWidth(),
                     verticalAlignment    = Alignment.CenterVertically,
@@ -546,9 +520,6 @@ private fun TransactionCard(
     }
 }
 
-// =============================================================================
-// Component 6 — Status Badge (UNUSED / SOLDOUT)
-// =============================================================================
 @Composable
 private fun StatusBadge(isSoldOut: Boolean) {
     val bgColor   = if (isSoldOut) AccentRed.copy(alpha = 0.12f) else AccentGreen.copy(alpha = 0.12f)
@@ -572,7 +543,7 @@ private fun StatusBadge(isSoldOut: Boolean) {
 }
 
 // =============================================================================
-// Component 7 — Skeleton Loading Card
+// Component 6 — Skeleton Loading Card
 // =============================================================================
 @Composable
 private fun SkeletonTransactionCard() {
@@ -635,7 +606,7 @@ private fun SkeletonTransactionCard() {
 }
 
 // =============================================================================
-// Component 8 — Empty State
+// Component 7 — Empty State
 // =============================================================================
 @Composable
 private fun EmptyStateCard(hasFilter: Boolean) {
@@ -671,7 +642,7 @@ private fun EmptyStateCard(hasFilter: Boolean) {
 }
 
 // =============================================================================
-// Component 9 — Error Card
+// Component 8 — Error Card
 // =============================================================================
 @Composable
 private fun HistoryErrorCard(

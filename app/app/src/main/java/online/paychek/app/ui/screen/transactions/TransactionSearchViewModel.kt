@@ -26,22 +26,15 @@ enum class ProviderFilter(val label: String, val apiValue: String, val emoji: St
 // =============================================================================
 // UI State
 // =============================================================================
-data class TransactionHistoryState(
-    // ─── Data ─────────────────────────────────────────────────────────────────
-    val rawList:     List<TransactionItem> = emptyList(),  // Server থেকে আসা মূল তালিকা
-    val displayList: List<TransactionItem> = emptyList(),  // Filter + Search-এর পর UI দেখায়
-
-    // ─── Filter / Search ──────────────────────────────────────────────────────
+data class TransactionSearchState(
+    val rawList:     List<TransactionItem> = emptyList(),
+    val displayList: List<TransactionItem> = emptyList(),
     val selectedProvider: ProviderFilter = ProviderFilter.ALL,
     val searchQuery:      String         = "",
-
-    // ─── Pagination ───────────────────────────────────────────────────────────
     val currentPage:        Int     = 1,
     val hasMore:            Boolean = true,
-    val isInitialLoading:   Boolean = true,   // প্রথম load — Skeleton দেখাবে
-    val isLoadingMore:      Boolean = false,  // পেজের নিচে Spinner
-
-    // ─── Error ────────────────────────────────────────────────────────────────
+    val isInitialLoading:   Boolean = true,
+    val isLoadingMore:      Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -49,7 +42,7 @@ data class TransactionHistoryState(
 // ViewModel
 // =============================================================================
 @OptIn(FlowPreview::class)
-class TransactionHistoryViewModel(application: Application) : AndroidViewModel(application) {
+class TransactionSearchViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         private const val PAGE_SIZE = 20
@@ -58,14 +51,12 @@ class TransactionHistoryViewModel(application: Application) : AndroidViewModel(a
     private val repository = PaymentRepository()
     private val prefs      = application.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
 
-    private val _state = MutableStateFlow(TransactionHistoryState())
-    val state: StateFlow<TransactionHistoryState> = _state.asStateFlow()
+    private val _state = MutableStateFlow(TransactionSearchState())
+    val state: StateFlow<TransactionSearchState> = _state.asStateFlow()
 
-    // Search debounce — আলাদা Flow হিসেবে রাখা হয়েছে
     private val _searchQuery = MutableStateFlow("")
 
     init {
-        // 300ms debounce — প্রতি keystroke-এ filter নয়
         _searchQuery
             .debounce(300)
             .onEach { query ->
@@ -74,21 +65,13 @@ class TransactionHistoryViewModel(application: Application) : AndroidViewModel(a
             }
             .launchIn(viewModelScope)
 
-        // স্ক্রিন খোলার সাথে সাথে প্রথম পেজ লোড
         loadFirstPage()
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Search Query — UI থেকে কল হয়
-    // ─────────────────────────────────────────────────────────────────────────
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Provider Filter — Chip ক্লিকে কল হয়
-    // Filter পরিবর্তন হলে পেজ রিসেট + নতুন API call
-    // ─────────────────────────────────────────────────────────────────────────
     fun onProviderFilterChanged(filter: ProviderFilter) {
         if (_state.value.selectedProvider == filter) return
 
@@ -106,9 +89,6 @@ class TransactionHistoryViewModel(application: Application) : AndroidViewModel(a
         fetchPage(page = 1)
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Pagination — প্রথম পেজ লোড
-    // ─────────────────────────────────────────────────────────────────────────
     private fun loadFirstPage() {
         _state.update {
             it.copy(
@@ -122,27 +102,18 @@ class TransactionHistoryViewModel(application: Application) : AndroidViewModel(a
         fetchPage(page = 1)
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Pagination — পরের পেজ লোড (Infinite Scroll)
-    // LazyColumn-এর শেষ থেকে ৩য় item দেখা গেলে UI এই ফাংশন call করবে
-    // ─────────────────────────────────────────────────────────────────────────
     fun loadNextPage() {
         val current = _state.value
-        // Guard: loading চললে বা আর ডেটা না থাকলে skip
         if (current.isLoadingMore || !current.hasMore) return
 
         _state.update { it.copy(isLoadingMore = true) }
         fetchPage(page = current.currentPage + 1)
     }
 
-    // Pull-to-Refresh
     fun onRefresh() {
         loadFirstPage()
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Core Fetch — API call করে rawList আপডেট করে
-    // ─────────────────────────────────────────────────────────────────────────
     private fun fetchPage(page: Int) {
         viewModelScope.launch {
             val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
@@ -168,7 +139,6 @@ class TransactionHistoryViewModel(application: Application) : AndroidViewModel(a
             result.fold(
                 onSuccess = { newItems ->
                     _state.update { current ->
-                        // পেজ ১ হলে fresh list, অন্যথায় পুরনো তালিকায় যোগ
                         val merged = if (page == 1) newItems else current.rawList + newItems
                         val updated = current.copy(
                             rawList          = merged,
@@ -195,16 +165,11 @@ class TransactionHistoryViewModel(application: Application) : AndroidViewModel(a
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Local Filter — rawList-এর উপর Filter + Search প্রয়োগ
-    // নতুন API call ছাড়াই displayList আপডেট হয়
-    // ─────────────────────────────────────────────────────────────────────────
     private fun applyLocalFilter() {
         val current  = _state.value
         val query    = current.searchQuery.trim().lowercase()
 
         val filtered = current.rawList.filter { item ->
-            // Search filter — TrxID তে query থাকলে দেখাবে
             val matchesSearch = query.isEmpty() ||
                     item.trxId.lowercase().contains(query) ||
                     (item.senderNumber?.lowercase()?.contains(query) == true)

@@ -24,9 +24,10 @@ import androidx.navigation3.runtime.NavKey
 import online.paychek.app.NavKey as AppNavKey
 import kotlinx.coroutines.launch
 import online.paychek.app.ui.screen.dashboard.DashboardScreen
-import online.paychek.app.ui.screen.gateway.GatewayCustomizerScreen
+import online.paychek.app.ui.screen.device.DeviceScreen
 import online.paychek.app.ui.screen.profile.ProfileSettingsScreen
-import online.paychek.app.ui.screen.transactions.TransactionHistoryScreen
+import online.paychek.app.ui.screen.transactions.TransactionSearchScreen
+import online.paychek.app.ui.screen.apicenter.ApiIntegrationScreen
 import online.paychek.app.ui.theme.RoyalIndigo
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.History
@@ -194,16 +195,7 @@ fun HomeScreen(
             CustomBottomBar(
                 selectedTab = selectedTab,
                 onTabSelect = { tab ->
-                    if (tab == HomeTab.API) {
-                        val accountLevel = prefs.getString("pcu_account_level", "FREE_LEVEL") ?: "FREE_LEVEL"
-                        if (accountLevel == "FREE_LEVEL") {
-                            showPurchaseDialog = true
-                        } else {
-                            selectedTab = tab
-                        }
-                    } else {
-                        selectedTab = tab
-                    }
+                    selectedTab = tab
                 }
             )
         }
@@ -215,24 +207,20 @@ fun HomeScreen(
         ) {
             when (selectedTab) {
                 HomeTab.HOME -> DashboardScreen(
-                    onNavigateToHistory = { /* Handle history navigation */ },
+                    onNavigateToHistory = { selectedTab = HomeTab.SEARCH },
                     modifier = Modifier.fillMaxSize()
                 )
-                HomeTab.DEVICE -> GatewayCustomizerScreen(
-                    onNavigateToApiCenter = onNavigateToApiCenter,
+                HomeTab.DEVICE -> DeviceScreen(
                     onNavigateBack = { selectedTab = HomeTab.HOME },
                     modifier = Modifier.fillMaxSize()
                 )
-                HomeTab.SEARCH -> Box(
-                    modifier = Modifier.fillMaxSize().background(Color(0xFF0F172A)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(text = "Search Screen", color = Color.White, fontSize = 18.sp)
-                }
-                HomeTab.API -> {
-                    // Navigate to API Center screen via NavController
-                    onNavigateToApiCenter()
-                }
+                HomeTab.SEARCH -> TransactionSearchScreen(
+                    modifier = Modifier.fillMaxSize()
+                )
+                HomeTab.API -> ApiIntegrationScreen(
+                    onNavigateToCheckout = onNavigateToApiCenter,
+                    modifier = Modifier.fillMaxSize()
+                )
                 HomeTab.PROFILE -> ProfileSettingsScreen(
                     onNavigateBack = { selectedTab = HomeTab.HOME },
                     modifier = Modifier.fillMaxSize()
