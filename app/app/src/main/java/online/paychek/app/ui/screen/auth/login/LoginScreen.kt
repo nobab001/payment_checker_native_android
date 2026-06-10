@@ -61,7 +61,6 @@ fun LoginScreen(
     viewModel: LoginViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val scrollState = rememberScrollState()
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
 
@@ -273,13 +272,13 @@ fun LoginScreen(
         modifier = modifier
             .fillMaxSize()
             .background(AppBackground)
+            .imePadding()
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(scrollState),
+                .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
