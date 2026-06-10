@@ -91,9 +91,13 @@ class SmsMonitorService : Service() {
             retryOfflineQueue()
         }
 
-        // ── গেটওয়ে মেথড কনফিগ সিঙ্ক করা ─────────────────────────────
+        // ── গেটওয়ে মেথড কনফিগ ও ডিভাইস অ্যাক্টিভেশন সিঙ্ক করা ─────────────────────────────
         serviceScope.launch {
-            syncGatewayMethods()
+            while (isActive) {
+                syncDeviceConfig()
+                syncGatewayMethods()
+                delay(30_000L) // every 30 seconds
+            }
         }
 
         return START_STICKY // সিস্টেম kill করলে নিজে পুনরায় চালু হবে
@@ -288,6 +292,35 @@ class SmsMonitorService : Service() {
             }
         } catch (e: Exception) {
             Log.w(TAG, "গেটওয়ে মেথড সিঙ্ক করতে ব্যর্থ: ${e.message}")
+        }
+    }
+
+    private suspend fun syncDeviceConfig() {
+        try {
+            val sharedPrefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+            val token = SecurePreferences.decrypt(this, AppConfig.KEY_AUTH_TOKEN)
+            if (token.isEmpty()) return
+
+            val response = RetrofitClient.gatewayApiService.getMyDeviceConfig("Bearer $token")
+            if (response.isSuccessful && response.body() != null && response.body()!!.success) {
+                val devConfig = response.body()!!.data
+                val sim1Active = devConfig.simOneActive == 1
+                val sim2Active = devConfig.simTwoActive == 1
+                val isAppActive = devConfig.isAppActive == 1
+
+                sharedPrefs.edit().apply {
+                    putBoolean(AppConfig.KEY_SIM1_ENABLED, sim1Active)
+                    putBoolean(AppConfig.KEY_SIM2_ENABLED, sim2Active)
+                    putBoolean("pcu_is_app_active", isAppActive)
+                    putBoolean("pcu_is_parent", devConfig.isParent == 1)
+                    putString("pcu_custom_device_name", devConfig.customDeviceName)
+                    apply()
+                }
+
+                Log.i(TAG, "✅ Device configuration synced. SIM1: $sim1Active, SIM2: $sim2Active, AppActive: $isAppActive")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to sync device configuration: ${e.message}")
         }
     }
 

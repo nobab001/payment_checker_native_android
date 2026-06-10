@@ -1494,6 +1494,100 @@ async function getPublicConfig(req, res) {
   }
 }
 
+async function getChildDevices(req, res) {
+  try {
+    const userId = req.user.userId;
+    const devices = await query(
+      `SELECT id, device_id, custom_device_name, is_parent, 
+              sim_one_number, sim_one_active, sim_two_number, sim_two_active, is_app_active 
+       FROM registered_devices 
+       WHERE user_id = ? AND is_parent = 0`,
+      [userId]
+    );
+    return res.json({ success: true, data: devices });
+  } catch (error) {
+    console.error('Error fetching child devices:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function remoteUpdateDevice(req, res) {
+  try {
+    const userId = req.user.userId;
+    const {
+      deviceId,
+      custom_device_name,
+      sim_one_number,
+      sim_one_active,
+      sim_two_number,
+      sim_two_active,
+      is_app_active
+    } = req.body;
+
+    if (!deviceId) {
+      return res.status(400).json({ success: false, error: 'deviceId is required' });
+    }
+
+    const result = await query(
+      `UPDATE registered_devices 
+       SET custom_device_name = ?, 
+           sim_one_number = ?, 
+           sim_one_active = ?, 
+           sim_two_number = ?, 
+           sim_two_active = ?, 
+           is_app_active = ?
+       WHERE user_id = ? AND device_id = ? AND is_parent = 0`,
+      [
+        custom_device_name || '',
+        sim_one_number || null,
+        sim_one_active !== undefined ? sim_one_active : 1,
+        sim_two_number || null,
+        sim_two_active !== undefined ? sim_two_active : 1,
+        is_app_active !== undefined ? is_app_active : 1,
+        userId,
+        deviceId
+      ]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, error: 'Device not found or unauthorized' });
+    }
+
+    return res.json({ success: true, message: 'Device configuration updated successfully' });
+  } catch (error) {
+    console.error('Error updating child device:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function getMyDeviceConfig(req, res) {
+  try {
+    const userId = req.user.userId;
+    const deviceId = req.user.deviceId;
+
+    if (!deviceId) {
+      return res.status(400).json({ success: false, error: 'Device ID missing in token context' });
+    }
+
+    const devices = await query(
+      `SELECT id, device_id, custom_device_name, is_parent, 
+              sim_one_number, sim_one_active, sim_two_number, sim_two_active, is_app_active 
+       FROM registered_devices 
+       WHERE user_id = ? AND device_id = ? LIMIT 1`,
+      [userId, deviceId]
+    );
+
+    if (devices.length === 0) {
+      return res.status(404).json({ success: false, error: 'Device not found' });
+    }
+
+    return res.json({ success: true, data: devices[0] });
+  } catch (error) {
+    console.error('Error fetching own device config:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   checkContact,
   sendOtp,
@@ -1503,5 +1597,9 @@ module.exports = {
   completeProfile,
   checkDeviceTrial,
   getPublicConfig,
+  getChildDevices,
+  remoteUpdateDevice,
+  getMyDeviceConfig,
   sendOtpDispatch   // exported for reuse by credentialController & pinController
 };
+

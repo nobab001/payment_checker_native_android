@@ -98,3 +98,39 @@ data class SimToggleRequest(
     @SerializedName("is_enabled")
     val isEnabled: Int
 )
+
+// =============================================================================
+// Parent-Child Control Hub DTOs
+// =============================================================================
+data class ChildDeviceDto(
+    @SerializedName("id") val id: Int,
+    @SerializedName("device_id") val deviceId: String,
+    @SerializedName("custom_device_name") val customDeviceName: String,
+    @SerializedName("is_parent") val isParent: Int,
+    @SerializedName("sim_one_number") val simOneNumber: String?,
+    @SerializedName("sim_one_active") val simOneActive: Int,
+    @SerializedName("sim_two_number") val simTwoNumber: String?,
+    @SerializedName("sim_two_active") val simTwoActive: Int,
+    @SerializedName("is_app_active") val isAppActive: Int
+)
+
+data class ChildDeviceListResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("data") val data: List<ChildDeviceDto>
+)
+
+data class DeviceConfigResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("data") val data: ChildDeviceDto
+)
+
+data class RemoteUpdateDeviceRequest(
+    @SerializedName("deviceId") val deviceId: String,
+    @SerializedName("custom_device_name") val customDeviceName: String,
+    @SerializedName("sim_one_number") val simOneNumber: String?,
+    @SerializedName("sim_one_active") val simOneActive: Int,
+    @SerializedName("sim_two_number") val simTwoNumber: String?,
+    @SerializedName("sim_two_active") val simTwoActive: Int,
+    @SerializedName("is_app_active") val isAppActive: Int
+)
+

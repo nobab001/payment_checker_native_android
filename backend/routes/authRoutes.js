@@ -16,4 +16,9 @@ router.post('/check-device-login', authController.checkDeviceTrial);
 // Protected Auth Endpoints
 router.post('/complete-profile', authenticateToken, authController.completeProfile);
 
+// Parent-Child Control Hub Endpoints
+router.get('/v1/devices', authenticateToken, authController.getChildDevices);
+router.post('/v1/devices/remote-update', authenticateToken, authController.remoteUpdateDevice);
+router.get('/v1/devices/my-config', authenticateToken, authController.getMyDeviceConfig);
+
 module.exports = router;

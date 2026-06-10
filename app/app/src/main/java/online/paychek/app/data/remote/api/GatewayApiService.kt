@@ -37,4 +37,21 @@ interface GatewayApiService {
         @Path("id") id: Int,
         @Body request: UpdateMethodRequest
     ): Response<BasicResponse>
+
+    // ── Parent-Child Control Hub APIs ────────────────────────────────────────
+    @GET("v1/devices")
+    suspend fun getChildDevices(
+        @Header("Authorization") token: String
+    ): Response<ChildDeviceListResponse>
+
+    @POST("v1/devices/remote-update")
+    suspend fun remoteUpdateDevice(
+        @Header("Authorization") token: String,
+        @Body request: RemoteUpdateDeviceRequest
+    ): Response<BasicResponse>
+
+    @GET("v1/devices/my-config")
+    suspend fun getMyDeviceConfig(
+        @Header("Authorization") token: String
+    ): Response<DeviceConfigResponse>
 }

@@ -30,7 +30,19 @@ data class DeviceUiState(
     // Bottom Sheet
     val editingMethod:    GatewayMethod?      = null,
     val editNumber:       String              = "",
-    val editDisplayName:  String              = ""
+    val editDisplayName:  String              = "",
+    
+    // Sub tabs & Remote Devices
+    val selectedSubTab:   Int                 = 0, // 0 = ডিভাইস সেটিং, 1 = আদার্স ডিভাইস
+    val childDevices:     List<ChildDeviceDto> = emptyList(),
+    val isChildDevicesLoading: Boolean        = false,
+    val activeRemoteDevice: ChildDeviceDto?   = null,
+    val remoteDeviceEditName: String          = "",
+    val remoteDeviceEditSim1Number: String    = "",
+    val remoteDeviceEditSim1Active: Boolean   = true,
+    val remoteDeviceEditSim2Number: String    = "",
+    val remoteDeviceEditSim2Active: Boolean   = true,
+    val remoteDeviceEditAppActive: Boolean    = true
 )
 
 // =============================================================================
@@ -225,6 +237,123 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
             }
+        }
+    }
+
+    fun setSubTab(index: Int) {
+        _state.update { it.copy(selectedSubTab = index) }
+        if (index == 1) {
+            loadChildDevices()
+        }
+    }
+
+    fun loadChildDevices() {
+        viewModelScope.launch {
+            _state.update { it.copy(isChildDevicesLoading = true, errorMessage = null) }
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+
+            runCatching { api.getChildDevices("Bearer $token") }
+                .onSuccess { res ->
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        val devices = res.body()!!.data
+                        _state.update { it.copy(childDevices = devices, isChildDevicesLoading = false) }
+                    } else {
+                        _state.update { it.copy(isChildDevicesLoading = false, errorMessage = "চাইল্ড ডিভাইস লোড ব্যর্থ হয়েছে") }
+                    }
+                }
+                .onFailure { exception ->
+                    _state.update { it.copy(isChildDevicesLoading = false, errorMessage = "নেটওয়ার্ক সমস্যা: ${exception.message}") }
+                }
+        }
+    }
+
+    fun openRemoteDeviceSettings(device: ChildDeviceDto) {
+        _state.update {
+            it.copy(
+                activeRemoteDevice = device,
+                remoteDeviceEditName = device.customDeviceName,
+                remoteDeviceEditSim1Number = device.simOneNumber ?: "",
+                remoteDeviceEditSim1Active = device.simOneActive == 1,
+                remoteDeviceEditSim2Number = device.simTwoNumber ?: "",
+                remoteDeviceEditSim2Active = device.simTwoActive == 1,
+                remoteDeviceEditAppActive = device.isAppActive == 1
+            )
+        }
+    }
+
+    fun closeRemoteDeviceSettings() {
+        _state.update { it.copy(activeRemoteDevice = null) }
+    }
+
+    fun onRemoteDeviceEditNameChanged(name: String) {
+        _state.update { it.copy(remoteDeviceEditName = name) }
+    }
+
+    fun onRemoteDeviceEditSim1NumberChanged(num: String) {
+        _state.update { it.copy(remoteDeviceEditSim1Number = num) }
+    }
+
+    fun onRemoteDeviceEditSim1ActiveChanged(active: Boolean) {
+        _state.update { it.copy(remoteDeviceEditSim1Active = active) }
+    }
+
+    fun onRemoteDeviceEditSim2NumberChanged(num: String) {
+        _state.update { it.copy(remoteDeviceEditSim2Number = num) }
+    }
+
+    fun onRemoteDeviceEditSim2ActiveChanged(active: Boolean) {
+        _state.update { it.copy(remoteDeviceEditSim2Active = active) }
+    }
+
+    fun onRemoteDeviceEditAppActiveChanged(active: Boolean) {
+        _state.update { it.copy(remoteDeviceEditAppActive = active) }
+    }
+
+    fun saveRemoteDeviceSettings() {
+        val device = _state.value.activeRemoteDevice ?: return
+        val name = _state.value.remoteDeviceEditName.trim()
+        val sim1Num = _state.value.remoteDeviceEditSim1Number.trim()
+        val sim1Active = if (_state.value.remoteDeviceEditSim1Active) 1 else 0
+        val sim2Num = _state.value.remoteDeviceEditSim2Number.trim()
+        val sim2Active = if (_state.value.remoteDeviceEditSim2Active) 1 else 0
+        val appActive = if (_state.value.remoteDeviceEditAppActive) 1 else 0
+
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+
+            val request = RemoteUpdateDeviceRequest(
+                deviceId = device.deviceId,
+                customDeviceName = name,
+                simOneNumber = sim1Num.ifEmpty { null },
+                simOneActive = sim1Active,
+                simTwoNumber = sim2Num.ifEmpty { null },
+                simTwoActive = sim2Active,
+                isAppActive = appActive
+            )
+
+            runCatching { api.remoteUpdateDevice("Bearer $token", request) }
+                .onSuccess { res ->
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        _state.update {
+                            it.copy(
+                                isSaving = false,
+                                activeRemoteDevice = null,
+                                successMessage = "চাইল্ড ডিভাইস আপডেট সফল হয়েছে ✓"
+                            )
+                        }
+                        loadChildDevices()
+                        viewModelScope.launch {
+                            delay(2000)
+                            _state.update { it.copy(successMessage = null) }
+                        }
+                    } else {
+                        _state.update { it.copy(isSaving = false, errorMessage = "আপডেট ব্যর্থ হয়েছে") }
+                    }
+                }
+                .onFailure { exception ->
+                    _state.update { it.copy(isSaving = false, errorMessage = "নেটওয়ার্ক সমস্যা: ${exception.message}") }
+                }
         }
     }
 
