@@ -236,7 +236,7 @@ class LoginViewModel : ViewModel() {
             startTimer()
         } else {
             val errorBody = response.errorBody()?.string()
-            if (response.code() == 403 && errorBody?.contains("TRIAL_EXPIRED_FOR_DEVICE") == true) {
+            if (response.code() == 403 && (errorBody?.contains("DEVICE_ALREADY_BOUND") == true || errorBody?.contains("TRIAL_EXPIRED_FOR_DEVICE") == true)) {
                 val (phones, emails) = parseBoundCredentials(errorBody)
                 _uiState.update {
                     it.copy(
@@ -382,7 +382,7 @@ class LoginViewModel : ViewModel() {
                     onOtpVerified(verifyResponse)
                 } else {
                     val errorBody = response.errorBody()?.string()
-                    if (response.code() == 403 && errorBody?.contains("TRIAL_EXPIRED_FOR_DEVICE") == true) {
+                    if (response.code() == 403 && (errorBody?.contains("DEVICE_ALREADY_BOUND") == true || errorBody?.contains("TRIAL_EXPIRED_FOR_DEVICE") == true)) {
                         val (phones, emails) = parseBoundCredentials(errorBody)
                         _uiState.update {
                             it.copy(
@@ -432,7 +432,7 @@ class LoginViewModel : ViewModel() {
     }
 
     /**
-     * Parses `boundPhones` and `boundEmails` arrays from the TRIAL_EXPIRED_FOR_DEVICE JSON error body.
+     * Parses `boundPhones` and `boundEmails` arrays from the DEVICE_ALREADY_BOUND / TRIAL_EXPIRED_FOR_DEVICE JSON error body.
      * Returns Pair(phones, emails) where each is an empty list if the field is absent or parsing fails.
      */
     @Suppress("UNCHECKED_CAST")

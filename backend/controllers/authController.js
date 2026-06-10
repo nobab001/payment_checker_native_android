@@ -33,7 +33,7 @@ async function findUserByContact(contact) {
  * Checks if a contact (phone or email) is registered.
  * ⚠️  SECURITY: Device-binding gatekeeper runs FIRST.
  *     Even if the contact is not found, a bound device gets
- *     TRIAL_EXPIRED_FOR_DEVICE — never a plain { exists: false }.
+ *     DEVICE_ALREADY_BOUND — never a plain { exists: false }.
  */
 async function checkContact(req, res) {
   try {
@@ -57,8 +57,8 @@ async function checkContact(req, res) {
         const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
         return res.status(403).json({
           success: false,
-          action:  'TRIAL_EXPIRED_FOR_DEVICE',
-          message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।',
+          action:  'DEVICE_ALREADY_BOUND',
+          message: 'ডিভাইস লিংক নোটিশ: নিরাপত্তা ও পলিসিগত কারণে আমাদের সিস্টেমে একটি hardware ডিভাইসের সাথে কেবল একটি মূল অ্যাকাউন্টই যুক্ত রাখা সম্ভব। আপনার এই ডিভাইসটি ইতিমধ্যে নিচের অ্যাকাউন্টটির সাথে নিবন্ধিত ও লিংক করা রয়েছে। অনুগ্রহ করে পূর্বের লিংক করা অ্যাকাউন্টটি ব্যবহার করে লগইন সম্পন্ন করুন। এই ডিভাইসে নতুন কোনো অ্যাকাউন্ট তৈরি বা অন্য অ্যাকাউন্ট ব্যবহার করা যাবে না।',
           boundPhones,
           boundEmails
         });
@@ -69,7 +69,7 @@ async function checkContact(req, res) {
         return res.status(403).json({
           success: false,
           action: bindingResult.reason || 'DEVICE_NOT_BOUND',
-          message: 'ডিভাইসটি কোনো অ্যাকাউন্টের সাথে যুক্ত নয় বা ট্রায়াল লকড।',
+          message: 'ডিভাইসটি কোনো অ্যাকাউন্টের সাথে যুক্ত নয় বা লকড।',
           userId: bindingResult.userId
         });
       }
@@ -123,8 +123,8 @@ async function sendOtp(req, res) {
         const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
         return res.status(403).json({
           success: false,
-          action:  'TRIAL_EXPIRED_FOR_DEVICE',
-          message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।',
+          action:  'DEVICE_ALREADY_BOUND',
+          message: 'ডিভাইস লিংক নোটিশ: নিরাপত্তা ও পলিসিগত কারণে আমাদের সিস্টেমে একটি hardware ডিভাইসের সাথে কেবল একটি মূল অ্যাকাউন্টই যুক্ত রাখা সম্ভব। আপনার এই ডিভাইসটি ইতিমধ্যে নিচের অ্যাকাউন্টটির সাথে নিবন্ধিত ও লিংক করা রয়েছে। অনুগ্রহ করে পূর্বের লিংক করা অ্যাকাউন্টটি ব্যবহার করে লগইন সম্পন্ন করুন। এই ডিভাইসে নতুন কোনো অ্যাকাউন্ট তৈরি বা অন্য অ্যাকাউন্ট ব্যবহার করা যাবে না।',
           boundPhones,
           boundEmails
         });
@@ -207,8 +207,8 @@ async function registerSendOtp(req, res) {
         const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
         return res.status(403).json({
           success: false,
-          action: 'TRIAL_EXPIRED_FOR_DEVICE',
-          message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।',
+          action: 'DEVICE_ALREADY_BOUND',
+          message: 'ডিভাইস লিংক নোটিশ: নিরাপত্তা ও পলিসিগত কারণে আমাদের সিস্টেমে একটি hardware ডিভাইসের সাথে কেবল একটি মূল অ্যাকাউন্টই যুক্ত রাখা সম্ভব। আপনার এই ডিভাইসটি ইতিমধ্যে নিচের অ্যাকাউন্টটির সাথে নিবন্ধিত ও লিংক করা রয়েছে। অনুগ্রহ করে পূর্বের লিংক করা অ্যাকাউন্টটি ব্যবহার করে লগইন সম্পন্ন করুন। এই ডিভাইসে নতুন কোনো অ্যাকাউন্ট তৈরি বা অন্য অ্যাকাউন্ট ব্যবহার করা যাবে না।',
           boundPhones,
           boundEmails
         });
@@ -297,8 +297,8 @@ async function verifyOtp(req, res) {
       const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
       return res.status(403).json({
         success: false,
-        action: 'TRIAL_EXPIRED_FOR_DEVICE',
-        message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।',
+        action: 'DEVICE_ALREADY_BOUND',
+        message: 'ডিভাইস লিংক নোটিশ: নিরাপত্তা ও পলিসিগত কারণে আমাদের সিস্টেমে একটি hardware ডিভাইসের সাথে কেবল একটি মূল অ্যাকাউন্টই যুক্ত রাখা সম্ভব। আপনার এই ডিভাইসটি ইতিমধ্যে নিচের অ্যাকাউন্টটির সাথে নিবন্ধিত ও লিংক করা রয়েছে। অনুগ্রহ করে পূর্বের লিংক করা অ্যাকাউন্টটি ব্যবহার করে লগইন সম্পন্ন করুন। এই ডিভাইসে নতুন কোনো অ্যাকাউন্ট তৈরি বা অন্য অ্যাকাউন্ট ব্যবহার করা যাবে না।',
         boundPhones,
         boundEmails
       });
@@ -846,8 +846,8 @@ async function checkDeviceTrial(req, res) {
       const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
       return res.status(403).json({
         success: false,
-        action: 'TRIAL_EXPIRED_FOR_DEVICE',
-        message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।',
+        action: 'DEVICE_ALREADY_BOUND',
+        message: 'ডিভাইস লিংক নোটিশ: নিরাপত্তা ও পলিসিগত কারণে আমাদের সিস্টেমে একটি hardware ডিভাইসের সাথে কেবল একটি মূল অ্যাকাউন্টই যুক্ত রাখা সম্ভব। আপনার এই ডিভাইসটি ইতিমধ্যে নিচের অ্যাকাউন্টটির সাথে নিবন্ধিত ও লিংক করা রয়েছে। অনুগ্রহ করে পূর্বের লিংক করা অ্যাকাউন্টটি ব্যবহার করে লগইন সম্পন্ন করুন। এই ডিভাইসে নতুন কোনো অ্যাকাউন্ট তৈরি বা অন্য অ্যাকাউন্ট ব্যবহার করা যাবে না।',
         boundPhones,
         boundEmails
       });
@@ -875,8 +875,8 @@ async function checkDeviceTrial(req, res) {
         const { boundPhones: lkPhones, boundEmails: lkEmails } = await getBoundCredentials(device.user_id);
         return res.status(403).json({
           success: false,
-          action: 'TRIAL_EXPIRED_FOR_DEVICE',
-          message: 'দুঃখিত, আপনার এই ডিভাইসটি থেকে ইতিমধ্যে একবার ট্রায়াল অ্যাকাউন্ট ব্যবহার করা হয়েছে। আমাদের গেটওয়ে সার্ভিসটি পুনরায় সচল করতে অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন অথবা একটি প্রিমিয়াম সাবস্ক্রিপশন প্ল্যান সক্রিয় করুন।',
+          action: 'DEVICE_ALREADY_BOUND',
+          message: 'ডিভাইস লিংক নোটিশ: নিরাপত্তা ও পলিসিগত কারণে আমাদের সিস্টেমে একটি hardware ডিভাইসের সাথে কেবল একটি মূল অ্যাকাউন্টই যুক্ত রাখা সম্ভব। আপনার এই ডিভাইসটি ইতিমধ্যে নিচের অ্যাকাউন্টটির সাথে নিবন্ধিত ও লিংক করা রয়েছে। অনুগ্রহ করে পূর্বের লিংক করা অ্যাকাউন্টটি ব্যবহার করে লগইন সম্পন্ন করুন। এই ডিভাইসে নতুন কোনো অ্যাকাউন্ট তৈরি বা অন্য অ্যাকাউন্ট ব্যবহার করা যাবে না।',
           boundPhones: lkPhones,
           boundEmails: lkEmails
         });

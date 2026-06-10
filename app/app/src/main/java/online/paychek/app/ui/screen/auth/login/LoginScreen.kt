@@ -247,7 +247,7 @@ fun LoginScreen(
         }
     }
 
-    // ── "ডিভাইস লিংকড" প্রিমিয়াম কাস্টম ডায়ালগ ─────────────
+    // ── "ডিভাইস লিংক নোটিশ" প্রিমিয়াম কাস্টম ডায়ালগ ─────────────
     if (uiState.showDeviceBoundDialog) {
         Dialog(
             onDismissRequest = { viewModel.dismissDeviceBoundDialog() }
@@ -276,7 +276,7 @@ fun LoginScreen(
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                text      = "ডিভাইস লিংকড",
+                                text      = "ডিভাইস লিংক নোটিশ",
                                 fontWeight = FontWeight.Bold,
                                 color     = Color.White,
                                 fontSize  = 16.sp
@@ -296,9 +296,9 @@ fun LoginScreen(
                     ) {
                         // মূল সিকিউরিটি বার্তা
                         Text(
-                            text       = "আপনার এই ডিভাইসটি নিচের অ্যাকাউন্টটির সাথে লিংক করা রয়েছে। নিরাপত্তা জনিত কারণে আপনি নতুন কোনো অ্যাকাউন্ট তৈরি বা অন্য অ্যাকাউন্ট ব্যবহার করতে পারবেন না। অনুগ্রহ করে আপনার পূর্বের অ্যাকাউন্টে লগইন করুন।",
+                            text       = "নিরাপত্তা নিশ্চিতকরণ ও অ্যাকাউন্ট পলিসির কারণে একটি ডিভাইসে কেবল একটি অ্যাকাউন্টই সক্রিয় রাখা অনুমোদিত। আপনার এই ডিভাইসটি ইতিমধ্যে নিচের অ্যাকাউন্টের সাথে লিংক করা রয়েছে:",
                             color      = Color(0xFF475569),
-                            fontSize   = 12.sp,
+                            fontSize   = 13.sp,
                             lineHeight = 19.sp
                         )
 
@@ -378,52 +378,26 @@ fun LoginScreen(
                             }
                         }
 
-                        // ── বাটন কলাম (খাড়া, ডানপাশে) ───────────────────
-                        Column(
-                            modifier            = Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.End,
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        Text(
+                            text       = "নতুন করে অন্য কোনো অ্যাকাউন্ট এই ডিভাইসে যুক্ত করা সম্ভব নয়। অ্যাপের সেবা উপভোগ করতে দয়া করে আপনার ওপরের লিংক করা অ্যাকাউন্টটি ব্যবহার করুন।",
+                            color      = Color(0xFF64748B),
+                            fontSize   = 12.sp,
+                            lineHeight = 18.sp
+                        )
+
+                        // ── বাটন রো (ঠিক আছে) ───────────────────
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
                         ) {
-                            TextButton(onClick = { viewModel.dismissDeviceBoundDialog() }) {
-                                Text(
-                                    text       = "ফিরে যান",
-                                    color      = Color(0xFF64748B),
-                                    fontSize   = 13.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
                             Button(
-                                onClick        = {
-                                    viewModel.dismissDeviceBoundDialog()
-                                    val waLink = uiState.whatsappSupportLink
-                                    val tgLink = uiState.telegramSupportLink
-                                    val finalUrl = when {
-                                        waLink.isNotBlank() -> {
-                                            val raw = waLink.trim()
-                                            if (raw.startsWith("http://") || raw.startsWith("https://")) raw
-                                            else if (raw.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }) "https://wa.me/${raw.filter { it.isDigit() }}"
-                                            else "https://wa.me/$raw"
-                                        }
-                                        tgLink.isNotBlank() -> {
-                                            val raw = tgLink.trim()
-                                            if (raw.startsWith("http://") || raw.startsWith("https://")) raw
-                                            else "https://$raw"
-                                        }
-                                        else -> "https://wa.me/8801700000000"
-                                    }
-                                    try {
-                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
-                                        context.startActivity(intent)
-                                    } catch (e: Exception) {
-                                        // Ignore
-                                    }
-                                },
+                                onClick        = { viewModel.dismissDeviceBoundDialog() },
                                 colors         = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
                                 shape          = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)
+                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
                             ) {
                                 Text(
-                                    text       = "সাবস্ক্রিপশন কিনুন (Support)",
+                                    text       = "ঠিক আছে",
                                     color      = Color.White,
                                     fontSize   = 13.sp,
                                     fontWeight = FontWeight.Bold

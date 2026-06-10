@@ -29,7 +29,7 @@ async function validateDevice(deviceId, userId = null) {
   const dev = rows[0];
   const expired = dev.trial_expires_at && new Date(dev.trial_expires_at) < new Date();
   if (dev.is_trial_locked || expired) {
-    return { valid: false, reason: 'TRIAL_EXPIRED_FOR_DEVICE', userId: dev.user_id };
+    return { valid: false, reason: 'DEVICE_ALREADY_BOUND', userId: dev.user_id };
   }
   if (userId && dev.user_id !== userId) {
     return { valid: false, reason: 'DEVICE_BOUND_TO_OTHER_USER', userId: dev.user_id };
