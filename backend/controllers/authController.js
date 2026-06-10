@@ -670,11 +670,6 @@ async function completeProfile(req, res) {
   }
 }
 
-/**
- * Helper: Checks if the device signature matches any registered device trial lock,
- * or if it is logged in device_trial_logs as having consumed a trial.
- * Returns: { abused: Boolean, userId: Number|null }
- */
 async function isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds, targetUserId = null) {
   try {
     const safeDeviceId = deviceId || '';
@@ -682,61 +677,78 @@ async function isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotId
     const safeHardwareFingerprint = hardwareFingerprint || '';
     const safeSimSlotIds = simSlotIds || '';
 
-    // 1. Check if the device exists in registered_devices and is trial locked or expired
+    let linkedUserId = null;
+    let isLockedOrExpired = false;
+
+    // 1. Check if the device exists in registered_devices
     if (safeDeviceId) {
       const devices = await query(
-        'SELECT id, user_id, trial_expires_at, is_trial_locked FROM registered_devices WHERE device_id = ? LIMIT 1',
+        'SELECT user_id, trial_expires_at, is_trial_locked FROM registered_devices WHERE device_id = ? LIMIT 1',
         [safeDeviceId]
       );
       if (devices && devices.length > 0) {
         const dev = devices[0];
+        linkedUserId = dev.user_id || null;
         const expired = dev.trial_expires_at && new Date(dev.trial_expires_at) < new Date();
         if (dev.is_trial_locked || expired) {
-          // If this is the owner logging back into their own account, exempt them from the lock block
-          if (targetUserId !== null && dev.user_id === targetUserId) {
-            // Owner bypasses the block
-          } else {
-            return { abused: true, userId: dev.user_id || null };
-          }
+          isLockedOrExpired = true;
         }
       }
     }
 
-    // 2. Check if any of the three identifiers match device_trial_logs with has_used_trial = 1
-    const checkFields = [];
-    const checkParams = [];
-    
-    if (safeAndroidId && safeAndroidId !== 'unknown_android_id' && safeAndroidId !== '') {
-      checkFields.push('android_id = ?');
-      checkParams.push(safeAndroidId);
-    }
-    if (safeHardwareFingerprint && safeHardwareFingerprint !== 'unknown_fingerprint' && safeHardwareFingerprint !== '') {
-      checkFields.push('hardware_fingerprint = ?');
-      checkParams.push(safeHardwareFingerprint);
-    }
-    
-    // Ignore empty or dummy sim_slot_ids
-    const isValidSimSlotId = safeSimSlotIds && 
-                             safeSimSlotIds !== 'no_sims' && 
-                             safeSimSlotIds !== 'no_sim' && 
-                             safeSimSlotIds !== 'permission_denied' && 
-                             safeSimSlotIds !== 'unknown' &&
-                             safeSimSlotIds !== '';
-    if (isValidSimSlotId) {
-      checkFields.push('sim_slot_ids = ?');
-      checkParams.push(safeSimSlotIds);
+    // 2. Check if the device exists in device_trial_logs
+    if (!linkedUserId) {
+      const checkFields = [];
+      const checkParams = [];
+      
+      if (safeAndroidId && safeAndroidId !== 'unknown_android_id' && safeAndroidId !== '') {
+        checkFields.push('android_id = ?');
+        checkParams.push(safeAndroidId);
+      }
+      if (safeHardwareFingerprint && safeHardwareFingerprint !== 'unknown_fingerprint' && safeHardwareFingerprint !== '') {
+        checkFields.push('hardware_fingerprint = ?');
+        checkParams.push(safeHardwareFingerprint);
+      }
+      
+      const isValidSimSlotId = safeSimSlotIds && 
+                               safeSimSlotIds !== 'no_sims' && 
+                               safeSimSlotIds !== 'no_sim' && 
+                               safeSimSlotIds !== 'permission_denied' && 
+                               safeSimSlotIds !== 'unknown' &&
+                               safeSimSlotIds !== '';
+      if (isValidSimSlotId) {
+        checkFields.push('sim_slot_ids = ?');
+        checkParams.push(safeSimSlotIds);
+      }
+
+      if (checkFields.length > 0) {
+        const queryStr = `SELECT user_id FROM device_trial_logs WHERE (${checkFields.join(' OR ')}) AND has_used_trial = 1 LIMIT 1`;
+        const logs = await query(queryStr, checkParams);
+        if (logs && logs.length > 0) {
+          linkedUserId = logs[0].user_id || null;
+        }
+      }
     }
 
-    if (checkFields.length > 0) {
-      const queryStr = `SELECT id, user_id FROM device_trial_logs WHERE (${checkFields.join(' OR ')}) AND has_used_trial = 1 LIMIT 1`;
-      const logs = await query(queryStr, checkParams);
-      if (logs && logs.length > 0) {
-        const matchedUserId = logs[0].user_id || null;
-        // If this is the owner logging back into their own account, exempt them from the lock block
-        if (targetUserId !== null && matchedUserId === targetUserId) {
-          // Owner bypasses the block
+    // If there is a linked user for this device:
+    if (linkedUserId) {
+      if (targetUserId !== null) {
+        // If a contact ID is provided, verify ownership
+        if (parseInt(targetUserId, 10) === parseInt(linkedUserId, 10)) {
+          // Owner is allowed to bypass and log back in
+          return { abused: false, userId: null };
         } else {
-          return { abused: true, userId: matchedUserId };
+          // Trying to access another account or register a new one: Block!
+          console.log(`[Device Binding] Blocked device usage. Target user ${targetUserId} !== Linked owner ${linkedUserId}`);
+          return { abused: true, userId: linkedUserId };
+        }
+      } else {
+        // If checking device trial / login on app startup (targetUserId is null):
+        // Block only if the device has expired or is trial-locked
+        if (isLockedOrExpired) {
+          return { abused: true, userId: linkedUserId };
+        } else {
+          return { abused: false, userId: null };
         }
       }
     }
