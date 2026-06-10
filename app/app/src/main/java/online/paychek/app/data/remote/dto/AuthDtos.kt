@@ -1,118 +1,120 @@
 package online.paychek.app.data.remote.dto
 
-import online.paychek.app.domain.model.DeviceStatus
+import com.google.gson.annotations.SerializedName
 
-data class CheckContactRequest(
-    val contact: String,
+data class ContactCheckRequest(
+    @SerializedName("contact") val contact: String = "",
     // Device hardware signature — sent for server-side device-binding gatekeeper
-    val deviceId: String? = null,
-    val fingerprint: String? = null,
-    val androidId: String? = null,
-    val hardwareFingerprint: String? = null,
-    val simSlotIds: String? = null
+    @SerializedName("deviceId") val deviceId: String? = null,
+    @SerializedName("fingerprint") val fingerprint: String? = null,
+    @SerializedName("androidId") val androidId: String? = null,
+    @SerializedName("hardwareFingerprint") val hardwareFingerprint: String? = null,
+    @SerializedName("simSlotIds") val simSlotIds: String? = null
 )
 
-data class CheckContactResponse(
-    val exists: Boolean
+data class ContactCheckResponse(
+    @SerializedName("exists") val exists: Boolean = false
 )
 
 data class SendOtpRequest(
-    val contact: String,
-    val deviceId: String,
-    val androidId: String? = null,
-    val hardwareFingerprint: String? = null,
-    val simSlotIds: String? = null
+    @SerializedName("contact") val contact: String = "",
+    @SerializedName("deviceId") val deviceId: String = "",
+    @SerializedName("androidId") val androidId: String? = null,
+    @SerializedName("hardwareFingerprint") val hardwareFingerprint: String? = null,
+    @SerializedName("simSlotIds") val simSlotIds: String? = null
 )
 
 data class OtpResponse(
-    val success: Boolean,
-    val message: String?
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("message") val message: String? = null
 )
 
 data class VerifyOtpRequest(
-    val contact: String,
-    val code: String,
-    val deviceId: String,
-    val deviceModel: String,
-    val androidVersion: String,
-    val fingerprint: String,
-    val androidId: String? = null,
-    val hardwareFingerprint: String? = null,
-    val simSlotIds: String? = null
+    @SerializedName("contact") val contact: String = "",
+    @SerializedName("code") val code: String = "",
+    @SerializedName("deviceId") val deviceId: String = "",
+    @SerializedName("deviceModel") val deviceModel: String = "",
+    @SerializedName("androidVersion") val androidVersion: String = "",
+    @SerializedName("fingerprint") val fingerprint: String = "",
+    @SerializedName("androidId") val androidId: String? = null,
+    @SerializedName("hardwareFingerprint") val hardwareFingerprint: String? = null,
+    @SerializedName("simSlotIds") val simSlotIds: String? = null
 )
 
 data class VerifyOtpResponse(
-    val token: String,
-    val user: UserDto,
-    val requiresSecurityPin: Boolean,
-    val device: DeviceDto
+    @SerializedName("token") val token: String = "",
+    @SerializedName("user") val user: UserDto = UserDto(),
+    @SerializedName("requiresSecurityPin") val requiresSecurityPin: Boolean = false,
+    @SerializedName("device") val device: DeviceDto = DeviceDto()
 )
 
 data class CompleteProfileRequest(
-    val name: String,
-    val pin: String,
-    val phone: String?,
-    val email: String?,
-    val deviceId: String? = null,
-    val androidId: String? = null,
-    val hardwareFingerprint: String? = null,
-    val simSlotIds: String? = null,
-    val fingerprint: String? = null
+    @SerializedName("name") val name: String = "",
+    @SerializedName("pin") val pin: String = "",
+    @SerializedName("phone") val phone: String? = null,
+    @SerializedName("email") val email: String? = null,
+    @SerializedName("deviceId") val deviceId: String? = null,
+    @SerializedName("androidId") val androidId: String? = null,
+    @SerializedName("hardwareFingerprint") val hardwareFingerprint: String? = null,
+    @SerializedName("simSlotIds") val simSlotIds: String? = null,
+    @SerializedName("fingerprint") val fingerprint: String? = null
 )
 
 data class CompleteProfileResponse(
-    val success: Boolean,
-    val user: UserDto
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("user") val user: UserDto = UserDto()
 )
 
-data class CheckDeviceTrialRequest(
-    val deviceId: String,
-    val fingerprint: String,
-    val androidId: String? = null,
-    val hardwareFingerprint: String? = null,
-    val simSlotIds: String? = null
+data class DeviceCheckRequest(
+    @SerializedName("deviceId") val deviceId: String = "",
+    @SerializedName("fingerprint") val fingerprint: String = "",
+    @SerializedName("androidId") val androidId: String? = null,
+    @SerializedName("hardwareFingerprint") val hardwareFingerprint: String? = null,
+    @SerializedName("simSlotIds") val simSlotIds: String? = null
 )
 
-data class CheckDeviceTrialResponse(
-    val trialAllowed: Boolean,
-    val isLocked: Boolean,
-    val lockReason: String?,
-    val success: Boolean? = null,
-    val abused: Boolean? = null,
-    val message: String? = null
+data class DeviceCheckResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("abused") val abused: Boolean = false,
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("trialAllowed") val trialAllowed: Boolean = false,
+    @SerializedName("isLocked") val isLocked: Boolean = false,
+    @SerializedName("lockReason") val lockReason: String? = null,
+    @SerializedName("boundPhones") val boundPhones: List<String> = emptyList(),
+    @SerializedName("boundEmails") val boundEmails: List<String> = emptyList()
 )
 
 // Simplified DTO wrappers to decouple API from Database/Domain layer if needed
 data class UserDto(
-    val id: Int,
-    val name: String,
-    val phone: String?,
-    val email: String?,
-    val role: String,
-    val balance: Double,
-    val blocked: Boolean,
-    val profileComplete: Boolean,
-    val smsEnabled: Boolean,
-    val gmailEnabled: Boolean
+    @SerializedName("id") val id: Int = 0,
+    @SerializedName("name") val name: String = "",
+    @SerializedName("phone") val phone: String? = null,
+    @SerializedName("email") val email: String? = null,
+    @SerializedName("role") val role: String = "",
+    @SerializedName("balance") val balance: Double = 0.0,
+    @SerializedName("blocked") val blocked: Boolean = false,
+    @SerializedName(value = "profileComplete", alternate = ["profile_complete"]) val profileComplete: Boolean = false,
+    @SerializedName(value = "smsEnabled", alternate = ["sms_enabled"]) val smsEnabled: Boolean = false,
+    @SerializedName(value = "gmailEnabled", alternate = ["gmail_enabled"]) val gmailEnabled: Boolean = false
 )
 
 data class DeviceDto(
-    val id: Int,
-    val userId: Int,
-    val deviceId: String,
-    val deviceName: String,
-    val status: String, // pending, active, rejected
-    val isParent: Boolean,
-    val isTrialLocked: Boolean,
-    val trialExpiresAt: String?,
-    val lockReason: String?
+    @SerializedName("id") val id: Int = 0,
+    @SerializedName("userId") val userId: Int = 0,
+    @SerializedName("deviceId") val deviceId: String = "",
+    @SerializedName("deviceName") val deviceName: String = "",
+    @SerializedName("status") val status: String = "", // pending, active, rejected
+    @SerializedName(value = "isParent", alternate = ["is_parent"]) val isParent: Boolean = false,
+    @SerializedName(value = "isTrialLocked", alternate = ["is_trial_locked"]) val isTrialLocked: Boolean = false,
+    @SerializedName(value = "trialExpiresAt", alternate = ["trial_expires_at"]) val trialExpiresAt: String? = null,
+    @SerializedName(value = "lockReason", alternate = ["lock_reason"]) val lockReason: String? = null
 )
 
 data class VerifyPinRequest(
-    val pin: String
+    @SerializedName("pin") val pin: String = ""
 )
 
 data class VerifyPinResponse(
-    val success: Boolean,
-    val message: String?
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("message") val message: String? = null
 )

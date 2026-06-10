@@ -248,9 +248,9 @@ fun LoginScreen(
     }
 
     // ── "ডিভাইস লিংকড" প্রিমিয়াম কাস্টম ডায়ালগ ─────────────
-    if (uiState.showTrialExpiredDialog) {
+    if (uiState.showDeviceBoundDialog) {
         Dialog(
-            onDismissRequest = { viewModel.dismissTrialExpiredDialog() }
+            onDismissRequest = { viewModel.dismissDeviceBoundDialog() }
         ) {
             Surface(
                 shape    = RoundedCornerShape(20.dp),
@@ -384,7 +384,7 @@ fun LoginScreen(
                             horizontalAlignment = Alignment.End,
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            TextButton(onClick = { viewModel.dismissTrialExpiredDialog() }) {
+                            TextButton(onClick = { viewModel.dismissDeviceBoundDialog() }) {
                                 Text(
                                     text       = "ফিরে যান",
                                     color      = Color(0xFF64748B),
@@ -394,7 +394,7 @@ fun LoginScreen(
                             }
                             Button(
                                 onClick        = {
-                                    viewModel.dismissTrialExpiredDialog()
+                                    viewModel.dismissDeviceBoundDialog()
                                     val waLink = uiState.whatsappSupportLink
                                     val tgLink = uiState.telegramSupportLink
                                     val finalUrl = when {

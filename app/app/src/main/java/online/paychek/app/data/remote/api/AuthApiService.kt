@@ -14,8 +14,8 @@ interface AuthApiService {
 
     @POST("check-contact")
     suspend fun checkContact(
-        @Body request: CheckContactRequest
-    ): Response<CheckContactResponse>
+        @Body request: ContactCheckRequest
+    ): Response<ContactCheckResponse>
 
     @POST("send-otp")
     suspend fun sendOtp(
@@ -43,10 +43,10 @@ interface AuthApiService {
         @Body request: CompleteProfileRequest
     ): Response<CompleteProfileResponse>
 
-    @POST("check-device-trial")
-    suspend fun checkDeviceTrial(
-        @Body request: CheckDeviceTrialRequest
-    ): Response<CheckDeviceTrialResponse>
+    @POST("check-device-login")
+    suspend fun checkDeviceLogin(
+        @Body request: DeviceCheckRequest
+    ): Response<DeviceCheckResponse>
 
     @POST("pin/verify")
     suspend fun verifyPin(

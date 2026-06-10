@@ -93,17 +93,12 @@ class LoginViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 // ══════════════════════════════════════════════════════════
-                // STEP 0 — DEVICE-BINDING GATEKEEPER (সবার আগে চলবে)
-                // Policy:
-                //   HTTP 403 → নিশ্চিতভাবে bound → block করো
-                //   HTTP 200 + isLocked/!trialAllowed → block করো
-                //   অন্য যেকোনো error (500, network fail) → proceed করো
-                //   (false-blocking legitimate users is worse than a rare miss)
+                // GATE 1 — DEVICE ELIGIBILITY CHECK (সবার আগে চলবে)
                 // ══════════════════════════════════════════════════════════
                 if (!isAdminBypass) {
                     try {
-                        val trialResponse = apiService.checkDeviceTrial(
-                            CheckDeviceTrialRequest(
+                        val deviceResponse = apiService.checkDeviceLogin(
+                            DeviceCheckRequest(
                                 deviceId            = deviceId,
                                 fingerprint         = fingerprint,
                                 androidId           = androidId,
@@ -112,66 +107,43 @@ class LoginViewModel : ViewModel() {
                             )
                         )
 
-                        when {
-                            // ── ✅ HTTP 403: ডিভাইস বাউন্ড — hard block ──────
-                            trialResponse.code() == 403 -> {
-                                val errorBody = trialResponse.errorBody()?.string()
-                                val (phones, emails) = parseBoundCredentials(errorBody)
-                                _uiState.update {
-                                    it.copy(
-                                        isLoading              = false,
-                                        showRegisterDialog     = false,
-                                        showTrialExpiredDialog = true,
-                                        boundPhones            = phones,
-                                        boundEmails            = emails
-                                    )
-                                }
-                                return@launch
-                            }
+                        val responseCode = deviceResponse.code()
+                        val responseBody = deviceResponse.body()
+                        val isForbidden = responseCode == 403
+                        
+                        val isAbused = responseBody?.abused == true || responseBody?.success == false || responseBody?.trialAllowed == false || responseBody?.isLocked == true
 
-                            // ── ✅ HTTP 200: body check ───────────────────────
-                            trialResponse.isSuccessful -> {
-                                val body = trialResponse.body()
-                                if (body != null) {
-                                    if (body.success == true && body.abused == false) {
-                                        // clean device → proceed to step 1
-                                    } else if (!body.trialAllowed || body.isLocked || body.abused == true) {
-                                        _uiState.update {
-                                            it.copy(
-                                                isLoading              = false,
-                                                showRegisterDialog     = false,
-                                                showTrialExpiredDialog = true
-                                            )
-                                        }
-                                        return@launch
-                                    }
-                                }
-                                // trialAllowed = true → proceed
-                            }
+                        if (isForbidden || isAbused) {
+                            val errorBody = deviceResponse.errorBody()?.string()
+                            val parsedCreds = parseBoundCredentials(errorBody ?: responseBody?.message)
+                            val phones = if (parsedCreds.first.isNotEmpty()) parsedCreds.first else responseBody?.boundPhones ?: emptyList()
+                            val emails = if (parsedCreds.second.isNotEmpty()) parsedCreds.second else responseBody?.boundEmails ?: emptyList()
 
-                            // ── ⚠️ অন্য যেকোনো error (500, network) → proceed ──
-                            else -> {
-                                // সার্ভার সাময়িক সমস্যায় — user-কে block করব না,
-                                // check-contact-এ backend double-check আছে
-                                android.util.Log.w(
-                                    "DeviceGatekeeper",
-                                    "check-device-trial returned ${trialResponse.code()} — proceeding with caution"
+                            _uiState.update {
+                                it.copy(
+                                    isLoading              = false,
+                                    showRegisterDialog     = false,
+                                    showDeviceBoundDialog  = true,
+                                    boundPhones            = phones,
+                                    boundEmails            = emails
                                 )
                             }
+                            return@launch
                         }
                     } catch (gateEx: Exception) {
-                        // Network error — proceed, backend check-contact-এ double-check আছে
+                        // Network error / local failure on checking device login
                         android.util.Log.w(
                             "DeviceGatekeeper",
-                            "check-device-trial network error: ${gateEx.localizedMessage} — proceeding"
+                            "checkDeviceLogin error: ${gateEx.localizedMessage} — proceeding with caution"
                         )
                     }
                 }
-                // ── ডিভাইস ক্লিন বা check করা সম্ভব হয়নি — পরবর্তী ধাপে ──
 
-                // STEP 1 — কন্টাক্ট ডাটাবেজে আছে কি না চেক (Backend Double-Check সহ)
+                // ══════════════════════════════════════════════════════════
+                // GATE 2 — CONTACT EXIST CHECK
+                // ══════════════════════════════════════════════════════════
                 val checkResponse = apiService.checkContact(
-                    CheckContactRequest(
+                    ContactCheckRequest(
                         contact             = contact,
                         deviceId            = deviceId,
                         fingerprint         = fingerprint,
@@ -180,12 +152,13 @@ class LoginViewModel : ViewModel() {
                         simSlotIds          = simSlotIds
                     )
                 )
+
                 if (checkResponse.isSuccessful && checkResponse.body() != null) {
                     val exists = checkResponse.body()!!.exists
                     _uiState.update { it.copy(isNewUser = !exists) }
 
                     if (!exists) {
-                        // নতুন ইউজার → "নতুন অ্যাকাউন্ট তৈরি করুন" ডায়ালগ
+                        // নতুন ইউজার → "অ্যাকাউন্ট পাওয়া যায়নি" ডায়ালগ
                         _uiState.update {
                             it.copy(
                                 isLoading          = false,
@@ -193,7 +166,7 @@ class LoginViewModel : ViewModel() {
                             )
                         }
                     } else {
-                        // পুরনো ইউজার → OTP পাঠাও
+                        // পুরনো ইউজার → OTP পাঠাও সরাসরি (কোনো পপআপ ছাড়া)
                         sendOtpApi(
                             contact = contact,
                             deviceId = deviceId,
@@ -210,8 +183,8 @@ class LoginViewModel : ViewModel() {
                     _uiState.update {
                         it.copy(
                             isLoading              = false,
-                            showRegisterDialog     = false, // "নতুন অ্যাকাউন্ট" ডায়ালগ নিষিদ্ধ
-                            showTrialExpiredDialog = true,
+                            showRegisterDialog     = false,
+                            showDeviceBoundDialog  = true,
                             boundPhones            = phones,
                             boundEmails            = emails
                         )
@@ -246,7 +219,7 @@ class LoginViewModel : ViewModel() {
             simSlotIds = simSlotIds
         )
         val response = if (isNew) {
-            apiService.registerSendOtp(request)
+            apiService.sendOtpNew(request)
         } else {
             apiService.sendOtp(request)
         }
@@ -268,7 +241,7 @@ class LoginViewModel : ViewModel() {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        showTrialExpiredDialog = true,
+                        showDeviceBoundDialog = true,
                         boundPhones = phones,
                         boundEmails = emails
                     )
@@ -322,14 +295,13 @@ class LoginViewModel : ViewModel() {
         _uiState.update { it.copy(showRegisterDialog = false) }
     }
 
-    fun dismissTrialExpiredDialog() {
-        _uiState.update { it.copy(showTrialExpiredDialog = false) }
+    fun dismissDeviceBoundDialog() {
+        _uiState.update { it.copy(showDeviceBoundDialog = false) }
     }
 
     fun proceedToRegister(context: Context) {
         val contact = _uiState.value.contact.trim()
         val deviceId = DeviceIdHelper.getHashedAndroidId(context)
-        val fingerprint = DeviceIdHelper.getHashedFingerprint()
         val androidId = DeviceIdHelper.getAndroidId(context)
         val hardwareFingerprint = DeviceIdHelper.getBuildFingerprint()
         val simSlotIds = DeviceIdHelper.getSimSlotIds(context)
@@ -344,63 +316,7 @@ class LoginViewModel : ViewModel() {
 
         viewModelScope.launch {
             try {
-                // 1. Perform Device Trial Check to prevent trial abuse
-                val trialResponse = apiService.checkDeviceTrial(
-                    CheckDeviceTrialRequest(
-                        deviceId = deviceId,
-                        fingerprint = fingerprint,
-                        androidId = androidId,
-                        hardwareFingerprint = hardwareFingerprint,
-                        simSlotIds = simSlotIds
-                    )
-                )
-
-                if (trialResponse.isSuccessful && trialResponse.body() != null) {
-                    val trialData = trialResponse.body()!!
-                    if (trialData.success == true && trialData.abused == false) {
-                        // clean device → proceed
-                    } else if (!trialData.trialAllowed || trialData.isLocked || trialData.abused == true) {
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                showTrialExpiredDialog = true
-                            )
-                        }
-                        return@launch
-                    }
-                } else if (trialResponse.code() == 403) {
-                    val errorBody = trialResponse.errorBody()?.string()
-                    val isTrialAbused = errorBody?.contains("TRIAL_EXPIRED_FOR_DEVICE") == true
-                    if (isTrialAbused) {
-                        val (phones, emails) = parseBoundCredentials(errorBody)
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                showTrialExpiredDialog = true,
-                                boundPhones = phones,
-                                boundEmails = emails
-                            )
-                        }
-                    } else {
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                errorMessage = "ডিভাইস ট্রায়াল যাচাই করতে ব্যর্থ হয়েছে।"
-                            )
-                        }
-                    }
-                    return@launch
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            errorMessage = "ডিভাইস ট্রায়াল যাচাই করতে ব্যর্থ হয়েছে। আবার চেষ্টা করুন।"
-                        )
-                    }
-                    return@launch
-                }
-
-                // 2. Send Registration OTP
+                // সরাসরি নতুন অ্যাকাউন্ট তৈরি করার জন্য ওটিপি পাঠাও
                 _uiState.update { it.copy(isNewUser = true) }
                 sendOtpApi(
                     contact = contact,
@@ -471,7 +387,7 @@ class LoginViewModel : ViewModel() {
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
-                                showTrialExpiredDialog = true,
+                                showDeviceBoundDialog = true,
                                 boundPhones = phones,
                                 boundEmails = emails
                             )
@@ -548,7 +464,7 @@ data class LoginUiState(
     val isNewUser: Boolean = false,
     val isTrialBlocked: Boolean = false,
     val showRegisterDialog: Boolean = false,
-    val showTrialExpiredDialog: Boolean = false,
+    val showDeviceBoundDialog: Boolean = false,
     val boundPhones: List<String> = emptyList(),
     val boundEmails: List<String> = emptyList(),
     val errorMessage: String? = null,
