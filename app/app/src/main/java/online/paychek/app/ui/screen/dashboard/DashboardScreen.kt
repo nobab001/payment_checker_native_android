@@ -1,5 +1,7 @@
 package online.paychek.app.ui.screen.dashboard
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -127,7 +129,15 @@ fun DashboardScreen(
                 item {
                     WalletBalanceCard(
                         balance = successStats.walletCredits,
-                        onRechargeClick = { showRechargeDialog = true },
+                        onRechargeClick = {
+                            try {
+                                val url = "${online.paychek.app.config.AppConfig.BASE_URL}checkout_gateway.html?apiKey=test_merchant_key&amount=50.00"
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                android.widget.Toast.makeText(context, "ব্রাউজার ওপেন করা সম্ভব হয়নি।", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        },
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
@@ -795,7 +805,7 @@ private fun WalletBalanceCard(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "রিচার্জ",
+                    text = "Add Balance",
                     color = Color(0xFF0F172A),
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp
