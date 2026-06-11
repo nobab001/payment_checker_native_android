@@ -19,6 +19,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.window.DialogProperties
 import online.paychek.app.data.remote.dto.CredentialItem
 import online.paychek.app.data.repository.CredentialRepository
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -192,20 +195,28 @@ fun ProfileCredentialsCard(
     }
 
     if (showAddDialog) {
-        Dialog(onDismissRequest = {
-            showAddDialog = false
-            viewModel.clearError()
-        }) {
+        Dialog(
+            onDismissRequest = {
+                showAddDialog = false
+                viewModel.clearError()
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = true)
+        ) {
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = PsCardAlt),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(8.dp)
+                    .padding(horizontal = 8.dp)
+                    .wrapContentHeight()
             ) {
+                val scrollState = rememberScrollState()
                 Column(
-                    modifier = Modifier.padding(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    modifier = Modifier
+                        .padding(20.dp)
+                        .verticalScroll(scrollState),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
                         text = if (!viewModel.isOtpSentForLinking) "নতুন ক্রেডেনশিয়াল যোগ" else "ওটিপি যাচাই করুন",
@@ -213,7 +224,6 @@ fun ProfileCredentialsCard(
                         color = TextW,
                         fontSize = 18.sp
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
 
                     if (!viewModel.isOtpSentForLinking) {
                         OutlinedTextField(
@@ -281,7 +291,7 @@ fun ProfileCredentialsCard(
                                             .background(
                                                 color = if (char.isNotEmpty()) Color.White.copy(0.05f) else PsCardAlt,
                                                 shape = RoundedCornerShape(10.dp)
-                                            )
+                                             )
                                             .border(
                                                 width = if (isFocused) 2.dp else 1.dp,
                                                 color = if (isFocused) PsCyan else PsCardAlt,
@@ -303,7 +313,6 @@ fun ProfileCredentialsCard(
                     }
 
                     viewModel.errorMessage?.let { error ->
-                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = error,
                             color = PsRed,
@@ -313,19 +322,24 @@ fun ProfileCredentialsCard(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
-
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(onClick = {
-                            showAddDialog = false
-                            viewModel.clearError()
-                        }) {
-                            Text("বাতিল", color = TextM)
+                        OutlinedButton(
+                            onClick = {
+                                showAddDialog = false
+                                viewModel.clearError()
+                            },
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, PsCyan.copy(alpha = 0.5f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextM),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(vertical = 12.dp)
+                        ) {
+                            Text("বাতিল")
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
                         Button(
                             onClick = {
                                 if (!viewModel.isOtpSentForLinking) {
@@ -337,11 +351,15 @@ fun ProfileCredentialsCard(
                                     }
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = PsCyan)
+                            colors = ButtonDefaults.buttonColors(containerColor = PsCyan),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(vertical = 12.dp)
                         ) {
                             Text(
                                 text = if (!viewModel.isOtpSentForLinking) "কোড পাঠান" else "যাচাই করুন",
-                                color = PsCard
+                                color = PsCard,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
@@ -350,10 +368,13 @@ fun ProfileCredentialsCard(
         }
     }
     if (showPinDeleteDialog) {
-        Dialog(onDismissRequest = {
-            showPinDeleteDialog = false
-            viewModel.clearError()
-        }) {
+        Dialog(
+            onDismissRequest = {
+                showPinDeleteDialog = false
+                viewModel.clearError()
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = true)
+        ) {
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = PsCardAlt),
@@ -362,7 +383,9 @@ fun ProfileCredentialsCard(
                     .padding(8.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(20.dp),
+                    modifier = Modifier
+                        .padding(20.dp)
+                        .verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
@@ -411,15 +434,17 @@ fun ProfileCredentialsCard(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        TextButton(onClick = {
-                            showPinDeleteDialog = false
-                            viewModel.clearError()
-                        }) {
+                        TextButton(
+                            onClick = {
+                                showPinDeleteDialog = false
+                                viewModel.clearError()
+                            },
+                            modifier = Modifier.weight(1f).fillMaxWidth()
+                        ) {
                             Text("বাতিল", color = TextM)
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
                         Button(
                             onClick = {
                                 credentialIdToDelete?.let { id ->
@@ -429,7 +454,8 @@ fun ProfileCredentialsCard(
                                     }
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = PsCyan)
+                            colors = ButtonDefaults.buttonColors(containerColor = PsCyan),
+                            modifier = Modifier.weight(1f).fillMaxWidth()
                         ) {
                             Text(
                                 text = "নিশ্চিত করুন",
@@ -439,8 +465,8 @@ fun ProfileCredentialsCard(
                     }
                 }
             }
+        }
     }
-}
 
 }
 

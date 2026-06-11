@@ -18,6 +18,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -868,11 +870,13 @@ private fun ExpiryReminderDialog(
             )
         },
         text = {
-            Text(
-                text = "আপনার বর্তমান সাবস্ক্রিপশন মেয়াদের আর মাত্র $daysRemaining দিন বাকি আছে। সার্ভিস সচল রাখতে এবং পেমেন্ট মনিটরিং অব্যাহত রাখতে অনুগ্রহ করে আপনার প্যাকেজটি রিনিউ করুন।",
-                color = TextWhite,
-                fontSize = 14.sp
-            )
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    text = "আপনার বর্তমান সাবস্ক্রিপশন মেয়াদের আর মাত্র $daysRemaining দিন বাকি আছে। সার্ভিস সচল রাখতে এবং পেমেন্ট মনিটরিং অব্যাহত রাখতে অনুগ্রহ করে আপনার প্যাকেজটি রিনিউ করুন।",
+                    color = TextWhite,
+                    fontSize = 14.sp
+                )
+            }
         },
         confirmButton = {
             TextButton(
@@ -1008,7 +1012,9 @@ fun SubscriptionPurchaseDialog(
             } else {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
                 ) {
                     Text(
                         "আপনার পেমেন্ট গেটওয়ে এবং সার্ভিস সচল রাখতে যেকোনো একটি প্যাকেজ বেছে নিন:",

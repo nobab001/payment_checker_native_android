@@ -32,6 +32,9 @@ import androidx.compose.material.icons.filled.Support
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -118,17 +121,24 @@ fun LoginScreen(
     // ── "ডিভাইস লিংক নোটিশ" প্রিমিয়াম কাস্টম ডায়ালগ ─────────────
     if (uiState.showDeviceBoundDialog) {
         Dialog(
-            onDismissRequest = { viewModel.dismissDeviceBoundDialog() }
+            onDismissRequest = { viewModel.dismissDeviceBoundDialog() },
+            properties = DialogProperties(usePlatformDefaultWidth = true)
         ) {
             Surface(
                 shape    = RoundedCornerShape(20.dp),
                 color    = Color.White,
                 tonalElevation = 8.dp,
                 modifier = Modifier
-                    .width(300.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
                     .wrapContentHeight()
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                val scrollState = rememberScrollState()
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(scrollState)
+                ) {
 
                     // ── রয়্যাল ইন্ডিগো শীর্ষ ব্যান্ড ─────────────────────────
                     Box(
@@ -254,23 +264,19 @@ fun LoginScreen(
                         )
 
                         // ── বাটন রো (ঠিক আছে) ───────────────────
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
+                        Button(
+                            onClick        = { viewModel.dismissDeviceBoundDialog() },
+                            colors         = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
+                            shape          = RoundedCornerShape(10.dp),
+                            modifier       = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(vertical = 12.dp)
                         ) {
-                            Button(
-                                onClick        = { viewModel.dismissDeviceBoundDialog() },
-                                colors         = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
-                                shape          = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
-                            ) {
-                                Text(
-                                    text       = "ঠিক আছে",
-                                    color      = Color.White,
-                                    fontSize   = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+                            Text(
+                                text       = "ঠিক আছে",
+                                color      = Color.White,
+                                fontSize   = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
@@ -748,20 +754,27 @@ fun PremiumRegisterDialog(
     onDismiss: () -> Unit,
     onRegisterClick: () -> Unit
 ) {
-    Dialog(onDismissRequest = onDismiss) {
-        Box(
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = true)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = Color(0xFFFAF9F6),
+            tonalElevation = 6.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color(0xFFFAF9F6)) // সফট অফ-হোয়াইট ব্যাকগ্রাউন্ড
-                .padding(24.dp)
+                .wrapContentHeight()
         ) {
+            val scrollState = rememberScrollState()
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+                    .padding(24.dp),
                 horizontalAlignment = Alignment.Start
             ) {
-                // ১. শিরোনাম (Title) - একদম ছিমছাম ও প্রফেশনাল
                 Text(
                     text = "অ্যাকাউন্ট পাওয়া যায়নি",
                     fontSize = 18.sp,
@@ -770,7 +783,6 @@ fun PremiumRegisterDialog(
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
 
-                // ২. মূল লেখা (Body Micro-copy) - টু দ্য পয়েন্ট, কোনো বাড়তি লেখা নেই
                 Text(
                     text = "এই জিমেইল/নম্বরটি আমাদের সিস্টেমে নিবন্ধিত নেই। আপনি কি একটি নতুন অ্যাকাউন্ট তৈরি করতে চান?",
                     fontSize = 14.sp,
@@ -779,43 +791,40 @@ fun PremiumRegisterDialog(
                     modifier = Modifier.padding(bottom = 28.dp)
                 )
 
-                // ৩. বাটন লেআউট (দুই কোণায় ছোট আকারে চাপানো রো)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // বাম পাশের বাটন (ধূসর/বর্ডার টেক্সট: বাতিল করুন)
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .border(1.dp, Color(0xFFC2C7CE), RoundedCornerShape(12.dp))
-                            .clickable { onDismiss() }
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        contentAlignment = Alignment.Center
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFC2C7CE)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF616161)),
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        contentPadding = PaddingValues(vertical = 12.dp, horizontal = 8.dp)
                     ) {
                         Text(
                             text = "বাতিল করুন",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF616161) // দৃষ্টিনন্দন ধূসর শেড
+                            textAlign = TextAlign.Center
                         )
                     }
 
-                    // ডান পাশের বাটন (ছোট গাঢ় নীল/বেগুনী বাটন: নতুন অ্যাকাউন্ট)
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFF3F51B5)) // রাজকীয় গাঢ় নীল/বেগুনী কালার টোন
-                            .clickable { onRegisterClick() }
-                            .padding(horizontal = 20.dp, vertical = 10.dp),
-                        contentAlignment = Alignment.Center
+                    Button(
+                        onClick = onRegisterClick,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3F51B5)),
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        contentPadding = PaddingValues(vertical = 12.dp, horizontal = 8.dp)
                     ) {
                         Text(
                             text = "নতুন অ্যাকাউন্ট",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White // হোয়াইট টেক্সট কন্ট্রাস্ট
+                            color = Color.White,
+                            textAlign = TextAlign.Center
                         )
                     }
                 }

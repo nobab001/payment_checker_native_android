@@ -526,12 +526,18 @@ private fun AddCredentialDialog(
     val icon    = if (isPhone) Icons.Default.PhoneAndroid else Icons.Default.Email
     val accent  = if (isPhone) RoyalIndigo else Color(0xFF0EA5E9)
 
-    Dialog(onDismissRequest = { viewModel.dismissAddCredentialDialog() }) {
+    Dialog(
+        onDismissRequest = { viewModel.dismissAddCredentialDialog() },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = true)
+    ) {
         Surface(
             shape          = RoundedCornerShape(20.dp),
             color          = PsCard,
             tonalElevation = 8.dp,
-            modifier       = Modifier.width(320.dp).wrapContentHeight()
+            modifier       = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .wrapContentHeight()
         ) {
             Column {
                 // Header band
@@ -550,7 +556,13 @@ private fun AddCredentialDialog(
                     }
                 }
 
-                Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                val innerScrollState = rememberScrollState()
+                Column(
+                    modifier = Modifier
+                        .padding(20.dp)
+                        .verticalScroll(innerScrollState),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
                     // Contact input
                     PsTextField(
                         value       = state.addCredentialContact,
@@ -639,11 +651,19 @@ private fun AddCredentialDialog(
 
                     // Buttons
                     Row(
-                        modifier            = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(onClick = { viewModel.dismissAddCredentialDialog() }) {
-                            Text("বাতিল", color = TextM)
+                        OutlinedButton(
+                            onClick = { viewModel.dismissAddCredentialDialog() },
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, PsCyan.copy(alpha = 0.5f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextM),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            contentPadding = PaddingValues(vertical = 12.dp)
+                        ) {
+                            Text("বাতিল")
                         }
                         Button(
                             onClick = {
@@ -651,7 +671,9 @@ private fun AddCredentialDialog(
                                 else viewModel.verifyCredential()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = accent),
-                            shape  = RoundedCornerShape(10.dp)
+                            shape  = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            contentPadding = PaddingValues(vertical = 12.dp)
                         ) {
                             Text(
                                 if (!state.addCredentialOtpSent) "OTP পাঠান"
@@ -677,12 +699,15 @@ private fun ChangePinDialog(
     state: ProfileSettingsState,
     viewModel: ProfileSettingsViewModel
 ) {
-    Dialog(onDismissRequest = { viewModel.dismissChangePinDialog() }) {
+    Dialog(
+        onDismissRequest = { viewModel.dismissChangePinDialog() },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = true)
+    ) {
         Surface(
             shape          = RoundedCornerShape(20.dp),
             color          = PsCard,
             tonalElevation = 8.dp,
-            modifier       = Modifier.width(320.dp).wrapContentHeight()
+            modifier       = Modifier.fillMaxWidth().padding(horizontal = 16.dp).wrapContentHeight()
         ) {
             Column {
                 Box(
@@ -701,19 +726,40 @@ private fun ChangePinDialog(
                     }
                 }
 
-                Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                val scrollState = rememberScrollState()
+                Column(
+                    modifier = Modifier
+                        .padding(20.dp)
+                        .verticalScroll(scrollState),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     PinField("পুরানো PIN (৪-৬ ডিজিট)", state.changePinOld, viewModel::onChangePinOldChange)
                     PinField("নতুন PIN (৪-৬ ডিজিট)", state.changePinNew, viewModel::onChangePinNewChange)
                     PinField("নতুন PIN নিশ্চিত করুন", state.changePinConfirm, viewModel::onChangePinConfirmChange)
 
                     state.errorMessage?.let { Text(it, color = PsRed, fontSize = 12.sp) }
 
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                        TextButton(onClick = { viewModel.dismissChangePinDialog() }) { Text("বাতিল", color = TextM) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = { viewModel.dismissChangePinDialog() },
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, PsCyan.copy(alpha = 0.5f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextM),
+                            contentPadding = PaddingValues(vertical = 12.dp)
+                        ) {
+                            Text("বাতিল")
+                        }
                         Button(
                             onClick = { viewModel.submitChangePin() },
                             colors  = ButtonDefaults.buttonColors(containerColor = PsAmber),
-                            shape   = RoundedCornerShape(10.dp)
+                            shape   = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            contentPadding = PaddingValues(vertical = 12.dp)
                         ) {
                             Text("সংরক্ষণ করুন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
@@ -733,12 +779,15 @@ private fun ResetPinDialog(
     state: ProfileSettingsState,
     viewModel: ProfileSettingsViewModel
 ) {
-    Dialog(onDismissRequest = { viewModel.dismissResetPinDialog() }) {
+    Dialog(
+        onDismissRequest = { viewModel.dismissResetPinDialog() },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = true)
+    ) {
         Surface(
             shape          = RoundedCornerShape(20.dp),
             color          = PsCard,
             tonalElevation = 8.dp,
-            modifier       = Modifier.width(320.dp).wrapContentHeight()
+            modifier       = Modifier.fillMaxWidth().padding(horizontal = 16.dp).wrapContentHeight()
         ) {
             Column {
                 Box(
@@ -757,7 +806,13 @@ private fun ResetPinDialog(
                     }
                 }
 
-                Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                val scrollState = rememberScrollState()
+                Column(
+                    modifier = Modifier
+                        .padding(20.dp)
+                        .verticalScroll(scrollState),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     PsTextField(
                         value         = state.resetPinContact,
                         onValueChange = { viewModel.onResetPinContactChange(it) },
@@ -832,15 +887,30 @@ private fun ResetPinDialog(
 
                     state.errorMessage?.let { Text(it, color = PsRed, fontSize = 12.sp) }
 
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                        TextButton(onClick = { viewModel.dismissResetPinDialog() }) { Text("বাতিল", color = TextM) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = { viewModel.dismissResetPinDialog() },
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, PsCyan.copy(alpha = 0.5f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextM),
+                            contentPadding = PaddingValues(vertical = 12.dp)
+                        ) {
+                            Text("বাতিল")
+                        }
                         Button(
                             onClick = {
                                 if (!state.resetPinOtpSent) viewModel.sendResetPinOtp()
                                 else viewModel.submitResetPin()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = PsGreen),
-                            shape  = RoundedCornerShape(10.dp)
+                            shape  = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            contentPadding = PaddingValues(vertical = 12.dp)
                         ) {
                             Text(
                                 if (!state.resetPinOtpSent) "OTP পাঠান" else "PIN রিসেট করুন",

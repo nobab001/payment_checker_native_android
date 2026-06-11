@@ -3,6 +3,8 @@ package online.paychek.app.ui.screen.apicenter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -588,7 +590,9 @@ fun CheckoutDesignerScreen(
             text = {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
                 ) {
                     Text("এখানে সিম-১ ও সিম-২ কোন পেমেন্ট গেটওয়ের সাথে যুক্ত তা সিলেক্ট করুন:", fontSize = 12.sp, color = TextSecondary)
                     

@@ -76,4 +76,10 @@ interface GatewayApiService {
     suspend fun checkApprovalStatus(
         @Header("Authorization") token: String
     ): Response<ApprovalStatusResponse>
+
+    @POST("v1/devices/toggle-remote-role")
+    suspend fun toggleRemoteRole(
+        @Header("Authorization") token: String,
+        @Body request: ToggleRemoteRoleRequest
+    ): Response<BasicResponse>
 }

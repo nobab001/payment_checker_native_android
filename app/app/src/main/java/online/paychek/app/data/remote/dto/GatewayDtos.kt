@@ -138,6 +138,13 @@ data class RemoteUpdateDeviceRequest(
 
 data class ApproveDeviceRequest(
     @SerializedName("deviceId") val deviceId: String,
+    @SerializedName("pin") val pin: String,
+    @SerializedName("deviceRole") val deviceRole: String
+)
+
+data class ToggleRemoteRoleRequest(
+    @SerializedName("remoteDeviceId") val remoteDeviceId: String,
+    @SerializedName("newRole") val newRole: String,
     @SerializedName("pin") val pin: String
 )
 

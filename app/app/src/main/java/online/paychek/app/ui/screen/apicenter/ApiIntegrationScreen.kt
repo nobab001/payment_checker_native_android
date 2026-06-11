@@ -429,7 +429,12 @@ fun ApiIntegrationScreen(
             onDismissRequest = { showWebhookDialog = false },
             title = { Text("ওয়েবহুক URL পরিবর্তন করুন", fontWeight = FontWeight.Bold, color = TextWhite) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
                     Text("পেমেন্ট সফল হওয়ার সাথে সাথে আমাদের সার্ভার এই URL-এ ইনস্ট্যান্ট পোস্ট ডেটা পাঠাবে:", fontSize = 12.sp, color = TextMuted)
                     OutlinedTextField(
                         value = tempUrl,
@@ -473,7 +478,9 @@ fun ApiIntegrationScreen(
             onDismissRequest = { showRegenDialog = false },
             title = { Text("নতুন API Credentials জেনারেট করুন?", fontWeight = FontWeight.Bold, color = TextWhite) },
             text = {
-                Text("সতর্কতা: নতুন ক্রেডেনশিয়াল জেনারেট করলে আগের এপিআই কী নিষ্ক্রিয় হয়ে যাবে এবং আপনার এক্সিস্টিং ইন্টিগ্রেশন সাময়িকভাবে পেমেন্ট রিকোয়েস্ট এক্সেপ্ট করা বন্ধ করবে।", color = TextMuted, fontSize = 13.sp)
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text("সতর্কতা: নতুন ক্রেডেনশিয়াল জেনারেট করলে আগের এপিআই কী নিষ্ক্রিয় হয়ে যাবে এবং আপনার এক্সিস্টিং ইন্টিগ্রেশন সাময়িকভাবে পেমেন্ট রিকোয়েস্ট এক্সেপ্ট করা বন্ধ করবে।", color = TextMuted, fontSize = 13.sp)
+                }
             },
             confirmButton = {
                 Button(

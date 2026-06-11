@@ -1685,7 +1685,7 @@ async function getPendingApprovals(req, res) {
 async function approveByPin(req, res) {
   try {
     const userId = req.user.userId;
-    const { deviceId, pin } = req.body;
+    const { deviceId, pin, deviceRole } = req.body;
 
     if (!deviceId || !pin) {
       return res.status(400).json({ success: false, error: 'deviceId and pin are required' });
@@ -1708,12 +1708,15 @@ async function approveByPin(req, res) {
       return res.status(400).json({ success: false, error: 'ভুল পিন কোড, অনুগ্রহ করে আবার চেষ্টা করুন।' });
     }
 
-    // 2. Update device status to approved and active
+    // Validate deviceRole
+    const role = (deviceRole === 'owner' || deviceRole === 'restricted') ? deviceRole : 'restricted';
+
+    // 2. Update device status to approved, active, and set the role
     const result = await query(
       `UPDATE registered_devices 
-       SET is_approved = 1, status = 'active' 
+       SET is_approved = 1, status = 'active', device_role = ? 
        WHERE user_id = ? AND device_id = ?`,
-      [userId, deviceId]
+      [role, userId, deviceId]
     );
 
     if (result.affectedRows === 0) {
@@ -1784,6 +1787,55 @@ async function checkApprovalStatus(req, res) {
   }
 }
 
+async function toggleRemoteRole(req, res) {
+  try {
+    const userId = req.user.userId;
+    const { remoteDeviceId, newRole, pin } = req.body;
+
+    if (!remoteDeviceId || !newRole || !pin) {
+      return res.status(400).json({ success: false, error: 'remoteDeviceId, newRole, and pin are required' });
+    }
+
+    if (newRole !== 'owner' && newRole !== 'restricted') {
+      return res.status(400).json({ success: false, error: 'Invalid role' });
+    }
+
+    // 1. Fetch user to verify PIN
+    const users = await query('SELECT pin FROM users WHERE id = ? LIMIT 1', [userId]);
+    if (users.length === 0) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const user = users[0];
+    if (!user.pin) {
+      return res.status(400).json({ success: false, error: 'Security PIN not configured' });
+    }
+
+    // Verify PIN
+    const pinMatch = await bcrypt.compare(pin, user.pin);
+    if (!pinMatch) {
+      return res.status(401).json({ success: false, error: 'ভুল পিন কোড, অনুগ্রহ করে আবার চেষ্টা করুন।' });
+    }
+
+    // 2. Update device role
+    const result = await query(
+      `UPDATE registered_devices 
+       SET device_role = ? 
+       WHERE user_id = ? AND device_id = ?`,
+      [newRole, userId, remoteDeviceId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, error: 'Device not found' });
+    }
+
+    return res.json({ success: true, message: 'রিমোট ডিভাইসের রোল সফলভাবে পরিবর্তন করা হয়েছে।' });
+  } catch (error) {
+    console.error('Error toggling remote device role:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   checkContact,
   sendOtp,
@@ -1802,6 +1854,7 @@ module.exports = {
   checkApprovalStatus,
   getProfile,
   uploadAvatar,
+  toggleRemoteRole,
   sendOtpDispatch   // exported for reuse by credentialController & pinController
 };
 

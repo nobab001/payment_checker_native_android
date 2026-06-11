@@ -26,6 +26,7 @@ router.get('/v1/devices/pending-approvals', authenticateToken, authController.ge
 router.post('/v1/devices/approve-by-pin', authenticateToken, authController.approveByPin);
 router.post('/v1/devices/submit-role', authenticateToken, authController.submitRole);
 router.get('/v1/devices/check-approval-status', authenticateToken, authController.checkApprovalStatus);
+router.post('/v1/devices/toggle-remote-role', authenticateToken, authenticateToken.restrictDevice, authController.toggleRemoteRole);
 
 // Profile Endpoints
 router.get('/v1/profile', authenticateToken, authController.getProfile);

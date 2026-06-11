@@ -39,10 +39,17 @@ data class DeviceUiState(
     val activeRemoteDevice: ChildDeviceDto?   = null,
     val remoteDeviceEditName: String          = "",
     val remoteDeviceEditSim1Number: String    = "",
-    val remoteDeviceEditSim1Active: Boolean   = true,
     val remoteDeviceEditSim2Number: String    = "",
+    val remoteDeviceEditSim1Active: Boolean   = true,
     val remoteDeviceEditSim2Active: Boolean   = true,
-    val remoteDeviceEditAppActive: Boolean    = true
+    val remoteDeviceEditAppActive: Boolean    = true,
+    
+    // New Role Toggle States
+    val showRolePinDialog: Boolean            = false,
+    val rolePinInput: String                  = "",
+    val rolePinError: String?                 = null,
+    val deviceForRoleToggle: ChildDeviceDto?  = null,
+    val targetRoleToggleValue: String         = ""
 )
 
 // =============================================================================
@@ -360,6 +367,90 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     private fun getToken(): String? {
         val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
         return token.ifEmpty { null }
+    }
+
+    fun initiateRoleToggle(device: ChildDeviceDto, targetRole: String) {
+        _state.update {
+            it.copy(
+                deviceForRoleToggle = device,
+                targetRoleToggleValue = targetRole,
+                showRolePinDialog = true,
+                rolePinInput = "",
+                rolePinError = null
+            )
+        }
+    }
+
+    fun onRolePinInputChanged(pin: String) {
+        if (pin.length <= 6 && pin.all { it.isDigit() }) {
+            _state.update { it.copy(rolePinInput = pin) }
+        }
+    }
+
+    fun dismissRolePinDialog() {
+        _state.update {
+            it.copy(
+                showRolePinDialog = false,
+                deviceForRoleToggle = null,
+                targetRoleToggleValue = "",
+                rolePinInput = "",
+                rolePinError = null
+            )
+        }
+    }
+
+    fun submitRoleToggle() {
+        val device = _state.value.deviceForRoleToggle ?: return
+        val role = _state.value.targetRoleToggleValue
+        val pin = _state.value.rolePinInput
+
+        if (pin.length < 4) {
+            _state.update { it.copy(rolePinError = "কমপক্ষে ৪ ডিজিটের পিন দিন") }
+            return
+        }
+
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+
+            val request = ToggleRemoteRoleRequest(
+                remoteDeviceId = device.deviceId,
+                newRole = role,
+                pin = pin
+            )
+
+            runCatching { api.toggleRemoteRole("Bearer $token", request) }
+                .onSuccess { res ->
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        _state.update {
+                            it.copy(
+                                isSaving = false,
+                                successMessage = "রোল সফলভাবে পরিবর্তন হয়েছে ✓"
+                            )
+                        }
+                        dismissRolePinDialog()
+                        // Update activeRemoteDevice role locally if it's currently open in bottom sheet
+                        _state.update { current ->
+                            val currentActive = current.activeRemoteDevice
+                            if (currentActive != null && currentActive.deviceId == device.deviceId) {
+                                current.copy(activeRemoteDevice = currentActive.copy(deviceRole = role))
+                            } else current
+                        }
+                        loadChildDevices()
+                        viewModelScope.launch {
+                            delay(2000)
+                            _state.update { it.copy(successMessage = null) }
+                        }
+                    } else {
+                        val err = if (res.code() == 401) "ভুল পিন কোড, অনুগ্রহ করে আবার চেষ্টা করুন।"
+                                  else "রোল পরিবর্তন ব্যর্থ হয়েছে (${res.code()})"
+                        _state.update { it.copy(isSaving = false, rolePinError = err) }
+                    }
+                }
+                .onFailure { exception ->
+                    _state.update { it.copy(isSaving = false, rolePinError = "নেটওয়ার্ক সমস্যা: ${exception.message}") }
+                }
+        }
     }
 
     private fun setError(msg: String) {
