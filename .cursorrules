@@ -1,0 +1,7 @@
+# Antigravity Project Rules
+
+Every time after completing a coding task or feature modification:
+1. **Stage, commit, and push changes**: Run `git push origin main` after staging and committing the files.
+2. **Deploy and Run**: Run the application on the connected Android device.
+   * Both the PC and the Android device are connected to the same Wi-Fi network.
+   * If `adb devices` shows no connected devices, ask the user for their device's IP address and port to connect via `adb connect <IP>:<PORT>` (or standard wireless debugging setup), then deploy the app.

@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -41,6 +42,8 @@ import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.dto.CredentialItem
 import androidx.compose.foundation.BorderStroke
 import online.paychek.app.ui.theme.RoyalIndigo
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -97,6 +100,32 @@ fun ProfileSettingsScreen(
     val context = LocalContext.current
     val isRestricted = remember(context) {
         online.paychek.app.utils.SecurePreferences.decrypt(context, "pcu_device_role") == "restricted"
+    }
+
+    val sharedPrefs = remember(context) {
+        context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
+    }
+    var currentTheme by remember {
+        mutableStateOf(sharedPrefs.getString("pcu_app_theme", "system") ?: "system")
+    }
+
+    DisposableEffect(sharedPrefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "pcu_app_theme") {
+                currentTheme = sharedPrefs.getString("pcu_app_theme", "system") ?: "system"
+            }
+        }
+        sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+    }
+
+    val isSystemDark = isSystemInDarkTheme()
+    val isDark = when (currentTheme) {
+        "light" -> false
+        "dark"  -> true
+        else    -> isSystemDark
     }
     val localAvatarFile = remember { java.io.File(context.filesDir, "profile_avatar.png") }
     var localAvatarPath by remember {
@@ -158,7 +187,14 @@ fun ProfileSettingsScreen(
         containerColor  = PsBg,
         snackbarHost    = { SnackbarHost(snackbarHost) },
         topBar = {
-            ProfileTopBar(onNavigateBack = onNavigateBack)
+            ProfileTopBar(
+                isDark = isDark,
+                onThemeToggle = {
+                    val newTheme = if (isDark) "light" else "dark"
+                    sharedPrefs.edit().putString("pcu_app_theme", newTheme).apply()
+                },
+                onNavigateBack = onNavigateBack
+            )
         }
     ) { innerPadding ->
         Box(
@@ -202,6 +238,10 @@ fun ProfileSettingsScreen(
 
                 // ── Section 4: App Theme ──────────────────────────────────
                 AppThemeSelectionCard(
+                    currentTheme = currentTheme,
+                    onThemeSelected = { newTheme ->
+                        sharedPrefs.edit().putString("pcu_app_theme", newTheme).apply()
+                    },
                     modifier       = Modifier.padding(horizontal = 16.dp)
                 )
 
@@ -268,7 +308,11 @@ fun ProfileSettingsScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProfileTopBar(onNavigateBack: () -> Unit) {
+private fun ProfileTopBar(
+    isDark: Boolean,
+    onThemeToggle: () -> Unit,
+    onNavigateBack: () -> Unit
+) {
     TopAppBar(
         modifier = Modifier.height(56.dp),
         windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
@@ -287,6 +331,16 @@ private fun ProfileTopBar(onNavigateBack: () -> Unit) {
                     contentDescription = "Back",
                     tint               = PsCyan,
                     modifier           = Modifier.size(16.dp)
+                )
+            }
+        },
+        actions = {
+            IconButton(onClick = onThemeToggle, modifier = Modifier.padding(end = 8.dp)) {
+                Icon(
+                    imageVector = if (isDark) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
+                    contentDescription = "Theme Toggle",
+                    tint = if (isDark) Color(0xFFF5F7FA) else Color(0xFF12161F),
+                    modifier = Modifier.size(24.dp)
                 )
             }
         },
@@ -1346,16 +1400,10 @@ private fun BlinkingCursor(color: Color) {
 
 @Composable
 private fun AppThemeSelectionCard(
+    currentTheme: String,
+    onThemeSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val sharedPrefs = remember(context) {
-        context.getSharedPreferences(AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
-    }
-    var currentTheme by remember(sharedPrefs) {
-        mutableStateOf(sharedPrefs.getString("pcu_app_theme", "system") ?: "system")
-    }
-
     val options = listOf(
         Triple("system", Icons.Default.PhoneAndroid, "📱 সিস্টেম ডিফল্ট"),
         Triple("light", Icons.Default.WbSunny, "☀️ লাইট মোড"),
@@ -1385,8 +1433,7 @@ private fun AppThemeSelectionCard(
                         .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface)
                         .border(borderStroke, RoundedCornerShape(14.dp))
                         .clickable {
-                            currentTheme = themeKey
-                            sharedPrefs.edit().putString("pcu_app_theme", themeKey).apply()
+                            onThemeSelected(themeKey)
                         }
                         .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
