@@ -170,8 +170,14 @@ async function sendOtp(req, res) {
     const cleanedContact = contact ? contact.trim() : '';
 
     const adminSecretUsername = process.env.ADMIN_SECRET_USERNAME || 'admin';
+
+    // 👑 ADMIN BYPASS
+    if (cleanedContact === adminSecretUsername) {
+      return res.json({ success: true, message: 'এডমিন ওটিপি বাইপাস সক্রিয়। অনুগ্রহ করে পাসওয়ার্ড দিন।' });
+    }
+
     let targetUserId = null;
-    if (cleanedContact && cleanedContact !== adminSecretUsername) {
+    if (cleanedContact) {
       const userRecord = await findUserByContact(cleanedContact);
       if (userRecord) {
         targetUserId = userRecord.id;
@@ -201,10 +207,6 @@ async function sendOtp(req, res) {
 
     if (!contact) {
       return res.status(400).json({ error: 'Contact is required' });
-    }
-
-    if (cleanedContact === adminSecretUsername) {
-      return res.json({ success: true, message: 'এডমিন ওটিপি বাইপাস সক্রিয়। অনুগ্রহ করে পাসওয়ার্ড দিন।' });
     }
 
     // Verify user exists via unified credentials
@@ -346,40 +348,16 @@ async function sendOtpNew(req, res) {
 async function verifyOtp(req, res) {
   try {
     const { contact, code, deviceId, deviceModel, androidVersion, fingerprint, androidId, hardwareFingerprint, simSlotIds } = req.body;
-    if (!deviceId) {
-      return res.status(400).json({ error: 'Missing required deviceId field' });
-    }
     const cleanedContact = contact ? contact.trim() : '';
 
     const adminSecretUsername = process.env.ADMIN_SECRET_USERNAME || 'admin';
-    let targetUserId = null;
-    if (cleanedContact && cleanedContact !== adminSecretUsername) {
-      const userRecord = await findUserByContact(cleanedContact);
-      if (userRecord) {
-        targetUserId = userRecord.id;
-      }
-    }
 
-    // ── DEVICE-BINDING GATEKEEPER (সবার আগে প্রায়োরিটি) ─────────────────
-    const { abused, userId: abuseUserId } = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds, targetUserId);
-    if (abused) {
-      const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
-      return res.status(403).json({
-        success: false,
-        action: 'DEVICE_ALREADY_BOUND',
-        message: 'ডিভাইস লিংক নোটিশ: নিরাপত্তা ও পলিসিগত কারণে আমাদের সিস্টেমে একটি hardware ডিভাইসের সাথে কেবল একটি মূল অ্যাকাউন্টই যুক্ত রাখা সম্ভব। আপনার এই ডিভাইসটি ইতিমধ্যে নিচের অ্যাকাউন্টটির সাথে নিবন্ধিত ও লিংক করা রয়েছে। অনুগ্রহ করে পূর্বের লিংক করা অ্যাকাউন্টটি ব্যবহার করে লগইন সম্পন্ন করুন। এই ডিভাইসে নতুন কোনো অ্যাকাউন্ট তৈরি বা অন্য অ্যাকাউন্ট ব্যবহার করা যাবে না।',
-        boundPhones,
-        boundEmails
-      });
-    }
-
-    if (!contact || !code) {
-      return res.status(400).json({ error: 'Missing required contact or code fields' });
-    }
-
-    const cleanedCode = code.trim();
-
+    // 👑 ADMIN BYPASS GATEKEEPER & TIME-SLOT PASS ENGINE
     if (cleanedContact === adminSecretUsername) {
+      if (!code) {
+        return res.status(400).json({ error: 'Missing required code fields' });
+      }
+      const cleanedCode = code.trim();
       const currentSeconds = new Date().getSeconds() + (new Date().getMinutes() % 2) * 60; // 2 minutes (120 seconds) current loop counter
       let expectedPass = '';
       if (currentSeconds >= 0 && currentSeconds <= 30) {
@@ -425,12 +403,46 @@ async function verifyOtp(req, res) {
           deviceName: 'Admin Dashboard Console',
           status: 'active',
           isParent: true,
+          isApproved: true,
+          deviceRole: 'owner',
           isTrialLocked: false,
           trialExpiresAt: null,
           lockReason: null
         }
       });
     }
+
+    // --- REGULAR USER CHECK ---
+    if (!deviceId) {
+      return res.status(400).json({ error: 'Missing required deviceId field' });
+    }
+
+    let targetUserId = null;
+    if (cleanedContact) {
+      const userRecord = await findUserByContact(cleanedContact);
+      if (userRecord) {
+        targetUserId = userRecord.id;
+      }
+    }
+
+    // ── DEVICE-BINDING GATEKEEPER (সবার আগে প্রায়োরিটি) ─────────────────
+    const { abused, userId: abuseUserId } = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds, targetUserId);
+    if (abused) {
+      const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
+      return res.status(403).json({
+        success: false,
+        action: 'DEVICE_ALREADY_BOUND',
+        message: 'ডিভাইস লিংক নোটিশ: নিরাপত্তা ও পলিসিগত কারণে আমাদের সিস্টেমে একটি hardware ডিভাইসের সাথে কেবল একটি মূল অ্যাকাউন্টই যুক্ত রাখা সম্ভব। আপনার এই ডিভাইসটি ইতিমধ্যে নিচের অ্যাকাউন্টটির সাথে নিবন্ধিত ও লিংক করা রয়েছে। অনুগ্রহ করে পূর্বের লিংক করা অ্যাকাউন্টটি ব্যবহার করে লগইন সম্পন্ন করুন। এই ডিভাইসে নতুন কোনো অ্যাকাউন্ট তৈরি বা অন্য অ্যাকাউন্ট ব্যবহার করা যাবে না।',
+        boundPhones,
+        boundEmails
+      });
+    }
+
+    if (!contact || !code) {
+      return res.status(400).json({ error: 'Missing required contact or code fields' });
+    }
+
+    const cleanedCode = code.trim();
 
     // Check OTP record
     const otps = await query(
