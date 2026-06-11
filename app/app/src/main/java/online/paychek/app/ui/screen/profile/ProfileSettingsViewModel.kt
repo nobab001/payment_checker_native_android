@@ -51,7 +51,6 @@ data class ProfileSettingsState(
 
     // ── Avatar ────────────────────────────────────────────────────
     val avatarUrl: String?                = null,
-    val isUploadingAvatar: Boolean        = false,
 
     // ── Global feedback ───────────────────────────────────────────
     val isLoading: Boolean                = false,
@@ -355,7 +354,7 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
 
     fun fetchProfile() {
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, errorMessage = null) }
+            _state.update { it.copy(isLoading = true, errorMessage = null, successMessage = null) }
             try {
                 val response = api.getProfile(bearerToken())
                 if (response.isSuccessful) {
@@ -375,53 +374,29 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
                                 userRole = user.role,
                                 subscriptionType = user.activePlanName ?: "trial",
                                 primaryPhone = user.phone,
-                                primaryEmail = user.email,
-                                avatarUrl = user.avatar
+                                primaryEmail = user.email
                             )
                         }
                     } else {
-                        _state.update { it.copy(isLoading = false, errorMessage = "প্রোফাইল তথ্য লোড করতে ব্যর্থ হয়েছে।") }
+                        _state.update { it.copy(isLoading = false) }
                     }
                 } else {
-                    _state.update { it.copy(isLoading = false, errorMessage = "প্রোফাইল তথ্য লোড করতে ব্যর্থ হয়েছে।") }
+                    _state.update { it.copy(isLoading = false) }
                 }
             } catch (e: Exception) {
-                _state.update { it.copy(isLoading = false, errorMessage = "নেটওয়ার্ক এরর। প্রোফাইল লোড করতে সমস্যা হচ্ছে।") }
+                _state.update { it.copy(isLoading = false) }
             }
         }
     }
 
     fun setLocalAvatar(localPath: String) {
-        _state.update { it.copy(avatarUrl = localPath) }
-        prefs.edit().putString("pcu_local_avatar_path", localPath).apply()
-    }
-
-    fun uploadAvatar(base64Data: String) {
-        viewModelScope.launch {
-            _state.update { it.copy(isUploadingAvatar = true, errorMessage = null) }
-            try {
-                val response = api.uploadAvatar(bearerToken(), UploadAvatarRequest(base64Data))
-                if (response.isSuccessful) {
-                    val body = response.body()
-                    if (body != null && body.success) {
-                        _state.update {
-                            it.copy(
-                                isUploadingAvatar = false,
-                                avatarUrl = body.avatar,
-                                successMessage = "প্রোফাইল ছবি সফলভাবে পরিবর্তন করা হয়েছে!"
-                            )
-                        }
-                    } else {
-                        _state.update { it.copy(isUploadingAvatar = false, errorMessage = body?.message ?: "ছবি আপলোড করতে ব্যর্থ হয়েছে।") }
-                    }
-                } else {
-                    val errBody = response.errorBody()?.string() ?: ""
-                    _state.update { it.copy(isUploadingAvatar = false, errorMessage = parseErrorMessage(errBody, "ছবি আপলোড করতে ব্যর্থ হয়েছে।")) }
-                }
-            } catch (e: Exception) {
-                _state.update { it.copy(isUploadingAvatar = false, errorMessage = "নেটওয়ার্ক এরর। ছবি আপলোড করা সম্ভব হয়নি।") }
-            }
+        _state.update { 
+            it.copy(
+                avatarUrl = localPath,
+                successMessage = "প্রোফাইল ছবি সফলভাবে পরিবর্তন করা হয়েছে!"
+            ) 
         }
+        prefs.edit().putString("pcu_local_avatar_path", localPath).apply()
     }
 
     // ─────────────────────────────────────────────────────────────

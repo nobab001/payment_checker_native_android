@@ -101,6 +101,12 @@ fun ProfileSettingsScreen(
         viewModel.loadCredentials()
     }
 
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.clearMessages()
+        }
+    }
+
     LaunchedEffect(selectedUriForCrop) {
         selectedUriForCrop?.let { uri ->
             withContext(Dispatchers.IO) {
@@ -166,7 +172,6 @@ fun ProfileSettingsScreen(
                     primaryEmail     = state.primaryEmail,
                     subscriptionType = state.subscriptionType,
                     avatarUrl        = localAvatarPath ?: state.avatarUrl,
-                    isUploadingAvatar = state.isUploadingAvatar,
                     onAvatarClick    = { imagePickerLauncher.launch("image/*") },
                     modifier         = Modifier.padding(horizontal = 16.dp)
                 )
@@ -232,12 +237,6 @@ fun ProfileSettingsScreen(
                     
                     localAvatarPath = localPath
                     viewModel.setLocalAvatar(localPath)
-                    
-                    val byteArrayOutputStream = java.io.ByteArrayOutputStream()
-                    croppedBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, byteArrayOutputStream)
-                    val byteArray = byteArrayOutputStream.toByteArray()
-                    val base64 = android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
-                    viewModel.uploadAvatar(base64)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -291,7 +290,6 @@ private fun ProfileHeaderCard(
     primaryEmail: String?,
     subscriptionType: String,
     avatarUrl: String?,
-    isUploadingAvatar: Boolean,
     onAvatarClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -356,21 +354,6 @@ private fun ProfileHeaderCard(
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                        }
-                    }
-
-                    if (isUploadingAvatar) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.4f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(
-                                color = PsCyan,
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.5.dp
-                            )
                         }
                     }
                 }

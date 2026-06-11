@@ -51,10 +51,4 @@ interface ProfileApiService {
     suspend fun getProfile(
         @Header("Authorization") token: String
     ): Response<ProfileResponse>
-
-    @POST("v1/profile/upload-avatar")
-    suspend fun uploadAvatar(
-        @Header("Authorization") token: String,
-        @Body request: UploadAvatarRequest
-    ): Response<UploadAvatarResponse>
 }
