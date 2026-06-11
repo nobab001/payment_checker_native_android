@@ -44,6 +44,7 @@ import androidx.compose.foundation.BorderStroke
 import online.paychek.app.ui.theme.RoyalIndigo
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -188,10 +189,24 @@ fun ProfileSettingsScreen(
         snackbarHost    = { SnackbarHost(snackbarHost) },
         topBar = {
             ProfileTopBar(
+                currentTheme = currentTheme,
                 isDark = isDark,
                 onThemeToggle = {
-                    val newTheme = if (isDark) "light" else "dark"
-                    sharedPrefs.edit().putString("pcu_app_theme", newTheme).apply()
+                    val nextTheme = when (currentTheme) {
+                        "system" -> {
+                            android.widget.Toast.makeText(context, "লাইট মোড সক্রিয়", android.widget.Toast.LENGTH_SHORT).show()
+                            "light"
+                        }
+                        "light" -> {
+                            android.widget.Toast.makeText(context, "ডার্ক মোড সক্রিয়", android.widget.Toast.LENGTH_SHORT).show()
+                            "dark"
+                        }
+                        else -> {
+                            android.widget.Toast.makeText(context, "সিস্টেম ডিফল্ট সক্রিয়", android.widget.Toast.LENGTH_SHORT).show()
+                            "system"
+                        }
+                    }
+                    sharedPrefs.edit().putString("pcu_app_theme", nextTheme).apply()
                 },
                 onNavigateBack = onNavigateBack
             )
@@ -236,14 +251,7 @@ fun ProfileSettingsScreen(
                     modifier       = Modifier.padding(horizontal = 16.dp)
                 )
 
-                // ── Section 4: App Theme ──────────────────────────────────
-                AppThemeSelectionCard(
-                    currentTheme = currentTheme,
-                    onThemeSelected = { newTheme ->
-                        sharedPrefs.edit().putString("pcu_app_theme", newTheme).apply()
-                    },
-                    modifier       = Modifier.padding(horizontal = 16.dp)
-                )
+                // Theme is now managed solely via the one-tap top bar icon
 
                 Spacer(Modifier.height(32.dp))
             }
@@ -309,10 +317,18 @@ fun ProfileSettingsScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProfileTopBar(
+    currentTheme: String,
     isDark: Boolean,
     onThemeToggle: () -> Unit,
     onNavigateBack: () -> Unit
 ) {
+    val icon = when (currentTheme) {
+        "light" -> Icons.Rounded.LightMode
+        "dark"  -> Icons.Rounded.DarkMode
+        else    -> Icons.Rounded.Smartphone
+    }
+    val iconColor = if (isDark) Color(0xFFF5F7FA) else Color(0xFF12161F)
+
     TopAppBar(
         modifier = Modifier.height(56.dp),
         windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
@@ -337,9 +353,9 @@ private fun ProfileTopBar(
         actions = {
             IconButton(onClick = onThemeToggle, modifier = Modifier.padding(end = 8.dp)) {
                 Icon(
-                    imageVector = if (isDark) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
+                    imageVector = icon,
                     contentDescription = "Theme Toggle",
-                    tint = if (isDark) Color(0xFFF5F7FA) else Color(0xFF12161F),
+                    tint = iconColor,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -1398,80 +1414,5 @@ private fun BlinkingCursor(color: Color) {
     )
 }
 
-@Composable
-private fun AppThemeSelectionCard(
-    currentTheme: String,
-    onThemeSelected: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val options = listOf(
-        Triple("system", Icons.Default.PhoneAndroid, "📱 সিস্টেম ডিফল্ট"),
-        Triple("light", Icons.Default.WbSunny, "☀️ লাইট মোড"),
-        Triple("dark", Icons.Default.Brightness2, "🌌 ডার্ক মোড")
-    )
-
-    PsSection(
-        icon = Icons.Default.Palette,
-        iconColor = MaterialTheme.colorScheme.primary,
-        title = "অ্যাপ থিম (App Theme)",
-        modifier = modifier
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            options.forEach { (themeKey, icon, title) ->
-                val isSelected = currentTheme == themeKey
-                val borderBrush = if (isSelected) {
-                    Brush.horizontalGradient(listOf(MaterialTheme.colorScheme.primary, Color(0xFF7C3AED)))
-                } else {
-                    SolidColor(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f))
-                }
-                val borderStroke = BorderStroke(if (isSelected) 2.dp else 1.dp, borderBrush)
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface)
-                        .border(borderStroke, RoundedCornerShape(14.dp))
-                        .clickable {
-                            onThemeSelected(themeKey)
-                        }
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = title,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                        if (themeKey == "system") {
-                            Text(
-                                text = "ফোনের সেটিংস অনুযায়ী স্বয়ংক্রিয়ভাবে পরিবর্তিত হবে।",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp,
-                                modifier = Modifier.padding(top = 2.dp)
-                            )
-                        }
-                    }
-                    if (isSelected) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Selected",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
+// AppThemeSelectionCard has been removed in favor of the 3-state cyclic top bar toggle button
 
