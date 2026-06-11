@@ -361,13 +361,8 @@ private fun ProfileHeaderCard(
                     )
                     
                     // Show dynamic subscription plan name below the user's name
-                    val displayPlan = if (subscriptionPlan.equals("Free", ignoreCase = true) || subscriptionPlan.isEmpty()) {
-                        "Plan: Free"
-                    } else {
-                        "Plan: $subscriptionPlan"
-                    }
                     Text(
-                        text       = displayPlan,
+                        text       = "Plan: $subscriptionPlan",
                         color      = PsCyan,
                         fontSize   = 13.sp,
                         fontWeight = FontWeight.SemiBold

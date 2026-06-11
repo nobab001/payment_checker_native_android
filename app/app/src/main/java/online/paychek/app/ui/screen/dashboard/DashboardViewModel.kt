@@ -84,6 +84,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             val result = repository.fetchDashboardStats(token)
             result.fold(
                 onSuccess = { stats ->
+                    prefs.edit().putString("pcu_account_level", stats.activePlanName).apply()
                     _state.update {
                         it.copy(
                             uiState     = DashboardUiState.Success(stats),

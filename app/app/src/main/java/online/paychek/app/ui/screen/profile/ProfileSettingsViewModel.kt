@@ -71,21 +71,34 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
 
     private var timerJob: kotlinx.coroutines.Job? = null
 
+    private val preferenceListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "pcu_account_level") {
+            updatePlanFromPrefs()
+        }
+    }
+
+    private fun updatePlanFromPrefs() {
+        val rawSub = prefs.getString("pcu_account_level", "FREE_LEVEL") ?: "FREE_LEVEL"
+        val cleanSub = if (rawSub.isEmpty() || rawSub.uppercase() == "TRIAL" || rawSub.uppercase() == "FREE_LEVEL") "Free" else rawSub
+        _state.update { 
+            it.copy(subscriptionPlan = cleanSub)
+        }
+    }
+
     init {
         // Load stored user info
         val name = prefs.getString("pcu_user_name", "") ?: ""
         val role = prefs.getString("pcu_user_role", "merchant") ?: "merchant"
-        val rawSub  = prefs.getString("pcu_subscription_type", "Free") ?: "Free"
-        val cleanSub = if (rawSub.isEmpty() || rawSub.uppercase() == "TRIAL" || rawSub.uppercase() == "FREE_LEVEL") "Free" else rawSub
         val localAvatar = prefs.getString("pcu_local_avatar_path", "") ?: ""
         _state.update { 
             it.copy(
                 userName = name, 
                 userRole = role, 
-                subscriptionPlan = cleanSub,
                 avatarUrl = localAvatar.ifEmpty { null }
             ) 
         }
+        prefs.registerOnSharedPreferenceChangeListener(preferenceListener)
+        updatePlanFromPrefs()
         loadCredentials()
     }
 
@@ -362,8 +375,8 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
                     val body = response.body()
                     if (body != null && body.success) {
                         val user = body.user
-                        val rawPlan = user.activePlanName
-                        val cleanPlan = if (rawPlan.isNullOrEmpty() || rawPlan.uppercase() == "FREE_LEVEL" || rawPlan.uppercase() == "TRIAL") {
+                        val rawPlan = user.activePlanName ?: "FREE_LEVEL"
+                        val cleanPlan = if (rawPlan.isEmpty() || rawPlan.uppercase() == "FREE_LEVEL" || rawPlan.uppercase() == "TRIAL") {
                             "Free"
                         } else {
                             rawPlan
@@ -371,7 +384,7 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
                         prefs.edit().apply {
                             putString("pcu_user_name", user.name)
                             putString("pcu_user_role", user.role)
-                            putString("pcu_subscription_type", cleanPlan)
+                            putString("pcu_account_level", rawPlan)
                             apply()
                         }
                         _state.update {
@@ -425,6 +438,7 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
 
     override fun onCleared() {
         super.onCleared()
+        prefs.unregisterOnSharedPreferenceChangeListener(preferenceListener)
         timerJob?.cancel()
     }
 }
