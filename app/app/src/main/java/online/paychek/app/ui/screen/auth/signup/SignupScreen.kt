@@ -27,10 +27,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import online.paychek.app.ui.theme.*
-import androidx.compose.ui.autofill.AutofillType
+import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import online.paychek.app.utils.autofill
+import androidx.compose.ui.autofill.ContentType
 import online.paychek.app.utils.disableAutofill
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,7 +55,7 @@ fun SignupScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(AppBackground)
+            .background(MaterialTheme.colorScheme.background)
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -72,14 +72,14 @@ fun SignupScreen(
                 text = "প্রোফাইল সম্পন্ন করুন",
                 fontSize = 26.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = RoyalIndigo,
+                color = MaterialTheme.colorScheme.primary,
                 textAlign = TextAlign.Center
             )
 
             Text(
                 text = "আপনার পেমেন্ট চেকার অ্যাকাউন্টটি সক্রিয় করতে নিচের তথ্যগুলো পূরণ করুন।",
                 fontSize = 13.sp,
-                color = TextSecondary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 12.dp)
             )
@@ -89,7 +89,7 @@ fun SignupScreen(
             // Error Message
             uiState.errorMessage?.let { error ->
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
+                    colors = CardDefaults.cardColors(containerColor = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF3D1F1F) else Color(0xFFFFEBEE)),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -122,19 +122,18 @@ fun SignupScreen(
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color(0xFFFBFBFC),
-                    focusedBorderColor = RoyalIndigo,
-                    unfocusedBorderColor = Color(0xFFE2E8F0),
-                    focusedPlaceholderColor = Color(0xFF94A3B8),
-                    unfocusedPlaceholderColor = Color(0xFF94A3B8)
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .autofill(
-                        autofillTypes = listOf(AutofillType.PersonFullName),
-                        onFill = { viewModel.onNameChanged(it) }
-                    )
+                    .semantics { contentType = ContentType.PersonFullName }
             )
 
             // 2. Mobile Phone (Read-Only if prefilled)
@@ -158,19 +157,18 @@ fun SignupScreen(
                 enabled = !uiState.isPhonePreFilled,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color(0xFFFBFBFC),
-                    focusedBorderColor = RoyalIndigo,
-                    unfocusedBorderColor = Color(0xFFE2E8F0),
-                    focusedPlaceholderColor = Color(0xFF94A3B8),
-                    unfocusedPlaceholderColor = Color(0xFF94A3B8)
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .autofill(
-                        autofillTypes = listOf(AutofillType.PhoneNumber),
-                        onFill = { viewModel.onPhoneChanged(it) }
-                    )
+                    .semantics { contentType = ContentType.PhoneNumber }
             )
 
             // 3. Email (Read-Only if prefilled)
@@ -194,19 +192,18 @@ fun SignupScreen(
                 enabled = !uiState.isEmailPreFilled,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color(0xFFFBFBFC),
-                    focusedBorderColor = RoyalIndigo,
-                    unfocusedBorderColor = Color(0xFFE2E8F0),
-                    focusedPlaceholderColor = Color(0xFF94A3B8),
-                    unfocusedPlaceholderColor = Color(0xFF94A3B8)
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .autofill(
-                        autofillTypes = listOf(AutofillType.EmailAddress),
-                        onFill = { viewModel.onEmailChanged(it) }
-                    )
+                    .semantics { contentType = ContentType.EmailAddress }
             )
 
             // 4. PIN Field (4-6 digits, numeric)
@@ -229,12 +226,14 @@ fun SignupScreen(
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color(0xFFFBFBFC),
-                    focusedBorderColor = RoyalIndigo,
-                    unfocusedBorderColor = Color(0xFFE2E8F0),
-                    focusedPlaceholderColor = Color(0xFF94A3B8),
-                    unfocusedPlaceholderColor = Color(0xFF94A3B8)
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -268,12 +267,14 @@ fun SignupScreen(
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color(0xFFFBFBFC),
-                    focusedBorderColor = RoyalIndigo,
-                    unfocusedBorderColor = Color(0xFFE2E8F0),
-                    focusedPlaceholderColor = Color(0xFF94A3B8),
-                    unfocusedPlaceholderColor = Color(0xFF94A3B8)
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
                 ),
                 modifier = Modifier
                     .fillMaxWidth()

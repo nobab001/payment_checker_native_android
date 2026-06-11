@@ -24,7 +24,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.window.DialogProperties
 import online.paychek.app.data.remote.dto.CredentialItem
 import online.paychek.app.data.repository.CredentialRepository
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.graphics.SolidColor
@@ -32,8 +31,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.border
-import androidx.compose.ui.autofill.AutofillType
-import online.paychek.app.utils.autofill
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
@@ -138,10 +138,11 @@ fun ProfileCredentialsCard(
                 )
             } else {
                 viewModel.linkedPhones.forEach { item ->
+                    val isPrimary = isSamePhone(item.value, viewModel.primaryPhone)
                     CredentialItemRow(
                         item = item,
                         icon = Icons.Default.PhoneAndroid,
-                        isRestricted = isRestricted,
+                        isRestricted = isRestricted || isPrimary,
                         onRemove = {
                             credentialIdToDelete = item.id
                             deletePinValue = ""
@@ -191,10 +192,11 @@ fun ProfileCredentialsCard(
                 )
             } else {
                 viewModel.linkedEmails.forEach { item ->
+                    val isPrimary = isSameEmail(item.value, viewModel.primaryEmail)
                     CredentialItemRow(
                         item = item,
                         icon = Icons.Default.Email,
-                        isRestricted = isRestricted,
+                        isRestricted = isRestricted || isPrimary,
                         onRemove = {
                             credentialIdToDelete = item.id
                             deletePinValue = ""
@@ -256,10 +258,9 @@ fun ProfileCredentialsCard(
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .autofill(
-                                    autofillTypes = if (inputType == "phone") listOf(AutofillType.PhoneNumber) else listOf(AutofillType.EmailAddress),
-                                    onFill = { inputValue = it }
-                                )
+                                .semantics {
+                                    contentType = if (inputType == "phone") ContentType.PhoneNumber else ContentType.EmailAddress
+                                }
                         )
                     } else {
                         Text(
@@ -571,4 +572,16 @@ private fun BlinkingCursor(color: Color) {
             .alpha(alpha)
             .background(color)
     )
+}
+
+private fun isSamePhone(p1: String?, p2: String?): Boolean {
+    if (p1 == null || p2 == null) return false
+    val clean1 = p1.replace(Regex("[^0-9]"), "")
+    val clean2 = p2.replace(Regex("[^0-9]"), "")
+    return clean1.isNotEmpty() && clean1.takeLast(10) == clean2.takeLast(10)
+}
+
+private fun isSameEmail(e1: String?, e2: String?): Boolean {
+    if (e1 == null || e2 == null) return false
+    return e1.trim().lowercase() == e2.trim().lowercase()
 }

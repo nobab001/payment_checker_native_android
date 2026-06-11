@@ -139,19 +139,10 @@ app.listen(PORT, async () => {
     console.log('[DB] Synced existing users to user_credentials.');
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Initialize global_billing_settings table (kept for admin config)
+    // DROP deprecated global_billing_settings table
     // ─────────────────────────────────────────────────────────────────────────
-    await query(`
-      CREATE TABLE IF NOT EXISTS \`global_billing_settings\` (
-        \`id\`           INT          NOT NULL AUTO_INCREMENT,
-        \`setting_key\`   VARCHAR(255) NOT NULL,
-        \`setting_value\` VARCHAR(255) NOT NULL,
-        \`description\`   VARCHAR(255) DEFAULT NULL,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`uniq_setting_key\` (\`setting_key\`)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    `);
-    console.log('[DB] global_billing_settings table verified.');
+    await query(`DROP TABLE IF EXISTS \`global_billing_settings\``);
+    console.log('[DB] Dropped deprecated global_billing_settings table.');
 
     // ─────────────────────────────────────────────────────────────────────────
     // DROP deprecated credit_deduction_ledger table

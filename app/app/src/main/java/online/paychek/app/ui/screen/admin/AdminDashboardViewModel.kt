@@ -22,7 +22,6 @@ data class AdminUiState(
     val smsSettings: List<SmsSettingsDto> = emptyList(),
     val users: List<AdminUserDto> = emptyList(),
     val otpFormatTemplate: String = "",
-    val billingSettings: List<BillingSettingDto> = emptyList(),
     val plans: List<SubscriptionPlanDto> = emptyList(),
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
@@ -80,10 +79,6 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 val otpFormatRes = api.getOtpFormat(token)
                 val otpFormat = if (otpFormatRes.isSuccessful) otpFormatRes.body()?.template ?: "" else ""
 
-                // Fetch billing settings
-                val billingSettingsRes = api.getBillingSettings(token)
-                val billingSettings = if (billingSettingsRes.isSuccessful) billingSettingsRes.body()?.settings ?: emptyList() else emptyList()
-
                 // Fetch plans
                 val plansRes = api.getPlans(token)
                 val plans = if (plansRes.isSuccessful) plansRes.body()?.plans ?: emptyList() else emptyList()
@@ -97,7 +92,6 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                         smsSettings = smsSettings,
                         users = users,
                         otpFormatTemplate = otpFormat,
-                        billingSettings = billingSettings,
                         plans = plans,
                         isLoading = false
                     )
@@ -429,17 +423,17 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    fun saveBillingSettings(settings: List<BillingSettingDto>) {
+    fun deletePlan(planId: Int) {
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true) }
             try {
                 val token = "Bearer ${getToken()}"
-                val response = api.updateBillingSettings(token, UpdateBillingSettingsRequest(settings))
+                val response = api.deletePlan(token, planId)
                 if (response.isSuccessful && response.body()?.success == true) {
-                    _state.update { it.copy(successMessage = "বিলিং সেটিংস সফলভাবে সংরক্ষিত হয়েছে।") }
-                    refreshBillingSettings()
+                    _state.update { it.copy(successMessage = "প্ল্যান সফলভাবে মুছে ফেলা হয়েছে।") }
+                    refreshPlans()
                 } else {
-                    _state.update { it.copy(isSaving = false, errorMessage = "বিলিং সেটিংস সেভ ব্যর্থ হয়েছে।") }
+                    _state.update { it.copy(isSaving = false, errorMessage = "মুছে ফেলা ব্যর্থ হয়েছে।") }
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }
@@ -447,17 +441,27 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    private suspend fun refreshBillingSettings() {
-        try {
-            val token = "Bearer ${getToken()}"
-            val res = api.getBillingSettings(token)
-            if (res.isSuccessful) {
-                _state.update { it.copy(billingSettings = res.body()?.settings ?: emptyList(), isSaving = false) }
-            } else {
-                _state.update { it.copy(isSaving = false) }
+    fun verifyAdminPinAndDeletePlan(pin: String, planId: Int, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val token = "Bearer ${getToken()}"
+                val response = RetrofitClient.authApiService.verifyPin(token, VerifyPinRequest(pin))
+                if (response.isSuccessful && response.body()?.success == true) {
+                    val deleteRes = api.deletePlan(token, planId)
+                    if (deleteRes.isSuccessful && deleteRes.body()?.success == true) {
+                        _state.update { it.copy(successMessage = "প্ল্যান সফলভাবে মুছে ফেলা হয়েছে।") }
+                        refreshPlans()
+                        onSuccess()
+                    } else {
+                        val errMsg = deleteRes.body()?.message ?: "মুছে ফেলা ব্যর্থ হয়েছে।"
+                        onError(errMsg)
+                    }
+                } else {
+                    onError("ভুল পিন নম্বর। অনুগ্রহ করে সঠিক পিন দিন।")
+                }
+            } catch (e: Exception) {
+                onError("নেটওয়ার্ক ত্রুটি: ${e.localizedMessage}")
             }
-        } catch (e: Exception) {
-            _state.update { it.copy(isSaving = false) }
         }
     }
 

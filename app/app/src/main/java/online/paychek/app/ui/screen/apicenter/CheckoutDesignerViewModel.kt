@@ -102,16 +102,11 @@ class CheckoutDesignerViewModel(application: Application) : AndroidViewModel(app
     }
 
     fun saveLayout() {
-        _uiState.update { it.copy(isLoading = true, statusMessage = null) }
-        
-        // Simulated delay
-        kotlinx.coroutines.GlobalScope.run {
-            _uiState.update {
-                it.copy(
-                    isLoading = false,
-                    statusMessage = "গেটওয়ে লেআউট সফলভাবে সংরক্ষণ করা হয়েছে!"
-                )
-            }
+        _uiState.update {
+            it.copy(
+                isLoading = false,
+                statusMessage = "গেটওয়ে লেআউট সফলভাবে সংরক্ষণ করা হয়েছে!"
+            )
         }
     }
 

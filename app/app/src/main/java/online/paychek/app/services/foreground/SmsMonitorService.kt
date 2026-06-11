@@ -432,7 +432,7 @@ class SmsMonitorService : Service() {
     // Utility
     // ─────────────────────────────────────────────────────────────────────────
     private fun formatTime(epochMs: Long): String =
-        SimpleDateFormat("hh:mm a", Locale("bn", "BD")).format(Date(epochMs))
+        SimpleDateFormat("hh:mm a", Locale.forLanguageTag("bn-BD")).format(Date(epochMs))
 
     override fun onDestroy() {
         super.onDestroy()

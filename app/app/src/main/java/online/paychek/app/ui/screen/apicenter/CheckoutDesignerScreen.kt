@@ -17,7 +17,6 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -113,13 +112,13 @@ fun CheckoutDesignerScreen(
                 .padding(innerPadding)
         ) {
             // Twin-Mode Tabs: Edit Mode vs Customer Preview Mode
-            TabRow(
+            SecondaryTabRow(
                 selectedTabIndex = uiState.selectedTab,
                 containerColor = CardBackground,
                 contentColor = RoyalIndigo,
-                indicator = { tabPositions ->
+                indicator = {
                     TabRowDefaults.SecondaryIndicator(
-                        Modifier.tabIndicatorOffset(tabPositions[uiState.selectedTab]),
+                        modifier = Modifier.tabIndicatorOffset(uiState.selectedTab),
                         color = RoyalIndigo
                     )
                 }
@@ -383,7 +382,7 @@ fun CheckoutDesignerScreen(
                             )
 
                             // Provider Tabs
-                            ScrollableTabRow(
+                            SecondaryScrollableTabRow(
                                 selectedTabIndex = providers.indexOf(selectedProviderFilter).coerceAtLeast(0),
                                 containerColor = Color.Transparent,
                                 edgePadding = 0.dp

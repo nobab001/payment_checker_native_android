@@ -18,6 +18,8 @@ data class VerifyLinkCredentialRequest(
 // ৩. প্রোফাইলে লিংকড ক্রেডেনশিয়াল লিস্ট দেখানোর রেসপন্স
 data class LinkedCredentialsResponse(
     @SerializedName("success") val success: Boolean,
+    @SerializedName("primaryPhone") val primaryPhone: String? = null,
+    @SerializedName("primaryEmail") val primaryEmail: String? = null,
     @SerializedName("phones") val phones: List<CredentialItem> = emptyList(),
     @SerializedName("emails") val emails: List<CredentialItem> = emptyList()
 )

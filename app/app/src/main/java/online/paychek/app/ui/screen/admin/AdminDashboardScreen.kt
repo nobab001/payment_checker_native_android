@@ -107,7 +107,7 @@ fun AdminDashboardScreen(
             )
         },
         bottomBar = {
-            TabRow(
+            PrimaryTabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = MaterialTheme.colorScheme.surface,
                 contentColor = MaterialTheme.colorScheme.primary,

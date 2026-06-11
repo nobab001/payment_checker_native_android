@@ -109,17 +109,6 @@ interface AdminApiService {
         @Body request: UpdateOtpFormatRequest
     ): Response<AdminGenericResponse>
 
-    @GET("admin/billing-settings")
-    suspend fun getBillingSettings(
-        @Header("Authorization") token: String
-    ): Response<BillingSettingsResponse>
-
-    @POST("admin/billing-settings")
-    suspend fun updateBillingSettings(
-        @Header("Authorization") token: String,
-        @Body request: UpdateBillingSettingsRequest
-    ): Response<AdminGenericResponse>
-
     @POST("admin/users/{id}/manual-grace")
     suspend fun updateUserManualGrace(
         @Header("Authorization") token: String,
@@ -136,5 +125,11 @@ interface AdminApiService {
     suspend fun savePlan(
         @Header("Authorization") token: String,
         @Body request: SubscriptionPlanDto
+    ): Response<AdminGenericResponse>
+
+    @DELETE("admin/plans/{id}")
+    suspend fun deletePlan(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int
     ): Response<AdminGenericResponse>
 }

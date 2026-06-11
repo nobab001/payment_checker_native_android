@@ -16,7 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -270,7 +270,7 @@ fun SecurityGateScreen(
                                                 .border(1.dp, Color(0xFF334155), shape = CircleShape)
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Default.Backspace,
+                                                imageVector = Icons.AutoMirrored.Filled.Backspace,
                                                 contentDescription = "Delete Digit",
                                                 tint = Color.White,
                                                 modifier = Modifier.size(24.dp)

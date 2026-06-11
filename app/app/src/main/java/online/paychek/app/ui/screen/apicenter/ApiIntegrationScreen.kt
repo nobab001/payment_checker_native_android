@@ -18,8 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import android.content.ClipData
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -55,7 +59,8 @@ fun ApiIntegrationScreen(
 ) {
     val scrollState = rememberScrollState()
     val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val coroutineScope = rememberCoroutineScope()
 
     var apiKey by remember { mutableStateOf("pk_live_f893634ca31ce46e784dbc2e2f") }
     var clientSecret by remember { mutableStateOf("cs_live_93634ca31ce46e784dbc2e2f7b") }
@@ -208,7 +213,9 @@ fun ApiIntegrationScreen(
                                 modifier = Modifier
                                     .size(16.dp)
                                     .clickable {
-                                        clipboardManager.setText(AnnotatedString(apiKey))
+                                        coroutineScope.launch {
+                                            clipboard.setClipEntry(ClipData.newPlainText("API Key", apiKey).toClipEntry())
+                                        }
                                         Toast.makeText(context, "API Key কপি করা হয়েছে।", Toast.LENGTH_SHORT).show()
                                     }
                             )
@@ -242,7 +249,9 @@ fun ApiIntegrationScreen(
                                 modifier = Modifier
                                     .size(16.dp)
                                     .clickable {
-                                        clipboardManager.setText(AnnotatedString(clientSecret))
+                                        coroutineScope.launch {
+                                            clipboard.setClipEntry(ClipData.newPlainText("Client Secret", clientSecret).toClipEntry())
+                                        }
                                         Toast.makeText(context, "Client Secret কপি করা হয়েছে।", Toast.LENGTH_SHORT).show()
                                     }
                             )

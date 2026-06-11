@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
+const adminController = require('../controllers/adminController');
 const authenticateToken = require('../middleware/auth');
 
 // Public Auth Endpoints
@@ -12,6 +13,10 @@ router.post('/auth/register-send-otp', authController.registerSendOtp);
 router.post('/verify-otp', authController.verifyOtp);
 router.post('/check-device-trial', authController.checkDeviceTrial);
 router.post('/check-device-login', authController.checkDeviceTrial);
+
+// Aliases/Routes for site/device registration requested
+router.post('/sites/add', authenticateToken, adminController.addSite);
+router.post('/devices/register', authController.verifyOtp);
 
 // Protected Auth Endpoints
 router.post('/complete-profile', authenticateToken, authController.completeProfile);

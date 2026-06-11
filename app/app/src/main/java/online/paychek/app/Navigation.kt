@@ -101,6 +101,7 @@ fun MainNavigation() {
             entry<NavKey.Profile> {
                 ProfileSettingsScreen(
                     onNavigateBack = { backStack.removeLastOrNull() },
+                    onNavigateToSubscription = { backStack.add(NavKey.SubscriptionPackages) },
                     modifier       = Modifier.fillMaxSize()
                 )
             }
@@ -120,6 +121,21 @@ fun MainNavigation() {
             entry<NavKey.AdminBillingConfig> {
                 BillingConfigScreen(
                     viewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            entry<NavKey.SubscriptionPackages> {
+                online.paychek.app.ui.screen.billing.SubscriptionPackagesScreen(
+                    onNavigateToPaymentMock = { backStack.add(NavKey.PaymentGatewayMock) },
+                    onNavigateBack = { backStack.removeLastOrNull() },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            entry<NavKey.PaymentGatewayMock> {
+                online.paychek.app.ui.screen.billing.PaymentGatewayMockScreen(
+                    onNavigateBack = { backStack.removeLastOrNull() },
                     modifier = Modifier.fillMaxSize()
                 )
             }

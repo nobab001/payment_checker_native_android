@@ -521,12 +521,12 @@ fun HomeScreen(
                     Text(
                         text = "ডিভাইস অনুমোদন করুন",
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onBackground,
                         fontSize = 18.sp
                     )
                     Text(
                         text = "নতুন ডিভাইস '${deviceToApprove.customDeviceName.ifEmpty { "চাইল্ড ডিভাইস" }}' অনুমোদন করতে ডিভাইস রোল সিলেক্ট করে সিকিউরিটি পিন লিখুন।",
-                        color = Color(0xFF94A3B8),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp,
                         textAlign = TextAlign.Center,
                         lineHeight = 18.sp
@@ -599,8 +599,8 @@ fun HomeScreen(
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = Color(0xFF22D3EE),
                                 unfocusedBorderColor = Color(0xFF475569),
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                             ),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -749,6 +749,7 @@ fun HomeScreen(
                 when (selectedTab) {
                     HomeTab.HOME -> DashboardScreen(
                         onNavigateToHistory = { selectedTab = HomeTab.SEARCH },
+                        onNavigateToSubscription = { onNavigate(AppNavKey.SubscriptionPackages) },
                         modifier = Modifier.fillMaxSize()
                     )
                     HomeTab.DEVICE -> DeviceScreen(
@@ -764,6 +765,7 @@ fun HomeScreen(
                     )
                     HomeTab.PROFILE -> ProfileSettingsScreen(
                         onNavigateBack = { selectedTab = HomeTab.HOME },
+                        onNavigateToSubscription = { onNavigate(AppNavKey.SubscriptionPackages) },
                         modifier = Modifier.fillMaxSize()
                     )
                 }

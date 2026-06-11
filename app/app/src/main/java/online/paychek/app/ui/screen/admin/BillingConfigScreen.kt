@@ -1,5 +1,6 @@
 package online.paychek.app.ui.screen.admin
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -10,26 +11,22 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import online.paychek.app.data.remote.dto.BillingSettingDto
 import online.paychek.app.ui.theme.RoyalIndigo
-import online.paychek.app.ui.theme.RoyalIndigoLight
-import online.paychek.app.ui.theme.BkashPink
-import online.paychek.app.ui.theme.NagadOrange
-import online.paychek.app.ui.theme.RocketPurple
-import online.paychek.app.ui.theme.UpayTeal
-import online.paychek.app.ui.theme.StatusGreen
-import online.paychek.app.ui.theme.StatusOrange
 import online.paychek.app.ui.theme.StatusRed
-import online.paychek.app.ui.theme.SoldOutRed
+import online.paychek.app.data.remote.dto.SubscriptionPlanDto
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 
@@ -46,15 +43,31 @@ fun BillingConfigScreen(
 ) {
     val uiState by viewModel.state.collectAsState()
     val scrollState = rememberScrollState()
+    val context = LocalContext.current
 
     var showCreatePlanDialog by remember { mutableStateOf(false) }
-    var editingPlan by remember { mutableStateOf<online.paychek.app.data.remote.dto.SubscriptionPlanDto?>(null) }
+    var editingPlan by remember { mutableStateOf<SubscriptionPlanDto?>(null) }
     var planName by remember { mutableStateOf("") }
     var planPrice by remember { mutableStateOf("") }
     var planMaxSites by remember { mutableStateOf("") }
     var planMaxDevices by remember { mutableStateOf("") }
     var planDurationDays by remember { mutableStateOf("365") }
 
+    // PIN Verification Dialog states
+    var showPinDialog by remember { mutableStateOf(false) }
+    var planToDelete by remember { mutableStateOf<SubscriptionPlanDto?>(null) }
+    var adminPinInput by remember { mutableStateOf("") }
+    var pinErrorText by remember { mutableStateOf<String?>(null) }
+    var pinVerificationLoading by remember { mutableStateOf(false) }
+
+    // Global trial days state
+    var trialDays by remember { mutableStateOf("7") }
+
+    LaunchedEffect(uiState.configs) {
+        trialDays = uiState.configs["trial_days"] ?: "7"
+    }
+
+    // Edit/Create Plan Dialog
     if (showCreatePlanDialog) {
         AlertDialog(
             onDismissRequest = { 
@@ -161,7 +174,7 @@ fun BillingConfigScreen(
                         
                         if (planName.isNotEmpty()) {
                             viewModel.savePlan(
-                                online.paychek.app.data.remote.dto.SubscriptionPlanDto(
+                                SubscriptionPlanDto(
                                     id = editingPlan?.id,
                                     planName = planName,
                                     price = p,
@@ -204,22 +217,102 @@ fun BillingConfigScreen(
         )
     }
 
-    // Key-Value states for global billing settings
-    var signupBonus by remember { mutableStateOf("") }
-    var dailyRate by remember { mutableStateOf("") }
-    var siteFee by remember { mutableStateOf("") }
-    var deviceFee by remember { mutableStateOf("") }
-
-    // Sync input fields with model when loaded
-    LaunchedEffect(uiState.billingSettings) {
-        uiState.billingSettings.forEach { setting ->
-            when (setting.settingKey) {
-                "default_signup_bonus" -> signupBonus = setting.settingValue
-                "daily_maintenance_rate" -> dailyRate = setting.settingValue
-                "one_time_site_fee" -> siteFee = setting.settingValue
-                "one_time_device_fee" -> deviceFee = setting.settingValue
-            }
-        }
+    // Security PIN Verification Dialog for Deleting Plan
+    if (showPinDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showPinDialog = false
+                planToDelete = null
+                adminPinInput = ""
+                pinErrorText = null
+                pinVerificationLoading = false
+            },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.Lock, null, tint = StatusRed)
+                    Text("পাস সিকিউরিটি পিন (Enter Admin PIN)", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 16.sp)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("নিরাপত্তার স্বার্থে এই প্ল্যানটি ডিলিট করতে আপনার অ্যাডমিন সিকিউরিটি পিন দিন:", color = TextSecondary, fontSize = 13.sp)
+                    OutlinedTextField(
+                        value = adminPinInput,
+                        onValueChange = {
+                            if (it.length <= 6 && it.all { char -> char.isDigit() }) {
+                                adminPinInput = it
+                            }
+                        },
+                        label = { Text("অ্যাডমিন পিন") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = StatusRed,
+                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    pinErrorText?.let {
+                        Text(it, color = StatusRed, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val plan = planToDelete
+                        if (plan?.id != null && adminPinInput.isNotEmpty()) {
+                            pinVerificationLoading = true
+                            pinErrorText = null
+                            viewModel.verifyAdminPinAndDeletePlan(
+                                pin = adminPinInput,
+                                planId = plan.id,
+                                onSuccess = {
+                                    showPinDialog = false
+                                    planToDelete = null
+                                    adminPinInput = ""
+                                    pinVerificationLoading = false
+                                    Toast.makeText(context, "প্ল্যানটি ডিলিট করা হয়েছে।", Toast.LENGTH_SHORT).show()
+                                },
+                                onError = { err ->
+                                    pinErrorText = err
+                                    pinVerificationLoading = false
+                                }
+                            )
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusRed),
+                    enabled = !pinVerificationLoading
+                ) {
+                    if (pinVerificationLoading) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("ডিলিট কনফার্ম", color = Color.White)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showPinDialog = false
+                        planToDelete = null
+                        adminPinInput = ""
+                        pinErrorText = null
+                    },
+                    enabled = !pinVerificationLoading
+                ) {
+                    Text("বাতিল", color = TextSecondary)
+                }
+            },
+            containerColor = CardBackground,
+            modifier = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Modifier else Modifier.border(1.dp, Color(0xFFE3E5E8), RoundedCornerShape(28.dp))
+        )
     }
 
     Column(
@@ -231,55 +324,46 @@ fun BillingConfigScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = "⚙️ গ্লোবাল বিলিং রেট সেটিিংস",
+            text = "⚙️ গ্লোবাল ফ্রি ট্রায়াল সেটিংস",
             color = TextPrimary,
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold
         )
 
-        // Default Signup Bonus
-        BillingSettingField(
-            label = "সাইনআপ বোনাস (৳)",
-            description = "নতুন ইউজার জয়েন করলে অটোমেটিক ক্রেডিট দেওয়া হবে।",
-            value = signupBonus,
-            onValueChange = { signupBonus = it }
-        )
+        // Global Free Trial settings card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
+            shape = RoundedCornerShape(12.dp),
+            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(text = "গ্লোবাল ফ্রি ট্রায়াল দিন (trial_days)", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text(text = "নতুন নিবন্ধিত ডিভাইসের জন্য ডিফল্ট ফ্রি ট্রায়াল দিনসংখ্যা।", color = TextSecondary, fontSize = 11.sp)
+                OutlinedTextField(
+                    value = trialDays,
+                    onValueChange = { trialDays = it },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
 
-        // Daily Maintenance Rate
-        BillingSettingField(
-            label = "দৈনিক সার্ভিস ফি (৳)",
-            description = "প্রতিদিন মধ্যরাতে ইউজার অ্যাকাউন্ট থেকে কাটা হবে।",
-            value = dailyRate,
-            onValueChange = { dailyRate = it }
-        )
-
-        // One-time Site Fee
-        BillingSettingField(
-            label = "ওয়েবসাইট যুক্তকরণ ফি (৳)",
-            description = "নতুন পেমেন্ট লেআউট/সাইট তৈরি করার ওয়ান-টাইম চার্জ।",
-            value = siteFee,
-            onValueChange = { siteFee = it }
-        )
-
-        // One-time Device Fee
-        BillingSettingField(
-            label = "চাইল্ড ডিভাইস অ্যাড ফি (৳)",
-            description = "নতুন চাইল্ড ডিভাইস যুক্ত করার ওয়ান-টাইম চার্জ।",
-            value = deviceFee,
-            onValueChange = { deviceFee = it }
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         Button(
             onClick = {
-                val updatedSettings = listOf(
-                    BillingSettingDto(settingKey = "default_signup_bonus", settingValue = signupBonus),
-                    BillingSettingDto(settingKey = "daily_maintenance_rate", settingValue = dailyRate),
-                    BillingSettingDto(settingKey = "one_time_site_fee", settingValue = siteFee),
-                    BillingSettingDto(settingKey = "one_time_device_fee", settingValue = deviceFee)
-                )
-                viewModel.saveBillingSettings(updatedSettings)
+                viewModel.updateConfig("trial_days", trialDays)
             },
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
             shape = RoundedCornerShape(8.dp),
@@ -291,7 +375,7 @@ fun BillingConfigScreen(
             } else {
                 Icon(imageVector = Icons.Default.Save, contentDescription = "Save", tint = MaterialTheme.colorScheme.onPrimary)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("বিলিং সেটিংস সংরক্ষণ করুন", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                Text("ট্রায়াল সেটিংস সংরক্ষণ করুন", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
             }
         }
 
@@ -347,49 +431,32 @@ fun BillingConfigScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(plan.planName, fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 15.sp)
-                            Text("৳${plan.price}", fontWeight = FontWeight.Bold, color = Color(0xFF22D3EE), fontSize = 15.sp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text("৳${plan.price}", fontWeight = FontWeight.Bold, color = Color(0xFF22D3EE), fontSize = 15.sp)
+                                IconButton(
+                                    onClick = {
+                                        planToDelete = plan
+                                        showPinDialog = true
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete Plan",
+                                        tint = StatusRed,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
                         }
                         Text("সর্বোচ্চ সাইট: ${plan.maxSites} | সর্বোচ্চ ডিভাইস: ${plan.maxDevices}", color = TextSecondary, fontSize = 12.sp)
                         Text("মেয়াদ: ${plan.durationDays} দিন", color = Color(0xFF10B981), fontSize = 12.sp)
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun BillingSettingField(
-    label: String,
-    description: String,
-    value: String,
-    onValueChange: (String) -> Unit
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-        shape = RoundedCornerShape(12.dp),
-        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(text = label, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Text(text = description, color = TextSecondary, fontSize = 11.sp)
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
-                    focusedTextColor = TextPrimary,
-                    unfocusedTextColor = TextPrimary
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
         }
     }
 }

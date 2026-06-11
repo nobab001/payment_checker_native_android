@@ -44,19 +44,18 @@ import androidx.compose.foundation.BorderStroke
 import online.paychek.app.ui.theme.RoyalIndigo
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
-import androidx.compose.material.icons.rounded.Smartphone
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.autofill.AutofillType
+import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import online.paychek.app.utils.autofill
+import androidx.compose.ui.autofill.ContentType
 import online.paychek.app.utils.disableAutofill
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
@@ -93,6 +92,7 @@ private val GradIndigo = Brush.horizontalGradient(listOf(RoyalIndigo, Color(0xFF
 @Composable
 fun ProfileSettingsScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToSubscription: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: ProfileSettingsViewModel = viewModel()
 ) {
@@ -190,13 +190,24 @@ fun ProfileSettingsScreen(
         topBar = {
             ProfileTopBar(
                 isDark = isDark,
+                currentTheme = currentTheme,
                 onThemeToggle = {
-                    val nextTheme = if (isDark) {
-                        android.widget.Toast.makeText(context, "লাইট মোড সক্রিয়", android.widget.Toast.LENGTH_SHORT).show()
-                        "light"
-                    } else {
-                        android.widget.Toast.makeText(context, "ডার্ক মোড সক্রিয়", android.widget.Toast.LENGTH_SHORT).show()
-                        "dark"
+                    val nextTheme = when (currentTheme) {
+                        "system" -> {
+                            // Currently following system; override to opposite
+                            if (isSystemDark) {
+                                android.widget.Toast.makeText(context, "লাইট মোড সক্রিয়", android.widget.Toast.LENGTH_SHORT).show()
+                                "light"
+                            } else {
+                                android.widget.Toast.makeText(context, "ডার্ক মোড সক্রিয়", android.widget.Toast.LENGTH_SHORT).show()
+                                "dark"
+                            }
+                        }
+                        else -> {
+                            // Already overridden; go back to system-follow mode
+                            android.widget.Toast.makeText(context, "সিস্টেম থিম সক্রিয়", android.widget.Toast.LENGTH_SHORT).show()
+                            "system"
+                        }
                     }
                     sharedPrefs.edit().putString("pcu_app_theme", nextTheme).apply()
                 },
@@ -225,6 +236,7 @@ fun ProfileSettingsScreen(
                     subscriptionPlan = state.subscriptionPlan,
                     avatarUrl        = localAvatarPath ?: state.avatarUrl,
                     onAvatarClick    = { imagePickerLauncher.launch("image/*") },
+                    onRenewClick     = onNavigateToSubscription,
                     isRestricted     = isRestricted,
                     modifier         = Modifier.padding(horizontal = 16.dp)
                 )
@@ -310,6 +322,7 @@ fun ProfileSettingsScreen(
 @Composable
 private fun ProfileTopBar(
     isDark: Boolean,
+    currentTheme: String,
     onThemeToggle: () -> Unit,
     onNavigateBack: () -> Unit
 ) {
@@ -365,6 +378,7 @@ private fun ProfileHeaderCard(
     subscriptionPlan: String,
     avatarUrl: String?,
     onAvatarClick: () -> Unit,
+    onRenewClick: () -> Unit,
     isRestricted: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -416,12 +430,12 @@ private fun ProfileHeaderCard(
                             )
                         } else {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text(
-                                    text     = if (userName.isNotEmpty()) userName.first().uppercase() else "M",
-                                    color    = Color.White,
-                                    fontSize = 26.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                  Text(
+                                      text     = if (userName.isNotEmpty()) userName.first().uppercase() else "M",
+                                      color    = Color.White,
+                                      fontSize = 26.sp,
+                                      fontWeight = FontWeight.Bold
+                                  )
                             }
                         }
                     }
@@ -435,13 +449,33 @@ private fun ProfileHeaderCard(
                         fontWeight = FontWeight.Bold
                     )
                     
-                    // Show dynamic subscription plan name below the user's name
-                    Text(
-                        text       = "Plan: $subscriptionPlan",
-                        color      = PsCyan,
-                        fontSize   = 13.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text       = "Plan: $subscriptionPlan",
+                            color      = PsCyan,
+                            fontSize   = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        // Renew/Subscription glassmorphic button
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(PsCyan.copy(alpha = 0.2f))
+                                .border(1.dp, PsCyan, RoundedCornerShape(8.dp))
+                                .clickable { onRenewClick() }
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "রিনিউ/সাবস্ক্রিপশন",
+                                color = PsCyan,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
 
                     // Display primary phone contact
                     if (!primaryPhone.isNullOrEmpty()) {
@@ -513,7 +547,7 @@ private fun SecurityPinCard(
             enabled  = !isRestricted,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Icon(Icons.Default.HelpOutline, null, tint = if (isRestricted) TextM.copy(alpha = 0.4f) else TextM, modifier = Modifier.size(16.dp))
+            Icon(Icons.AutoMirrored.Filled.HelpOutline, null, tint = if (isRestricted) TextM.copy(alpha = 0.4f) else TextM, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
             Text("পিন ভুলে গেছেন? OTP দিয়ে রিসেট করুন", color = if (isRestricted) TextM.copy(alpha = 0.4f) else TextM, fontSize = 13.sp)
         }
@@ -644,8 +678,7 @@ private fun AddCredentialDialog(
                         enabled     = !state.addCredentialOtpSent,
                         keyType     = if (isPhone) KeyboardType.Phone else KeyboardType.Email,
                         accent      = accent,
-                        autofillTypes = if (isPhone) listOf(AutofillType.PhoneNumber) else listOf(AutofillType.EmailAddress),
-                        onFill = { viewModel.onAddCredentialContactChange(it) }
+                        contentType = if (isPhone) ContentType.PhoneNumber else ContentType.EmailAddress
                     )
 
                     // OTP input (visible after send)
@@ -920,8 +953,7 @@ private fun ResetPinDialog(
                         icon          = Icons.Default.ContactPhone,
                         enabled       = !state.resetPinOtpSent,
                         accent        = PsGreen,
-                        autofillTypes = listOf(AutofillType.PhoneNumber, AutofillType.EmailAddress),
-                        onFill = { viewModel.onResetPinContactChange(it) }
+                        contentType   = ContentType.PhoneNumber + ContentType.EmailAddress
                     )
 
                     AnimatedVisibility(visible = state.resetPinOtpSent) {
@@ -1061,12 +1093,11 @@ private fun PsTextField(
     enabled: Boolean = true,
     keyType: KeyboardType = KeyboardType.Text,
     accent: Color = PsCyan,
-    autofillTypes: List<AutofillType>? = null,
-    onFill: ((String) -> Unit)? = null
+    contentType: ContentType? = null
 ) {
     val fieldModifier = Modifier.fillMaxWidth().run {
-        if (autofillTypes != null && onFill != null) {
-            autofill(autofillTypes, onFill)
+        if (contentType != null) {
+            semantics { this.contentType = contentType }
         } else {
             this
         }

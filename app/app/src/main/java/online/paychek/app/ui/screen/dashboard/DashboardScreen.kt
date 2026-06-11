@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -74,6 +75,7 @@ private val GradientHeader = Brush.linearGradient(
 @Composable
 fun DashboardScreen(
     onNavigateToHistory: () -> Unit,
+    onNavigateToSubscription: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: DashboardViewModel = viewModel()
 ) {
@@ -124,7 +126,7 @@ fun DashboardScreen(
             onBuyPlanClick = {
                 showExpiryReminderDialog = false
                 hasShownReminder = true
-                viewModel.setShowPurchaseDialog(true)
+                onNavigateToSubscription()
             }
         )
     }
@@ -159,7 +161,7 @@ fun DashboardScreen(
                         isPaid = isPaid,
                         activePlanName = successStats.activePlanName,
                         expiryDate = successStats.expiryDate,
-                        onBuyPlanClick = { viewModel.setShowPurchaseDialog(true) },
+                        onBuyPlanClick = onNavigateToSubscription,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
@@ -172,7 +174,7 @@ fun DashboardScreen(
                     onToggle    = { enable ->
                         if (enable) {
                             if (!isPaid) {
-                                viewModel.setShowPurchaseDialog(true)
+                                onNavigateToSubscription()
                             } else {
                                 val simStatus = online.paychek.app.utils.DeviceIdHelper.getSimSlotIds(context)
                                 if (simStatus == "no_sims" || simStatus == "permission_denied") {
@@ -457,7 +459,7 @@ private fun StatsGrid(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             StatCard(
-                icon       = Icons.Default.ReceiptLong,
+                icon       = Icons.AutoMirrored.Filled.ReceiptLong,
                 iconColor  = Color(0xFF818CF8),   // Indigo
                 label      = "মোট ট্রানজেকশন",
                 subLabel   = "Total Transactions",
@@ -833,7 +835,7 @@ private fun formatTimestamp(raw: String): String {
         // ISO 8601 format handle
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
         val date = sdf.parse(raw) ?: Date()
-        SimpleDateFormat("dd MMM, hh:mm a", Locale("bn", "BD")).format(date)
+        SimpleDateFormat("dd MMM, hh:mm a", Locale.forLanguageTag("bn-BD")).format(date)
     } catch (e: Exception) {
         raw.take(16)
     }
@@ -844,7 +846,7 @@ private fun formatExpiryDateToBangla(dateStr: String?): String {
     return try {
         val inputFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val date = inputFormat.parse(dateStr) ?: return dateStr
-        val outputFormat = SimpleDateFormat("dd MMMM, yyyy", Locale("bn", "BD"))
+        val outputFormat = SimpleDateFormat("dd MMMM, yyyy", Locale.forLanguageTag("bn-BD"))
         outputFormat.format(date)
     } catch (e: Exception) {
         dateStr
@@ -1011,7 +1013,7 @@ fun SubscriptionPurchaseDialog(
             Text(
                 "সাবস্ক্রিপশন প্যাকেজ কিনুন",
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = TextWhite,
                 fontSize = 18.sp
             )
         },
@@ -1053,7 +1055,7 @@ fun SubscriptionPurchaseDialog(
                                     Text(
                                         text = plan.planName,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.White,
+                                        color = TextWhite,
                                         fontSize = 15.sp
                                     )
                                     Text(

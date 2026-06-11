@@ -16,6 +16,8 @@ class CredentialViewModel(private val repository: CredentialRepository) : ViewMo
     // UI কন্ট্রোল স্টেটস
     var linkedPhones by mutableStateOf<List<CredentialItem>>(emptyList())
     var linkedEmails by mutableStateOf<List<CredentialItem>>(emptyList())
+    var primaryPhone by mutableStateOf<String?>(null)
+    var primaryEmail by mutableStateOf<String?>(null)
     var isOtpSentForLinking by mutableStateOf(false)
     var errorMessage by mutableStateOf<String?>(null)
 
@@ -33,6 +35,8 @@ class CredentialViewModel(private val repository: CredentialRepository) : ViewMo
                 .onSuccess { response ->
                     linkedPhones = response.phones
                     linkedEmails = response.emails
+                    primaryPhone = response.primaryPhone
+                    primaryEmail = response.primaryEmail
                 }
                 .onFailure { error ->
                     errorMessage = error.message

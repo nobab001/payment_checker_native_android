@@ -331,6 +331,9 @@ async function listUsers(req, res) {
     const result = users.map(u => {
       return {
         ...u,
+        is_paid: !!u.is_paid,
+        blocked: !!u.blocked,
+        profile_complete: !!u.profile_complete,
         devices: devicesByUserId[u.id] || []
       };
     });
@@ -462,10 +465,10 @@ async function addSite(req, res) {
     const currentSites = currentSitesRows[0].cnt;
 
     if (currentSites >= plan.max_sites) {
-      return res.status(400).json({
+      return res.status(403).json({
         success: false,
         error: 'LIMIT_EXCEEDED',
-        message: `আপনার বর্তমান প্ল্যানে সর্বোচ্চ ${plan.max_sites}টি ওয়েবসাইট হোস্ট করা সম্ভব। দয়া করে প্ল্যানটি আপগ্রেড করুন।`
+        message: `👑 লিমিট শেষ! আরও সাইট বা ডিভাইস যুক্ত করতে অনুগ্রহ করে আপনার প্যাকেজটি আপগ্রেড করুন।`
       });
     }
 
@@ -506,36 +509,6 @@ async function addSite(req, res) {
   }
 }
 
-async function getBillingSettings(req, res) {
-  try {
-    const settings = await query('SELECT * FROM global_billing_settings');
-    return res.json({ success: true, settings });
-  } catch (err) {
-    console.error('[Admin Billing] getBillingSettings error:', err);
-    return res.status(500).json({ error: 'Internal Server Error' });
-  }
-}
-
-async function updateBillingSettings(req, res) {
-  try {
-    const { settings } = req.body;
-    if (!settings || !Array.isArray(settings)) {
-      return res.status(400).json({ error: 'Invalid settings format. Array required.' });
-    }
-
-    for (const setting of settings) {
-      await query(
-        'INSERT INTO global_billing_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?',
-        [setting.setting_key, String(setting.setting_value), String(setting.setting_value)]
-      );
-    }
-
-    return res.json({ success: true, message: 'Global billing settings updated successfully.' });
-  } catch (err) {
-    console.error('[Admin Billing] updateBillingSettings error:', err);
-    return res.status(500).json({ error: 'Internal Server Error' });
-  }
-}
 
 async function manualGrace(req, res) {
   try {
@@ -605,7 +578,5 @@ module.exports = {
   getOtpFormat,
   updateOtpFormat,
   addSite,
-  getBillingSettings,
-  updateBillingSettings,
   manualGrace
 };

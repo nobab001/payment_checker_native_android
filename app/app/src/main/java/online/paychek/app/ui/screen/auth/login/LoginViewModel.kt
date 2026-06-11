@@ -300,6 +300,10 @@ class LoginViewModel : ViewModel() {
         _uiState.update { it.copy(showDeviceBoundDialog = false) }
     }
 
+    fun dismissLimitExceededDialog() {
+        _uiState.update { it.copy(showLimitExceededDialog = false) }
+    }
+
     fun proceedToRegister(context: Context) {
         val contact = _uiState.value.contact.trim()
         val deviceId = DeviceIdHelper.getHashedAndroidId(context)
@@ -383,7 +387,14 @@ class LoginViewModel : ViewModel() {
                     onOtpVerified(verifyResponse)
                 } else {
                     val errorBody = response.errorBody()?.string()
-                    if (response.code() == 403 && (errorBody?.contains("DEVICE_ALREADY_BOUND") == true || errorBody?.contains("TRIAL_EXPIRED_FOR_DEVICE") == true)) {
+                    if (response.code() == 403 && errorBody?.contains("LIMIT_EXCEEDED") == true) {
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                showLimitExceededDialog = true
+                            )
+                        }
+                    } else if (response.code() == 403 && (errorBody?.contains("DEVICE_ALREADY_BOUND") == true || errorBody?.contains("TRIAL_EXPIRED_FOR_DEVICE") == true)) {
                         val (phones, emails) = parseBoundCredentials(errorBody)
                         _uiState.update {
                             it.copy(
@@ -467,6 +478,7 @@ data class LoginUiState(
     val isTrialBlocked: Boolean = false,
     val showRegisterDialog: Boolean = false,
     val showDeviceBoundDialog: Boolean = false,
+    val showLimitExceededDialog: Boolean = false,
     val boundPhones: List<String> = emptyList(),
     val boundEmails: List<String> = emptyList(),
     val errorMessage: String? = null,

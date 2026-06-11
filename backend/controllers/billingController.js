@@ -147,9 +147,28 @@ async function createPlan(req, res) {
   }
 }
 
+/**
+ * DELETE /api/admin/plans/:id
+ * Deletes a subscription plan (Admin Only).
+ */
+async function deletePlan(req, res) {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'Missing plan ID.' });
+    }
+    await query('DELETE FROM subscription_plans WHERE id = ?', [id]);
+    return res.json({ success: true, message: 'প্ল্যান সফলভাবে ডিলিট করা হয়েছে।' });
+  } catch (error) {
+    console.error('[Billing Controller] deletePlan error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   updateFcmToken,
   purchaseSubscription,
   listPlans,
-  createPlan
+  createPlan,
+  deletePlan
 };

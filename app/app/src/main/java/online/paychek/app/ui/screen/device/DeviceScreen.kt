@@ -37,7 +37,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import online.paychek.app.data.remote.dto.GatewayMethod
 import online.paychek.app.data.remote.dto.ChildDeviceDto
 import online.paychek.app.ui.theme.*
@@ -134,13 +133,13 @@ fun DeviceScreen(
             // ─── Tab Row ─────────────────────────────────────────────────────
             if (isOwner) {
                 item {
-                    TabRow(
+                    SecondaryTabRow(
                         selectedTabIndex = currentSubTab,
                         containerColor = GwBg,
                         contentColor = AccentCyan,
-                        indicator = { tabPositions ->
+                        indicator = {
                             TabRowDefaults.SecondaryIndicator(
-                                modifier = Modifier.tabIndicatorOffset(tabPositions[currentSubTab]),
+                                modifier = Modifier.tabIndicatorOffset(currentSubTab),
                                 color = AccentCyan
                             )
                         },

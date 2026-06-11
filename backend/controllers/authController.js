@@ -482,7 +482,11 @@ async function verifyOtp(req, res) {
       // Plan limit check for child devices
       if (isParent === 0) {
         if (user.is_paid === 0 || user.active_plan_name === 'FREE_LEVEL') {
-          return res.status(403).json({ error: 'ফ্রি লেভেলের ব্যবহারকারীদের জন্য অতিরিক্ত চাইল্ড ডিভাইস যুক্ত করা অনুমোদিত নয়। অনুগ্রহ করে সাবস্ক্রিপশন প্ল্যান আপগ্রেড করুন।' });
+          return res.status(403).json({
+            success: false,
+            error: 'LIMIT_EXCEEDED',
+            message: '👑 লিমিট শেষ! আরও সাইট বা ডিভাইস যুক্ত করতে অনুগ্রহ করে আপনার প্যাকেজটি আপগ্রেড করুন।'
+          });
         }
         
         // Fetch plan limits
@@ -493,7 +497,11 @@ async function verifyOtp(req, res) {
         const maxDevices = plans.length > 0 ? plans[0].max_devices : 1;
         
         if (userDevicesCount[0].count >= maxDevices) {
-          return res.status(403).json({ error: `আপনার কারেন্ট প্যাকেজ (${user.active_plan_name}) এ সর্বোচ্চ ${maxDevices}টি ডিভাইস যুক্ত করতে পারবেন। অনুগ্রহ করে প্যাকেজ আপগ্রেড করুন।` });
+          return res.status(403).json({
+            success: false,
+            error: 'LIMIT_EXCEEDED',
+            message: '👑 লিমিট শেষ! আরও সাইট বা ডিভাইস যুক্ত করতে অনুগ্রহ করে আপনার প্যাকেজটি আপগ্রেড করুন।'
+          });
         }
       }
 
@@ -1613,7 +1621,7 @@ async function getProfile(req, res) {
         phone: users[0].phone,
         email: users[0].email,
         role: users[0].role,
-        isPaid: users[0].is_paid,
+        isPaid: !!users[0].is_paid,
         activePlanName: users[0].active_plan_name,
         expiryDate: users[0].expiry_date,
         avatar: users[0].avatar

@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import online.paychek.app.ui.theme.*
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.animation.core.*
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -124,6 +125,39 @@ fun LoginScreen(
         )
     }
 
+    // ── "👑 লিমিট শেষ" প্রিমিয়াম কাস্টম ডায়ালগ ─────────────
+    if (uiState.showLimitExceededDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissLimitExceededDialog() },
+            title = {
+                Text(
+                    text = "👑 লিমিট শেষ!",
+                    color = Color(0xFFF59E0B),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Text(
+                    text = "আপনি আপনার বর্তমান প্যাকেজের সর্বোচ্চ সীমা অতিক্রম করেছেন। আরও সাইট বা ডিভাইস যুক্ত করতে অনুগ্রহ করে আপনার প্যাকেজটি আপগ্রেড করুন।",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.dismissLimitExceededDialog() }
+                ) {
+                    Text("ঠিক আছে", color = RoyalIndigo, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(20.dp),
+            modifier = if (isSystemInDarkTheme()) Modifier else Modifier.border(1.dp, Color(0xFFE3E5E8), RoundedCornerShape(20.dp))
+        )
+    }
+
     // ── "ডিভাইস লিংক নোটিশ" প্রিমিয়াম কাস্টম ডায়ালগ ─────────────
     if (uiState.showDeviceBoundDialog) {
         Dialog(
@@ -132,7 +166,7 @@ fun LoginScreen(
         ) {
             Surface(
                 shape    = RoundedCornerShape(20.dp),
-                color    = Color.White,
+                color    = MaterialTheme.colorScheme.surface,
                 tonalElevation = 8.dp,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -181,7 +215,7 @@ fun LoginScreen(
                         // মূল সিকিউরিটি বার্তা
                         Text(
                             text       = "নিরাপত্তা নিশ্চিতকরণ ও অ্যাকাউন্ট পলিসির কারণে একটি ডিভাইসে কেবল একটি অ্যাকাউন্টই সক্রিয় রাখা অনুমোদিত। আপনার এই ডিভাইসটি ইতিমধ্যে নিচের অ্যাকাউন্টের সাথে লিংক করা রয়েছে:",
-                            color      = Color(0xFF475569),
+                            color      = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize   = 13.sp,
                             lineHeight = 19.sp
                         )
@@ -193,7 +227,7 @@ fun LoginScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .background(
-                                        color = Color(0xFFF1F5F9),
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
                                         shape = RoundedCornerShape(12.dp)
                                     )
                                     .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -202,7 +236,7 @@ fun LoginScreen(
                                 Text(
                                     text       = "লিংকড অ্যাকাউন্ট:",
                                     fontWeight = FontWeight.SemiBold,
-                                    color      = Color(0xFF334155),
+                                    color      = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize   = 11.sp
                                 )
                                 // ── ফোন নম্বরগুলো ──
@@ -227,7 +261,7 @@ fun LoginScreen(
                                         Text(
                                             text       = maskedPhone,
                                             fontWeight = FontWeight.SemiBold,
-                                            color      = Color(0xFF1E293B),
+                                            color      = MaterialTheme.colorScheme.onSurface,
                                             fontSize   = 13.sp
                                         )
                                     }
@@ -254,7 +288,7 @@ fun LoginScreen(
                                         Text(
                                             text       = maskedEmail,
                                             fontWeight = FontWeight.SemiBold,
-                                            color      = Color(0xFF1E293B),
+                                            color      = MaterialTheme.colorScheme.onSurface,
                                             fontSize   = 13.sp
                                         )
                                     }
@@ -264,7 +298,7 @@ fun LoginScreen(
 
                         Text(
                             text       = "নতুন করে অন্য কোনো অ্যাকাউন্ট এই ডিভাইসে যুক্ত করা সম্ভব নয়। অ্যাপের সেবা উপভোগ করতে দয়া করে আপনার ওপরের লিংক করা অ্যাকাউন্টটি ব্যবহার করুন।",
-                            color      = Color(0xFF64748B),
+                            color      = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize   = 12.sp,
                             lineHeight = 18.sp
                         )
@@ -293,7 +327,7 @@ fun LoginScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(AppBackground)
+            .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 24.dp, vertical = 16.dp),
         contentAlignment = Alignment.TopCenter
     ) {
@@ -355,14 +389,14 @@ fun LoginScreen(
                 text = "Payment Checker",
                 fontSize = 28.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = RoyalIndigo,
+                color = MaterialTheme.colorScheme.primary,
                 textAlign = TextAlign.Center
             )
 
             Text(
                 text = "SMS পেমেন্ট ট্র্যাকার",
                 fontSize = 14.sp,
-                color = TextSecondary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
 
@@ -371,7 +405,7 @@ fun LoginScreen(
             // Error Message display
             uiState.errorMessage?.let { error ->
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
+                    colors = CardDefaults.cardColors(containerColor = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF3D1F1F) else Color(0xFFFFEBEE)),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -411,12 +445,14 @@ fun LoginScreen(
                 readOnly = uiState.isOtpSent,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color(0xFFFBFBFC),
-                    focusedBorderColor = RoyalIndigo,
-                    unfocusedBorderColor = Color(0xFFE2E8F0),
-                    focusedPlaceholderColor = Color(0xFF94A3B8),
-                    unfocusedPlaceholderColor = Color(0xFF94A3B8)
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -434,7 +470,7 @@ fun LoginScreen(
                     Text(
                         text = "আমরা আপনার দেওয়া ঠিকানায় ৬ ডিজিটের ওটিপি পাঠিয়েছি।",
                         fontSize = 12.sp,
-                        color = TextSecondary
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     val isBypass = uiState.contact == "admin"
@@ -459,10 +495,12 @@ fun LoginScreen(
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = Color.White,
-                                unfocusedContainerColor = Color(0xFFFBFBFC),
-                                focusedBorderColor = RoyalIndigo,
-                                unfocusedBorderColor = Color(0xFFE2E8F0)
+                                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                             ),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -493,12 +531,12 @@ fun LoginScreen(
                                         modifier = Modifier
                                             .size(width = 44.dp, height = 52.dp)
                                             .background(
-                                                color = if (char.isNotEmpty()) Color.White else Color(0xFFFBFBFC),
+                                                color = if (char.isNotEmpty()) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant,
                                                 shape = RoundedCornerShape(12.dp)
                                             )
                                             .border(
                                                 width = if (isFocused) 2.dp else 1.dp,
-                                                color = if (isFocused) RoyalIndigo else Color(0xFFE2E8F0),
+                                                color = if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
                                                 shape = RoundedCornerShape(12.dp)
                                             ),
                                         contentAlignment = Alignment.Center
@@ -511,15 +549,15 @@ fun LoginScreen(
                                                 text = char,
                                                 fontSize = 20.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                color = RoyalIndigo,
+                                                color = MaterialTheme.colorScheme.primary,
                                                 textAlign = TextAlign.Center
                                             )
                                             if (isFocused && char.isNotEmpty()) {
-                                                BlinkingCursor(color = RoyalIndigo)
+                                                BlinkingCursor(color = MaterialTheme.colorScheme.primary)
                                             }
                                         }
                                         if (isFocused && char.isEmpty()) {
-                                            BlinkingCursor(color = RoyalIndigo)
+                                            BlinkingCursor(color = MaterialTheme.colorScheme.primary)
                                         }
                                     }
                                 }
@@ -573,7 +611,7 @@ fun LoginScreen(
                             Text(
                                 text = "${uiState.timerSeconds} সেকেন্ড পর আবার পাঠান",
                                 fontSize = 12.sp,
-                                color = TextSecondary
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         } else {
                             TextButton(
@@ -637,17 +675,17 @@ fun LoginScreen(
             ) {
                 HorizontalDivider(
                     modifier = Modifier.weight(1f),
-                    color = Color(0xFFE2E8F0)
+                    color = MaterialTheme.colorScheme.outlineVariant
                 )
                 Text(
                     text = "আমাদের সাথে থাকুন",
                     fontSize = 12.sp,
-                    color = TextSecondary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
                 HorizontalDivider(
                     modifier = Modifier.weight(1f),
-                    color = Color(0xFFE2E8F0)
+                    color = MaterialTheme.colorScheme.outlineVariant
                 )
             }
 
@@ -770,7 +808,7 @@ fun SocialItem(
         Text(
             text = name,
             fontSize = 11.sp,
-            color = TextSecondary,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Medium
         )
     }
@@ -787,7 +825,7 @@ fun PremiumRegisterDialog(
     ) {
         Surface(
             shape = RoundedCornerShape(24.dp),
-            color = Color(0xFFFAF9F6),
+            color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp,
             modifier = Modifier
                 .fillMaxWidth()
@@ -806,14 +844,14 @@ fun PremiumRegisterDialog(
                     text = "অ্যাকাউন্ট পাওয়া যায়নি",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1A1C1E),
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
 
                 Text(
                     text = "এই জিমেইল/নম্বরটি আমাদের সিস্টেমে নিবন্ধিত নেই। আপনি কি একটি নতুন অ্যাকাউন্ট তৈরি করতে চান?",
                     fontSize = 14.sp,
-                    color = Color(0xFF42474E),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 20.sp,
                     modifier = Modifier.padding(bottom = 28.dp)
                 )

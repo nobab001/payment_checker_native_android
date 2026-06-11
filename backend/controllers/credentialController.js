@@ -192,7 +192,7 @@ async function removeCredential(req, res) {
       return res.status(400).json({ error: 'নিরাপত্তা PIN প্রদান করা আবশ্যক।' });
     }
 
-    const users = await query('SELECT pin FROM users WHERE id = ? LIMIT 1', [userId]);
+    const users = await query('SELECT pin, phone, email FROM users WHERE id = ? LIMIT 1', [userId]);
     if (users.length === 0) {
       return res.status(404).json({ error: 'ইউজার খুঁজে পাওয়া যায়নি।' });
     }
@@ -206,6 +206,30 @@ async function removeCredential(req, res) {
     const isMatch = await bcrypt.compare(pin, currentHash);
     if (!isMatch) {
       return res.status(401).json({ error: 'ভুল পিন নম্বর।' });
+    }
+
+    // Check if user is attempting to delete primary phone or email
+    const targetCred = await query(
+      'SELECT type, value FROM user_credentials WHERE id = ? AND user_id = ? LIMIT 1',
+      [credId, userId]
+    );
+    if (targetCred.length === 0) {
+      return res.status(404).json({ error: 'Credential খুঁজে পাওয়া যায়নি।' });
+    }
+
+    const primaryPhone = users[0].phone;
+    const primaryEmail = users[0].email;
+    const credType = targetCred[0].type;
+    const credValue = targetCred[0].value;
+
+    const isPrimaryPhone = credType === 'phone' && primaryPhone &&
+      credValue.replace(/[^0-9]/g, '').slice(-10) === primaryPhone.replace(/[^0-9]/g, '').slice(-10);
+
+    const isPrimaryEmail = credType === 'email' && primaryEmail &&
+      credValue.trim().toLowerCase() === primaryEmail.trim().toLowerCase();
+
+    if (isPrimaryPhone || isPrimaryEmail) {
+      return res.status(400).json({ error: 'প্রধান/মেইন ক্রেডেনশিয়াল মুছে ফেলা সম্ভব নয়।' });
     }
 
     const result = await query(

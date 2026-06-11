@@ -248,7 +248,12 @@ class SmsReceiver(
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 val info = subscriptionManager.getActiveSubscriptionInfo(subscriptionId)
-                info?.number?.takeIf { it.isNotBlank() }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    subscriptionManager.getPhoneNumber(subscriptionId).takeIf { it.isNotBlank() }
+                } else {
+                    @Suppress("DEPRECATION")
+                    info?.number?.takeIf { it.isNotBlank() }
+                }
             } else {
                 null
             }
