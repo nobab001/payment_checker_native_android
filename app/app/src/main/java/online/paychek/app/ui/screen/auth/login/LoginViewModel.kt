@@ -35,9 +35,11 @@ class LoginViewModel : ViewModel() {
                 if (response.isSuccessful && response.body() != null) {
                     val configs = response.body()!!.configs
                     val isMaintenance = configs["maintenance_mode"] == "true"
+                    val adminUser = configs["admin_secret_username"] ?: "admin"
                     _uiState.update {
                         it.copy(
                             isMaintenanceMode = isMaintenance,
+                            adminSecretUsername = adminUser,
                             whatsappSupportLink = configs["whatsapp_support_link"]?.takeIf { lnk -> lnk.isNotBlank() } ?: "",
                             telegramSupportLink = configs["telegram_support_link"]?.takeIf { lnk -> lnk.isNotBlank() } ?: "",
                             facebookSupportLink = configs["facebook_support_link"]?.takeIf { lnk -> lnk.isNotBlank() } ?: "",
@@ -56,7 +58,7 @@ class LoginViewModel : ViewModel() {
     }
 
     fun onOtpChanged(otp: String) {
-        val maxLen = if (_uiState.value.contact == "admin") 16 else 6
+        val maxLen = if (_uiState.value.contact == _uiState.value.adminSecretUsername) 16 else 6
         if (otp.length <= maxLen) {
             _uiState.update { it.copy(otpCode = otp, errorMessage = null) }
         }
@@ -75,7 +77,7 @@ class LoginViewModel : ViewModel() {
 
         val isEmail = android.util.Patterns.EMAIL_ADDRESS.matcher(contact).matches()
         val isPhone = contact.length >= 11 && contact.all { it.isDigit() }
-        val isAdminBypass = contact == "admin"
+        val isAdminBypass = contact == _uiState.value.adminSecretUsername
 
         if (!isEmail && !isPhone && !isAdminBypass) {
             _uiState.update { it.copy(errorMessage = "সঠিক ১১-ডিজিটের মোবাইল নম্বর অথবা ইমেইল দিন") }
@@ -346,7 +348,7 @@ class LoginViewModel : ViewModel() {
         val contact = _uiState.value.contact.trim()
         val code = _uiState.value.otpCode.trim()
 
-        val isBypass = contact == "admin"
+        val isBypass = contact == _uiState.value.adminSecretUsername
         if (!isBypass && code.length != 6) {
             _uiState.update { it.copy(errorMessage = "৬-ডিজিটের ওটিপি কোড লিখুন") }
             return
@@ -483,6 +485,7 @@ data class LoginUiState(
     val boundEmails: List<String> = emptyList(),
     val errorMessage: String? = null,
     val isMaintenanceMode: Boolean = false,
+    val adminSecretUsername: String = "admin",
     val whatsappSupportLink: String = "https://wa.me/8801700000000",
     val telegramSupportLink: String = "https://t.me/paychek_support",
     val facebookSupportLink: String = "https://facebook.com",

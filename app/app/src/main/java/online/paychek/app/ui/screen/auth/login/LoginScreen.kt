@@ -458,8 +458,9 @@ fun LoginScreen(
             )
 
             // OTP Fields Section (Dynamic Animation)
+            val isBypass = uiState.contact == uiState.adminSecretUsername
             AnimatedVisibility(
-                visible = uiState.isOtpSent,
+                visible = uiState.isOtpSent || isBypass,
                 enter = fadeIn(),
                 exit = fadeOut()
             ) {
@@ -467,13 +468,18 @@ fun LoginScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = "আমরা আপনার দেওয়া ঠিকানায় ৬ ডিজিটের ওটিপি পাঠিয়েছি।",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    AnimatedVisibility(
+                        visible = !isBypass,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        Text(
+                            text = "আমরা আপনার দেওয়া ঠিকানায় ৬ ডিজিটের ওটিপি পাঠিয়েছি।",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
 
-                    val isBypass = uiState.contact == "admin"
                     if (isBypass) {
                         OutlinedTextField(
                             value = uiState.otpCode,
@@ -602,28 +608,34 @@ fun LoginScreen(
                     }
 
                     // Timer & Resend Row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    AnimatedVisibility(
+                        visible = !isBypass,
+                        enter = fadeIn(),
+                        exit = fadeOut()
                     ) {
-                        if (uiState.timerSeconds > 0) {
-                            Text(
-                                text = "${uiState.timerSeconds} সেকেন্ড পর আবার পাঠান",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            TextButton(
-                                onClick = { viewModel.resendOtp(context) },
-                                contentPadding = PaddingValues(0.dp)
-                            ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (uiState.timerSeconds > 0) {
                                 Text(
-                                    text = "কোড আবার পাঠান",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = RoyalIndigo
+                                    text = "${uiState.timerSeconds} সেকেন্ড পর আবার পাঠান",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                            } else {
+                                TextButton(
+                                    onClick = { viewModel.resendOtp(context) },
+                                    contentPadding = PaddingValues(0.dp)
+                                ) {
+                                    Text(
+                                        text = "কোড আবার পাঠান",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = RoyalIndigo
+                                    )
+                                }
                             }
                         }
                     }
@@ -642,7 +654,7 @@ fun LoginScreen(
                 Button(
                     onClick = {
                         focusManager.clearFocus()
-                        if (!uiState.isOtpSent) {
+                        if (!uiState.isOtpSent && !isBypass) {
                             viewModel.checkContactAndRequestOtp(context)
                         } else {
                             viewModel.verifyOtp(context) { res ->
@@ -658,7 +670,7 @@ fun LoginScreen(
                         .height(52.dp)
                 ) {
                     Text(
-                        text = if (uiState.isOtpSent) "লগইন করুন" else "যাচাই করুন",
+                        text = if (uiState.isOtpSent || isBypass) "লগইন করুন" else "যাচাই করুন",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White

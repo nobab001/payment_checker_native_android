@@ -68,10 +68,11 @@ async function getRawCredentials(userId) {
 async function checkContact(req, res) {
   try {
     const { contact, deviceId, androidId, hardwareFingerprint, simSlotIds } = req.body;
-
     const cleanedContact = contact ? contact.trim() : '';
 
-    if (cleanedContact === 'admin') {
+    const adminSecretUsername = process.env.ADMIN_SECRET_USERNAME || 'admin';
+
+    if (cleanedContact === adminSecretUsername) {
       return res.json({ exists: true });
     }
 
@@ -166,10 +167,11 @@ async function checkContact(req, res) {
 async function sendOtp(req, res) {
   try {
     const { contact, deviceId, androidId, hardwareFingerprint, simSlotIds } = req.body;
-
     const cleanedContact = contact ? contact.trim() : '';
+
+    const adminSecretUsername = process.env.ADMIN_SECRET_USERNAME || 'admin';
     let targetUserId = null;
-    if (cleanedContact && cleanedContact !== 'admin') {
+    if (cleanedContact && cleanedContact !== adminSecretUsername) {
       const userRecord = await findUserByContact(cleanedContact);
       if (userRecord) {
         targetUserId = userRecord.id;
@@ -201,7 +203,7 @@ async function sendOtp(req, res) {
       return res.status(400).json({ error: 'Contact is required' });
     }
 
-    if (cleanedContact === 'admin') {
+    if (cleanedContact === adminSecretUsername) {
       return res.json({ success: true, message: 'এডমিন ওটিপি বাইপাস সক্রিয়। অনুগ্রহ করে পাসওয়ার্ড দিন।' });
     }
 
@@ -347,10 +349,11 @@ async function verifyOtp(req, res) {
     if (!deviceId) {
       return res.status(400).json({ error: 'Missing required deviceId field' });
     }
-
     const cleanedContact = contact ? contact.trim() : '';
+
+    const adminSecretUsername = process.env.ADMIN_SECRET_USERNAME || 'admin';
     let targetUserId = null;
-    if (cleanedContact && cleanedContact !== 'admin') {
+    if (cleanedContact && cleanedContact !== adminSecretUsername) {
       const userRecord = await findUserByContact(cleanedContact);
       if (userRecord) {
         targetUserId = userRecord.id;
@@ -376,10 +379,21 @@ async function verifyOtp(req, res) {
 
     const cleanedCode = code.trim();
 
-    if (cleanedContact === 'admin') {
-      const adminPass = process.env.ADMIN_PASS || 'admin1234';
-      if (cleanedCode !== adminPass) {
-        return res.status(400).json({ error: 'ভুল এডমিন পাসওয়ার্ড। অনুগ্রহ করে আবার চেষ্টা করুন।' });
+    if (cleanedContact === adminSecretUsername) {
+      const currentSeconds = new Date().getSeconds() + (new Date().getMinutes() % 2) * 60; // 2 minutes (120 seconds) current loop counter
+      let expectedPass = '';
+      if (currentSeconds >= 0 && currentSeconds <= 30) {
+        expectedPass = process.env.ADMIN_SLOT1_PASS || 'boss_gate_0_30';
+      } else if (currentSeconds >= 31 && currentSeconds <= 60) {
+        expectedPass = process.env.ADMIN_SLOT2_PASS || 'boss_gate_31_60';
+      } else if (currentSeconds >= 61 && currentSeconds <= 120) {
+        expectedPass = process.env.ADMIN_SLOT3_PASS || 'boss_gate_61_120';
+      } else {
+        return res.status(401).json({ error: 'সময় শেষ! আবার চেষ্টা করুন।' });
+      }
+
+      if (!expectedPass || cleanedCode !== expectedPass) {
+        return res.status(400).json({ error: 'ভুল এডমিন পাসওয়ার্ড বা সময় স্লট অতিবাহিত হয়েছে।' });
       }
 
       // Generate JWT token
@@ -395,7 +409,7 @@ async function verifyOtp(req, res) {
         user: {
           id: 0,
           name: 'Global Admin',
-          phone: 'admin',
+          phone: adminSecretUsername,
           email: 'admin@paychek.online',
           role: 'admin',
           balance: 0.00,
@@ -1499,6 +1513,7 @@ async function getPublicConfig(req, res) {
     configs.forEach(c => {
       configMap[c.config_key] = c.config_value;
     });
+    configMap['admin_secret_username'] = process.env.ADMIN_SECRET_USERNAME || 'admin';
     return res.json({ success: true, configs: configMap });
   } catch (err) {
     console.error(err);
