@@ -89,6 +89,10 @@ fun ProfileSettingsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scroll = rememberScrollState()
     val context = LocalContext.current
+    val localAvatarFile = remember { java.io.File(context.filesDir, "profile_avatar.png") }
+    var localAvatarPath by remember {
+        mutableStateOf<String?>(if (localAvatarFile.exists()) localAvatarFile.absolutePath else null)
+    }
     var selectedUriForCrop by remember { mutableStateOf<android.net.Uri?>(null) }
     var bitmapToCrop by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
 
@@ -161,7 +165,7 @@ fun ProfileSettingsScreen(
                     primaryPhone     = state.primaryPhone,
                     primaryEmail     = state.primaryEmail,
                     subscriptionType = state.subscriptionType,
-                    avatarUrl        = state.avatarUrl,
+                    avatarUrl        = localAvatarPath ?: state.avatarUrl,
                     isUploadingAvatar = state.isUploadingAvatar,
                     onAvatarClick    = { imagePickerLauncher.launch("image/*") },
                     modifier         = Modifier.padding(horizontal = 16.dp)
@@ -219,18 +223,18 @@ fun ProfileSettingsScreen(
                 selectedUriForCrop = null
                 bitmapToCrop = null
                 
-                val cacheDir = context.cacheDir
-                val localFile = java.io.File(cacheDir, "avatar_preview.jpg")
+                val localFile = java.io.File(context.filesDir, "profile_avatar.png")
                 try {
                     val outputStream = java.io.FileOutputStream(localFile)
-                    croppedBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, outputStream)
+                    croppedBmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outputStream)
                     outputStream.close()
                     val localPath = localFile.absolutePath
                     
+                    localAvatarPath = localPath
                     viewModel.setLocalAvatar(localPath)
                     
                     val byteArrayOutputStream = java.io.ByteArrayOutputStream()
-                    croppedBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, byteArrayOutputStream)
+                    croppedBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, byteArrayOutputStream)
                     val byteArray = byteArrayOutputStream.toByteArray()
                     val base64 = android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
                     viewModel.uploadAvatar(base64)
@@ -1193,8 +1197,9 @@ private fun cropBitmap(
     val canvas = android.graphics.Canvas(cropped)
     
     val totalScale = baseScale * scale
-    val totalTranslateX = baseTranslateX * scale + offset.x
-    val totalTranslateY = baseTranslateY * scale + offset.y
+    val center = viewportSizePx / 2f
+    val totalTranslateX = (baseTranslateX - center) * scale + center + offset.x
+    val totalTranslateY = (baseTranslateY - center) * scale + center + offset.y
     
     val ratio = targetSize.toFloat() / viewportSizePx
     
