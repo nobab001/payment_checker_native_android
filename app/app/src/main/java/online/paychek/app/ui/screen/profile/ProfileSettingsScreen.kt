@@ -39,6 +39,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.dto.CredentialItem
+import androidx.compose.foundation.BorderStroke
 import online.paychek.app.ui.theme.RoyalIndigo
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.foundation.text.BasicTextField
@@ -69,15 +70,15 @@ import androidx.compose.animation.core.*
 // Design Tokens (matches Dark Gateway theme)
 // =============================================================================
 
-private val PsBg       = Color(0xFF0F172A)
-private val PsCard     = Color(0xFF1E293B)
-private val PsCardAlt  = Color(0xFF253349)
+private val PsBg: Color @Composable get() = MaterialTheme.colorScheme.background
+private val PsCard: Color @Composable get() = MaterialTheme.colorScheme.surface
+private val PsCardAlt: Color @Composable get() = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF253349) else Color(0xFFF1F3F5)
 private val PsCyan     = Color(0xFF22D3EE)
 private val PsGreen    = Color(0xFF10B981)
 private val PsAmber    = Color(0xFFF59E0B)
 private val PsRed      = Color(0xFFEF4444)
-private val TextW      = Color(0xFFF8FAFC)
-private val TextM      = Color(0xFF94A3B8)
+private val TextW: Color @Composable get() = MaterialTheme.colorScheme.onBackground
+private val TextM: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 private val GradHeader = Brush.linearGradient(listOf(Color(0xFF1A237E), Color(0xFF0D47A1), Color(0xFF006064)))
 private val GradIndigo = Brush.horizontalGradient(listOf(RoyalIndigo, Color(0xFF7C3AED)))
 
@@ -196,6 +197,11 @@ fun ProfileSettingsScreen(
                     onChangePin    = { viewModel.openChangePinDialog() },
                     onForgotPin    = { viewModel.openResetPinDialog() },
                     isRestricted   = isRestricted,
+                    modifier       = Modifier.padding(horizontal = 16.dp)
+                )
+
+                // ── Section 4: App Theme ──────────────────────────────────
+                AppThemeSelectionCard(
                     modifier       = Modifier.padding(horizontal = 16.dp)
                 )
 
@@ -367,7 +373,7 @@ private fun ProfileHeaderCard(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         text       = userName.ifEmpty { "মার্চেন্ট" },
-                        color      = TextW,
+                        color      = Color.White,
                         fontSize   = 20.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -384,7 +390,7 @@ private fun ProfileHeaderCard(
                     if (!primaryPhone.isNullOrEmpty()) {
                         Text(
                             text     = primaryPhone,
-                            color    = TextW.copy(alpha = 0.75f),
+                            color    = Color.White.copy(alpha = 0.75f),
                             fontSize = 13.sp
                         )
                     }
@@ -393,7 +399,7 @@ private fun ProfileHeaderCard(
                     if (!primaryEmail.isNullOrEmpty()) {
                         Text(
                             text     = primaryEmail,
-                            color    = TextW.copy(alpha = 0.60f),
+                            color    = Color.White.copy(alpha = 0.60f),
                             fontSize = 13.sp
                         )
                     }
@@ -473,6 +479,7 @@ private fun PsSection(
     Card(
         colors   = CardDefaults.cardColors(containerColor = PsCard),
         shape    = RoundedCornerShape(20.dp),
+        border   = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         modifier = modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
@@ -1335,5 +1342,89 @@ private fun BlinkingCursor(color: Color) {
             .alpha(alpha)
             .background(color)
     )
+}
+
+@Composable
+private fun AppThemeSelectionCard(
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val sharedPrefs = remember(context) {
+        context.getSharedPreferences(AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
+    }
+    var currentTheme by remember(sharedPrefs) {
+        mutableStateOf(sharedPrefs.getString("pcu_app_theme", "system") ?: "system")
+    }
+
+    val options = listOf(
+        Triple("system", Icons.Default.PhoneAndroid, "📱 সিস্টেম ডিফল্ট"),
+        Triple("light", Icons.Default.WbSunny, "☀️ লাইট মোড"),
+        Triple("dark", Icons.Default.Brightness2, "🌌 ডার্ক মোড")
+    )
+
+    PsSection(
+        icon = Icons.Default.Palette,
+        iconColor = MaterialTheme.colorScheme.primary,
+        title = "অ্যাপ থিম (App Theme)",
+        modifier = modifier
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            options.forEach { (themeKey, icon, title) ->
+                val isSelected = currentTheme == themeKey
+                val borderBrush = if (isSelected) {
+                    Brush.horizontalGradient(listOf(MaterialTheme.colorScheme.primary, Color(0xFF7C3AED)))
+                } else {
+                    SolidColor(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f))
+                }
+                val borderStroke = BorderStroke(if (isSelected) 2.dp else 1.dp, borderBrush)
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface)
+                        .border(borderStroke, RoundedCornerShape(14.dp))
+                        .clickable {
+                            currentTheme = themeKey
+                            sharedPrefs.edit().putString("pcu_app_theme", themeKey).apply()
+                        }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = title,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        if (themeKey == "system") {
+                            Text(
+                                text = "ফোনের সেটিংস অনুযায়ী স্বয়ংক্রিয়ভাবে পরিবর্তিত হবে।",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                    }
+                    if (isSelected) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Selected",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 

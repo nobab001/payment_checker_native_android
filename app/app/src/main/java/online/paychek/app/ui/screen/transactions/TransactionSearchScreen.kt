@@ -39,16 +39,18 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+import androidx.compose.foundation.BorderStroke
+
 // =============================================================================
 // Design Tokens
 // =============================================================================
-private val HistBg       = Color(0xFF0F172A)
-private val HistCard     = Color(0xFF1E293B)
+private val HistBg: Color @Composable get() = MaterialTheme.colorScheme.background
+private val HistCard: Color @Composable get() = MaterialTheme.colorScheme.surface
 private val AccentCyan   = Color(0xFF22D3EE)
 private val AccentGreen  = Color(0xFF10B981)
 private val AccentRed    = Color(0xFFEF4444)
-private val TextWhite    = Color(0xFFF8FAFC)
-private val TextMuted    = Color(0xFF94A3B8)
+private val TextWhite: Color @Composable get() = MaterialTheme.colorScheme.onBackground
+private val TextMuted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 
 // =============================================================================
 // TransactionSearchScreen — Root Composable
@@ -413,6 +415,7 @@ private fun TransactionCard(
     Card(
         colors   = CardDefaults.cardColors(containerColor = HistCard),
         shape    = RoundedCornerShape(12.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         modifier = modifier.fillMaxWidth()
     ) {
         Row(
@@ -554,6 +557,7 @@ private fun SkeletonTransactionCard() {
     Card(
         colors   = CardDefaults.cardColors(containerColor = HistCard),
         shape    = RoundedCornerShape(12.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
@@ -657,6 +661,7 @@ private fun HistoryErrorCard(
     Card(
         colors   = CardDefaults.cardColors(containerColor = HistCard),
         shape    = RoundedCornerShape(14.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         modifier = modifier.fillMaxWidth()
     ) {
         Column(

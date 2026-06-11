@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.BorderStroke
 import androidx.navigation3.runtime.NavKey
 import online.paychek.app.NavKey as AppNavKey
 import kotlinx.coroutines.launch
@@ -71,7 +72,7 @@ private fun CustomBottomBar(
 ) {
     val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     NavigationBar(
-        containerColor = Color(0xFF1E293B), // Slate container color matching GwCard
+        containerColor = MaterialTheme.colorScheme.surface,
         tonalElevation = 8.dp,
         windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
         modifier = Modifier
@@ -100,11 +101,11 @@ private fun CustomBottomBar(
                 },
                 alwaysShowLabel = true,
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Color.White,
-                    unselectedIconColor = Color(0xFF94A3B8),
-                    selectedTextColor = Color.White,
-                    unselectedTextColor = Color(0xFF94A3B8),
-                    indicatorColor = RoyalIndigo.copy(alpha = 0.35f) // Premium indicator pill tint
+                    selectedIconColor = MaterialTheme.colorScheme.onBackground,
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    selectedTextColor = MaterialTheme.colorScheme.onBackground,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                 ),
                 modifier = Modifier.fillMaxHeight()
             )
@@ -267,7 +268,7 @@ fun HomeScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF0F172A)),
+                .background(MaterialTheme.colorScheme.background),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -292,7 +293,7 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = "অন্য সচল ডিভাইস থেকে অনুমতি নিন",
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onBackground,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
@@ -300,14 +301,14 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = "এই ডিভাইসটি এখনও অনুমোদিত নয়। অনুগ্রহ করে আপনার অন্য কোনো সচল ডিভাইস থেকে পিন দিয়ে এটি অনুমোদন করুন।",
-                    color = Color(0xFF94A3B8),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     lineHeight = 20.sp,
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 CircularProgressIndicator(
-                    color = Color(0xFF22D3EE),
+                    color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(28.dp),
                     strokeWidth = 3.dp
                 )
@@ -324,7 +325,8 @@ fun HomeScreen(
         ) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
-                color = Color(0xFF1E293B),
+                color = MaterialTheme.colorScheme.surface,
+                border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                 tonalElevation = 8.dp,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -357,12 +359,12 @@ fun HomeScreen(
                     Text(
                         text = "এই ডিভাইসটি কার?",
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onBackground,
                         fontSize = 18.sp
                     )
                     Text(
                         text = "ডিভাইসের মালিকানা নিশ্চিত করতে নিচের উপযুক্ত মোডটি সিলেক্ট করুন।",
-                        color = Color(0xFF94A3B8),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp,
                         textAlign = TextAlign.Center,
                         lineHeight = 18.sp
@@ -370,8 +372,8 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF253349)),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF22D3EE).copy(0.3f)),
+                        colors = CardDefaults.cardColors(containerColor = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF253349) else Color(0xFFF1F3F5)),
+                        border = BorderStroke(1.dp, if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF22D3EE).copy(0.3f) else Color(0xFFE3E5E8)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable(enabled = !submittingRole) {
@@ -400,14 +402,14 @@ fun HomeScreen(
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(
                                 "আমার নিজের ডিভাইস",
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onBackground,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                "মালিকানা মোড (Full Owner Access)। সব সেটিংস পরিবর্তন ও অন্য ফোন অ্যাক্সেস সম্ভব।",
-                                color = Color(0xFF94A3B8),
+                                "মালিকানা মোড (Full Owner Access)। সব সেটি সেটিংস পরিবর্তন ও অন্য ফোন অ্যাক্সেস সম্ভব।",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp
                             )
@@ -415,8 +417,8 @@ fun HomeScreen(
                     }
 
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF253349)),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569).copy(0.3f)),
+                        colors = CardDefaults.cardColors(containerColor = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF253349) else Color(0xFFF1F3F5)),
+                        border = BorderStroke(1.dp, if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF475569).copy(0.3f) else Color(0xFFE3E5E8)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable(enabled = !submittingRole) {
@@ -445,14 +447,14 @@ fun HomeScreen(
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(
                                 "অন্য কারো/সহযোগীর ডিভাইস",
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onBackground,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 "স্টাফ মোড (Restricted Mode)। সেটিংস পরিবর্তন বন্ধ থাকবে ও অন্য কোনো ফোন দেখা যাবে না।",
-                                color = Color(0xFF94A3B8),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp
                             )
@@ -485,7 +487,8 @@ fun HomeScreen(
         ) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
-                color = Color(0xFF1E293B),
+                color = MaterialTheme.colorScheme.surface,
+                border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                 tonalElevation = 8.dp,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -536,11 +539,11 @@ fun HomeScreen(
                     ) {
                         Card(
                             colors = CardDefaults.cardColors(
-                                containerColor = if (selectedRoleToApprove == "owner") Color(0xFF22D3EE).copy(alpha = 0.15f) else Color(0xFF253349)
+                                containerColor = if (selectedRoleToApprove == "owner") Color(0xFF22D3EE).copy(alpha = 0.15f) else (if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF253349) else Color(0xFFF1F3F5))
                             ),
-                            border = androidx.compose.foundation.BorderStroke(
+                            border = BorderStroke(
                                 width = 1.dp,
-                                color = if (selectedRoleToApprove == "owner") Color(0xFF22D3EE) else Color(0xFF475569).copy(alpha = 0.5f)
+                                color = if (selectedRoleToApprove == "owner") Color(0xFF22D3EE) else (if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF475569).copy(alpha = 0.5f) else Color(0xFFE3E5E8))
                             ),
                             modifier = Modifier
                                 .weight(1f)
@@ -550,19 +553,19 @@ fun HomeScreen(
                                 modifier = Modifier.padding(12.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Text("আমার নিজের ডিভাইস", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.Center)
+                                Text("আমার নিজের ডিভাইস", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.Center)
                                 Spacer(modifier = Modifier.height(4.dp))
-                                Text("মালিক মোড (Owner)", color = Color(0xFF94A3B8), fontSize = 10.sp, textAlign = TextAlign.Center)
+                                Text("মালিক মোড (Owner)", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, textAlign = TextAlign.Center)
                             }
                         }
 
                         Card(
                             colors = CardDefaults.cardColors(
-                                containerColor = if (selectedRoleToApprove == "restricted") Color(0xFF22D3EE).copy(alpha = 0.15f) else Color(0xFF253349)
+                                containerColor = if (selectedRoleToApprove == "restricted") Color(0xFF22D3EE).copy(alpha = 0.15f) else (if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF253349) else Color(0xFFF1F3F5))
                             ),
-                            border = androidx.compose.foundation.BorderStroke(
+                            border = BorderStroke(
                                 width = 1.dp,
-                                color = if (selectedRoleToApprove == "restricted") Color(0xFF22D3EE) else Color(0xFF475569).copy(alpha = 0.5f)
+                                color = if (selectedRoleToApprove == "restricted") Color(0xFF22D3EE) else (if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF475569).copy(alpha = 0.5f) else Color(0xFFE3E5E8))
                             ),
                             modifier = Modifier
                                 .weight(1f)
@@ -572,9 +575,9 @@ fun HomeScreen(
                                 modifier = Modifier.padding(12.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Text("অন্য কারো ডিভাইস", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.Center)
+                                Text("অন্য কারো ডিভাইস", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.Center)
                                 Spacer(modifier = Modifier.height(4.dp))
-                                Text("স্টাফ মোড (Restricted)", color = Color(0xFF94A3B8), fontSize = 10.sp, textAlign = TextAlign.Center)
+                                Text("স্টাফ মোড (Restricted)", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, textAlign = TextAlign.Center)
                             }
                         }
                     }
@@ -681,7 +684,7 @@ fun HomeScreen(
     }
 
     Scaffold(
-        containerColor = Color(0xFF0F172A), // Dashboard dark bg
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             CustomBottomBar(
                 selectedTab = selectedTab,
@@ -777,7 +780,7 @@ private fun HistoryPlaceholderScreen() {
     Box(
         modifier         = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F172A)),
+            .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.Center
     ) {
         Column(

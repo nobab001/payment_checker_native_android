@@ -20,7 +20,23 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import online.paychek.app.data.remote.dto.BillingSettingDto
-import online.paychek.app.ui.theme.*
+import online.paychek.app.ui.theme.RoyalIndigo
+import online.paychek.app.ui.theme.RoyalIndigoLight
+import online.paychek.app.ui.theme.BkashPink
+import online.paychek.app.ui.theme.NagadOrange
+import online.paychek.app.ui.theme.RocketPurple
+import online.paychek.app.ui.theme.UpayTeal
+import online.paychek.app.ui.theme.StatusGreen
+import online.paychek.app.ui.theme.StatusOrange
+import online.paychek.app.ui.theme.StatusRed
+import online.paychek.app.ui.theme.SoldOutRed
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+
+private val AppBackground: Color @Composable get() = MaterialTheme.colorScheme.background
+private val CardBackground: Color @Composable get() = MaterialTheme.colorScheme.surface
+private val TextPrimary: Color @Composable get() = MaterialTheme.colorScheme.onBackground
+private val TextSecondary: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,7 +65,7 @@ fun BillingConfigScreen(
                 Text(
                     text = if (editingPlan == null) "নতুন সাবস্ক্রিপশন প্ল্যান তৈরি করুন" else "প্ল্যান সম্পাদন করুন",
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = TextPrimary,
                     fontSize = 17.sp
                 )
             },
@@ -64,11 +80,12 @@ fun BillingConfigScreen(
                         label = { Text("প্ল্যানের নাম (যেমন: Basic, Standard)") },
                         enabled = editingPlan == null,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedLabelColor = Color.LightGray,
-                            unfocusedLabelColor = Color.Gray,
-                            focusedBorderColor = RoyalIndigo
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedLabelColor = TextSecondary,
+                            unfocusedLabelColor = TextSecondary.copy(alpha = 0.6f),
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f)
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -78,11 +95,12 @@ fun BillingConfigScreen(
                         label = { Text("মূল্য (৳)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedLabelColor = Color.LightGray,
-                            unfocusedLabelColor = Color.Gray,
-                            focusedBorderColor = RoyalIndigo
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedLabelColor = TextSecondary,
+                            unfocusedLabelColor = TextSecondary.copy(alpha = 0.6f),
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f)
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -92,11 +110,12 @@ fun BillingConfigScreen(
                         label = { Text("সর্বোচ্চ সাইট সংখ্যা") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedLabelColor = Color.LightGray,
-                            unfocusedLabelColor = Color.Gray,
-                            focusedBorderColor = RoyalIndigo
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedLabelColor = TextSecondary,
+                            unfocusedLabelColor = TextSecondary.copy(alpha = 0.6f),
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f)
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -106,11 +125,12 @@ fun BillingConfigScreen(
                         label = { Text("সর্বোচ্চ ডিভাইস সংখ্যা") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedLabelColor = Color.LightGray,
-                            unfocusedLabelColor = Color.Gray,
-                            focusedBorderColor = RoyalIndigo
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedLabelColor = TextSecondary,
+                            unfocusedLabelColor = TextSecondary.copy(alpha = 0.6f),
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f)
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -120,11 +140,12 @@ fun BillingConfigScreen(
                         label = { Text("প্যাকেজের মেয়াদ (দিন)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedLabelColor = Color.LightGray,
-                            unfocusedLabelColor = Color.Gray,
-                            focusedBorderColor = RoyalIndigo
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedLabelColor = TextSecondary,
+                            unfocusedLabelColor = TextSecondary.copy(alpha = 0.6f),
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f)
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -158,9 +179,9 @@ fun BillingConfigScreen(
                             planDurationDays = "365"
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    Text("সংরক্ষণ", color = Color.White)
+                    Text("সংরক্ষণ", color = MaterialTheme.colorScheme.onPrimary)
                 }
             },
             dismissButton = {
@@ -175,10 +196,11 @@ fun BillingConfigScreen(
                         planDurationDays = "365"
                     }
                 ) {
-                    Text("বাতিল", color = Color.Gray)
+                    Text("বাতিল", color = TextSecondary)
                 }
             },
-            containerColor = Color(0xFF1E293B)
+            containerColor = CardBackground,
+            modifier = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Modifier else Modifier.border(1.dp, Color(0xFFE3E5E8), RoundedCornerShape(28.dp))
         )
     }
 
@@ -209,8 +231,8 @@ fun BillingConfigScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = "⚙️ গ্লোবাল বিলিং রেট সেটিংস",
-            color = Color.White,
+            text = "⚙️ গ্লোবাল বিলিং রেট সেটিিংস",
+            color = TextPrimary,
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold
         )
@@ -259,21 +281,21 @@ fun BillingConfigScreen(
                 )
                 viewModel.saveBillingSettings(updatedSettings)
             },
-            colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
             shape = RoundedCornerShape(8.dp),
             modifier = Modifier.fillMaxWidth(),
             enabled = !uiState.isSaving
         ) {
             if (uiState.isSaving) {
-                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp))
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
             } else {
-                Icon(imageVector = Icons.Default.Save, contentDescription = "Save")
+                Icon(imageVector = Icons.Default.Save, contentDescription = "Save", tint = MaterialTheme.colorScheme.onPrimary)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("বিলিং সেটিংস সংরক্ষণ করুন", fontWeight = FontWeight.Bold)
+                Text("বিলিং সেটিংস সংরক্ষণ করুন", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
             }
         }
 
-        HorizontalDivider(color = Color(0xFF475569).copy(alpha = 0.5f), modifier = Modifier.padding(vertical = 8.dp))
+        HorizontalDivider(color = TextSecondary.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -282,29 +304,30 @@ fun BillingConfigScreen(
         ) {
             Text(
                 text = "📋 Manage Subscription Plans",
-                color = Color.White,
+                color = TextPrimary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )
             IconButton(
                 onClick = { showCreatePlanDialog = true },
-                colors = IconButtonDefaults.iconButtonColors(containerColor = RoyalIndigo)
+                colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = "Add Plan",
-                    tint = Color.White
+                    tint = MaterialTheme.colorScheme.onPrimary
                 )
             }
         }
 
         if (uiState.plans.isEmpty()) {
-            Text("কোনো সাবস্ক্রিপশন প্ল্যান পাওয়া যায়নি।", color = Color.Gray, fontSize = 12.sp)
+            Text("কোনো সাবস্ক্রিপশন প্ল্যান পাওয়া যায়নি।", color = TextSecondary, fontSize = 12.sp)
         } else {
             uiState.plans.forEach { plan ->
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                    colors = CardDefaults.cardColors(containerColor = CardBackground),
                     shape = RoundedCornerShape(12.dp),
+                    border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
@@ -323,10 +346,10 @@ fun BillingConfigScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(plan.planName, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 15.sp)
+                            Text(plan.planName, fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 15.sp)
                             Text("৳${plan.price}", fontWeight = FontWeight.Bold, color = Color(0xFF22D3EE), fontSize = 15.sp)
                         }
-                        Text("সর্বোচ্চ সাইট: ${plan.maxSites} | সর্বোচ্চ ডিভাইস: ${plan.maxDevices}", color = Color.LightGray, fontSize = 12.sp)
+                        Text("সর্বোচ্চ সাইট: ${plan.maxSites} | সর্বোচ্চ ডিভাইস: ${plan.maxDevices}", color = TextSecondary, fontSize = 12.sp)
                         Text("মেয়াদ: ${plan.durationDays} দিন", color = Color(0xFF10B981), fontSize = 12.sp)
                     }
                 }
@@ -343,26 +366,27 @@ private fun BillingSettingField(
     onValueChange: (String) -> Unit
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
         shape = RoundedCornerShape(12.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(text = label, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Text(text = description, color = Color.Gray, fontSize = 11.sp)
+            Text(text = label, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(text = description, color = TextSecondary, fontSize = 11.sp)
             OutlinedTextField(
                 value = value,
                 onValueChange = onValueChange,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = RoyalIndigo,
-                    unfocusedBorderColor = Color(0xFF475569),
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary
                 ),
                 modifier = Modifier.fillMaxWidth()
             )

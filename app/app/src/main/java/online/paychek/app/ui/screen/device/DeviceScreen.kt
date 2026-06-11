@@ -43,17 +43,18 @@ import online.paychek.app.data.remote.dto.ChildDeviceDto
 import online.paychek.app.ui.theme.*
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import androidx.compose.foundation.BorderStroke
 
 // =============================================================================
 // Design Tokens
 // =============================================================================
-private val GwBg       = Color(0xFF0F172A)
-private val GwCard     = Color(0xFF1E293B)
-private val GwCardDrag = Color(0xFF2D3F57)
+private val GwBg: Color @Composable get() = MaterialTheme.colorScheme.background
+private val GwCard: Color @Composable get() = MaterialTheme.colorScheme.surface
+private val GwCardDrag: Color @Composable get() = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF2D3F57) else Color(0xFFE2E8F0)
 private val AccentCyan = Color(0xFF22D3EE)
 private val AccentGreen= Color(0xFF10B981)
-private val TextWhite  = Color(0xFFF8FAFC)
-private val TextMuted  = Color(0xFF94A3B8)
+private val TextWhite: Color @Composable get() = MaterialTheme.colorScheme.onBackground
+private val TextMuted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 private val ToggleOff  = Color(0xFF475569)
 
 private fun providerColor(tag: String): Color = when (tag.lowercase()) {
@@ -601,6 +602,7 @@ fun DeviceScreen(
                 Surface(
                     shape = RoundedCornerShape(24.dp),
                     color = GwCard,
+                    border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                     tonalElevation = 8.dp,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -856,6 +858,7 @@ private fun GatewayMethodCard(
     Card(
         colors   = CardDefaults.cardColors(containerColor = cardColor),
         shape    = RoundedCornerShape(12.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         modifier = modifier
             .fillMaxWidth()
             .then(
@@ -1079,6 +1082,7 @@ private fun ErrorBanner(message: String, onRetry: () -> Unit, modifier: Modifier
     Card(
         colors   = CardDefaults.cardColors(containerColor = GwCard),
         shape    = RoundedCornerShape(12.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         modifier = modifier.fillMaxWidth()
     ) {
         Column(
@@ -1109,6 +1113,7 @@ private fun DeviceSkeletonCard() {
     Card(
         colors   = CardDefaults.cardColors(containerColor = GwCard),
         shape    = RoundedCornerShape(12.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
@@ -1138,6 +1143,7 @@ private fun ChildDeviceCard(
     Card(
         colors = CardDefaults.cardColors(containerColor = GwCard),
         shape = RoundedCornerShape(16.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         modifier = modifier.fillMaxWidth()
     ) {
         Row(

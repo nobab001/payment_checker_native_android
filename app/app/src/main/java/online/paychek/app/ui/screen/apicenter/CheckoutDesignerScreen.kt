@@ -29,7 +29,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import online.paychek.app.data.remote.dto.GatewayMethod
-import online.paychek.app.ui.theme.*
+import online.paychek.app.ui.theme.RoyalIndigo
+import online.paychek.app.ui.theme.RoyalIndigoLight
+import online.paychek.app.ui.theme.BkashPink
+import online.paychek.app.ui.theme.NagadOrange
+import online.paychek.app.ui.theme.RocketPurple
+import online.paychek.app.ui.theme.UpayTeal
+import online.paychek.app.ui.theme.StatusGreen
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+
+private val AppBackground: Color @Composable get() = MaterialTheme.colorScheme.background
+private val CardBackground: Color @Composable get() = MaterialTheme.colorScheme.surface
+private val TextPrimary: Color @Composable get() = MaterialTheme.colorScheme.onBackground
+private val TextSecondary: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -187,6 +200,7 @@ fun CheckoutDesignerScreen(
                                         colors = CardDefaults.cardColors(containerColor = CardBackground),
                                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                                         shape = RoundedCornerShape(12.dp),
+                                        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Row(
@@ -311,6 +325,7 @@ fun CheckoutDesignerScreen(
                     if (uiState.activeMethods.isEmpty()) {
                         Card(
                             colors = CardDefaults.cardColors(containerColor = CardBackground),
+                            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(16.dp)
@@ -429,6 +444,7 @@ fun CheckoutDesignerScreen(
                                     colors = CardDefaults.cardColors(containerColor = CardBackground),
                                     elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                                     shape = RoundedCornerShape(16.dp),
+                                    border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(
@@ -506,6 +522,7 @@ fun CheckoutDesignerScreen(
                                             Card(
                                                 colors = CardDefaults.cardColors(containerColor = AppBackground),
                                                 shape = RoundedCornerShape(8.dp),
+                                                border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                                                 modifier = Modifier.fillMaxWidth()
                                             ) {
                                                 Row(
@@ -587,6 +604,8 @@ fun CheckoutDesignerScreen(
         AlertDialog(
             onDismissRequest = { showSettingsDialog = false },
             title = { Text("সিম ও মেথড সেটিংস", fontWeight = FontWeight.Bold, color = RoyalIndigo) },
+            containerColor = CardBackground,
+            modifier = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Modifier else Modifier.border(1.dp, Color(0xFFE3E5E8), RoundedCornerShape(28.dp)),
             text = {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(12.dp),

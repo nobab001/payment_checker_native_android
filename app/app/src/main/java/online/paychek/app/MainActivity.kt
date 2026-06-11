@@ -17,7 +17,7 @@ import androidx.compose.ui.Modifier
 import online.paychek.app.config.AppConfig
 import online.paychek.app.ui.screen.auth.pin.SecurityGateScreen
 import online.paychek.app.ui.screen.device.RemoteLockScreen
-import online.paychek.app.ui.theme.PaychekTheme
+import online.paychek.app.ui.theme.AppTheme
 import online.paychek.app.utils.SecurePreferences
 
 class MainActivity : FragmentActivity() {
@@ -47,7 +47,7 @@ class MainActivity : FragmentActivity() {
 
         enableEdgeToEdge()
         setContent {
-            PaychekTheme {
+            AppTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

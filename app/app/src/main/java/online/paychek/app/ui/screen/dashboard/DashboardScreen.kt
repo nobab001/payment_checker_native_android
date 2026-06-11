@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import online.paychek.app.data.remote.dto.DashboardStats
 import online.paychek.app.data.remote.dto.TransactionItem
 import online.paychek.app.ui.theme.*
@@ -50,14 +52,14 @@ import java.util.Locale
 // =============================================================================
 // ডিজাইন টোকেন (Dark Premium Gateway Theme)
 // =============================================================================
-private val DashBg        = Color(0xFF0F172A)   // গভীর নেভি
-private val DashCard      = Color(0xFF1E293B)   // Surface Dark
-private val DashCardAlt   = Color(0xFF253349)   // Slightly lighter card
+private val DashBg: Color @Composable get() = MaterialTheme.colorScheme.background
+private val DashCard: Color @Composable get() = MaterialTheme.colorScheme.surface
+private val DashCardAlt: Color @Composable get() = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF1B2030) else Color(0xFFF1F3F5)
 private val AccentCyan    = Color(0xFF22D3EE)   // Cyan accent
 private val AccentGreen   = Color(0xFF10B981)   // Emerald green (toggle ON)
 private val AccentAmber   = Color(0xFFF59E0B)   // Amber (stats icon)
-private val TextWhite     = Color(0xFFF8FAFC)
-private val TextMuted     = Color(0xFF94A3B8)
+private val TextWhite: Color @Composable get() = MaterialTheme.colorScheme.onBackground
+private val TextMuted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 private val ToggleOff     = Color(0xFF475569)   // Slate (toggle OFF)
 
 private val GradientHeader = Brush.linearGradient(
@@ -352,6 +354,7 @@ private fun SmsMonitorToggleCard(
     Card(
         colors = CardDefaults.cardColors(containerColor = DashCard),
         shape  = RoundedCornerShape(16.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         modifier = modifier.fillMaxWidth()
     ) {
         Row(
@@ -490,6 +493,7 @@ private fun StatCard(
     Card(
         colors   = CardDefaults.cardColors(containerColor = DashCard),
         shape    = RoundedCornerShape(14.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         modifier = modifier
     ) {
         Column(
@@ -624,6 +628,7 @@ private fun TransactionRow(
     Card(
         colors   = CardDefaults.cardColors(containerColor = DashCard),
         shape    = RoundedCornerShape(12.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         modifier = modifier.fillMaxWidth()
     ) {
         Row(
@@ -724,6 +729,7 @@ private fun StatsLoadingPlaceholder() {
                 Card(
                     colors   = CardDefaults.cardColors(containerColor = DashCard),
                     shape    = RoundedCornerShape(14.dp),
+                    border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                     modifier = Modifier.weight(1f).height(110.dp)
                 ) {
                     Box(
@@ -750,6 +756,11 @@ private fun StatsLoadingPlaceholder() {
                         .height(110.dp)
                         .clip(RoundedCornerShape(14.dp))
                         .background(DashCard)
+                        .border(
+                            if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) 0.dp else 1.dp,
+                            if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color.Transparent else Color(0xFFE3E5E8),
+                            RoundedCornerShape(14.dp)
+                        )
                 )
             }
         }
@@ -769,6 +780,7 @@ private fun ErrorCard(
     Card(
         colors   = CardDefaults.cardColors(containerColor = DashCard),
         shape    = RoundedCornerShape(14.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         modifier = modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
@@ -894,7 +906,8 @@ private fun ExpiryReminderDialog(
             }
         },
         containerColor = DashCard,
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
+        modifier = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Modifier else Modifier.border(1.dp, Color(0xFFE3E5E8), RoundedCornerShape(20.dp))
     )
 }
 
@@ -912,6 +925,7 @@ private fun PlanStatusCard(
     Card(
         colors = CardDefaults.cardColors(containerColor = DashCard),
         shape = RoundedCornerShape(16.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         modifier = modifier.fillMaxWidth()
     ) {
         Column(
@@ -1025,6 +1039,7 @@ fun SubscriptionPurchaseDialog(
                         Card(
                             colors = CardDefaults.cardColors(containerColor = DashCardAlt),
                             shape = RoundedCornerShape(12.dp),
+                            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable(enabled = !isLoading) { onPurchase(plan.planName) }
@@ -1071,6 +1086,7 @@ fun SubscriptionPurchaseDialog(
             }
         },
         containerColor = DashCard,
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
+        modifier = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Modifier else Modifier.border(1.dp, Color(0xFFE3E5E8), RoundedCornerShape(20.dp))
     )
 }

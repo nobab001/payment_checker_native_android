@@ -22,7 +22,22 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import online.paychek.app.data.remote.dto.*
-import online.paychek.app.ui.theme.*
+import online.paychek.app.ui.theme.RoyalIndigo
+import online.paychek.app.ui.theme.RoyalIndigoLight
+import online.paychek.app.ui.theme.BkashPink
+import online.paychek.app.ui.theme.NagadOrange
+import online.paychek.app.ui.theme.RocketPurple
+import online.paychek.app.ui.theme.UpayTeal
+import online.paychek.app.ui.theme.StatusGreen
+import online.paychek.app.ui.theme.StatusRed
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+
+private val AppBackground: Color @Composable get() = MaterialTheme.colorScheme.background
+private val CardBackground: Color @Composable get() = MaterialTheme.colorScheme.surface
+private val TextPrimary: Color @Composable get() = MaterialTheme.colorScheme.onBackground
+private val TextSecondary: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val AccentTitle: Color @Composable get() = MaterialTheme.colorScheme.primary
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,7 +79,7 @@ fun AdminDashboardScreen(
                     Text(
                         "Admin Panel Console",
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onPrimary,
                         fontSize = 16.sp
                     )
                 },
@@ -73,7 +88,7 @@ fun AdminDashboardScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ExitToApp,
                             contentDescription = "Logout",
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -83,43 +98,44 @@ fun AdminDashboardScreen(
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Refresh",
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = RoyalIndigo)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
             )
         },
         bottomBar = {
             TabRow(
                 selectedTabIndex = selectedTab,
-                containerColor = Color(0xFF1E293B),
-                contentColor = Color.White
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.primary,
+                modifier = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Modifier else Modifier.border(1.dp, Color(0xFFE3E5E8), RoundedCornerShape(0.dp))
             ) {
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("গেটওয়ে ও টেমপ্লেট", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                    icon = { Icon(Icons.Default.Build, "Gateways") }
+                    text = { Text("গেটওয়ে ও টেমপ্লেট", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (selectedTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
+                    icon = { Icon(Icons.Default.Build, "Gateways", tint = if (selectedTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("ইউজার ও ডিভাইস", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                    icon = { Icon(Icons.Default.People, "Users") }
+                    text = { Text("ইউজার ও ডিভাইস", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (selectedTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
+                    icon = { Icon(Icons.Default.People, "Users", tint = if (selectedTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                 )
                 Tab(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
-                    text = { Text("অ্যাপ সেটিংস", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                    icon = { Icon(Icons.Default.Settings, "Config") }
+                    text = { Text("অ্যাপ সেটিংস", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (selectedTab == 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
+                    icon = { Icon(Icons.Default.Settings, "Config", tint = if (selectedTab == 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                 )
                 Tab(
                     selected = selectedTab == 3,
                     onClick = { selectedTab = 3 },
-                    text = { Text("বিলিং সেটিংস", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                    icon = { Icon(Icons.Default.CreditCard, "Billing") }
+                    text = { Text("বিলিং সেটিংস", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (selectedTab == 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
+                    icon = { Icon(Icons.Default.CreditCard, "Billing", tint = if (selectedTab == 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                 )
             }
         },
@@ -251,8 +267,9 @@ private fun GatewaysAndTemplatesTab(
     ) {
         // Section 1: SMTP Profiles
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
             shape = RoundedCornerShape(12.dp),
+            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -261,7 +278,7 @@ private fun GatewaysAndTemplatesTab(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("SMTP Mailer Accounts", fontWeight = FontWeight.Bold, color = RoyalIndigo, fontSize = 16.sp)
+                    Text("SMTP Mailer Accounts", fontWeight = FontWeight.Bold, color = AccentTitle, fontSize = 16.sp)
                     IconButton(onClick = { onEditEmail(EmailAccountDto(null, "", "", "smtp.gmail.com", 465, 1, 500, 0, 1)) }) {
                         Icon(Icons.Default.AddCircle, "Add Email", tint = RoyalIndigo)
                     }
@@ -294,8 +311,9 @@ private fun GatewaysAndTemplatesTab(
 
         // Section 2: SMS Gateway Configs
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
             shape = RoundedCornerShape(12.dp),
+            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -304,7 +322,7 @@ private fun GatewaysAndTemplatesTab(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("SMS Gateway Settings", fontWeight = FontWeight.Bold, color = RoyalIndigo, fontSize = 16.sp)
+                    Text("SMS Gateway Settings", fontWeight = FontWeight.Bold, color = AccentTitle, fontSize = 16.sp)
                     if (uiState.smsSettings.isEmpty()) {
                         IconButton(onClick = { onEditGateway(SmsSettingsDto(null, "", "GET", null, null, null, null, 1)) }) {
                             Icon(Icons.Default.AddCircle, "Add Gateway", tint = RoyalIndigo)
@@ -338,15 +356,16 @@ private fun GatewaysAndTemplatesTab(
 
         // Section: OTP Message Format Manager
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
             shape = RoundedCornerShape(12.dp),
+            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = "OTP Message Format Manager",
                     fontWeight = FontWeight.Bold,
-                    color = RoyalIndigo,
+                    color = AccentTitle,
                     fontSize = 16.sp
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -387,8 +406,8 @@ private fun GatewaysAndTemplatesTab(
                     placeholder = { Text("আপনার ওটিপি ফরম্যাট লিখুন") },
                     shape = RoundedCornerShape(8.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White
+                        focusedContainerColor = CardBackground,
+                        unfocusedContainerColor = CardBackground
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -427,8 +446,9 @@ private fun GatewaysAndTemplatesTab(
 
         // Section 3: SMS Templates (Official)
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
             shape = RoundedCornerShape(12.dp),
+            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -437,7 +457,7 @@ private fun GatewaysAndTemplatesTab(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("SMS Templates (Official)", fontWeight = FontWeight.Bold, color = RoyalIndigo, fontSize = 16.sp)
+                    Text("SMS Templates (Official)", fontWeight = FontWeight.Bold, color = AccentTitle, fontSize = 16.sp)
                     IconButton(onClick = { onEditTemplate(SmsTemplateDto(null, "", "", "", "", 1, 1)) }) {
                         Icon(Icons.Default.AddCircle, "Add Template", tint = RoyalIndigo)
                     }
@@ -470,12 +490,13 @@ private fun GatewaysAndTemplatesTab(
 
         // Section 4: Checkout Instructions
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
             shape = RoundedCornerShape(12.dp),
+            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("Checkout Instructions Mapping", fontWeight = FontWeight.Bold, color = RoyalIndigo, fontSize = 16.sp)
+                Text("Checkout Instructions Mapping", fontWeight = FontWeight.Bold, color = AccentTitle, fontSize = 16.sp)
                 Spacer(modifier = Modifier.height(8.dp))
                 if (uiState.checkoutTemplates.isEmpty()) {
                     Text("কোনো নির্দেশিকা ম্যাপিং নেই।", fontSize = 13.sp, color = TextSecondary)
@@ -529,8 +550,8 @@ private fun UsersAndDevicesTab(
             leadingIcon = { Icon(Icons.Default.Search, "Search") },
             shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Color.White,
-                unfocusedContainerColor = Color.White
+                focusedContainerColor = CardBackground,
+                unfocusedContainerColor = CardBackground
             ),
             modifier = Modifier.fillMaxWidth()
         )
@@ -548,8 +569,9 @@ private fun UsersAndDevicesTab(
             ) {
                 filteredUsers.forEach { user ->
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        colors = CardDefaults.cardColors(containerColor = CardBackground),
                         shape = RoundedCornerShape(12.dp),
+                        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onUserClick(user) }
@@ -611,12 +633,13 @@ private fun GlobalSettingsTab(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
             shape = RoundedCornerShape(12.dp),
+            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("মাস্টার কন্ট্রোল টগলস", fontWeight = FontWeight.Bold, color = RoyalIndigo, fontSize = 16.sp)
+                Text("মাস্টার কন্ট্রোল টগলস", fontWeight = FontWeight.Bold, color = AccentTitle, fontSize = 16.sp)
                 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -651,12 +674,13 @@ private fun GlobalSettingsTab(
         }
 
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
             shape = RoundedCornerShape(12.dp),
+            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("সোশ্যাল মিডিয়া ও সাপোর্ট লিংকসমূহ", fontWeight = FontWeight.Bold, color = RoyalIndigo, fontSize = 16.sp)
+                Text("সোশ্যাল মিডিয়া ও সাপোর্ট লিংকসমূহ", fontWeight = FontWeight.Bold, color = AccentTitle, fontSize = 16.sp)
 
                 OutlinedTextField(
                     value = waLink,
@@ -722,8 +746,9 @@ private fun SmsTemplateEditDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
             shape = RoundedCornerShape(16.dp),
+            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -773,8 +798,9 @@ private fun EmailAccountEditDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
             shape = RoundedCornerShape(16.dp),
+            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -829,8 +855,9 @@ private fun SmsSettingsEditDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
             shape = RoundedCornerShape(16.dp),
+            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -877,8 +904,9 @@ private fun CheckoutTemplateEditDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
             shape = RoundedCornerShape(16.dp),
+            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -926,8 +954,9 @@ private fun UserDetailAndTrialDialog(
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = CardBackground),
             shape = RoundedCornerShape(16.dp),
+            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 12.dp)
@@ -1015,8 +1044,9 @@ private fun UserDetailAndTrialDialog(
                         var daysStr by remember { mutableStateOf("") }
                         
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+                            colors = CardDefaults.cardColors(containerColor = AppBackground),
                             shape = RoundedCornerShape(8.dp),
+                            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp)

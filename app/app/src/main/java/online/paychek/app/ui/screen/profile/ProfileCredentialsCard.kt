@@ -34,6 +34,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.border
 import androidx.compose.ui.autofill.AutofillType
 import online.paychek.app.utils.autofill
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -44,12 +45,12 @@ import androidx.compose.animation.core.*
 
 
 // Local color copies matching theme
-private val PsCard     = Color(0xFF1E293B)
-private val PsCardAlt  = Color(0xFF253349)
+private val PsCard: Color @Composable get() = MaterialTheme.colorScheme.surface
+private val PsCardAlt: Color @Composable get() = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF253349) else Color(0xFFF1F3F5)
 private val PsCyan     = Color(0xFF22D3EE)
 private val PsRed      = Color(0xFFEF4444)
-private val TextW      = Color(0xFFF8FAFC)
-private val TextM      = Color(0xFF94A3B8)
+private val TextW: Color @Composable get() = MaterialTheme.colorScheme.onBackground
+private val TextM: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 
 @Composable
 fun ProfileCredentialsCard(
@@ -89,6 +90,7 @@ fun ProfileCredentialsCard(
         modifier = modifier
             .fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         colors = CardDefaults.cardColors(containerColor = PsCard)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -215,6 +217,7 @@ fun ProfileCredentialsCard(
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = PsCardAlt),
+                border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp)
@@ -412,6 +415,7 @@ fun ProfileCredentialsCard(
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = PsCardAlt),
+                border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(8.dp)

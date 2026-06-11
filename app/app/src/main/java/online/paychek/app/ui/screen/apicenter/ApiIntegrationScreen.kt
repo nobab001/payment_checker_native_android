@@ -29,17 +29,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 
+import androidx.compose.foundation.BorderStroke
+
 // =============================================================================
 // Design Tokens (matches Premium Dark theme)
 // =============================================================================
-private val ApiBg        = Color(0xFF0F172A)
-private val ApiCard      = Color(0xFF1E293B)
-private val ApiCardAlt   = Color(0xFF253349)
+private val ApiBg: Color @Composable get() = MaterialTheme.colorScheme.background
+private val ApiCard: Color @Composable get() = MaterialTheme.colorScheme.surface
+private val ApiCardAlt: Color @Composable get() = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF1B2030) else Color(0xFFF1F3F5)
 private val AccentCyan   = Color(0xFF22D3EE)
 private val AccentGreen  = Color(0xFF10B981)
 private val AccentAmber  = Color(0xFFF59E0B)
-private val TextWhite    = Color(0xFFF8FAFC)
-private val TextMuted    = Color(0xFF94A3B8)
+private val TextWhite: Color @Composable get() = MaterialTheme.colorScheme.onBackground
+private val TextMuted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 
 private val GradientBtn  = Brush.horizontalGradient(
     colors = listOf(Color(0xFF4F46E5), Color(0xFF7C3AED))
@@ -162,6 +164,7 @@ fun ApiIntegrationScreen(
             Card(
                 colors = CardDefaults.cardColors(containerColor = ApiCard),
                 shape = RoundedCornerShape(16.dp),
+                border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -265,6 +268,7 @@ fun ApiIntegrationScreen(
             Card(
                 colors = CardDefaults.cardColors(containerColor = ApiCard),
                 shape = RoundedCornerShape(16.dp),
+                border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -333,6 +337,7 @@ fun ApiIntegrationScreen(
             Card(
                 colors = CardDefaults.cardColors(containerColor = ApiCard),
                 shape = RoundedCornerShape(16.dp),
+                border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -373,6 +378,7 @@ fun ApiIntegrationScreen(
             Card(
                 colors = CardDefaults.cardColors(containerColor = ApiCard),
                 shape = RoundedCornerShape(16.dp),
+                border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -468,7 +474,8 @@ fun ApiIntegrationScreen(
                     Text("বাতিল", color = TextMuted)
                 }
             },
-            containerColor = ApiCard
+            containerColor = ApiCard,
+            modifier = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Modifier else Modifier.border(1.dp, Color(0xFFE3E5E8), RoundedCornerShape(28.dp))
         )
     }
 
@@ -500,7 +507,8 @@ fun ApiIntegrationScreen(
                     Text("বাতিল", color = TextMuted)
                 }
             },
-            containerColor = ApiCard
+            containerColor = ApiCard,
+            modifier = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Modifier else Modifier.border(1.dp, Color(0xFFE3E5E8), RoundedCornerShape(28.dp))
         )
     }
 }
