@@ -59,6 +59,11 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.launch
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.animation.core.*
+
 
 // =============================================================================
 // Design Tokens (matches Dark Gateway theme)
@@ -521,6 +526,9 @@ private fun AddCredentialDialog(
     state: ProfileSettingsState,
     viewModel: ProfileSettingsViewModel
 ) {
+    val addCredentialOtpFocusRequester = remember { FocusRequester() }
+    val addCredentialOtpInteractionSource = remember { MutableInteractionSource() }
+
     val isPhone = state.addCredentialType == "phone"
     val label   = if (isPhone) "মোবাইল নম্বর" else "Gmail ঠিকানা"
     val icon    = if (isPhone) Icons.Default.PhoneAndroid else Icons.Default.Email
@@ -579,26 +587,17 @@ private fun AddCredentialDialog(
                     // OTP input (visible after send)
                     AnimatedVisibility(visible = state.addCredentialOtpSent) {
                         Box(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(
+                                    interactionSource = addCredentialOtpInteractionSource,
+                                    indication = null
+                                ) {
+                                    addCredentialOtpFocusRequester.requestFocus()
+                                },
                             contentAlignment = Alignment.Center
                         ) {
-                            BasicTextField(
-                                value = state.addCredentialOtpCode,
-                                onValueChange = { newValue ->
-                                    val sanitized = newValue.filter { it.isDigit() }.take(6)
-                                    viewModel.onAddCredentialOtpChange(sanitized)
-                                },
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number,
-                                    imeAction = ImeAction.Done
-                                ),
-                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.Transparent),
-                                cursorBrush = SolidColor(Color.Transparent),
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .alpha(0.01f)
-                            )
-
+                            // Visual OTP Boxes
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -612,7 +611,7 @@ private fun AddCredentialDialog(
                                         modifier = Modifier
                                             .size(width = 40.dp, height = 48.dp)
                                             .background(
-                                                color = if (char.isNotEmpty()) Color.White.copy(0.05f) else PsCardAlt,
+                                                color = if (char.isNotEmpty()) Color.White.copy(alpha = 0.05f) else PsCardAlt,
                                                 shape = RoundedCornerShape(10.dp)
                                             )
                                             .border(
@@ -622,18 +621,52 @@ private fun AddCredentialDialog(
                                             ),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text(
-                                            text = char,
-                                            fontSize = 18.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = TextW,
-                                            textAlign = TextAlign.Center
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            Text(
+                                                text = char,
+                                                fontSize = 18.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = TextW,
+                                                textAlign = TextAlign.Center
+                                            )
+                                            if (isFocused && char.isNotEmpty()) {
+                                                BlinkingCursor(color = accent)
+                                            }
+                                        }
+                                        if (isFocused && char.isEmpty()) {
+                                            BlinkingCursor(color = accent)
+                                        }
                                     }
                                 }
                             }
+
+                            // Hidden BasicTextField capturing keyboard & clipboard actions (layered on top)
+                            BasicTextField(
+                                value = state.addCredentialOtpCode,
+                                onValueChange = { newValue ->
+                                    val sanitized = newValue.filter { it.isDigit() }.take(6)
+                                    viewModel.onAddCredentialOtpChange(sanitized)
+                                },
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done
+                                ),
+                                textStyle = androidx.compose.ui.text.TextStyle(
+                                    color = Color.Transparent,
+                                    fontSize = 18.sp,
+                                    textAlign = TextAlign.Center
+                                ),
+                                cursorBrush = SolidColor(Color.Transparent),
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .focusRequester(addCredentialOtpFocusRequester)
+                            )
                         }
                     }
+
 
                     // Timer / Resend
                     if (state.addCredentialOtpSent && state.addCredentialTimer > 0) {
@@ -779,6 +812,9 @@ private fun ResetPinDialog(
     state: ProfileSettingsState,
     viewModel: ProfileSettingsViewModel
 ) {
+    val resetPinOtpFocusRequester = remember { FocusRequester() }
+    val resetPinOtpInteractionSource = remember { MutableInteractionSource() }
+
     Dialog(
         onDismissRequest = { viewModel.dismissResetPinDialog() },
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = true)
@@ -827,26 +863,17 @@ private fun ResetPinDialog(
                     AnimatedVisibility(visible = state.resetPinOtpSent) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Box(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(
+                                        interactionSource = resetPinOtpInteractionSource,
+                                        indication = null
+                                    ) {
+                                        resetPinOtpFocusRequester.requestFocus()
+                                    },
                                 contentAlignment = Alignment.Center
                             ) {
-                                BasicTextField(
-                                    value = state.resetPinOtpCode,
-                                    onValueChange = { newValue ->
-                                        val sanitized = newValue.filter { it.isDigit() }.take(6)
-                                        viewModel.onResetPinOtpChange(sanitized)
-                                    },
-                                    keyboardOptions = KeyboardOptions(
-                                        keyboardType = KeyboardType.Number,
-                                        imeAction = ImeAction.Done
-                                    ),
-                                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.Transparent),
-                                    cursorBrush = SolidColor(Color.Transparent),
-                                    modifier = Modifier
-                                        .matchParentSize()
-                                        .alpha(0.01f)
-                                )
-
+                                // Visual OTP Boxes
                                 Row(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -869,17 +896,50 @@ private fun ResetPinDialog(
                                                     shape = RoundedCornerShape(10.dp)
                                                 ),
                                             contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = char,
-                                                fontSize = 18.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = TextW,
-                                                textAlign = TextAlign.Center
-                                            )
+                                         ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.Center
+                                            ) {
+                                                Text(
+                                                    text = char,
+                                                    fontSize = 18.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TextW,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                                if (isFocused && char.isNotEmpty()) {
+                                                    BlinkingCursor(color = PsGreen)
+                                                }
+                                            }
+                                            if (isFocused && char.isEmpty()) {
+                                                BlinkingCursor(color = PsGreen)
+                                            }
                                         }
                                     }
                                 }
+
+                                // Hidden BasicTextField capturing keyboard & clipboard actions (layered on top)
+                                BasicTextField(
+                                    value = state.resetPinOtpCode,
+                                    onValueChange = { newValue ->
+                                        val sanitized = newValue.filter { it.isDigit() }.take(6)
+                                        viewModel.onResetPinOtpChange(sanitized)
+                                    },
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Number,
+                                        imeAction = ImeAction.Done
+                                    ),
+                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                        color = Color.Transparent,
+                                        fontSize = 18.sp,
+                                        textAlign = TextAlign.Center
+                                    ),
+                                    cursorBrush = SolidColor(Color.Transparent),
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .focusRequester(resetPinOtpFocusRequester)
+                                )
                             }
                             PinField("নতুন PIN (৪-৬ ডিজিট)", state.resetPinNewPin, viewModel::onResetPinNewPinChange)
                         }
@@ -1255,3 +1315,25 @@ private fun cropBitmap(
     
     return cropped
 }
+
+@Composable
+private fun BlinkingCursor(color: Color) {
+    val transition = rememberInfiniteTransition(label = "BlinkingCursor")
+    val alpha by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "CursorAlpha"
+    )
+    Box(
+        modifier = Modifier
+            .width(2.dp)
+            .height(18.dp)
+            .alpha(alpha)
+            .background(color)
+    )
+}
+

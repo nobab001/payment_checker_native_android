@@ -53,6 +53,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import online.paychek.app.ui.theme.*
+import androidx.compose.animation.core.*
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.interaction.MutableInteractionSource
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,6 +72,8 @@ fun LoginScreen(
     val context = LocalContext.current
 
     // Observe OTP verification and trigger navigation
+    val focusRequester = remember { FocusRequester() }
+    val otpInteractionSource = remember { MutableInteractionSource() }
     var verificationResult by remember { mutableStateOf<online.paychek.app.data.remote.dto.VerifyOtpResponse?>(null) }
 
     LaunchedEffect(verificationResult) {
@@ -462,43 +468,17 @@ fun LoginScreen(
                         )
                     } else {
                         // Custom 6-digit OTP input boxes (centered text, auto-paste, backspace traversal built-in via hidden field)
-                        val clipboardManager = LocalClipboardManager.current
                         Box(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(
+                                    interactionSource = otpInteractionSource,
+                                    indication = null
+                                ) {
+                                    focusRequester.requestFocus()
+                                },
                             contentAlignment = Alignment.Center
                         ) {
-                            // Hidden BasicTextField capturing keyboard & clipboard actions
-                            BasicTextField(
-                                value = uiState.otpCode,
-                                onValueChange = { newValue ->
-                                    val sanitized = newValue.filter { it.isDigit() }.take(6)
-                                    viewModel.onOtpChanged(sanitized)
-                                    if (sanitized.length == 6) {
-                                        focusManager.clearFocus()
-                                        viewModel.verifyOtp(context) { res ->
-                                            verificationResult = res
-                                        }
-                                    }
-                                },
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number,
-                                    imeAction = ImeAction.Done
-                                ),
-                                keyboardActions = KeyboardActions(
-                                    onDone = {
-                                        focusManager.clearFocus()
-                                        viewModel.verifyOtp(context) { res ->
-                                            verificationResult = res
-                                        }
-                                    }
-                                ),
-                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.Transparent),
-                                cursorBrush = SolidColor(Color.Transparent),
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .alpha(0.01f)
-                            )
-
                             // Visual OTP Boxes
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
@@ -523,16 +503,63 @@ fun LoginScreen(
                                             ),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text(
-                                            text = char,
-                                            fontSize = 20.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = RoyalIndigo,
-                                            textAlign = TextAlign.Center
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            Text(
+                                                text = char,
+                                                fontSize = 20.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = RoyalIndigo,
+                                                textAlign = TextAlign.Center
+                                            )
+                                            if (isFocused && char.isNotEmpty()) {
+                                                BlinkingCursor(color = RoyalIndigo)
+                                            }
+                                        }
+                                        if (isFocused && char.isEmpty()) {
+                                            BlinkingCursor(color = RoyalIndigo)
+                                        }
                                     }
                                 }
                             }
+
+                            // Hidden BasicTextField capturing keyboard & clipboard actions (layered on top)
+                            BasicTextField(
+                                value = uiState.otpCode,
+                                onValueChange = { newValue ->
+                                    val sanitized = newValue.filter { it.isDigit() }.take(6)
+                                    viewModel.onOtpChanged(sanitized)
+                                    if (sanitized.length == 6) {
+                                        focusManager.clearFocus()
+                                        viewModel.verifyOtp(context) { res ->
+                                            verificationResult = res
+                                        }
+                                    }
+                                },
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done
+                                ),
+                                keyboardActions = KeyboardActions(
+                                    onDone = {
+                                        focusManager.clearFocus()
+                                        viewModel.verifyOtp(context) { res ->
+                                            verificationResult = res
+                                        }
+                                    }
+                                ),
+                                textStyle = androidx.compose.ui.text.TextStyle(
+                                    color = Color.Transparent,
+                                    fontSize = 20.sp,
+                                    textAlign = TextAlign.Center
+                                ),
+                                cursorBrush = SolidColor(Color.Transparent),
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .focusRequester(focusRequester)
+                            )
                         }
                     }
 
@@ -832,3 +859,25 @@ fun PremiumRegisterDialog(
         }
     }
 }
+
+@Composable
+private fun BlinkingCursor(color: Color) {
+    val transition = rememberInfiniteTransition(label = "BlinkingCursor")
+    val alpha by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "CursorAlpha"
+    )
+    Box(
+        modifier = Modifier
+            .width(2.dp)
+            .height(18.dp)
+            .alpha(alpha)
+            .background(color)
+    )
+}
+
