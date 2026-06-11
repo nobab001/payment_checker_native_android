@@ -77,6 +77,7 @@ fun DeviceScreen(
     modifier: Modifier = Modifier,
     viewModel: DeviceViewModel = viewModel()
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val state       by viewModel.state.collectAsStateWithLifecycle()
     val haptic      = LocalHapticFeedback.current
     val sheetState  = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -101,6 +102,11 @@ fun DeviceScreen(
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
     }
 
+    val isRestricted = remember(context) {
+        online.paychek.app.utils.SecurePreferences.decrypt(context, "pcu_device_role") == "restricted"
+    }
+    val currentSubTab = if (isRestricted) 0 else state.selectedSubTab
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -120,52 +126,54 @@ fun DeviceScreen(
             }
 
             // ─── Tab Row ─────────────────────────────────────────────────────
-            item {
-                TabRow(
-                    selectedTabIndex = state.selectedSubTab,
-                    containerColor = GwBg,
-                    contentColor = AccentCyan,
-                    indicator = { tabPositions ->
-                        TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[state.selectedSubTab]),
-                            color = AccentCyan
+            if (!isRestricted) {
+                item {
+                    TabRow(
+                        selectedTabIndex = currentSubTab,
+                        containerColor = GwBg,
+                        contentColor = AccentCyan,
+                        indicator = { tabPositions ->
+                            TabRowDefaults.SecondaryIndicator(
+                                modifier = Modifier.tabIndicatorOffset(tabPositions[currentSubTab]),
+                                color = AccentCyan
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Tab(
+                            selected = currentSubTab == 0,
+                            onClick = { viewModel.setSubTab(0) },
+                            text = {
+                                Text(
+                                    "ডিভাইস সেটিং",
+                                    color = if (currentSubTab == 0) AccentCyan else TextMuted,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
                         )
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Tab(
-                        selected = state.selectedSubTab == 0,
-                        onClick = { viewModel.setSubTab(0) },
-                        text = {
-                            Text(
-                                "ডিভাইস সেটিং",
-                                color = if (state.selectedSubTab == 0) AccentCyan else TextMuted,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                        }
-                    )
-                    Tab(
-                        selected = state.selectedSubTab == 1,
-                        onClick = { viewModel.setSubTab(1) },
-                        text = {
-                            Text(
-                                "আদার্স ডিভাইস",
-                                color = if (state.selectedSubTab == 1) AccentCyan else TextMuted,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                        }
-                    )
+                        Tab(
+                            selected = currentSubTab == 1,
+                            onClick = { viewModel.setSubTab(1) },
+                            text = {
+                                Text(
+                                    "আদার্স ডিভাইস",
+                                    color = if (currentSubTab == 1) AccentCyan else TextMuted,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        )
+                    }
                 }
             }
 
             // ─── Loading Skeleton ─────────────────────────────────────────────
-            if (state.isLoading && state.selectedSubTab == 0) {
+            if (state.isLoading && currentSubTab == 0) {
                 items(5) { DeviceSkeletonCard() }
             }
 
-            if (!state.isLoading && state.selectedSubTab == 0) {
+            if (!state.isLoading && currentSubTab == 0) {
                 if (state.errorMessage != null) {
                     item {
                         ErrorBanner(
@@ -180,7 +188,8 @@ fun DeviceScreen(
                         SimSectionHeader(
                             simSlot   = 1,
                             isEnabled = state.sim1Enabled,
-                            onToggle  = { viewModel.toggleSim(1) }
+                            onToggle  = { if (!isRestricted) viewModel.toggleSim(1) },
+                            enabled   = !isRestricted
                         )
                     }
                     items(
@@ -193,24 +202,29 @@ fun DeviceScreen(
                         ) { isDragging ->
                             GatewayMethodCard(
                                 method      = method,
-                                simEnabled  = state.sim1Enabled,
-                                isDragging  = isDragging,
-                                onToggle    = { viewModel.toggleMethod(method) },
-                                onEdit      = { viewModel.openEditSheet(method) },
+                                simEnabled  = state.sim1Enabled && !isRestricted,
+                                isDragging  = isDragging && !isRestricted,
+                                onToggle    = { if (!isRestricted) viewModel.toggleMethod(method) },
+                                onEdit      = { if (!isRestricted) viewModel.openEditSheet(method) },
                                 dragHandle  = {
-                                    Icon(
-                                        imageVector        = Icons.Default.DragHandle,
-                                        contentDescription = "Drag",
-                                        tint               = TextMuted,
-                                        modifier           = Modifier
-                                            .size(22.dp)
-                                            .draggableHandle(
-                                                onDragStarted = {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                }
-                                            )
-                                    )
+                                    if (!isRestricted) {
+                                        Icon(
+                                            imageVector        = Icons.Default.DragHandle,
+                                            contentDescription = "Drag",
+                                            tint               = TextMuted,
+                                            modifier           = Modifier
+                                                .size(22.dp)
+                                                .draggableHandle(
+                                                    onDragStarted = {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    }
+                                                )
+                                        )
+                                    } else {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
                                 },
+                                isRestricted = isRestricted,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                             )
                         }
@@ -222,7 +236,8 @@ fun DeviceScreen(
                             SimSectionHeader(
                                 simSlot   = 2,
                                 isEnabled = state.sim2Enabled,
-                                onToggle  = { viewModel.toggleSim(2) },
+                                onToggle  = { if (!isRestricted) viewModel.toggleSim(2) },
+                                enabled   = !isRestricted,
                                 modifier  = Modifier.padding(top = 12.dp)
                             )
                         }
@@ -236,24 +251,29 @@ fun DeviceScreen(
                             ) { isDragging ->
                                 GatewayMethodCard(
                                     method     = method,
-                                    simEnabled = state.sim2Enabled,
-                                    isDragging = isDragging,
-                                    onToggle   = { viewModel.toggleMethod(method) },
-                                    onEdit     = { viewModel.openEditSheet(method) },
+                                    simEnabled = state.sim2Enabled && !isRestricted,
+                                    isDragging = isDragging && !isRestricted,
+                                    onToggle   = { if (!isRestricted) viewModel.toggleMethod(method) },
+                                    onEdit     = { if (!isRestricted) viewModel.openEditSheet(method) },
                                     dragHandle = {
-                                        Icon(
-                                            imageVector        = Icons.Default.DragHandle,
-                                            contentDescription = "Drag",
-                                            tint               = TextMuted,
-                                            modifier           = Modifier
-                                                .size(22.dp)
-                                                .draggableHandle(
-                                                    onDragStarted = {
-                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    }
-                                                )
-                                        )
+                                        if (!isRestricted) {
+                                            Icon(
+                                                imageVector        = Icons.Default.DragHandle,
+                                                contentDescription = "Drag",
+                                                tint               = TextMuted,
+                                                modifier           = Modifier
+                                                    .size(22.dp)
+                                                    .draggableHandle(
+                                                        onDragStarted = {
+                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                        }
+                                                    )
+                                            )
+                                        } else {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                        }
                                     },
+                                    isRestricted = isRestricted,
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                                 )
                             }
@@ -286,7 +306,7 @@ fun DeviceScreen(
                 }
             }
 
-            if (state.selectedSubTab == 1) {
+            if (currentSubTab == 1) {
                 // ─── Others Device Sub-Tab ─────────────────────────────────────────
                 if (state.isChildDevicesLoading) {
                     items(3) { DeviceSkeletonCard() }
@@ -600,6 +620,7 @@ private fun SimSectionHeader(
     simSlot: Int,
     isEnabled: Boolean,
     onToggle: () -> Unit,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val dotColor by animateColorAsState(
@@ -637,6 +658,7 @@ private fun SimSectionHeader(
         Switch(
             checked         = isEnabled,
             onCheckedChange = { onToggle() },
+            enabled         = enabled,
             colors          = SwitchDefaults.colors(
                 checkedTrackColor   = AccentGreen,
                 uncheckedTrackColor = ToggleOff,
@@ -661,6 +683,7 @@ private fun GatewayMethodCard(
     onToggle:   () -> Unit,
     onEdit:     () -> Unit,
     dragHandle: @Composable () -> Unit,
+    isRestricted: Boolean = false,
     modifier:   Modifier = Modifier
 ) {
     val isActive   = simEnabled && method.isEnabled == 1
@@ -739,7 +762,7 @@ private fun GatewayMethodCard(
                 Switch(
                     checked         = method.isEnabled == 1,
                     onCheckedChange = { onToggle() },
-                    enabled         = simEnabled,
+                    enabled         = simEnabled && !isRestricted,
                     colors          = SwitchDefaults.colors(
                         checkedTrackColor   = AccentGreen,
                         uncheckedTrackColor = ToggleOff,
@@ -747,16 +770,20 @@ private fun GatewayMethodCard(
                     ),
                     modifier = Modifier.height(28.dp)
                 )
-                IconButton(
-                    onClick  = onEdit,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector     = Icons.Default.Settings,
-                        contentDescription = "সম্পাদনা",
-                        tint            = TextMuted,
-                        modifier        = Modifier.size(18.dp)
-                    )
+                if (!isRestricted) {
+                    IconButton(
+                        onClick  = onEdit,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector     = Icons.Default.Settings,
+                            contentDescription = "সম্পাদনা",
+                            tint            = TextMuted,
+                            modifier        = Modifier.size(18.dp)
+                        )
+                    }
+                } else {
+                    Spacer(modifier = Modifier.width(32.dp))
                 }
             }
         }

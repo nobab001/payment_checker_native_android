@@ -89,6 +89,9 @@ fun ProfileSettingsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scroll = rememberScrollState()
     val context = LocalContext.current
+    val isRestricted = remember(context) {
+        online.paychek.app.utils.SecurePreferences.decrypt(context, "pcu_device_role") == "restricted"
+    }
     val localAvatarFile = remember { java.io.File(context.filesDir, "profile_avatar.png") }
     var localAvatarPath by remember {
         mutableStateOf<String?>(if (localAvatarFile.exists()) localAvatarFile.absolutePath else null)
@@ -173,11 +176,13 @@ fun ProfileSettingsScreen(
                     subscriptionPlan = state.subscriptionPlan,
                     avatarUrl        = localAvatarPath ?: state.avatarUrl,
                     onAvatarClick    = { imagePickerLauncher.launch("image/*") },
+                    isRestricted     = isRestricted,
                     modifier         = Modifier.padding(horizontal = 16.dp)
                 )
 
                 // ── Section 2: Linked Credentials ─────────────────────────
                 ProfileCredentialsCard(
+                    isRestricted   = isRestricted,
                     modifier       = Modifier.padding(horizontal = 16.dp)
                 )
 
@@ -185,6 +190,7 @@ fun ProfileSettingsScreen(
                 SecurityPinCard(
                     onChangePin    = { viewModel.openChangePinDialog() },
                     onForgotPin    = { viewModel.openResetPinDialog() },
+                    isRestricted   = isRestricted,
                     modifier       = Modifier.padding(horizontal = 16.dp)
                 )
 
@@ -291,6 +297,7 @@ private fun ProfileHeaderCard(
     subscriptionPlan: String,
     avatarUrl: String?,
     onAvatarClick: () -> Unit,
+    isRestricted: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -314,8 +321,8 @@ private fun ProfileHeaderCard(
                         .size(64.dp)
                         .clip(CircleShape)
                         .background(Color.White.copy(alpha = 0.15f))
-                        .border(2.dp, PsCyan, CircleShape)
-                        .clickable { onAvatarClick() },
+                        .border(2.dp, if (isRestricted) PsCyan.copy(alpha = 0.5f) else PsCyan, CircleShape)
+                        .then(if (!isRestricted) Modifier.clickable { onAvatarClick() } else Modifier),
                     contentAlignment = Alignment.Center
                 ) {
                     Crossfade(
@@ -401,6 +408,7 @@ private fun ProfileHeaderCard(
 private fun SecurityPinCard(
     onChangePin: () -> Unit,
     onForgotPin: () -> Unit,
+    isRestricted: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     PsSection(
@@ -419,25 +427,27 @@ private fun SecurityPinCard(
         // Change PIN button
         Button(
             onClick        = onChangePin,
+            enabled        = !isRestricted,
             colors         = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
             shape          = RoundedCornerShape(14.dp),
-            border         = androidx.compose.foundation.BorderStroke(1.dp, PsAmber),
+            border         = androidx.compose.foundation.BorderStroke(1.dp, if (isRestricted) PsAmber.copy(alpha = 0.3f) else PsAmber),
             modifier       = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(vertical = 14.dp)
         ) {
-            Icon(Icons.Default.Key, null, tint = PsAmber, modifier = Modifier.size(18.dp))
+            Icon(Icons.Default.Key, null, tint = if (isRestricted) PsAmber.copy(alpha = 0.4f) else PsAmber, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text("পিন পরিবর্তন করুন", color = PsAmber, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text("পিন পরিবর্তন করুন", color = if (isRestricted) PsAmber.copy(alpha = 0.4f) else PsAmber, fontWeight = FontWeight.Bold, fontSize = 14.sp)
         }
         Spacer(Modifier.height(8.dp))
         // Forgot PIN button
         TextButton(
             onClick  = onForgotPin,
+            enabled  = !isRestricted,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Icon(Icons.Default.HelpOutline, null, tint = TextM, modifier = Modifier.size(16.dp))
+            Icon(Icons.Default.HelpOutline, null, tint = if (isRestricted) TextM.copy(alpha = 0.4f) else TextM, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
-            Text("পিন ভুলে গেছেন? OTP দিয়ে রিসেট করুন", color = TextM, fontSize = 13.sp)
+            Text("পিন ভুলে গেছেন? OTP দিয়ে রিসেট করুন", color = if (isRestricted) TextM.copy(alpha = 0.4f) else TextM, fontSize = 13.sp)
         }
     }
 }

@@ -505,16 +505,18 @@ async function verifyOtp(req, res) {
 
       const insertDeviceResult = await query(
         `INSERT INTO registered_devices 
-          (user_id, device_id, device_name, device_model, android_version, status, is_parent, trial_started_at, trial_expires_at, is_trial_locked) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (user_id, device_id, device_name, device_model, android_version, status, is_parent, is_approved, device_role, trial_started_at, trial_expires_at, is_trial_locked) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           user.id,
           deviceId,
-          isParent ? 'Main Phone' : 'Child Device',
+          isParent ? 'Main Phone' : 'Co-Parent Device',
           deviceModel || 'Unknown Model',
           androidVersion || 'Android',
           initialStatus,
           isParent,
+          isParent ? 1 : 0,
+          isParent ? 'owner' : 'pending',
           trialStartedAt,
           trialExpiresAt,
           0
@@ -576,6 +578,8 @@ async function verifyOtp(req, res) {
         deviceName: device.custom_name || device.device_name,
         status: device.status,
         isParent: !!device.is_parent,
+        isApproved: device.is_approved === 1 || device.is_approved === true,
+        deviceRole: device.device_role || 'pending',
         isTrialLocked: !!device.is_trial_locked,
         trialExpiresAt: device.trial_expires_at,
         lockReason: device.lock_reason
@@ -1497,12 +1501,13 @@ async function getPublicConfig(req, res) {
 async function getChildDevices(req, res) {
   try {
     const userId = req.user.userId;
+    const currentDeviceId = req.user.deviceId || '';
     const devices = await query(
-      `SELECT id, device_id, custom_device_name, is_parent, 
+      `SELECT id, device_id, custom_device_name, is_parent, is_approved, device_role,
               sim_one_number, sim_one_active, sim_two_number, sim_two_active, is_app_active 
        FROM registered_devices 
-       WHERE user_id = ? AND is_parent = 0`,
-      [userId]
+       WHERE user_id = ? AND device_id != ?`,
+      [userId, currentDeviceId]
     );
     return res.json({ success: true, data: devices });
   } catch (error) {
@@ -1536,7 +1541,7 @@ async function remoteUpdateDevice(req, res) {
            sim_two_number = ?, 
            sim_two_active = ?, 
            is_app_active = ?
-       WHERE user_id = ? AND device_id = ? AND is_parent = 0`,
+       WHERE user_id = ? AND device_id = ?`,
       [
         custom_device_name || '',
         sim_one_number || null,
@@ -1570,7 +1575,7 @@ async function getMyDeviceConfig(req, res) {
     }
 
     const devices = await query(
-      `SELECT id, device_id, custom_device_name, is_parent, 
+      `SELECT id, device_id, custom_device_name, is_parent, is_approved, device_role,
               sim_one_number, sim_one_active, sim_two_number, sim_two_active, is_app_active 
        FROM registered_devices 
        WHERE user_id = ? AND device_id = ? LIMIT 1`,
@@ -1661,6 +1666,124 @@ async function uploadAvatar(req, res) {
   }
 }
 
+async function getPendingApprovals(req, res) {
+  try {
+    const userId = req.user.userId;
+    const devices = await query(
+      `SELECT id, device_id, custom_device_name, device_model, android_version, status, is_approved, device_role, created_at 
+       FROM registered_devices 
+       WHERE user_id = ? AND is_approved = 0`,
+      [userId]
+    );
+    return res.json({ success: true, data: devices });
+  } catch (error) {
+    console.error('Error fetching pending approvals:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function approveByPin(req, res) {
+  try {
+    const userId = req.user.userId;
+    const { deviceId, pin } = req.body;
+
+    if (!deviceId || !pin) {
+      return res.status(400).json({ success: false, error: 'deviceId and pin are required' });
+    }
+
+    // 1. Fetch user to verify PIN
+    const users = await query('SELECT pin FROM users WHERE id = ? LIMIT 1', [userId]);
+    if (users.length === 0) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const user = users[0];
+    if (!user.pin) {
+      return res.status(400).json({ success: false, error: 'Security PIN not configured' });
+    }
+
+    // Verify PIN
+    const pinMatch = await bcrypt.compare(pin, user.pin);
+    if (!pinMatch) {
+      return res.status(400).json({ success: false, error: 'ভুল পিন কোড, অনুগ্রহ করে আবার চেষ্টা করুন।' });
+    }
+
+    // 2. Update device status to approved and active
+    const result = await query(
+      `UPDATE registered_devices 
+       SET is_approved = 1, status = 'active' 
+       WHERE user_id = ? AND device_id = ?`,
+      [userId, deviceId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, error: 'Device not found' });
+    }
+
+    return res.json({ success: true, message: 'ডিভাইসটি সফলভাবে অনুমোদন করা হয়েছে।' });
+  } catch (error) {
+    console.error('Error approving device by PIN:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function submitRole(req, res) {
+  try {
+    const userId = req.user.userId;
+    const deviceId = req.user.deviceId;
+    const { role } = req.body;
+
+    if (!role || (role !== 'owner' && role !== 'restricted')) {
+      return res.status(400).json({ success: false, error: 'Valid role (owner or restricted) is required' });
+    }
+
+    const result = await query(
+      `UPDATE registered_devices 
+       SET device_role = ? 
+       WHERE user_id = ? AND device_id = ?`,
+      [role, userId, deviceId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, error: 'Device not found' });
+    }
+
+    return res.json({ success: true, message: 'ডিভাইস রোল সফলভাবে সেট করা হয়েছে।' });
+  } catch (error) {
+    console.error('Error submitting device role:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function checkApprovalStatus(req, res) {
+  try {
+    const userId = req.user.userId;
+    const deviceId = req.user.deviceId;
+
+    const devices = await query(
+      `SELECT is_approved, device_role, status 
+       FROM registered_devices 
+       WHERE user_id = ? AND device_id = ? LIMIT 1`,
+      [userId, deviceId]
+    );
+
+    if (devices.length === 0) {
+      return res.status(404).json({ success: false, error: 'Device not registered' });
+    }
+
+    const device = devices[0];
+    return res.json({
+      success: true,
+      isApproved: device.is_approved === 1 || device.is_approved === true,
+      deviceRole: device.device_role || 'pending',
+      status: device.status
+    });
+  } catch (error) {
+    console.error('Error checking approval status:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   checkContact,
   sendOtp,
@@ -1673,6 +1796,10 @@ module.exports = {
   getChildDevices,
   remoteUpdateDevice,
   getMyDeviceConfig,
+  getPendingApprovals,
+  approveByPin,
+  submitRole,
+  checkApprovalStatus,
   getProfile,
   uploadAvatar,
   sendOtpDispatch   // exported for reuse by credentialController & pinController

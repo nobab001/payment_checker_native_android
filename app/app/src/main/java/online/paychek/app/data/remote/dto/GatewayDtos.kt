@@ -107,6 +107,8 @@ data class ChildDeviceDto(
     @SerializedName("device_id") val deviceId: String,
     @SerializedName("custom_device_name") val customDeviceName: String,
     @SerializedName("is_parent") val isParent: Int,
+    @SerializedName("is_approved") val isApproved: Int = 0,
+    @SerializedName("device_role") val deviceRole: String = "pending",
     @SerializedName("sim_one_number") val simOneNumber: String?,
     @SerializedName("sim_one_active") val simOneActive: Int,
     @SerializedName("sim_two_number") val simTwoNumber: String?,
@@ -133,4 +135,21 @@ data class RemoteUpdateDeviceRequest(
     @SerializedName("sim_two_active") val simTwoActive: Int,
     @SerializedName("is_app_active") val isAppActive: Int
 )
+
+data class ApproveDeviceRequest(
+    @SerializedName("deviceId") val deviceId: String,
+    @SerializedName("pin") val pin: String
+)
+
+data class SubmitRoleRequest(
+    @SerializedName("role") val role: String
+)
+
+data class ApprovalStatusResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("isApproved") val isApproved: Boolean,
+    @SerializedName("deviceRole") val deviceRole: String?,
+    @SerializedName("status") val status: String?
+)
+
 

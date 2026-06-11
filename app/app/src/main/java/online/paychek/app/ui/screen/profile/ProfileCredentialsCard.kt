@@ -45,6 +45,7 @@ private val TextM      = Color(0xFF94A3B8)
 @Composable
 fun ProfileCredentialsCard(
     modifier: Modifier = Modifier,
+    isRestricted: Boolean = false,
     context: Context = LocalContext.current,
     viewModel: CredentialViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
         factory = remember {
@@ -95,7 +96,7 @@ fun ProfileCredentialsCard(
                     fontSize = 14.sp
                 )
                 Spacer(modifier = Modifier.weight(1f))
-                if (viewModel.linkedPhones.size < 5) {
+                if (!isRestricted && viewModel.linkedPhones.size < 5) {
                     IconButton(
                         onClick = {
                             inputType = "phone"
@@ -125,6 +126,7 @@ fun ProfileCredentialsCard(
                     CredentialItemRow(
                         item = item,
                         icon = Icons.Default.PhoneAndroid,
+                        isRestricted = isRestricted,
                         onRemove = {
                             credentialIdToDelete = item.id
                             deletePinValue = ""
@@ -147,7 +149,7 @@ fun ProfileCredentialsCard(
                     fontSize = 14.sp
                 )
                 Spacer(modifier = Modifier.weight(1f))
-                if (viewModel.linkedEmails.size < 5) {
+                if (!isRestricted && viewModel.linkedEmails.size < 5) {
                     IconButton(
                         onClick = {
                             inputType = "email"
@@ -177,6 +179,7 @@ fun ProfileCredentialsCard(
                     CredentialItemRow(
                         item = item,
                         icon = Icons.Default.Email,
+                        isRestricted = isRestricted,
                         onRemove = {
                             credentialIdToDelete = item.id
                             deletePinValue = ""
@@ -445,6 +448,7 @@ fun ProfileCredentialsCard(
 private fun CredentialItemRow(
     item: CredentialItem,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isRestricted: Boolean = false,
     onRemove: () -> Unit
 ) {
     Row(
@@ -468,16 +472,18 @@ private fun CredentialItemRow(
             fontSize = 13.sp,
             modifier = Modifier.weight(1f)
         )
-        IconButton(
-            onClick = onRemove,
-            modifier = Modifier.size(24.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = "Remove",
-                tint = PsRed,
-                modifier = Modifier.size(16.dp)
-            )
+        if (!isRestricted) {
+            IconButton(
+                onClick = onRemove,
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Remove",
+                    tint = PsRed,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
     }
 }

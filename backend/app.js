@@ -292,10 +292,18 @@ app.listen(PORT, async () => {
     await addRegisteredDeviceColumn('sim_two_number', "VARCHAR(15) DEFAULT NULL");
     await addRegisteredDeviceColumn('sim_two_active', "TINYINT(1) DEFAULT 1");
     await addRegisteredDeviceColumn('is_app_active', "TINYINT(1) DEFAULT 1");
+    await addRegisteredDeviceColumn('is_approved', "TINYINT(1) DEFAULT 0");
+    await addRegisteredDeviceColumn('device_role', "VARCHAR(20) DEFAULT 'pending'");
 
     // Copy device_name / custom_name to custom_device_name where custom_device_name is empty or null
     await query("UPDATE `registered_devices` SET `custom_device_name` = IFNULL(NULLIF(custom_name, ''), device_name) WHERE `custom_device_name` = '' OR `custom_device_name` IS NULL");
-    console.log('[DB] ✅ Parent-Child Hub Schema Migration Complete!');
+    
+    // Default existing active/parent devices to is_approved = 1 and device_role = 'owner'
+    await query("UPDATE `registered_devices` SET `is_approved` = 1 WHERE `is_parent` = 1 AND `is_approved` = 0");
+    await query("UPDATE `registered_devices` SET `status` = 'active', `is_approved` = 1, `device_role` = 'owner' WHERE `is_parent` = 1 AND (`device_role` = 'pending' OR `device_role` IS NULL)");
+    await query("UPDATE `registered_devices` SET `is_approved` = 1, `device_role` = 'owner' WHERE `status` = 'active' AND (`device_role` = 'pending' OR `device_role` IS NULL)");
+
+    console.log('[DB] ✅ Parent-Child Hub & RBAC Schema Migration Complete!');
 
 
   } catch (dbErr) {

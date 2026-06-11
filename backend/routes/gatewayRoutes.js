@@ -8,12 +8,12 @@ const billing    = require('../middleware/billing');
 router.get('/gateway/methods',               auth, billing, gw.getGatewayMethods);
 
 // PATCH /api/gateway/priority          → Drag & Drop পর priority ক্রম সেভ
-router.patch('/gateway/priority',            auth, billing, gw.updatePriority);
+router.patch('/gateway/priority',            auth, auth.restrictDevice, billing, gw.updatePriority);
 
 // PATCH /api/gateway/methods/:id/toggle → চালু/বন্ধ করা
-router.patch('/gateway/methods/:id/toggle',  auth, billing, gw.toggleMethod);
+router.patch('/gateway/methods/:id/toggle',  auth, auth.restrictDevice, billing, gw.toggleMethod);
 
 // PATCH /api/gateway/methods/:id        → নম্বর ও নাম আপডেট
-router.patch('/gateway/methods/:id',         auth, billing, gw.updateMethod);
+router.patch('/gateway/methods/:id',         auth, auth.restrictDevice, billing, gw.updateMethod);
 
 module.exports = router;

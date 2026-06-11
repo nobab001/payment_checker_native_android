@@ -39,6 +39,12 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ArrowBackIosNew
 import online.paychek.app.utils.SecurePreferences
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Info
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bottom Navigation Tab সংজ্ঞা
@@ -118,6 +124,89 @@ fun HomeScreen(
     var plansList by remember { mutableStateOf<List<online.paychek.app.data.remote.dto.SubscriptionPlanDto>>(emptyList()) }
     var purchaseLoading by remember { mutableStateOf(false) }
 
+    var isApproved by remember {
+        mutableStateOf(
+            SecurePreferences.decrypt(context, "pcu_is_approved") == "true"
+        )
+    }
+    var deviceRole by remember {
+        mutableStateOf(
+            SecurePreferences.decrypt(context, "pcu_device_role").ifEmpty { "pending" }
+        )
+    }
+
+    DisposableEffect(context) {
+        val sharedPrefs = context.getSharedPreferences("paychek_secure_prefs", android.content.Context.MODE_PRIVATE)
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "pcu_is_approved" || key == "pcu_device_role") {
+                isApproved = SecurePreferences.decrypt(context, "pcu_is_approved") == "true"
+                deviceRole = SecurePreferences.decrypt(context, "pcu_device_role").ifEmpty { "pending" }
+            }
+        }
+        sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+    }
+
+    // 5-second polling loop to check if approved
+    LaunchedEffect(isApproved) {
+        if (!isApproved) {
+            while (true) {
+                try {
+                    val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
+                    if (token.isNotEmpty()) {
+                        val response = online.paychek.app.data.remote.api.RetrofitClient.gatewayApiService.checkApprovalStatus("Bearer $token")
+                        if (response.isSuccessful && response.body() != null) {
+                            val body = response.body()!!
+                            if (body.isApproved) {
+                                SecurePreferences.encrypt(context, "pcu_is_approved", "true")
+                                SecurePreferences.encrypt(context, "pcu_device_role", body.deviceRole ?: "pending")
+                                isApproved = true
+                                deviceRole = body.deviceRole ?: "pending"
+                                break
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Ignore network error in background polling
+                }
+                kotlinx.coroutines.delay(5000L)
+            }
+        }
+    }
+
+    // 10-second polling for pending approvals when owner
+    var pendingDevices by remember { mutableStateOf<List<online.paychek.app.data.remote.dto.ChildDeviceDto>>(emptyList()) }
+    LaunchedEffect(isApproved, deviceRole) {
+        if (isApproved && deviceRole == "owner") {
+            while (true) {
+                try {
+                    val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
+                    if (token.isNotEmpty()) {
+                        val response = online.paychek.app.data.remote.api.RetrofitClient.gatewayApiService.getPendingApprovals("Bearer $token")
+                        if (response.isSuccessful && response.body() != null) {
+                            pendingDevices = response.body()!!.data.filter { it.isApproved == 0 }
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Ignore background error
+                }
+                kotlinx.coroutines.delay(10000L)
+            }
+        } else {
+            pendingDevices = emptyList()
+        }
+    }
+
+    var showPinApprovalDialogForDevice by remember { mutableStateOf<online.paychek.app.data.remote.dto.ChildDeviceDto?>(null) }
+    var pinApprovalInput by remember { mutableStateOf("") }
+    var pinApprovalError by remember { mutableStateOf<String?>(null) }
+    var pinApprovalLoading by remember { mutableStateOf(false) }
+
+    var submittingRole by remember { mutableStateOf(false) }
+    var submitRoleError by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(showPurchaseDialog) {
         if (showPurchaseDialog && plansList.isEmpty()) {
             val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
@@ -170,6 +259,346 @@ fun HomeScreen(
         selectedTab = HomeTab.HOME
     }
 
+    // 1. Lock Overlay if not approved
+    if (!isApproved) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF0F172A)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(32.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color(0xFFEF4444).copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Lock icon",
+                        tint = Color(0xFFEF4444),
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "অন্য সচল ডিভাইস থেকে অনুমতি নিন",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "এই ডিভাইসটি এখনও অনুমোদিত নয়। অনুগ্রহ করে আপনার অন্য কোনো সচল ডিভাইস থেকে পিন দিয়ে এটি অনুমোদন করুন।",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                CircularProgressIndicator(
+                    color = Color(0xFF22D3EE),
+                    modifier = Modifier.size(28.dp),
+                    strokeWidth = 3.dp
+                )
+            }
+        }
+        return
+    }
+
+    // 2. Role selection Dialog if role is pending
+    if (isApproved && deviceRole == "pending") {
+        Dialog(
+            onDismissRequest = { /* Non-dismissible */ }
+        ) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = Color(0xFF1E293B),
+                tonalElevation = 8.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(0xFF22D3EE).copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Person",
+                            tint = Color(0xFF22D3EE),
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                    Text(
+                        text = "এই ডিভাইসটি কার?",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 18.sp
+                    )
+                    Text(
+                        text = "ডিভাইসের মালিকানা নিশ্চিত করতে নিচের উপযুক্ত মোডটি সিলেক্ট করুন।",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF253349)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF22D3EE).copy(0.3f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !submittingRole) {
+                                coroutineScope.launch {
+                                    submittingRole = true
+                                    submitRoleError = null
+                                    try {
+                                        val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
+                                        val response = online.paychek.app.data.remote.api.RetrofitClient.gatewayApiService.submitRole(
+                                            "Bearer $token",
+                                            online.paychek.app.data.remote.dto.SubmitRoleRequest("owner")
+                                        )
+                                        if (response.isSuccessful && response.body()?.success == true) {
+                                            SecurePreferences.encrypt(context, "pcu_device_role", "owner")
+                                            deviceRole = "owner"
+                                        } else {
+                                            submitRoleError = "অনুমোদন জমা দেওয়া যায়নি"
+                                        }
+                                    } catch (e: Exception) {
+                                        submitRoleError = "নেটওয়ার্ক ত্রুটি: ${e.localizedMessage}"
+                                    }
+                                    submittingRole = false
+                                }
+                            }
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                "আমার নিজের ডিভাইস",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "মালিকানা মোড (Full Owner Access)। সব সেটিংস পরিবর্তন ও অন্য ফোন অ্যাক্সেস সম্ভব।",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF253349)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569).copy(0.3f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !submittingRole) {
+                                coroutineScope.launch {
+                                    submittingRole = true
+                                    submitRoleError = null
+                                    try {
+                                        val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
+                                        val response = online.paychek.app.data.remote.api.RetrofitClient.gatewayApiService.submitRole(
+                                            "Bearer $token",
+                                            online.paychek.app.data.remote.dto.SubmitRoleRequest("restricted")
+                                        )
+                                        if (response.isSuccessful && response.body()?.success == true) {
+                                            SecurePreferences.encrypt(context, "pcu_device_role", "restricted")
+                                            deviceRole = "restricted"
+                                        } else {
+                                            submitRoleError = "অনুমোদন জমা দেওয়া যায়নি"
+                                        }
+                                    } catch (e: Exception) {
+                                        submitRoleError = "নেটওয়ার্ক ত্রুটি: ${e.localizedMessage}"
+                                    }
+                                    submittingRole = false
+                                }
+                            }
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                "অন্য কারো/সহযোগীর ডিভাইস",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "স্টাফ মোড (Restricted Mode)। সেটিংস পরিবর্তন বন্ধ থাকবে ও অন্য কোনো ফোন দেখা যাবে না।",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+
+                    if (submitRoleError != null) {
+                        Text(submitRoleError!!, color = Color(0xFFEF4444), fontSize = 12.sp)
+                    }
+
+                    if (submittingRole) {
+                        CircularProgressIndicator(color = Color(0xFF22D3EE), modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. PIN Approval Dialog for Owner Device
+    val deviceToApprove = showPinApprovalDialogForDevice
+    if (deviceToApprove != null) {
+        Dialog(
+            onDismissRequest = {
+                showPinApprovalDialogForDevice = null
+                pinApprovalInput = ""
+                pinApprovalError = null
+            }
+        ) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = Color(0xFF1E293B),
+                tonalElevation = 8.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(0xFFF59E0B).copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Lock",
+                            tint = Color(0xFFF59E0B),
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                    Text(
+                        text = "ডিভাইস অনুমোদন করুন",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 18.sp
+                    )
+                    Text(
+                        text = "নতুন ডিভাইস '${deviceToApprove.customDeviceName.ifEmpty { "চাইল্ড ডিভাইস" }}' অনুমোদন করতে আপনার সিকিউরিটি পিন লিখুন।",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
+                    )
+
+                    OutlinedTextField(
+                        value = pinApprovalInput,
+                        onValueChange = { newValue ->
+                            if (newValue.length <= 6 && newValue.all { it.isDigit() }) {
+                                pinApprovalInput = newValue
+                            }
+                        },
+                        label = { Text("পিন কোড", color = Color(0xFF94A3B8)) },
+                        singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF22D3EE),
+                            unfocusedBorderColor = Color(0xFF475569),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (pinApprovalError != null) {
+                        Text(pinApprovalError!!, color = Color(0xFFEF4444), fontSize = 12.sp, textAlign = TextAlign.Center)
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                showPinApprovalDialogForDevice = null
+                                pinApprovalInput = ""
+                                pinApprovalError = null
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF94A3B8))
+                        ) {
+                            Text("বাতিল")
+                        }
+                        Button(
+                            onClick = {
+                                coroutineScope.launch {
+                                    if (pinApprovalInput.length < 4) {
+                                        pinApprovalError = "কমপক্ষে ৪ ডিজিটের পিন দিন"
+                                        return@launch
+                                    }
+                                    pinApprovalLoading = true
+                                    pinApprovalError = null
+                                    try {
+                                        val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
+                                        val response = online.paychek.app.data.remote.api.RetrofitClient.gatewayApiService.approveByPin(
+                                            "Bearer $token",
+                                            online.paychek.app.data.remote.dto.ApproveDeviceRequest(deviceToApprove.deviceId, pinApprovalInput)
+                                        )
+                                        if (response.isSuccessful && response.body()?.success == true) {
+                                            android.widget.Toast.makeText(context, "ডিভাইসটি সফলভাবে অনুমোদন করা হয়েছে।", android.widget.Toast.LENGTH_SHORT).show()
+                                            pendingDevices = pendingDevices.filter { it.deviceId != deviceToApprove.deviceId }
+                                            showPinApprovalDialogForDevice = null
+                                            pinApprovalInput = ""
+                                        } else {
+                                            pinApprovalError = "ভুল পিন কোড, অনুগ্রহ করে আবার চেষ্টা করুন।"
+                                        }
+                                    } catch (e: Exception) {
+                                        pinApprovalError = "নেটওয়ার্ক ত্রুটি: ${e.localizedMessage}"
+                                    }
+                                    pinApprovalLoading = false
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22D3EE)),
+                            enabled = !pinApprovalLoading
+                        ) {
+                            if (pinApprovalLoading) {
+                                CircularProgressIndicator(color = Color(0xFF0F172A), modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            } else {
+                                Text("নিশ্চিত করুন", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Scaffold(
         containerColor = Color(0xFF0F172A), // Dashboard dark bg
         bottomBar = {
@@ -181,31 +610,79 @@ fun HomeScreen(
             )
         }
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (selectedTab) {
-                HomeTab.HOME -> DashboardScreen(
-                    onNavigateToHistory = { selectedTab = HomeTab.SEARCH },
-                    modifier = Modifier.fillMaxSize()
-                )
-                HomeTab.DEVICE -> DeviceScreen(
-                    onNavigateBack = { selectedTab = HomeTab.HOME },
-                    modifier = Modifier.fillMaxSize()
-                )
-                HomeTab.SEARCH -> TransactionSearchScreen(
-                    modifier = Modifier.fillMaxSize()
-                )
-                HomeTab.API -> ApiIntegrationScreen(
-                    onNavigateToCheckout = onNavigateToApiCenter,
-                    modifier = Modifier.fillMaxSize()
-                )
-                HomeTab.PROFILE -> ProfileSettingsScreen(
-                    onNavigateBack = { selectedTab = HomeTab.HOME },
-                    modifier = Modifier.fillMaxSize()
-                )
+            // Top notification banner for owner devices with pending requests
+            if (isApproved && deviceRole == "owner" && pendingDevices.isNotEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF59E0B)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .clickable { showPinApprovalDialogForDevice = pendingDevices.first() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = "Warning",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "অনুমোদনের জন্য ${pendingDevices.size}টি ডিভাইস পেন্ডিং রয়েছে",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = "অনুমোদন করুন",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+            ) {
+                when (selectedTab) {
+                    HomeTab.HOME -> DashboardScreen(
+                        onNavigateToHistory = { selectedTab = HomeTab.SEARCH },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    HomeTab.DEVICE -> DeviceScreen(
+                        onNavigateBack = { selectedTab = HomeTab.HOME },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    HomeTab.SEARCH -> TransactionSearchScreen(
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    HomeTab.API -> ApiIntegrationScreen(
+                        onNavigateToCheckout = onNavigateToApiCenter,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    HomeTab.PROFILE -> ProfileSettingsScreen(
+                        onNavigateBack = { selectedTab = HomeTab.HOME },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
     }

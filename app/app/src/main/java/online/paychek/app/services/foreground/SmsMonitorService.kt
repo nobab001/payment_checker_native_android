@@ -317,6 +317,9 @@ class SmsMonitorService : Service() {
                     apply()
                 }
 
+                SecurePreferences.encrypt(this@SmsMonitorService, "pcu_is_approved", if (devConfig.isApproved == 1) "true" else "false")
+                SecurePreferences.encrypt(this@SmsMonitorService, "pcu_device_role", devConfig.deviceRole)
+
                 Log.i(TAG, "✅ Device configuration synced. SIM1: $sim1Active, SIM2: $sim2Active, AppActive: $isAppActive")
             }
         } catch (e: Exception) {

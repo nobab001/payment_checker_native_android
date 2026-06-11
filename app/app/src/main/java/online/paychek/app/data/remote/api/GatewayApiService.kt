@@ -54,4 +54,26 @@ interface GatewayApiService {
     suspend fun getMyDeviceConfig(
         @Header("Authorization") token: String
     ): Response<DeviceConfigResponse>
+
+    @GET("v1/devices/pending-approvals")
+    suspend fun getPendingApprovals(
+        @Header("Authorization") token: String
+    ): Response<ChildDeviceListResponse>
+
+    @POST("v1/devices/approve-by-pin")
+    suspend fun approveByPin(
+        @Header("Authorization") token: String,
+        @Body request: ApproveDeviceRequest
+    ): Response<BasicResponse>
+
+    @POST("v1/devices/submit-role")
+    suspend fun submitRole(
+        @Header("Authorization") token: String,
+        @Body request: SubmitRoleRequest
+    ): Response<BasicResponse>
+
+    @GET("v1/devices/check-approval-status")
+    suspend fun checkApprovalStatus(
+        @Header("Authorization") token: String
+    ): Response<ApprovalStatusResponse>
 }

@@ -109,6 +109,8 @@ data class DeviceDto(
     @SerializedName("deviceName") val deviceName: String = "",
     @SerializedName("status") val status: String = "", // pending, active, rejected
     @SerializedName(value = "isParent", alternate = ["is_parent"]) val isParent: Boolean = false,
+    @SerializedName(value = "isApproved", alternate = ["is_approved"]) val isApproved: Boolean = false,
+    @SerializedName(value = "deviceRole", alternate = ["device_role"]) val deviceRole: String = "pending",
     @SerializedName(value = "isTrialLocked", alternate = ["is_trial_locked"]) val isTrialLocked: Boolean = false,
     @SerializedName(value = "trialExpiresAt", alternate = ["trial_expires_at"]) val trialExpiresAt: String? = null,
     @SerializedName(value = "lockReason", alternate = ["lock_reason"]) val lockReason: String? = null

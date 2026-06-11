@@ -89,6 +89,8 @@ CREATE TABLE IF NOT EXISTS `registered_devices` (
   -- Status & Role
   `status`               ENUM('pending','active','rejected') NOT NULL DEFAULT 'pending',
   `is_parent`            TINYINT(1)    NOT NULL DEFAULT 0 COMMENT '1=Parent device, 0=Child device',
+  `is_approved`          TINYINT(1)    NOT NULL DEFAULT 0 COMMENT '0=pending, 1=approved',
+  `device_role`          VARCHAR(20)   NOT NULL DEFAULT 'pending' COMMENT 'owner | restricted | pending',
 
   -- SIM Configuration
   `sim1_number`          VARCHAR(32)   DEFAULT NULL,

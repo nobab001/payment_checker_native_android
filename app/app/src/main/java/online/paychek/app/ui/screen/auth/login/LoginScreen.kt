@@ -84,6 +84,16 @@ fun LoginScreen(
                 "pcu_contact",
                 uiState.contact
             )
+            online.paychek.app.utils.SecurePreferences.encrypt(
+                context,
+                "pcu_is_approved",
+                if (res.device.isApproved) "true" else "false"
+            )
+            online.paychek.app.utils.SecurePreferences.encrypt(
+                context,
+                "pcu_device_role",
+                res.device.deviceRole
+            )
             if (res.user.role == "admin") {
                 online.paychek.app.utils.SecurePreferences.encrypt(context, "pcu_profile_complete", "true")
                 onNavigateToAdminDashboard(res.token)

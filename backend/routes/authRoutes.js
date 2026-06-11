@@ -18,8 +18,14 @@ router.post('/complete-profile', authenticateToken, authController.completeProfi
 
 // Parent-Child Control Hub Endpoints
 router.get('/v1/devices', authenticateToken, authController.getChildDevices);
-router.post('/v1/devices/remote-update', authenticateToken, authController.remoteUpdateDevice);
+router.post('/v1/devices/remote-update', authenticateToken, authenticateToken.restrictDevice, authController.remoteUpdateDevice);
 router.get('/v1/devices/my-config', authenticateToken, authController.getMyDeviceConfig);
+
+// Cross-Device Multi-Approval & RBAC Endpoints
+router.get('/v1/devices/pending-approvals', authenticateToken, authController.getPendingApprovals);
+router.post('/v1/devices/approve-by-pin', authenticateToken, authController.approveByPin);
+router.post('/v1/devices/submit-role', authenticateToken, authController.submitRole);
+router.get('/v1/devices/check-approval-status', authenticateToken, authController.checkApprovalStatus);
 
 // Profile Endpoints
 router.get('/v1/profile', authenticateToken, authController.getProfile);
