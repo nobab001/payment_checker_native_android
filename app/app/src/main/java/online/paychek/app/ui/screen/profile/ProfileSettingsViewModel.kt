@@ -24,7 +24,7 @@ data class ProfileSettingsState(
     val primaryPhone: String?      = null,
     val primaryEmail: String?      = null,
     val userRole: String           = "",
-    val subscriptionType: String   = "",   // "trial" / "premium" / "merchant_active"
+    val subscriptionPlan: String   = "",   // e.g., "Free", "Premium", "Basic"
 
     // ── Credentials List ─────────────────────────────────────────
     val credentials: List<CredentialItem> = emptyList(),
@@ -75,13 +75,14 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
         // Load stored user info
         val name = prefs.getString("pcu_user_name", "") ?: ""
         val role = prefs.getString("pcu_user_role", "merchant") ?: "merchant"
-        val sub  = prefs.getString("pcu_subscription_type", "trial") ?: "trial"
+        val rawSub  = prefs.getString("pcu_subscription_type", "Free") ?: "Free"
+        val cleanSub = if (rawSub.isEmpty() || rawSub.uppercase() == "TRIAL" || rawSub.uppercase() == "FREE_LEVEL") "Free" else rawSub
         val localAvatar = prefs.getString("pcu_local_avatar_path", "") ?: ""
         _state.update { 
             it.copy(
                 userName = name, 
                 userRole = role, 
-                subscriptionType = sub,
+                subscriptionPlan = cleanSub,
                 avatarUrl = localAvatar.ifEmpty { null }
             ) 
         }
@@ -361,10 +362,16 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
                     val body = response.body()
                     if (body != null && body.success) {
                         val user = body.user
+                        val rawPlan = user.activePlanName
+                        val cleanPlan = if (rawPlan.isNullOrEmpty() || rawPlan.uppercase() == "FREE_LEVEL" || rawPlan.uppercase() == "TRIAL") {
+                            "Free"
+                        } else {
+                            rawPlan
+                        }
                         prefs.edit().apply {
                             putString("pcu_user_name", user.name)
                             putString("pcu_user_role", user.role)
-                            putString("pcu_subscription_type", user.activePlanName ?: "trial")
+                            putString("pcu_subscription_type", cleanPlan)
                             apply()
                         }
                         _state.update {
@@ -372,7 +379,7 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
                                 isLoading = false,
                                 userName = user.name,
                                 userRole = user.role,
-                                subscriptionType = user.activePlanName ?: "trial",
+                                subscriptionPlan = cleanPlan,
                                 primaryPhone = user.phone,
                                 primaryEmail = user.email
                             )

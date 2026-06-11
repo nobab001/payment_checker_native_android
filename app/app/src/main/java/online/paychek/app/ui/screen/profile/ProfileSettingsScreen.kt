@@ -170,7 +170,7 @@ fun ProfileSettingsScreen(
                     userName         = state.userName,
                     primaryPhone     = state.primaryPhone,
                     primaryEmail     = state.primaryEmail,
-                    subscriptionType = state.subscriptionType,
+                    subscriptionPlan = state.subscriptionPlan,
                     avatarUrl        = localAvatarPath ?: state.avatarUrl,
                     onAvatarClick    = { imagePickerLauncher.launch("image/*") },
                     modifier         = Modifier.padding(horizontal = 16.dp)
@@ -288,17 +288,11 @@ private fun ProfileHeaderCard(
     userName: String,
     primaryPhone: String?,
     primaryEmail: String?,
-    subscriptionType: String,
+    subscriptionPlan: String,
     avatarUrl: String?,
     onAvatarClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val (badgeLabel, badgeColor) = when (subscriptionType.lowercase()) {
-        "premium"          -> "প্রিমিয়াম"  to PsGreen
-        "merchant_active"  -> "অ্যাক্টিভ"   to PsCyan
-        else               -> "ট্রায়াল"     to PsAmber
-    }
-
     Card(
         colors   = CardDefaults.cardColors(containerColor = Color.Transparent),
         shape    = RoundedCornerShape(20.dp),
@@ -367,27 +361,17 @@ private fun ProfileHeaderCard(
                     )
                     
                     // Show dynamic subscription plan name below the user's name
+                    val displayPlan = if (subscriptionPlan.equals("Free", ignoreCase = true) || subscriptionPlan.isEmpty()) {
+                        "Plan: Free"
+                    } else {
+                        "Plan: $subscriptionPlan"
+                    }
                     Text(
-                        text       = "Plan: ${subscriptionType.replaceFirstChar { it.uppercase() }}",
+                        text       = displayPlan,
                         color      = PsCyan,
                         fontSize   = 13.sp,
                         fontWeight = FontWeight.SemiBold
                     )
-
-                    // Badge
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(badgeColor.copy(alpha = 0.2f))
-                            .padding(horizontal = 10.dp, vertical = 3.dp)
-                    ) {
-                        Text(
-                            text       = "● $badgeLabel অ্যাকাউন্ট",
-                            color      = badgeColor,
-                            fontSize   = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
 
                     // Display primary phone contact
                     if (!primaryPhone.isNullOrEmpty()) {
