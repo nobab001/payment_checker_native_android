@@ -189,22 +189,14 @@ fun ProfileSettingsScreen(
         snackbarHost    = { SnackbarHost(snackbarHost) },
         topBar = {
             ProfileTopBar(
-                currentTheme = currentTheme,
                 isDark = isDark,
                 onThemeToggle = {
-                    val nextTheme = when (currentTheme) {
-                        "system" -> {
-                            android.widget.Toast.makeText(context, "লাইট মোড সক্রিয়", android.widget.Toast.LENGTH_SHORT).show()
-                            "light"
-                        }
-                        "light" -> {
-                            android.widget.Toast.makeText(context, "ডার্ক মোড সক্রিয়", android.widget.Toast.LENGTH_SHORT).show()
-                            "dark"
-                        }
-                        else -> {
-                            android.widget.Toast.makeText(context, "সিস্টেম ডিফল্ট সক্রিয়", android.widget.Toast.LENGTH_SHORT).show()
-                            "system"
-                        }
+                    val nextTheme = if (isDark) {
+                        android.widget.Toast.makeText(context, "লাইট মোড সক্রিয়", android.widget.Toast.LENGTH_SHORT).show()
+                        "light"
+                    } else {
+                        android.widget.Toast.makeText(context, "ডার্ক মোড সক্রিয়", android.widget.Toast.LENGTH_SHORT).show()
+                        "dark"
                     }
                     sharedPrefs.edit().putString("pcu_app_theme", nextTheme).apply()
                 },
@@ -317,16 +309,11 @@ fun ProfileSettingsScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProfileTopBar(
-    currentTheme: String,
     isDark: Boolean,
     onThemeToggle: () -> Unit,
     onNavigateBack: () -> Unit
 ) {
-    val icon = when (currentTheme) {
-        "light" -> Icons.Rounded.LightMode
-        "dark"  -> Icons.Rounded.DarkMode
-        else    -> Icons.Rounded.Smartphone
-    }
+    val icon = if (isDark) Icons.Rounded.LightMode else Icons.Rounded.DarkMode
     val iconColor = if (isDark) Color(0xFFF5F7FA) else Color(0xFF12161F)
 
     TopAppBar(
