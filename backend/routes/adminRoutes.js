@@ -14,6 +14,7 @@ router.use(admin.verifyAdmin);
 router.post('/users/:id/manual-grace', admin.manualGrace);
 router.post('/plans', billingController.createPlan);
 router.get('/plans', billingController.listPlans);
+router.get('/subscription-plans', billingController.listPlans);
 router.delete('/plans/:id', billingController.deletePlan);
 
 // 1. App Configs (global_config)

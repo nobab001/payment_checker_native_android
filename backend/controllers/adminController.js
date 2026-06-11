@@ -70,7 +70,12 @@ async function updateConfig(req, res) {
 async function getSmsTemplates(req, res) {
   try {
     const templates = await query('SELECT * FROM sms_templates WHERE is_official = 1');
-    return res.json({ success: true, templates });
+    const mapped = templates.map(t => ({
+      ...t,
+      matching_keyword: t.matching_keyword || '',
+      regex_pattern: t.regex_pattern || ''
+    }));
+    return res.json({ success: true, templates: mapped });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal Server Error' });
@@ -318,7 +323,11 @@ async function listUsers(req, res) {
     const devicesByUserId = {};
     devices.forEach(d => {
       const userId = d.user_id;
-      const deviceObj = { ...d };
+      const deviceObj = { 
+        ...d,
+        isParent: d.isParent === 1,
+        isTrialLocked: d.isTrialLocked === 1
+      };
       delete deviceObj.user_id;
       
       if (!devicesByUserId[userId]) {

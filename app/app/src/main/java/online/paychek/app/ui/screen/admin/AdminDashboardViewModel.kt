@@ -48,57 +48,106 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
     fun loadAllData() {
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, errorMessage = null) }
-            try {
-                val token = "Bearer ${getToken()}"
-                
-                // Fetch configs
-                val configsRes = api.getConfigs(token)
-                val configs = if (configsRes.isSuccessful) configsRes.body()?.configs ?: emptyMap() else emptyMap()
+            val token = "Bearer ${getToken()}"
 
-                // Fetch templates
-                val templatesRes = api.getSmsTemplates(token)
-                val templates = if (templatesRes.isSuccessful) templatesRes.body()?.templates ?: emptyList() else emptyList()
-
-                // Fetch checkout templates
-                val checkoutsRes = api.getCheckoutTemplates(token)
-                val checkouts = if (checkoutsRes.isSuccessful) checkoutsRes.body()?.templates ?: emptyList() else emptyList()
-
-                // Fetch email accounts
-                val emailsRes = api.getEmailAccounts(token)
-                val emails = if (emailsRes.isSuccessful) emailsRes.body()?.accounts ?: emptyList() else emptyList()
-
-                // Fetch SMS settings
-                val smsSettingsRes = api.getSmsSettings(token)
-                val smsSettings = if (smsSettingsRes.isSuccessful) smsSettingsRes.body()?.settings ?: emptyList() else emptyList()
-
-                // Fetch users
-                val usersRes = api.getUsers(token)
-                val users = if (usersRes.isSuccessful) usersRes.body()?.users ?: emptyList() else emptyList()
-
-                // Fetch OTP format
-                val otpFormatRes = api.getOtpFormat(token)
-                val otpFormat = if (otpFormatRes.isSuccessful) otpFormatRes.body()?.template ?: "" else ""
-
-                // Fetch plans
-                val plansRes = api.getPlans(token)
-                val plans = if (plansRes.isSuccessful) plansRes.body()?.plans ?: emptyList() else emptyList()
-
-                _state.update {
-                    it.copy(
-                        configs = configs,
-                        smsTemplates = templates,
-                        checkoutTemplates = checkouts,
-                        emailAccounts = emails,
-                        smsSettings = smsSettings,
-                        users = users,
-                        otpFormatTemplate = otpFormat,
-                        plans = plans,
-                        isLoading = false
-                    )
+            val jobConfigs = launch {
+                try {
+                    val res = api.getConfigs(token)
+                    if (res.isSuccessful) {
+                        val configs = res.body()?.configs ?: emptyMap()
+                        _state.update { it.copy(configs = configs) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
-            } catch (e: Exception) {
-                _state.update { it.copy(isLoading = false, errorMessage = "ডেটা লোড করতে ব্যর্থ হয়েছে: ${e.localizedMessage}") }
             }
+
+            val jobTemplates = launch {
+                try {
+                    val res = api.getSmsTemplates(token)
+                    if (res.isSuccessful) {
+                        val templates = res.body()?.templates ?: emptyList()
+                        _state.update { it.copy(smsTemplates = templates) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            val jobCheckouts = launch {
+                try {
+                    val res = api.getCheckoutTemplates(token)
+                    if (res.isSuccessful) {
+                        val checkouts = res.body()?.templates ?: emptyList()
+                        _state.update { it.copy(checkoutTemplates = checkouts) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            val jobEmails = launch {
+                try {
+                    val res = api.getEmailAccounts(token)
+                    if (res.isSuccessful) {
+                        val emails = res.body()?.accounts ?: emptyList()
+                        _state.update { it.copy(emailAccounts = emails) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            val jobSmsSettings = launch {
+                try {
+                    val res = api.getSmsSettings(token)
+                    if (res.isSuccessful) {
+                        val smsSettings = res.body()?.settings ?: emptyList()
+                        _state.update { it.copy(smsSettings = smsSettings) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            val jobUsers = launch {
+                try {
+                    val res = api.getUsers(token)
+                    if (res.isSuccessful) {
+                        val users = res.body()?.users ?: emptyList()
+                        _state.update { it.copy(users = users) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            val jobOtpFormat = launch {
+                try {
+                    val res = api.getOtpFormat(token)
+                    if (res.isSuccessful) {
+                        val otpFormat = res.body()?.template ?: ""
+                        _state.update { it.copy(otpFormatTemplate = otpFormat) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            val jobPlans = launch {
+                try {
+                    val res = api.getPlans(token)
+                    if (res.isSuccessful) {
+                        val plans = res.body()?.plans ?: emptyList()
+                        _state.update { it.copy(plans = plans) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            kotlinx.coroutines.joinAll(jobConfigs, jobTemplates, jobCheckouts, jobEmails, jobSmsSettings, jobUsers, jobOtpFormat, jobPlans)
+            _state.update { it.copy(isLoading = false) }
         }
     }
 
