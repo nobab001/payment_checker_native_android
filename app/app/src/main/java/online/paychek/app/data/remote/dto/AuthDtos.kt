@@ -38,7 +38,8 @@ data class VerifyOtpRequest(
     @SerializedName("fingerprint") val fingerprint: String = "",
     @SerializedName("androidId") val androidId: String? = null,
     @SerializedName("hardwareFingerprint") val hardwareFingerprint: String? = null,
-    @SerializedName("simSlotIds") val simSlotIds: String? = null
+    @SerializedName("simSlotIds") val simSlotIds: String? = null,
+    @SerializedName("duration") val duration: Long? = null
 )
 
 data class VerifyOtpResponse(

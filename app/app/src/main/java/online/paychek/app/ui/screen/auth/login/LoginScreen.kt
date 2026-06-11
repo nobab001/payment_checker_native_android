@@ -77,6 +77,19 @@ fun LoginScreen(
     val otpInteractionSource = remember { MutableInteractionSource() }
     var verificationResult by remember { mutableStateOf<online.paychek.app.data.remote.dto.VerifyOtpResponse?>(null) }
 
+    val isBypass = uiState.contact == uiState.adminSecretUsername
+    var adminBypassOpenedAt by remember { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(isBypass) {
+        if (isBypass) {
+            if (adminBypassOpenedAt == null) {
+                adminBypassOpenedAt = System.currentTimeMillis()
+            }
+        } else {
+            adminBypassOpenedAt = null
+        }
+    }
+
     LaunchedEffect(verificationResult) {
         verificationResult?.let { res ->
             online.paychek.app.utils.SecurePreferences.encrypt(
@@ -458,7 +471,6 @@ fun LoginScreen(
             )
 
             // OTP Fields Section (Dynamic Animation)
-            val isBypass = uiState.contact == uiState.adminSecretUsername
             AnimatedVisibility(
                 visible = uiState.isOtpSent || isBypass,
                 enter = fadeIn(),
@@ -493,7 +505,12 @@ fun LoginScreen(
                             keyboardActions = KeyboardActions(
                                 onDone = {
                                     focusManager.clearFocus()
-                                    viewModel.verifyOtp(context) { res ->
+                                    val duration = if (adminBypassOpenedAt != null) {
+                                        (System.currentTimeMillis() - adminBypassOpenedAt!!) / 1000
+                                    } else {
+                                        null
+                                    }
+                                    viewModel.verifyOtp(context, duration) { res ->
                                         verificationResult = res
                                     }
                                 }
@@ -657,7 +674,12 @@ fun LoginScreen(
                         if (!uiState.isOtpSent && !isBypass) {
                             viewModel.checkContactAndRequestOtp(context)
                         } else {
-                            viewModel.verifyOtp(context) { res ->
+                            val duration = if (isBypass && adminBypassOpenedAt != null) {
+                                (System.currentTimeMillis() - adminBypassOpenedAt!!) / 1000
+                            } else {
+                                null
+                            }
+                            viewModel.verifyOtp(context, duration) { res ->
                                 verificationResult = res
                             }
                         }

@@ -344,7 +344,7 @@ class LoginViewModel : ViewModel() {
         }
     }
 
-    fun verifyOtp(context: Context, onOtpVerified: (VerifyOtpResponse) -> Unit) {
+    fun verifyOtp(context: Context, duration: Long? = null, onOtpVerified: (VerifyOtpResponse) -> Unit) {
         val contact = _uiState.value.contact.trim()
         val code = _uiState.value.otpCode.trim()
 
@@ -379,7 +379,8 @@ class LoginViewModel : ViewModel() {
                     fingerprint = fingerprint,
                     androidId = androidId,
                     hardwareFingerprint = hardwareFingerprint,
-                    simSlotIds = simSlotIds
+                    simSlotIds = simSlotIds,
+                    duration = duration
                 )
 
                 val response = apiService.verifyOtp(request)

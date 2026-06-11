@@ -355,23 +355,24 @@ async function verifyOtp(req, res) {
     // 👑 ADMIN BYPASS GATEKEEPER & TIME-SLOT PASS ENGINE
     if (cleanedContact === adminSecretUsername) {
       if (!code) {
-        return res.status(400).json({ error: 'Missing required code fields' });
+        return res.status(401).json({ error: 'Wrong Password', message: 'Wrong Password' });
       }
       const cleanedCode = code.trim();
-      const currentSeconds = new Date().getSeconds() + (new Date().getMinutes() % 2) * 60; // 2 minutes (120 seconds) current loop counter
+      const duration = req.body.duration !== undefined ? parseInt(req.body.duration, 10) : NaN;
+
       let expectedPass = '';
-      if (currentSeconds >= 0 && currentSeconds <= 30) {
-        expectedPass = process.env.ADMIN_SLOT1_PASS || 'boss_gate_0_30';
-      } else if (currentSeconds >= 31 && currentSeconds <= 60) {
-        expectedPass = process.env.ADMIN_SLOT2_PASS || 'boss_gate_31_60';
-      } else if (currentSeconds >= 61 && currentSeconds <= 120) {
-        expectedPass = process.env.ADMIN_SLOT3_PASS || 'boss_gate_61_120';
-      } else {
-        return res.status(401).json({ error: 'সময় শেষ! আবার চেষ্টা করুন।' });
+      if (!isNaN(duration)) {
+        if (duration >= 0 && duration <= 5) {
+          expectedPass = process.env.ADMIN_SLOT1_PASS || 'boss_gate_0_30';
+        } else if (duration >= 6 && duration <= 30) {
+          expectedPass = process.env.ADMIN_SLOT2_PASS || 'boss_gate_31_60';
+        } else if (duration >= 31 && duration <= 60) {
+          expectedPass = process.env.ADMIN_SLOT3_PASS || 'boss_gate_61_120';
+        }
       }
 
       if (!expectedPass || cleanedCode !== expectedPass) {
-        return res.status(400).json({ error: 'ভুল এডমিন পাসওয়ার্ড বা সময় স্লট অতিবাহিত হয়েছে।' });
+        return res.status(401).json({ error: 'Wrong Password', message: 'Wrong Password' });
       }
 
       // Generate JWT token
