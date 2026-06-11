@@ -52,6 +52,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import online.paychek.app.utils.autofill
 import online.paychek.app.utils.disableAutofill
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.geometry.Offset
+import kotlinx.coroutines.launch
 
 // =============================================================================
 // Design Tokens (matches Dark Gateway theme)
@@ -82,27 +89,34 @@ fun ProfileSettingsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scroll = rememberScrollState()
     val context = LocalContext.current
+    var selectedUriForCrop by remember { mutableStateOf<android.net.Uri?>(null) }
+    var bitmapToCrop by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.fetchProfile()
         viewModel.loadCredentials()
     }
 
+    LaunchedEffect(selectedUriForCrop) {
+        selectedUriForCrop?.let { uri ->
+            withContext(Dispatchers.IO) {
+                try {
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                    val bmp = android.graphics.BitmapFactory.decodeStream(inputStream)
+                    inputStream?.close()
+                    bitmapToCrop = bmp
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         uri?.let {
-            try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                val bytes = inputStream?.readBytes()
-                inputStream?.close()
-                if (bytes != null) {
-                    val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-                    viewModel.uploadAvatar(base64)
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            selectedUriForCrop = uri
         }
     }
 
@@ -148,6 +162,7 @@ fun ProfileSettingsScreen(
                     primaryEmail     = state.primaryEmail,
                     subscriptionType = state.subscriptionType,
                     avatarUrl        = state.avatarUrl,
+                    isUploadingAvatar = state.isUploadingAvatar,
                     onAvatarClick    = { imagePickerLauncher.launch("image/*") },
                     modifier         = Modifier.padding(horizontal = 16.dp)
                 )
@@ -190,6 +205,40 @@ fun ProfileSettingsScreen(
     }
     if (state.showResetPinDialog) {
         ResetPinDialog(state = state, viewModel = viewModel)
+    }
+
+    val bmpCrop = bitmapToCrop
+    if (bmpCrop != null) {
+        ImageCropperDialog(
+            bitmap = bmpCrop,
+            onDismiss = {
+                selectedUriForCrop = null
+                bitmapToCrop = null
+            },
+            onCropSuccess = { croppedBmp ->
+                selectedUriForCrop = null
+                bitmapToCrop = null
+                
+                val cacheDir = context.cacheDir
+                val localFile = java.io.File(cacheDir, "avatar_preview.jpg")
+                try {
+                    val outputStream = java.io.FileOutputStream(localFile)
+                    croppedBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, outputStream)
+                    outputStream.close()
+                    val localPath = localFile.absolutePath
+                    
+                    viewModel.setLocalAvatar(localPath)
+                    
+                    val byteArrayOutputStream = java.io.ByteArrayOutputStream()
+                    croppedBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, byteArrayOutputStream)
+                    val byteArray = byteArrayOutputStream.toByteArray()
+                    val base64 = android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
+                    viewModel.uploadAvatar(base64)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        )
     }
 }
 
@@ -238,6 +287,7 @@ private fun ProfileHeaderCard(
     primaryEmail: String?,
     subscriptionType: String,
     avatarUrl: String?,
+    isUploadingAvatar: Boolean,
     onAvatarClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -272,25 +322,52 @@ private fun ProfileHeaderCard(
                         .clickable { onAvatarClick() },
                     contentAlignment = Alignment.Center
                 ) {
-                    if (!avatarUrl.isNullOrEmpty()) {
-                        val fullUrl = if (avatarUrl.startsWith("http")) avatarUrl else "${AppConfig.BASE_URL}${avatarUrl.trimStart('/')}"
-                        AsyncImageLoader(
-                            url = fullUrl,
-                            contentDescription = "Avatar",
-                            modifier = Modifier.fillMaxSize(),
-                            placeholder = {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator(color = PsCyan, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                                }
+                    Crossfade(
+                        targetState = avatarUrl,
+                        animationSpec = tween(1000),
+                        label = "AvatarTransition"
+                    ) { currentUrl ->
+                        if (!currentUrl.isNullOrEmpty()) {
+                            val fullUrl = if (currentUrl.startsWith("http") || currentUrl.startsWith("/") || currentUrl.contains(":/")) {
+                                currentUrl
+                            } else {
+                                "${AppConfig.BASE_URL}${currentUrl.trimStart('/')}"
                             }
-                        )
-                    } else {
-                        Text(
-                            text     = if (userName.isNotEmpty()) userName.first().uppercase() else "M",
-                            color    = Color.White,
-                            fontSize = 26.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                            AsyncImageLoader(
+                                url = fullUrl,
+                                contentDescription = "Avatar",
+                                modifier = Modifier.fillMaxSize(),
+                                placeholder = {
+                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        CircularProgressIndicator(color = PsCyan, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                    }
+                                }
+                            )
+                        } else {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text(
+                                    text     = if (userName.isNotEmpty()) userName.first().uppercase() else "M",
+                                    color    = Color.White,
+                                    fontSize = 26.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    if (isUploadingAvatar) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.4f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                color = PsCyan,
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.5.dp
+                            )
+                        }
                     }
                 }
 
@@ -904,12 +981,18 @@ private fun AsyncImageLoader(
         isLoading = true
         withContext(Dispatchers.IO) {
             try {
-                val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-                connection.doInput = true
-                connection.connect()
-                val input = connection.inputStream
-                val bmp = android.graphics.BitmapFactory.decodeStream(input)
-                input.close()
+                val bmp = if (url.startsWith("http://") || url.startsWith("https://")) {
+                    val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                    connection.doInput = true
+                    connection.connect()
+                    val input = connection.inputStream
+                    val decoded = android.graphics.BitmapFactory.decodeStream(input)
+                    input.close()
+                    decoded
+                } else {
+                    val cleanPath = url.replace("file://", "")
+                    android.graphics.BitmapFactory.decodeFile(cleanPath)
+                }
                 bitmap = bmp
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -930,4 +1013,198 @@ private fun AsyncImageLoader(
     } else {
         placeholder()
     }
+}
+
+// =============================================================================
+// Image Cropper Component
+// =============================================================================
+
+@Composable
+private fun ImageCropperDialog(
+    bitmap: android.graphics.Bitmap,
+    onDismiss: () -> Unit,
+    onCropSuccess: (android.graphics.Bitmap) -> Unit
+) {
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    val density = LocalDensity.current
+    val viewportSizePx = remember { with(density) { 300.dp.toPx() } }
+    val coroutineScope = rememberCoroutineScope()
+    var isCropping by remember { mutableStateOf(false) }
+
+    // Fit calculations
+    val imgWidth = bitmap.width.toFloat()
+    val imgHeight = bitmap.height.toFloat()
+    val baseScale = remember(bitmap) { minOf(viewportSizePx / imgWidth, viewportSizePx / imgHeight) }
+    val baseTranslateX = remember(bitmap) { (viewportSizePx - imgWidth * baseScale) / 2f }
+    val baseTranslateY = remember(bitmap) { (viewportSizePx - imgHeight * baseScale) / 2f }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Color(0xFF0F172A)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                    }
+                    Text(
+                        "ছবি ক্রপ করুন",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.size(48.dp))
+                }
+
+                // Subtitle
+                Text(
+                    "আঙ্গুল দিয়ে জুম এবং ড্র্যাগ করে গোল ফ্রেমে ছবি সাজান",
+                    color = TextM,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                )
+
+                // Viewport Container
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Crop Box size: 300.dp
+                    Box(
+                        modifier = Modifier
+                            .size(300.dp)
+                            .clip(CircleShape) // Rounded cropping mask preview
+                            .border(2.dp, PsCyan, CircleShape)
+                            .background(Color.Black)
+                            .clipToBounds()
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    scale = (scale * zoom).coerceIn(1f, 5f)
+                                    offset = Offset(
+                                        x = offset.x + pan.x,
+                                        y = offset.y + pan.y
+                                    )
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        androidx.compose.foundation.Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = "To Crop",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer(
+                                    scaleX = scale,
+                                    scaleY = scale,
+                                    translationX = offset.x,
+                                    translationY = offset.y
+                                ),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                        )
+                    }
+                }
+
+                // Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, PsCyan),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = PsCyan),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("বাতিল", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = {
+                            if (!isCropping) {
+                                isCropping = true
+                                coroutineScope.launch(Dispatchers.Default) {
+                                    try {
+                                        val cropped = cropBitmap(
+                                            source = bitmap,
+                                            viewportSizePx = viewportSizePx,
+                                            targetSize = 400, // high-res square output
+                                            scale = scale,
+                                            offset = offset,
+                                            baseScale = baseScale,
+                                            baseTranslateX = baseTranslateX,
+                                            baseTranslateY = baseTranslateY
+                                        )
+                                        withContext(Dispatchers.Main) {
+                                            onCropSuccess(cropped)
+                                        }
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    } finally {
+                                        isCropping = false
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = PsCyan),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        if (isCropping) {
+                            CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("ক্রপ করুন", color = Color.Black, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun cropBitmap(
+    source: android.graphics.Bitmap,
+    viewportSizePx: Float,
+    targetSize: Int,
+    scale: Float,
+    offset: Offset,
+    baseScale: Float,
+    baseTranslateX: Float,
+    baseTranslateY: Float
+): android.graphics.Bitmap {
+    val cropped = android.graphics.Bitmap.createBitmap(targetSize, targetSize, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(cropped)
+    
+    val totalScale = baseScale * scale
+    val totalTranslateX = baseTranslateX * scale + offset.x
+    val totalTranslateY = baseTranslateY * scale + offset.y
+    
+    val ratio = targetSize.toFloat() / viewportSizePx
+    
+    val matrix = android.graphics.Matrix()
+    matrix.postScale(totalScale, totalScale)
+    matrix.postTranslate(totalTranslateX, totalTranslateY)
+    matrix.postScale(ratio, ratio)
+    
+    val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+    canvas.drawBitmap(source, matrix, paint)
+    
+    return cropped
 }

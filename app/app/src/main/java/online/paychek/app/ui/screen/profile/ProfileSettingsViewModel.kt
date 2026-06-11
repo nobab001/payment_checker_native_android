@@ -51,6 +51,7 @@ data class ProfileSettingsState(
 
     // ── Avatar ────────────────────────────────────────────────────
     val avatarUrl: String?                = null,
+    val isUploadingAvatar: Boolean        = false,
 
     // ── Global feedback ───────────────────────────────────────────
     val isLoading: Boolean                = false,
@@ -76,7 +77,15 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
         val name = prefs.getString("pcu_user_name", "") ?: ""
         val role = prefs.getString("pcu_user_role", "merchant") ?: "merchant"
         val sub  = prefs.getString("pcu_subscription_type", "trial") ?: "trial"
-        _state.update { it.copy(userName = name, userRole = role, subscriptionType = sub) }
+        val localAvatar = prefs.getString("pcu_local_avatar_path", "") ?: ""
+        _state.update { 
+            it.copy(
+                userName = name, 
+                userRole = role, 
+                subscriptionType = sub,
+                avatarUrl = localAvatar.ifEmpty { null }
+            ) 
+        }
         loadCredentials()
     }
 
@@ -382,9 +391,14 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
+    fun setLocalAvatar(localPath: String) {
+        _state.update { it.copy(avatarUrl = localPath) }
+        prefs.edit().putString("pcu_local_avatar_path", localPath).apply()
+    }
+
     fun uploadAvatar(base64Data: String) {
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, errorMessage = null) }
+            _state.update { it.copy(isUploadingAvatar = true, errorMessage = null) }
             try {
                 val response = api.uploadAvatar(bearerToken(), UploadAvatarRequest(base64Data))
                 if (response.isSuccessful) {
@@ -392,20 +406,20 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
                     if (body != null && body.success) {
                         _state.update {
                             it.copy(
-                                isLoading = false,
+                                isUploadingAvatar = false,
                                 avatarUrl = body.avatar,
                                 successMessage = "প্রোফাইল ছবি সফলভাবে পরিবর্তন করা হয়েছে!"
                             )
                         }
                     } else {
-                        _state.update { it.copy(isLoading = false, errorMessage = body?.message ?: "ছবি আপলোড করতে ব্যর্থ হয়েছে।") }
+                        _state.update { it.copy(isUploadingAvatar = false, errorMessage = body?.message ?: "ছবি আপলোড করতে ব্যর্থ হয়েছে।") }
                     }
                 } else {
                     val errBody = response.errorBody()?.string() ?: ""
-                    _state.update { it.copy(isLoading = false, errorMessage = parseErrorMessage(errBody, "ছবি আপলোড করতে ব্যর্থ হয়েছে।")) }
+                    _state.update { it.copy(isUploadingAvatar = false, errorMessage = parseErrorMessage(errBody, "ছবি আপলোড করতে ব্যর্থ হয়েছে।")) }
                 }
             } catch (e: Exception) {
-                _state.update { it.copy(isLoading = false, errorMessage = "নেটওয়ার্ক এরর। ছবি আপলোড করা সম্ভব হয়নি।") }
+                _state.update { it.copy(isUploadingAvatar = false, errorMessage = "নেটওয়ার্ক এরর। ছবি আপলোড করা সম্ভব হয়নি।") }
             }
         }
     }
