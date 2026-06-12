@@ -41,6 +41,14 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.animation.core.*
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.zIndex
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 
 
 
@@ -81,6 +89,9 @@ fun ProfileCredentialsCard(
         viewModel.errorMessage?.let { msg ->
             if (!showAddDialog) {
                 Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                viewModel.clearError()
+            } else {
+                kotlinx.coroutines.delay(3000L)
                 viewModel.clearError()
             }
         }
@@ -225,6 +236,7 @@ fun ProfileCredentialsCard(
                     .padding(horizontal = 8.dp)
                     .wrapContentHeight()
             ) {
+                Box(modifier = Modifier.fillMaxWidth().wrapContentHeight()) {
                 val scrollState = rememberScrollState()
                 Column(
                     modifier = Modifier
@@ -327,11 +339,35 @@ fun ProfileCredentialsCard(
                             }
 
                             // Hidden BasicTextField capturing keyboard & clipboard actions (layered on top)
+                            var otpValueState by remember {
+                                mutableStateOf(
+                                    TextFieldValue(
+                                        text = otpValue,
+                                        selection = TextRange(otpValue.length)
+                                    )
+                                )
+                            }
+                            LaunchedEffect(otpValue) {
+                                if (otpValue != otpValueState.text) {
+                                    otpValueState = TextFieldValue(
+                                        text = otpValue,
+                                        selection = TextRange(otpValue.length)
+                                    )
+                                }
+                            }
+
                             BasicTextField(
-                                value = otpValue,
+                                value = otpValueState,
                                 onValueChange = { newValue ->
-                                    val sanitized = newValue.filter { it.isDigit() }.take(6)
-                                    otpValue = sanitized
+                                    val digits = newValue.text.filter { it.isDigit() }
+                                    val sanitized = digits.take(6)
+                                    if (sanitized != otpValue) {
+                                        otpValue = sanitized
+                                    }
+                                    otpValueState = newValue.copy(
+                                        text = sanitized,
+                                        selection = TextRange(sanitized.length)
+                                    )
                                 },
                                 keyboardOptions = KeyboardOptions(
                                     keyboardType = KeyboardType.Number,
@@ -339,26 +375,20 @@ fun ProfileCredentialsCard(
                                 ),
                                 textStyle = androidx.compose.ui.text.TextStyle(
                                     color = Color.Transparent,
-                                    fontSize = 18.sp,
+                                    fontSize = 14.sp,
                                     textAlign = TextAlign.Center
                                 ),
                                 cursorBrush = SolidColor(Color.Transparent),
                                 modifier = Modifier
-                                    .matchParentSize()
+                                    .fillMaxWidth()
+                                    .align(Alignment.BottomCenter)
+                                    .height(20.dp)
                                     .focusRequester(otpFocusRequester)
                             )
                         }
                     }
 
-                    viewModel.errorMessage?.let { error ->
-                        Text(
-                            text = error,
-                            color = PsRed,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
+                    // Error is removed to prevent layout displacement
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -402,9 +432,25 @@ fun ProfileCredentialsCard(
                         }
                     }
                 }
+
+                // Floating Error Overlay inside Dialog Box
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = viewModel.errorMessage != null,
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
+                    exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 8.dp)
+                        .zIndex(99f)
+                ) {
+                    viewModel.errorMessage?.let { error ->
+                        FloatingErrorBanner(message = error)
+                    }
+                }
             }
         }
     }
+}
     if (showPinDeleteDialog) {
         Dialog(
             onDismissRequest = {
@@ -573,6 +619,8 @@ private fun BlinkingCursor(color: Color) {
             .background(color)
     )
 }
+
+
 
 private fun isSamePhone(p1: String?, p2: String?): Boolean {
     if (p1 == null || p2 == null) return false

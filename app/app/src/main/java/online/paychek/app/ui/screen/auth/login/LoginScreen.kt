@@ -58,6 +58,11 @@ import androidx.compose.animation.core.*
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.zIndex
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,6 +92,13 @@ fun LoginScreen(
             }
         } else {
             adminBypassOpenedAt = null
+        }
+    }
+
+    LaunchedEffect(uiState.errorMessage) {
+        if (uiState.errorMessage != null) {
+            kotlinx.coroutines.delay(3000L)
+            viewModel.clearError()
         }
     }
 
@@ -415,22 +427,7 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Error Message display
-            uiState.errorMessage?.let { error ->
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF3D1F1F) else Color(0xFFFFEBEE)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = error,
-                        color = StatusRed,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(12.dp),
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
+            // Error Message display is removed from layout Column to prevent displacement
 
             // Contact Input Box
             OutlinedTextField(
@@ -587,11 +584,35 @@ fun LoginScreen(
                             }
 
                             // Hidden BasicTextField capturing keyboard & clipboard actions (layered on top)
+                            var otpValueState by remember {
+                                mutableStateOf(
+                                    TextFieldValue(
+                                        text = uiState.otpCode,
+                                        selection = TextRange(uiState.otpCode.length)
+                                    )
+                                )
+                            }
+                            LaunchedEffect(uiState.otpCode) {
+                                if (uiState.otpCode != otpValueState.text) {
+                                    otpValueState = TextFieldValue(
+                                        text = uiState.otpCode,
+                                        selection = TextRange(uiState.otpCode.length)
+                                    )
+                                }
+                            }
+
                             BasicTextField(
-                                value = uiState.otpCode,
+                                value = otpValueState,
                                 onValueChange = { newValue ->
-                                    val sanitized = newValue.filter { it.isDigit() }.take(6)
-                                    viewModel.onOtpChanged(sanitized)
+                                    val digits = newValue.text.filter { it.isDigit() }
+                                    val sanitized = digits.take(6)
+                                    if (sanitized != uiState.otpCode) {
+                                        viewModel.onOtpChanged(sanitized)
+                                    }
+                                    otpValueState = newValue.copy(
+                                        text = sanitized,
+                                        selection = TextRange(sanitized.length)
+                                    )
                                     if (sanitized.length == 6) {
                                         focusManager.clearFocus()
                                         viewModel.verifyOtp(context) { res ->
@@ -613,12 +634,14 @@ fun LoginScreen(
                                 ),
                                 textStyle = androidx.compose.ui.text.TextStyle(
                                     color = Color.Transparent,
-                                    fontSize = 20.sp,
+                                    fontSize = 14.sp,
                                     textAlign = TextAlign.Center
                                 ),
                                 cursorBrush = SolidColor(Color.Transparent),
                                 modifier = Modifier
-                                    .matchParentSize()
+                                    .fillMaxWidth()
+                                    .align(Alignment.BottomCenter)
+                                    .height(20.dp)
                                     .focusRequester(focusRequester)
                             )
                         }
@@ -804,6 +827,21 @@ fun LoginScreen(
                 }
             }
         }
+
+        // Floating Error Message overlay (Top-overlay banner)
+        AnimatedVisibility(
+            visible = uiState.errorMessage != null,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 16.dp)
+                .zIndex(99f)
+        ) {
+            uiState.errorMessage?.let { error ->
+                FloatingErrorBanner(message = error)
+            }
+        }
     }
 }
 
@@ -951,5 +989,40 @@ private fun BlinkingCursor(color: Color) {
             .alpha(alpha)
             .background(color)
     )
+}
+
+@Composable
+private fun FloatingErrorBanner(
+    message: String,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF3D1F1F) else Color(0xFFFFEBEE)
+        ),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Error,
+                contentDescription = "Error",
+                tint = StatusRed,
+                modifier = Modifier.size(20.dp)
+            )
+            Text(
+                text = message,
+                color = StatusRed,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
 }
 

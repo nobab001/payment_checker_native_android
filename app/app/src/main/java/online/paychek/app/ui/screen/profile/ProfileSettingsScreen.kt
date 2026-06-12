@@ -67,6 +67,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.animation.core.*
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.zIndex
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 
 
 // =============================================================================
@@ -172,14 +177,22 @@ fun ProfileSettingsScreen(
     // Global Snackbar
     val snackbarHost = remember { SnackbarHostState() }
     LaunchedEffect(state.successMessage) {
-        state.successMessage?.let {
-            snackbarHost.showSnackbar(it)
+        state.successMessage?.let { msg ->
+            val snackJob = launch {
+                snackbarHost.showSnackbar(msg)
+            }
+            kotlinx.coroutines.delay(3000L)
+            snackJob.cancel()
             viewModel.clearMessages()
         }
     }
     LaunchedEffect(state.errorMessage) {
-        state.errorMessage?.let {
-            snackbarHost.showSnackbar("⚠ $it")
+        state.errorMessage?.let { msg ->
+            val snackJob = launch {
+                snackbarHost.showSnackbar("⚠ $msg")
+            }
+            kotlinx.coroutines.delay(3000L)
+            snackJob.cancel()
             viewModel.clearMessages()
         }
     }
@@ -645,7 +658,8 @@ private fun AddCredentialDialog(
                 .padding(horizontal = 16.dp)
                 .wrapContentHeight()
         ) {
-            Column {
+            Box(modifier = Modifier.fillMaxWidth().wrapContentHeight()) {
+                Column {
                 // Header band
                 Box(
                     modifier = Modifier
@@ -741,11 +755,35 @@ private fun AddCredentialDialog(
                             }
 
                             // Hidden BasicTextField capturing keyboard & clipboard actions (layered on top)
+                            var addCredOtpState by remember {
+                                mutableStateOf(
+                                    TextFieldValue(
+                                        text = state.addCredentialOtpCode,
+                                        selection = TextRange(state.addCredentialOtpCode.length)
+                                    )
+                                )
+                            }
+                            LaunchedEffect(state.addCredentialOtpCode) {
+                                if (state.addCredentialOtpCode != addCredOtpState.text) {
+                                    addCredOtpState = TextFieldValue(
+                                        text = state.addCredentialOtpCode,
+                                        selection = TextRange(state.addCredentialOtpCode.length)
+                                    )
+                                }
+                            }
+
                             BasicTextField(
-                                value = state.addCredentialOtpCode,
+                                value = addCredOtpState,
                                 onValueChange = { newValue ->
-                                    val sanitized = newValue.filter { it.isDigit() }.take(6)
-                                    viewModel.onAddCredentialOtpChange(sanitized)
+                                    val digits = newValue.text.filter { it.isDigit() }
+                                    val sanitized = digits.take(6)
+                                    if (sanitized != state.addCredentialOtpCode) {
+                                        viewModel.onAddCredentialOtpChange(sanitized)
+                                    }
+                                    addCredOtpState = newValue.copy(
+                                        text = sanitized,
+                                        selection = TextRange(sanitized.length)
+                                    )
                                 },
                                 keyboardOptions = KeyboardOptions(
                                     keyboardType = KeyboardType.Number,
@@ -753,12 +791,14 @@ private fun AddCredentialDialog(
                                 ),
                                 textStyle = androidx.compose.ui.text.TextStyle(
                                     color = Color.Transparent,
-                                    fontSize = 18.sp,
+                                    fontSize = 14.sp,
                                     textAlign = TextAlign.Center
                                 ),
                                 cursorBrush = SolidColor(Color.Transparent),
                                 modifier = Modifier
-                                    .matchParentSize()
+                                    .fillMaxWidth()
+                                    .align(Alignment.BottomCenter)
+                                    .height(20.dp)
                                     .focusRequester(addCredentialOtpFocusRequester)
                             )
                         }
@@ -774,10 +814,7 @@ private fun AddCredentialDialog(
                         )
                     }
 
-                    // Error
-                    state.errorMessage?.let {
-                        Text(it, color = PsRed, fontSize = 12.sp)
-                    }
+                    // Error is removed to prevent layout displacement
 
                     // Buttons
                     Row(
@@ -815,6 +852,22 @@ private fun AddCredentialDialog(
                         }
                     }
                 }
+            } // closes outer Column
+
+                // Floating Error Overlay inside Dialog Box
+                AnimatedVisibility(
+                    visible = state.errorMessage != null,
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
+                    exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 8.dp)
+                        .zIndex(99f)
+                ) {
+                    state.errorMessage?.let { error ->
+                        FloatingErrorBanner(message = error)
+                    }
+                }
             }
         }
     }
@@ -839,60 +892,77 @@ private fun ChangePinDialog(
             tonalElevation = 8.dp,
             modifier       = Modifier.fillMaxWidth().padding(horizontal = 16.dp).wrapContentHeight()
         ) {
-            Column {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Brush.horizontalGradient(listOf(Color(0xFFF59E0B), Color(0xFFD97706))),
-                            RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-                        .padding(horizontal = 20.dp, vertical = 16.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Icon(Icons.Default.Key, null, tint = Color.White, modifier = Modifier.size(20.dp))
-                        Column {
-                            Text("PIN পরিবর্তন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            Text("পুরানো PIN দিয়ে নতুন PIN সেট করুন", color = Color.White.copy(0.75f), fontSize = 11.sp)
+            Box(modifier = Modifier.fillMaxWidth().wrapContentHeight()) {
+                Column {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Brush.horizontalGradient(listOf(Color(0xFFF59E0B), Color(0xFFD97706))),
+                                RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                            .padding(horizontal = 20.dp, vertical = 16.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Icon(Icons.Default.Key, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                            Column {
+                                Text("PIN পরিবর্তন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                Text("পুরানো PIN দিয়ে নতুন PIN সেট করুন", color = Color.White.copy(0.75f), fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    val scrollState = rememberScrollState()
+                    Column(
+                        modifier = Modifier
+                            .padding(20.dp)
+                            .verticalScroll(scrollState),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        PinField("পুরানো PIN (৪-৬ ডিজিট)", state.changePinOld, viewModel::onChangePinOldChange)
+                        PinField("নতুন PIN (৪-৬ ডিজিট)", state.changePinNew, viewModel::onChangePinNewChange)
+                        PinField("নতুন PIN নিশ্চিত করুন", state.changePinConfirm, viewModel::onChangePinConfirmChange)
+
+                        // Error is removed to prevent layout displacement
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = { viewModel.dismissChangePinDialog() },
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, PsCyan.copy(alpha = 0.5f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextM),
+                                contentPadding = PaddingValues(vertical = 12.dp)
+                            ) {
+                                Text("বাতিল")
+                            }
+                            Button(
+                                onClick = { viewModel.submitChangePin() },
+                                colors  = ButtonDefaults.buttonColors(containerColor = PsAmber),
+                                shape   = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                contentPadding = PaddingValues(vertical = 12.dp)
+                            ) {
+                                Text("সংরক্ষণ করুন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
                         }
                     }
                 }
 
-                val scrollState = rememberScrollState()
-                Column(
+                // Floating Error Overlay inside Dialog Box
+                AnimatedVisibility(
+                    visible = state.errorMessage != null,
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
+                    exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
                     modifier = Modifier
-                        .padding(20.dp)
-                        .verticalScroll(scrollState),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .align(Alignment.TopCenter)
+                        .padding(top = 8.dp)
+                        .zIndex(99f)
                 ) {
-                    PinField("পুরানো PIN (৪-৬ ডিজিট)", state.changePinOld, viewModel::onChangePinOldChange)
-                    PinField("নতুন PIN (৪-৬ ডিজিট)", state.changePinNew, viewModel::onChangePinNewChange)
-                    PinField("নতুন PIN নিশ্চিত করুন", state.changePinConfirm, viewModel::onChangePinConfirmChange)
-
-                    state.errorMessage?.let { Text(it, color = PsRed, fontSize = 12.sp) }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedButton(
-                            onClick = { viewModel.dismissChangePinDialog() },
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, PsCyan.copy(alpha = 0.5f)),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextM),
-                            contentPadding = PaddingValues(vertical = 12.dp)
-                        ) {
-                            Text("বাতিল")
-                        }
-                        Button(
-                            onClick = { viewModel.submitChangePin() },
-                            colors  = ButtonDefaults.buttonColors(containerColor = PsAmber),
-                            shape   = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                            contentPadding = PaddingValues(vertical = 12.dp)
-                        ) {
-                            Text("সংরক্ষণ করুন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
+                    state.errorMessage?.let { error ->
+                        FloatingErrorBanner(message = error)
                     }
                 }
             }
@@ -922,7 +992,8 @@ private fun ResetPinDialog(
             tonalElevation = 8.dp,
             modifier       = Modifier.fillMaxWidth().padding(horizontal = 16.dp).wrapContentHeight()
         ) {
-            Column {
+            Box(modifier = Modifier.fillMaxWidth().wrapContentHeight()) {
+                Column {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1016,11 +1087,35 @@ private fun ResetPinDialog(
                                 }
 
                                 // Hidden BasicTextField capturing keyboard & clipboard actions (layered on top)
+                                var resetPinOtpState by remember {
+                                    mutableStateOf(
+                                        TextFieldValue(
+                                            text = state.resetPinOtpCode,
+                                            selection = TextRange(state.resetPinOtpCode.length)
+                                        )
+                                    )
+                                }
+                                LaunchedEffect(state.resetPinOtpCode) {
+                                    if (state.resetPinOtpCode != resetPinOtpState.text) {
+                                        resetPinOtpState = TextFieldValue(
+                                            text = state.resetPinOtpCode,
+                                            selection = TextRange(state.resetPinOtpCode.length)
+                                        )
+                                    }
+                                }
+
                                 BasicTextField(
-                                    value = state.resetPinOtpCode,
+                                    value = resetPinOtpState,
                                     onValueChange = { newValue ->
-                                        val sanitized = newValue.filter { it.isDigit() }.take(6)
-                                        viewModel.onResetPinOtpChange(sanitized)
+                                        val digits = newValue.text.filter { it.isDigit() }
+                                        val sanitized = digits.take(6)
+                                        if (sanitized != state.resetPinOtpCode) {
+                                            viewModel.onResetPinOtpChange(sanitized)
+                                        }
+                                        resetPinOtpState = newValue.copy(
+                                            text = sanitized,
+                                            selection = TextRange(sanitized.length)
+                                        )
                                     },
                                     keyboardOptions = KeyboardOptions(
                                         keyboardType = KeyboardType.Number,
@@ -1028,12 +1123,14 @@ private fun ResetPinDialog(
                                     ),
                                     textStyle = androidx.compose.ui.text.TextStyle(
                                         color = Color.Transparent,
-                                        fontSize = 18.sp,
+                                        fontSize = 14.sp,
                                         textAlign = TextAlign.Center
                                     ),
                                     cursorBrush = SolidColor(Color.Transparent),
                                     modifier = Modifier
-                                        .matchParentSize()
+                                        .fillMaxWidth()
+                                        .align(Alignment.BottomCenter)
+                                        .height(20.dp)
                                         .focusRequester(resetPinOtpFocusRequester)
                                 )
                             }
@@ -1041,7 +1138,7 @@ private fun ResetPinDialog(
                         }
                     }
 
-                    state.errorMessage?.let { Text(it, color = PsRed, fontSize = 12.sp) }
+                    // Error is removed to prevent layout displacement
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1073,6 +1170,22 @@ private fun ResetPinDialog(
                                 color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp
                             )
                         }
+                    }
+                }
+            } // closes outer Column
+
+                // Floating Error Overlay inside Dialog Box
+                AnimatedVisibility(
+                    visible = state.errorMessage != null,
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
+                    exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 8.dp)
+                        .zIndex(99f)
+                ) {
+                    state.errorMessage?.let { error ->
+                        FloatingErrorBanner(message = error)
                     }
                 }
             }
@@ -1430,6 +1543,41 @@ private fun BlinkingCursor(color: Color) {
             .alpha(alpha)
             .background(color)
     )
+}
+
+@Composable
+fun FloatingErrorBanner(
+    message: String,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF3D1F1F) else Color(0xFFFFEBEE)
+        ),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Error,
+                contentDescription = "Error",
+                tint = PsRed,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = message,
+                color = PsRed,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
 }
 
 // AppThemeSelectionCard has been removed in favor of the 3-state cyclic top bar toggle button
