@@ -153,12 +153,6 @@ fun DashboardScreen(
 
     if (showDateRangePicker) {
         val dateRangePickerState = rememberDateRangePickerState()
-        val dialogHeight = when {
-            screenWidth() < 360.dp -> 460.dp
-            screenWidth() < 400.dp -> 500.dp
-            else -> 540.dp
-        }
-        val cellSize = screenWidth() / 8f
 
         DatePickerDialog(
             onDismissRequest = { showDateRangePicker = false },
@@ -200,7 +194,7 @@ fun DashboardScreen(
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(dialogHeight),
+                .fillMaxHeight(0.75f),
             properties = DialogProperties(usePlatformDefaultWidth = false),
             shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
             colors = DatePickerDefaults.colors(
@@ -220,7 +214,7 @@ fun DashboardScreen(
                     
                     Column(
                         modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         Text(
                             text = start,
@@ -232,7 +226,8 @@ fun DashboardScreen(
                             text = "থেকে",
                             color = TextMuted,
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Normal
+                            fontWeight = FontWeight.Normal,
+                            modifier = Modifier.padding(vertical = 2.dp)
                         )
                         Text(
                             text = end,
@@ -263,7 +258,8 @@ fun DashboardScreen(
                 ),
                 modifier = Modifier
                     .weight(1f)
-                    .width(cellSize * 8f)
+                    .fillMaxWidth()
+                    .heightIn(max = (screenWidth() * 1.1f))
                     .padding(start = 12.dp, end = 12.dp, bottom = 2.dp)
             )
         }
