@@ -153,6 +153,13 @@ fun DashboardScreen(
 
     if (showDateRangePicker) {
         val dateRangePickerState = rememberDateRangePickerState()
+        val dialogHeight = when {
+            screenWidth() < 360.dp -> 460.dp
+            screenWidth() < 400.dp -> 500.dp
+            else -> 540.dp
+        }
+        val cellSize = screenWidth() / 8f
+
         DatePickerDialog(
             onDismissRequest = { showDateRangePicker = false },
             confirmButton = {
@@ -192,10 +199,10 @@ fun DashboardScreen(
                 }
             },
             modifier = Modifier
-                .fillMaxWidth(0.95f)
-                .wrapContentHeight()
-                .padding(16.dp),
+                .fillMaxWidth()
+                .height(dialogHeight),
             properties = DialogProperties(usePlatformDefaultWidth = false),
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
             colors = DatePickerDefaults.colors(
                 containerColor = DashCard
             )
@@ -218,19 +225,19 @@ fun DashboardScreen(
                         Text(
                             text = start,
                             color = TextWhite,
-                            style = MaterialTheme.typography.titleMedium,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
                             text = "থেকে",
                             color = TextMuted,
-                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Normal
                         )
                         Text(
                             text = end,
                             color = TextWhite,
-                            style = MaterialTheme.typography.titleMedium,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -256,29 +263,9 @@ fun DashboardScreen(
                 ),
                 modifier = Modifier
                     .weight(1f)
+                    .width(cellSize * 8f)
                     .padding(start = 12.dp, end = 12.dp, bottom = 2.dp)
             )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = "scroll for next month",
-                    tint = AccentCyan,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "পরের মাস দেখতে নিচে স্ক্রল করুন",
-                    color = TextMuted,
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
         }
     }
 
