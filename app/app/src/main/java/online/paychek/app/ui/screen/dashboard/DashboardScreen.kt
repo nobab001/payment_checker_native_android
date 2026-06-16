@@ -1514,7 +1514,7 @@ private fun CustomDateRangePickerDialog(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(290.dp), // Height to make exactly 4.5 rows visible!
+                        .height(208.dp), // Height to make exactly 4.5 rows visible!
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     items(monthsList) { monthYearPair ->
