@@ -23,6 +23,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -40,10 +43,18 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import online.paychek.app.data.remote.dto.DashboardStats
 import online.paychek.app.data.remote.dto.TransactionItem
+import online.paychek.app.ui.components.ConnectivityBanner
+import online.paychek.app.utils.adaptivePadding
+import online.paychek.app.utils.adaptiveTextSize
+import online.paychek.app.utils.screenWidth
 import online.paychek.app.ui.theme.*
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
@@ -80,9 +91,18 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = viewModel()
 ) {
     val screenState by viewModel.state.collectAsStateWithLifecycle()
+    val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     var hasShownReminder by remember { mutableStateOf(false) }
     var showExpiryReminderDialog by remember { mutableStateOf(false) }
+
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedProvider by remember { mutableStateOf<String?>(null) }
+    var selectedDate by remember { mutableStateOf<String?>("today") }
+    var showDateRangePicker by remember { mutableStateOf(false) }
+    var customStartDate by remember { mutableStateOf<Long?>(null) }
+    var customEndDate by remember { mutableStateOf<Long?>(null) }
 
     val successStats = (screenState.uiState as? DashboardUiState.Success)?.stats
     val isPaid = successStats?.isPaid ?: false
@@ -131,47 +151,169 @@ fun DashboardScreen(
         )
     }
 
-    PullToRefreshBox(
-        isRefreshing = screenState.isRefreshing,
-        onRefresh    = { viewModel.onRefresh() },
-        modifier     = modifier
+    if (showDateRangePicker) {
+        val dateRangePickerState = rememberDateRangePickerState()
+        DatePickerDialog(
+            onDismissRequest = { showDateRangePicker = false },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        customStartDate = dateRangePickerState.selectedStartDateMillis
+                        customEndDate = dateRangePickerState.selectedEndDateMillis
+                        selectedDate = "custom"
+                        showDateRangePicker = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(end = 12.dp, bottom = 8.dp)
+                ) {
+                    Text(
+                        text = "নিশ্চিত করুন",
+                        color = Color(0xFF0F172A),
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showDateRangePicker = false },
+                    border = BorderStroke(1.dp, TextMuted.copy(alpha = 0.4f)),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMuted),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(end = 8.dp, bottom = 8.dp)
+                ) {
+                    Text(
+                        text = "বাতিল",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .wrapContentHeight()
+                .padding(16.dp),
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+            colors = DatePickerDefaults.colors(
+                containerColor = DashCard
+            )
+        ) {
+            DateRangePicker(
+                state = dateRangePickerState,
+                title = null,
+                headline = {
+                    val start = dateRangePickerState.selectedStartDateMillis?.let {
+                        SimpleDateFormat("dd MMM, yyyy", Locale.forLanguageTag("bn-BD")).format(Date(it))
+                    } ?: "শুরুর তারিখ"
+                    val end = dateRangePickerState.selectedEndDateMillis?.let {
+                        SimpleDateFormat("dd MMM, yyyy", Locale.forLanguageTag("bn-BD")).format(Date(it))
+                    } ?: "শেষের তারিখ"
+                    
+                    Column(
+                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = start,
+                            color = TextWhite,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "থেকে",
+                            color = TextMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Normal
+                        )
+                        Text(
+                            text = end,
+                            color = TextWhite,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                },
+                showModeToggle = false,
+                colors = DatePickerDefaults.colors(
+                    containerColor = DashCard,
+                    titleContentColor = TextWhite,
+                    headlineContentColor = TextWhite,
+                    weekdayContentColor = TextMuted,
+                    subheadContentColor = TextMuted,
+                    navigationContentColor = TextWhite,
+                    yearContentColor = TextMuted,
+                    selectedYearContentColor = TextWhite,
+                    selectedYearContainerColor = AccentCyan,
+                    dayContentColor = TextWhite,
+                    selectedDayContentColor = Color(0xFF0F172A),
+                    selectedDayContainerColor = AccentCyan,
+                    todayContentColor = AccentCyan,
+                    todayDateBorderColor = Color.Transparent,
+                    dayInSelectionRangeContentColor = TextWhite,
+                    dayInSelectionRangeContainerColor = AccentCyan.copy(alpha = 0.2f)
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp, end = 12.dp, bottom = 2.dp)
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = "scroll for next month",
+                    tint = AccentCyan,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "পরের মাস দেখতে নিচে স্ক্রল করুন",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+
+    Column(
+        modifier = modifier
             .fillMaxSize()
             .background(DashBg)
     ) {
+        if (!isNetworkAvailable) {
+            ConnectivityBanner()
+        }
+
+        PullToRefreshBox(
+            isRefreshing = screenState.isRefreshing,
+            onRefresh    = { viewModel.onRefresh() },
+            modifier     = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
         LazyColumn(
             modifier            = Modifier.fillMaxSize(),
             contentPadding      = PaddingValues(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
 
-            // ─── ১. হেডার গ্রেডিয়েন্ট কার্ড ───────────────────────────────
+            // ১. Dashboard Header Block (স্বাগতম, প্যাকেজ ও SMS মনিটর সম্বলিত একটি কার্ড)
             item {
-                HeaderWelcomeCard(
+                DashboardHeaderBlock(
                     userName = screenState.userName,
+                    isPaid = isPaid,
                     activePlanName = successStats?.activePlanName ?: "FREE_LEVEL",
                     expiryDate = successStats?.expiryDate,
-                    isPaid = isPaid
-                )
-            }
-
-            // ─── Subscribed Plan Info / Purchase Banner ─────────────────
-            item {
-                if (successStats != null) {
-                    PlanStatusCard(
-                        isPaid = isPaid,
-                        activePlanName = successStats.activePlanName,
-                        expiryDate = successStats.expiryDate,
-                        onBuyPlanClick = onNavigateToSubscription,
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-                }
-            }
-
-            // ─── ২. SMS Monitor Toggle কার্ড ────────────────────────────────
-            item {
-                SmsMonitorToggleCard(
-                    isActive    = screenState.isServiceActive,
-                    onToggle    = { enable ->
+                    onBuyPlanClick = onNavigateToSubscription,
+                    isServiceActive = screenState.isServiceActive,
+                    onServiceToggle = { enable ->
                         if (enable) {
                             if (!isPaid) {
                                 onNavigateToSubscription()
@@ -190,228 +332,499 @@ fun DashboardScreen(
                         } else {
                             viewModel.toggleSmsService(false)
                         }
-                    },
-                    modifier    = Modifier.padding(horizontal = 16.dp)
-                )
-            }
-
-            // ─── ৩. Stats কার্ড / লোডিং / এরর ──────────────────────────────
-            item {
-                AnimatedContent(
-                    targetState = screenState.uiState,
-                    transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) },
-                    label = "DashboardUiState"
-                ) { uiState ->
-                    when (uiState) {
-                        is DashboardUiState.Loading -> StatsLoadingPlaceholder()
-                        is DashboardUiState.Error   -> ErrorCard(
-                            message  = uiState.message,
-                            onRetry  = { viewModel.loadDashboardStats() }
-                        )
-                        is DashboardUiState.Success -> StatsGrid(stats = uiState.stats)
                     }
-                }
-            }
-
-            // ─── ৪. সাম্প্রতিক ট্রানজেকশন ──────────────────────────────────
-            val recentList = (screenState.uiState as? DashboardUiState.Success)
-                ?.stats?.recentTransactions ?: emptyList()
-
-            if (recentList.isNotEmpty()) {
-                item {
-                    RecentTransactionsHeader(onSeeAll = onNavigateToHistory)
-                }
-                items(recentList, key = { it.id }) { trx ->
-                    TransactionRow(
-                        item     = trx,
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-// =============================================================================
-// Component 1 — Header Welcome Card (Gradient)
-// =============================================================================
-
-@Composable
-private fun HeaderWelcomeCard(
-    userName: String,
-    activePlanName: String,
-    expiryDate: String?,
-    isPaid: Boolean
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(GradientHeader)
-            .padding(horizontal = 20.dp, vertical = 24.dp)
-    ) {
-        Row(
-            verticalAlignment    = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            // Avatar circle
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector     = Icons.Default.AccountBalanceWallet,
-                    contentDescription = "Gateway Icon",
-                    tint            = Color.White,
-                    modifier        = Modifier.size(28.dp)
                 )
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // ৩. Search box (filter button সহ)
+            item {
                 Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text       = "স্বাগতম, $userName",
-                        color      = Color.White,
-                        fontSize   = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    
-                    // Subscription Tier Badge
-                    Surface(
-                        color = when (activePlanName) {
-                            "Premium" -> Color(0xFFFFD700) // Gold
-                            "Standard" -> Color(0xFFC0C0C0) // Silver
-                            "Basic" -> Color(0xFFCD7F32) // Bronze
-                            else -> Color.White.copy(alpha = 0.2f) // FREE_LEVEL
-                        },
-                        contentColor = if (activePlanName == "FREE_LEVEL") Color.White else Color.Black,
-                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Text(
-                            text = activePlanName,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-                
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text     = "Paychek Payment Gateway",
-                        color    = Color.White.copy(alpha = 0.75f),
-                        fontSize = 13.sp
-                    )
-                    
-                    if (isPaid && !expiryDate.isNullOrEmpty()) {
-                        val banglaDate = formatExpiryDateToBangla(expiryDate)
-                        Surface(
-                            color = Color(0xFF10B981).copy(alpha = 0.2f),
-                            contentColor = Color(0xFF34D399),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
+                    var showFilterMenu by remember { mutableStateOf(false) }
+
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = {
                             Text(
-                                text = "মেয়াদ: $banglaDate",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                text = "ট্রানজেকশন খুঁজুন...",
+                                color = TextMuted,
+                                fontSize = 13.sp
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search",
+                                tint = AccentCyan,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        trailingIcon = if (searchQuery.isNotEmpty()) {
+                            {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Clear Search",
+                                        tint = TextMuted,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        } else null,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = AccentCyan,
+                            unfocusedBorderColor = TextMuted.copy(alpha = 0.3f),
+                            focusedTextColor = TextWhite,
+                            unfocusedTextColor = TextWhite,
+                            cursorColor = AccentCyan,
+                            focusedContainerColor = DashCard,
+                            unfocusedContainerColor = DashCard
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Box {
+                        IconButton(
+                            onClick = { showFilterMenu = !showFilterMenu },
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = DashCard,
+                                contentColor = AccentCyan
+                            ),
+                            modifier = Modifier
+                                .size(52.dp)
+                                .border(
+                                    width = 1.dp,
+                                    color = TextMuted.copy(alpha = 0.3f),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .clip(RoundedCornerShape(12.dp))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = "Filter"
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showFilterMenu,
+                            onDismissRequest = { showFilterMenu = false },
+                            modifier = Modifier.background(DashCard)
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("কাস্টম তারিখ বাছাই করুন 📅", color = TextWhite) },
+                                onClick = {
+                                    showFilterMenu = false
+                                    showDateRangePicker = true
+                                }
+                            )
+                            HorizontalDivider(color = ToggleOff.copy(alpha = 0.3f))
+                            DropdownMenuItem(
+                                text = { Text("আজকের", color = if (selectedDate == "today") AccentCyan else TextWhite) },
+                                onClick = {
+                                    selectedDate = "today"
+                                    customStartDate = null
+                                    customEndDate = null
+                                    showFilterMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("গত ২ দিন", color = if (selectedDate == "last_2_days") AccentCyan else TextWhite) },
+                                onClick = {
+                                    selectedDate = "last_2_days"
+                                    customStartDate = null
+                                    customEndDate = null
+                                    showFilterMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("গত ৭ দিন", color = if (selectedDate == "last_7_days") AccentCyan else TextWhite) },
+                                onClick = {
+                                    selectedDate = "last_7_days"
+                                    customStartDate = null
+                                    customEndDate = null
+                                    showFilterMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("গত ১৫ দিন", color = if (selectedDate == "last_15_days") AccentCyan else TextWhite) },
+                                onClick = {
+                                    selectedDate = "last_15_days"
+                                    customStartDate = null
+                                    customEndDate = null
+                                    showFilterMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("গত ২১ দিন", color = if (selectedDate == "last_21_days") AccentCyan else TextWhite) },
+                                onClick = {
+                                    selectedDate = "last_21_days"
+                                    customStartDate = null
+                                    customEndDate = null
+                                    showFilterMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("গত ৩০ দিন", color = if (selectedDate == "last_30_days") AccentCyan else TextWhite) },
+                                onClick = {
+                                    selectedDate = "last_30_days"
+                                    customStartDate = null
+                                    customEndDate = null
+                                    showFilterMenu = false
+                                }
                             )
                         }
                     }
                 }
             }
+
+            // ৪. Provider chips (বিকাশ, নগদ, রকেট, উপায়)
+            // - search এ কিছু type করলে chips HIDE হবে
+            if (searchQuery.isEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val providerFilters = listOf(
+                            "bkash" to ("বিকাশ" to Color(0xFF10B981)), // Green dot
+                            "nagad" to ("নগদ" to Color(0xFFF97316)),  // Orange dot
+                            "rocket" to ("রকেট" to Color(0xFF8B5CF6)), // Purple/blue dot
+                            "upay" to ("উপায়" to Color(0xFFEAB308))    // Yellow dot
+                        )
+                        providerFilters.forEach { (tag, info) ->
+                            val (label, dotColor) = info
+                            val isSelected = selectedProvider == tag
+                            val chipBgColor = if (isSelected) AccentCyan.copy(alpha = 0.18f) else DashCard
+                            val chipBorderColor = if (isSelected) AccentCyan else TextMuted.copy(alpha = 0.25f)
+                            val chipTextColor = if (isSelected) AccentCyan else TextMuted
+
+                            Box(
+                                modifier = Modifier
+                                    .border(
+                                        width = 1.dp,
+                                        color = chipBorderColor,
+                                        shape = RoundedCornerShape(20.dp)
+                                    )
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(chipBgColor)
+                                    .clickable {
+                                        selectedProvider = if (isSelected) null else tag
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    // Colored dot
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(dotColor)
+                                    )
+                                    Text(
+                                        text = label,
+                                        color = chipTextColor,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ৫. Stats cards (আজকের পেমেন্ট, সর্বমোট, মোট ট্রানজেকশন, অ্যাক্টিভ ডিভাইস)
+            // - search এ কিছু type করলে stats cards HIDE হবে
+            if (searchQuery.isEmpty()) {
+                item {
+                    val isOffline = !isNetworkAvailable
+                    if (isOffline) {
+                        StatsGrid(stats = null, isOffline = true)
+                    } else {
+                        AnimatedContent(
+                            targetState = screenState.uiState,
+                            transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) },
+                            modifier = Modifier.padding(bottom = 4.dp),
+                            label = "DashboardUiState"
+                        ) { uiState ->
+                            when (uiState) {
+                                is DashboardUiState.Loading -> StatsLoadingPlaceholder()
+                                is DashboardUiState.Error   -> ErrorCard(
+                                    message  = uiState.message,
+                                    onRetry  = { viewModel.loadDashboardStats() }
+                                )
+                                is DashboardUiState.Success -> StatsGrid(stats = uiState.stats, isOffline = false)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ৬. আজকের ট্রানজেকশন list
+            // - "সব দেখুন" বাটন সহ
+            val recentList = (screenState.uiState as? DashboardUiState.Success)
+                ?.stats?.recentTransactions ?: emptyList()
+
+            val filteredList = recentList.filter { trx ->
+                val matchesQuery = searchQuery.isEmpty() ||
+                    trx.trxId.contains(searchQuery, ignoreCase = true) ||
+                    (trx.senderNumber != null && trx.senderNumber.contains(searchQuery, ignoreCase = true)) ||
+                    trx.amount.toString().contains(searchQuery)
+
+                val matchesProvider = selectedProvider == null ||
+                    trx.providerTag.equals(selectedProvider, ignoreCase = true)
+
+                val matchesDate = isDateMatching(trx.smsTimestamp, selectedDate, customStartDate, customEndDate)
+
+                matchesQuery && matchesProvider && matchesDate
+            }
+
+            if (filteredList.isNotEmpty()) {
+                item {
+                    RecentTransactionsHeader(onSeeAll = onNavigateToHistory)
+                }
+                items(filteredList, key = { it.id }) { trx ->
+                    TransactionRow(
+                        item     = trx,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
+            } else if (searchQuery.isNotEmpty() || selectedProvider != null || selectedDate != null) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "কোনো ট্রানজেকশন পাওয়া যায়নি",
+                            color = TextMuted,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+            }
         }
     }
 }
+}
 
 // =============================================================================
-// Component 2 — SMS Monitor Toggle Card
+// Component 1 — Unified Header & Subscription Block
 // =============================================================================
 
 @Composable
-private fun SmsMonitorToggleCard(
-    isActive: Boolean,
-    onToggle: (Boolean) -> Unit,
+private fun DashboardHeaderBlock(
+    userName: String,
+    isPaid: Boolean,
+    activePlanName: String,
+    expiryDate: String?,
+    onBuyPlanClick: () -> Unit,
+    isServiceActive: Boolean,
+    onServiceToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val dotColor by animateColorAsState(
-        targetValue   = if (isActive) AccentGreen else ToggleOff,
-        animationSpec = tween(400),
-        label         = "DotColor"
-    )
-    val dotScale by animateFloatAsState(
-        targetValue   = if (isActive) 1.2f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label         = "DotScale"
-    )
+    val context = LocalContext.current
+    val daysRemaining = calculateDaysRemaining(expiryDate)
+    val formattedDate = formatExpiryDateToBangla(expiryDate)
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = DashCard),
-        shape  = RoundedCornerShape(16.dp),
-        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
-        modifier = modifier.fillMaxWidth()
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                color = Color(0xFF162A5E),
+                shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)
+            )
+            .padding(adaptivePadding(12.dp, 16.dp))
     ) {
-        Row(
-            modifier             = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalAlignment    = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+        Column(
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Row 1: Avatar, Welcome Text, Standard Badge, Menu Button
             Row(
-                verticalAlignment    = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier             = Modifier.weight(1f)
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Animated status dot
+                // Avatar icon
                 Box(
                     modifier = Modifier
-                        .size(12.dp)
-                        .scale(dotScale)
+                        .size(44.dp)
                         .clip(CircleShape)
-                        .background(dotColor)
-                )
+                        .background(Color.White.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = "User Icon",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
 
-                Column {
+                // Welcome texts
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text       = "💳 SMS পেমেন্ট মনিটর",
-                        color      = TextWhite,
-                        fontSize   = 15.sp,
-                        fontWeight = FontWeight.SemiBold
+                        text = "স্বাগতম",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 12.sp
                     )
                     Text(
-                        text     = if (isActive)
-                            "ব্যাকগ্রাউন্ডে সক্রিয়ভাবে ট্র্যাক হচ্ছে"
-                        else
-                            "নিষ্ক্রিয় — চালু করতে Toggle চাপুন",
-                        color    = if (isActive) AccentGreen.copy(alpha = 0.85f) else TextMuted,
-                        fontSize = 12.sp
+                        text = userName,
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Plan Badge
+                Surface(
+                    color = Color.White.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f))
+                ) {
+                    Text(
+                        text = activePlanName,
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+
+                // Three-dots menu button
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.15f))
+                        .clickable {
+                            // Can show more options or info
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreHoriz,
+                        contentDescription = "More options",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
 
-            Switch(
-                checked         = isActive,
-                onCheckedChange = { onToggle(it) },
-                colors          = SwitchDefaults.colors(
-                    checkedThumbColor       = Color.White,
-                    checkedTrackColor       = AccentGreen,
-                    uncheckedThumbColor     = Color.White,
-                    uncheckedTrackColor     = ToggleOff,
-                    uncheckedBorderColor    = ToggleOff
+            // Row 2: Inner Card (Plan details and renew button)
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.08f)),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = if (isPaid) "$activePlanName প্যাকেজ" else "কোনো সক্রিয় প্যাকেজ নেই",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (isPaid && !expiryDate.isNullOrEmpty()) {
+                            Text(
+                                text = "মেয়াদ শেষ: $formattedDate • ${daysRemaining} দিন বাকি",
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontSize = 11.sp
+                            )
+                        } else if (!isPaid) {
+                            Text(
+                                text = "গেটওয়ে সচল করতে প্যাকেজ কিনুন",
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = onBuyPlanClick,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f)),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = if (isPaid) "রিনিউ করুন" else "প্যাকেজ কিনুন",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+
+            // Row 3: SMS Payment Monitor Switch Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Inbox,
+                        contentDescription = "Monitor Icon",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "SMS পেমেন্ট মনিটর",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Switch(
+                    checked = isServiceActive,
+                    onCheckedChange = onServiceToggle,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color(0xFF10B981),
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color.White.copy(alpha = 0.3f),
+                        uncheckedBorderColor = Color.Transparent
+                    )
                 )
-            )
+            }
         }
     }
 }
+
 
 // =============================================================================
 // Component 3 — Stats Grid (২×২)
@@ -419,10 +832,17 @@ private fun SmsMonitorToggleCard(
 
 @Composable
 private fun StatsGrid(
-    stats: DashboardStats,
+    stats: DashboardStats?,
+    isOffline: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val fmt = DecimalFormat("#,##0.00")
+    val todayEarningsVal = if (isOffline || stats == null) "--" else "৳ ${fmt.format(stats.todayEarnings)}"
+    val totalEarningsVal = if (isOffline || stats == null) "--" else "৳ ${fmt.format(stats.totalEarnings)}"
+    val totalTransactionsVal = if (isOffline || stats == null) "--" else "${stats.totalTransactions}"
+    val activeDevicesVal = if (isOffline || stats == null) "--" else "${stats.activeDevices} টি"
+    val todayTransactionsBadge = if (isOffline || stats == null) null else "${stats.todayTransactions} টি"
+    val totalTransactionsBadge = if (isOffline || stats == null) null else (if (stats.unusedCount > 0) "${stats.unusedCount} নতুন" else null)
 
     Column(
         modifier            = modifier.padding(horizontal = 16.dp),
@@ -438,8 +858,8 @@ private fun StatsGrid(
                 iconColor  = AccentCyan,
                 label      = "আজকের মোট পেমেন্ট",
                 subLabel   = "Today's Received",
-                value      = "৳ ${fmt.format(stats.todayEarnings)}",
-                badge      = "${stats.todayTransactions} টি",
+                value      = todayEarningsVal,
+                badge      = todayTransactionsBadge,
                 modifier   = Modifier.weight(1f)
             )
             StatCard(
@@ -447,7 +867,7 @@ private fun StatsGrid(
                 iconColor  = AccentAmber,
                 label      = "সর্বমোট পেমেন্ট",
                 subLabel   = "Total Received",
-                value      = "৳ ${fmt.format(stats.totalEarnings)}",
+                value      = totalEarningsVal,
                 badge      = null,
                 modifier   = Modifier.weight(1f)
             )
@@ -463,8 +883,8 @@ private fun StatsGrid(
                 iconColor  = Color(0xFF818CF8),   // Indigo
                 label      = "মোট ট্রানজেকশন",
                 subLabel   = "Total Transactions",
-                value      = "${stats.totalTransactions}",
-                badge      = if (stats.unusedCount > 0) "${stats.unusedCount} নতুন" else null,
+                value      = totalTransactionsVal,
+                badge      = totalTransactionsBadge,
                 badgeColor = AccentGreen,
                 modifier   = Modifier.weight(1f)
             )
@@ -473,7 +893,7 @@ private fun StatsGrid(
                 iconColor  = Color(0xFFF472B6),   // Pink
                 label      = "অ্যাক্টিভ ডিভাইস",
                 subLabel   = "Active Devices",
-                value      = "${stats.activeDevices} টি",
+                value      = activeDevicesVal,
                 badge      = null,
                 modifier   = Modifier.weight(1f)
             )
@@ -499,7 +919,7 @@ private fun StatCard(
         modifier = modifier
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(adaptivePadding(8.dp, 12.dp)),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
@@ -543,7 +963,7 @@ private fun StatCard(
             Text(
                 text       = value,
                 color      = TextWhite,
-                fontSize   = 20.sp,
+                fontSize   = adaptiveTextSize(14.sp, 18.sp),
                 fontWeight = FontWeight.Bold,
                 maxLines   = 1,
                 overflow   = TextOverflow.Ellipsis
@@ -586,17 +1006,17 @@ private fun RecentTransactionsHeader(
         verticalAlignment    = Alignment.CenterVertically
     ) {
         Text(
-            text       = "🕐 সাম্প্রতিক ট্রানজেকশন",
+            text       = "আজকের ট্রানজেকশন",
             color      = TextWhite,
             fontSize   = 15.sp,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.Bold
         )
         TextButton(onClick = onSeeAll) {
             Text(
-                text     = "সব দেখুন →",
+                text     = "সব দেখুন",
                 color    = AccentCyan,
                 fontSize = 13.sp,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Bold
             )
         }
     }
@@ -913,92 +1333,7 @@ private fun ExpiryReminderDialog(
     )
 }
 
-@Composable
-private fun PlanStatusCard(
-    isPaid: Boolean,
-    activePlanName: String,
-    expiryDate: String?,
-    onBuyPlanClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val fmt = formatExpiryDateToBangla(expiryDate)
-    val daysRemaining = calculateDaysRemaining(expiryDate)
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = DashCard),
-        shape = RoundedCornerShape(16.dp),
-        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
-        modifier = modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = if (isPaid) "🔒 সক্রিয় সাবস্ক্রিপশন" else "🔓 ফ্রি মেম্বারশিপ",
-                        color = TextWhite,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = if (isPaid) "প্যাকেজ: $activePlanName" else "কোনো সক্রিয় প্যাকেজ নেই",
-                        color = if (isPaid) AccentGreen else AccentAmber,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                Button(
-                    onClick = onBuyPlanClick,
-                    colors = ButtonDefaults.buttonColors(containerColor = if (isPaid) AccentCyan else AccentAmber),
-                    shape = RoundedCornerShape(10.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Text(
-                        text = if (isPaid) "রিনিউ করুন" else "প্যাকেজ কিনুন",
-                        color = Color(0xFF0F172A),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-
-            if (isPaid && !expiryDate.isNullOrEmpty()) {
-                HorizontalDivider(color = ToggleOff.copy(alpha = 0.3f))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "মেয়াদ শেষ হবে:",
-                        color = TextMuted,
-                        fontSize = 12.sp
-                    )
-                    Text(
-                        text = "$fmt (${daysRemaining} দিন বাকি)",
-                        color = TextWhite,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            } else if (!isPaid) {
-                HorizontalDivider(color = ToggleOff.copy(alpha = 0.3f))
-                Text(
-                    text = "সাইট বা ডিভাইস হোস্ট করতে দয়া করে একটি সাবস্ক্রিপশন প্যাকেজ কিনুন।",
-                    color = TextMuted,
-                    fontSize = 11.sp
-                )
-            }
-        }
-    }
-}
 
 @Composable
 fun SubscriptionPurchaseDialog(
@@ -1092,3 +1427,83 @@ fun SubscriptionPurchaseDialog(
         modifier = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Modifier else Modifier.border(1.dp, Color(0xFFE3E5E8), RoundedCornerShape(20.dp))
     )
 }
+
+private fun isDateMatching(
+    rawTimestamp: String,
+    filter: String?,
+    customStartDate: Long? = null,
+    customEndDate: Long? = null
+): Boolean {
+    if (filter == null || filter == "all") return true
+    return try {
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
+        val date = sdf.parse(rawTimestamp) ?: return false
+
+        val todayCal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val todayMidnight = todayCal.timeInMillis
+
+        val trxCal = java.util.Calendar.getInstance().apply {
+            time = date
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val trxMidnight = trxCal.timeInMillis
+
+        when (filter) {
+            "today" -> trxMidnight == todayMidnight
+            "last_2_days" -> {
+                val limit = todayMidnight - 1 * 24L * 60 * 60 * 1000
+                trxMidnight >= limit
+            }
+            "last_7_days" -> {
+                val limit = todayMidnight - 6 * 24L * 60 * 60 * 1000
+                trxMidnight >= limit
+            }
+            "last_15_days" -> {
+                val limit = todayMidnight - 14 * 24L * 60 * 60 * 1000
+                trxMidnight >= limit
+            }
+            "last_21_days" -> {
+                val limit = todayMidnight - 20 * 24L * 60 * 60 * 1000
+                trxMidnight >= limit
+            }
+            "last_30_days" -> {
+                val limit = todayMidnight - 29 * 24L * 60 * 60 * 1000
+                trxMidnight >= limit
+            }
+            "custom" -> {
+                val localStart = customStartDate?.let { utcMidnightToLocalMidnight(it) }
+                val localEnd = customEndDate?.let { utcMidnightToLocalMidnight(it) }
+                val matchesStart = localStart == null || trxMidnight >= localStart
+                val matchesEnd = localEnd == null || trxMidnight <= localEnd
+                matchesStart && matchesEnd
+            }
+            else -> true
+        }
+    } catch (e: Exception) {
+        false
+    }
+}
+
+private fun utcMidnightToLocalMidnight(utcMs: Long): Long {
+    val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply {
+        timeInMillis = utcMs
+    }
+    return java.util.Calendar.getInstance().apply {
+        set(
+            utcCal.get(java.util.Calendar.YEAR),
+            utcCal.get(java.util.Calendar.MONTH),
+            utcCal.get(java.util.Calendar.DAY_OF_MONTH),
+            0, 0, 0
+        )
+        set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
+}
+
