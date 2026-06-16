@@ -23,8 +23,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Person
@@ -1399,9 +1397,6 @@ private fun CustomDateRangePickerDialog(
     modifier: Modifier = Modifier
 ) {
     val calendarToday = Calendar.getInstance()
-    var currentMonth by remember { mutableStateOf(calendarToday.get(Calendar.MONTH)) }
-    var currentYear by remember { mutableStateOf(calendarToday.get(Calendar.YEAR)) }
-
     var startDate by remember { mutableStateOf<Long?>(null) }
     var endDate by remember { mutableStateOf<Long?>(null) }
 
@@ -1420,18 +1415,28 @@ private fun CustomDateRangePickerDialog(
         }
     }
 
+    val monthsList = remember {
+        val list = mutableListOf<Pair<Int, Int>>()
+        val cal = Calendar.getInstance()
+        cal.add(Calendar.MONTH, -6)
+        for (i in 0..12) {
+            list.add(Pair(cal.get(Calendar.MONTH), cal.get(Calendar.YEAR)))
+            cal.add(Calendar.MONTH, 1)
+        }
+        list
+    }
+
     val monthNames = listOf(
         "January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December"
     )
-    val headerText = "${monthNames[currentMonth]} $currentYear"
 
     val startFormatted = startDate?.let {
-        SimpleDateFormat("dd MMM, yyyy", Locale.forLanguageTag("bn-BD")).format(Date(it))
+        SimpleDateFormat("dd MMMM, yyyy", Locale.forLanguageTag("bn-BD")).format(Date(it))
     } ?: "শুরুর তারিখ"
 
     val endFormatted = endDate?.let {
-        SimpleDateFormat("dd MMM, yyyy", Locale.forLanguageTag("bn-BD")).format(Date(it))
+        SimpleDateFormat("dd MMMM, yyyy", Locale.forLanguageTag("bn-BD")).format(Date(it))
     } ?: "শেষের তারিখ"
 
     Dialog(
@@ -1481,62 +1486,8 @@ private fun CustomDateRangePickerDialog(
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
 
-                // ৪. Month navigation
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = {
-                            if (currentMonth == 0) {
-                                currentMonth = 11
-                                currentYear -= 1
-                            } else {
-                                currentMonth -= 1
-                            }
-                        },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                            contentDescription = "Previous Month",
-                            tint = Color(0xFF0F172A)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text(
-                        text = headerText,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF0F172A),
-                        modifier = Modifier.width(120.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    IconButton(
-                        onClick = {
-                            if (currentMonth == 11) {
-                                currentMonth = 0
-                                currentYear += 1
-                            } else {
-                                currentMonth += 1
-                            }
-                        },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = "Next Month",
-                            tint = Color(0xFF0F172A)
-                        )
-                    }
-                }
-
                 // ৩. Calendar grid
-                // Weekdays header row
+                // Weekdays header row (stays fixed at the top)
                 val weekdays = listOf("S", "M", "T", "W", "T", "F", "S")
                 Row(
                     modifier = Modifier
@@ -1559,111 +1510,136 @@ private fun CustomDateRangePickerDialog(
                     }
                 }
 
-                val calendar = Calendar.getInstance().apply {
-                    set(Calendar.YEAR, currentYear)
-                    set(Calendar.MONTH, currentMonth)
-                    set(Calendar.DAY_OF_MONTH, 1)
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-                }
-
-                val firstDayOfWeek = calendar.get(Calendar.DAY_OF_WEEK)
-                val daysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
-                val prefixEmptyCells = firstDayOfWeek - 1
-                val totalCells = prefixEmptyCells + daysInMonth
-                val rowCount = (totalCells + 6) / 7
-
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                    modifier = Modifier.fillMaxWidth()
+                // Vertical scrollable months list
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(290.dp), // Height to make exactly 4.5 rows visible!
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    for (row in 0 until rowCount) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            for (col in 0 until 7) {
-                                val cellIndex = row * 7 + col
-                                if (cellIndex < prefixEmptyCells || cellIndex >= totalCells) {
-                                    Box(modifier = Modifier.weight(1f).aspectRatio(1f))
-                                } else {
-                                    val dayOfMonth = cellIndex - prefixEmptyCells + 1
-                                    val dayCalendar = Calendar.getInstance().apply {
-                                        set(Calendar.YEAR, currentYear)
-                                        set(Calendar.MONTH, currentMonth)
-                                        set(Calendar.DAY_OF_MONTH, dayOfMonth)
-                                        set(Calendar.HOUR_OF_DAY, 0)
-                                        set(Calendar.MINUTE, 0)
-                                        set(Calendar.SECOND, 0)
-                                        set(Calendar.MILLISECOND, 0)
-                                    }
-                                    val dayMs = dayCalendar.timeInMillis
+                    items(monthsList) { monthYearPair ->
+                        val (month, year) = monthYearPair
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            // Month Title
+                            Text(
+                                text = "${monthNames[month]} $year",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F172A),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
 
-                                    val isToday = dayCalendar.get(Calendar.YEAR) == calendarToday.get(Calendar.YEAR) &&
-                                                  dayCalendar.get(Calendar.MONTH) == calendarToday.get(Calendar.MONTH) &&
-                                                  dayCalendar.get(Calendar.DAY_OF_MONTH) == calendarToday.get(Calendar.DAY_OF_MONTH)
+                            val calendar = Calendar.getInstance().apply {
+                                set(Calendar.YEAR, year)
+                                set(Calendar.MONTH, month)
+                                set(Calendar.DAY_OF_MONTH, 1)
+                                set(Calendar.HOUR_OF_DAY, 0)
+                                set(Calendar.MINUTE, 0)
+                                set(Calendar.SECOND, 0)
+                                set(Calendar.MILLISECOND, 0)
+                            }
 
-                                    val isSelectedStart = startDate != null && dayMs == startDate
-                                    val isSelectedEnd = endDate != null && dayMs == endDate
-                                    val isWithinRange = startDate != null && endDate != null && dayMs > startDate!! && dayMs < endDate!!
+                            val firstDayOfWeek = calendar.get(Calendar.DAY_OF_WEEK)
+                            val daysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+                            val prefixEmptyCells = firstDayOfWeek - 1
+                            val totalCells = prefixEmptyCells + daysInMonth
+                            val rowCount = (totalCells + 6) / 7
 
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .aspectRatio(1f)
-                                            .clickable { handleDateClick(dayMs) },
-                                        contentAlignment = Alignment.Center
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                for (row in 0 until rowCount) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        if (isWithinRange) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(28.dp)
-                                                    .background(Color(0xFFE0F7FA))
-                                            )
-                                        } else if (isSelectedStart && endDate != null) {
-                                            Row(modifier = Modifier.fillMaxSize()) {
-                                                Spacer(modifier = Modifier.weight(1f))
+                                        for (col in 0 until 7) {
+                                            val cellIndex = row * 7 + col
+                                            if (cellIndex < prefixEmptyCells || cellIndex >= totalCells) {
+                                                Box(modifier = Modifier.weight(1f).aspectRatio(1f))
+                                            } else {
+                                                val dayOfMonth = cellIndex - prefixEmptyCells + 1
+                                                val dayCalendar = Calendar.getInstance().apply {
+                                                    set(Calendar.YEAR, year)
+                                                    set(Calendar.MONTH, month)
+                                                    set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                                                    set(Calendar.HOUR_OF_DAY, 0)
+                                                    set(Calendar.MINUTE, 0)
+                                                    set(Calendar.SECOND, 0)
+                                                    set(Calendar.MILLISECOND, 0)
+                                                }
+                                                val dayMs = dayCalendar.timeInMillis
+
+                                                val isToday = dayCalendar.get(Calendar.YEAR) == calendarToday.get(Calendar.YEAR) &&
+                                                              dayCalendar.get(Calendar.MONTH) == calendarToday.get(Calendar.MONTH) &&
+                                                              dayCalendar.get(Calendar.DAY_OF_MONTH) == calendarToday.get(Calendar.DAY_OF_MONTH)
+
+                                                val isSelectedStart = startDate != null && dayMs == startDate
+                                                val isSelectedEnd = endDate != null && dayMs == endDate
+                                                val isWithinRange = startDate != null && endDate != null && dayMs > startDate!! && dayMs < endDate!!
+
                                                 Box(
                                                     modifier = Modifier
                                                         .weight(1f)
-                                                        .height(28.dp)
-                                                        .background(Color(0xFFE0F7FA))
-                                                )
-                                            }
-                                        } else if (isSelectedEnd && startDate != null) {
-                                            Row(modifier = Modifier.fillMaxSize()) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .height(28.dp)
-                                                        .background(Color(0xFFE0F7FA))
-                                                )
-                                                Spacer(modifier = Modifier.weight(1f))
+                                                        .aspectRatio(1f)
+                                                        .clickable { handleDateClick(dayMs) },
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    if (isWithinRange) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .height(28.dp)
+                                                                .background(Color(0xFFE0F7FA))
+                                                        )
+                                                    } else if (isSelectedStart && endDate != null) {
+                                                        Row(modifier = Modifier.fillMaxSize()) {
+                                                            Spacer(modifier = Modifier.weight(1f))
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .weight(1f)
+                                                                    .height(28.dp)
+                                                                    .background(Color(0xFFE0F7FA))
+                                                            )
+                                                        }
+                                                    } else if (isSelectedEnd && startDate != null) {
+                                                        Row(modifier = Modifier.fillMaxSize()) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .weight(1f)
+                                                                    .height(28.dp)
+                                                                    .background(Color(0xFFE0F7FA))
+                                                            )
+                                                            Spacer(modifier = Modifier.weight(1f))
+                                                        }
+                                                    }
+
+                                                    if (isSelectedStart || isSelectedEnd) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(36.dp)
+                                                                .background(Color(0xFF22D3EE), CircleShape)
+                                                        )
+                                                    }
+
+                                                    Text(
+                                                        text = dayOfMonth.toString(),
+                                                        fontSize = 13.sp,
+                                                        fontWeight = if (isSelectedStart || isSelectedEnd) FontWeight.Bold else FontWeight.Normal,
+                                                        color = when {
+                                                            isSelectedStart || isSelectedEnd -> Color(0xFF0F172A)
+                                                            isToday -> Color(0xFF22D3EE)
+                                                            else -> Color(0xFF0F172A)
+                                                        }
+                                                    )
+                                                }
                                             }
                                         }
-
-                                        if (isSelectedStart || isSelectedEnd) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(36.dp)
-                                                    .background(Color(0xFF22D3EE), CircleShape)
-                                            )
-                                        }
-
-                                        Text(
-                                            text = dayOfMonth.toString(),
-                                            fontSize = 13.sp,
-                                            fontWeight = if (isSelectedStart || isSelectedEnd) FontWeight.Bold else FontWeight.Normal,
-                                            color = when {
-                                                isSelectedStart || isSelectedEnd -> Color(0xFF0F172A)
-                                                isToday -> Color(0xFF22D3EE)
-                                                else -> Color(0xFF0F172A)
-                                            }
-                                        )
                                     }
                                 }
                             }
@@ -1671,19 +1647,7 @@ private fun CustomDateRangePickerDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "↓ পরের মাস",
-                        fontSize = 10.sp,
-                        color = Color.Gray
-                    )
-                }
-
+                // ৫. Button row
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
