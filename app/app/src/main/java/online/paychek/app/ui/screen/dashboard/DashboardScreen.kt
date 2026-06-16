@@ -23,6 +23,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Person
@@ -60,6 +62,7 @@ import online.paychek.app.ui.theme.*
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Calendar
 import java.util.Locale
 
 // =============================================================================
@@ -153,130 +156,15 @@ fun DashboardScreen(
     }
 
     if (showDateRangePicker) {
-        val dateRangePickerState = rememberDateRangePickerState()
-
-        Dialog(
-            onDismissRequest = { showDateRangePicker = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Surface(
-                modifier = Modifier
-                    .widthIn(max = 360.dp)
-                    .fillMaxWidth(0.95f)
-                    .fillMaxHeight(0.75f),
-                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-                color = DashCard
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    val start = dateRangePickerState.selectedStartDateMillis?.let {
-                        SimpleDateFormat("dd MMM, yyyy", Locale.forLanguageTag("bn-BD")).format(Date(it))
-                    } ?: "শুরুর তারিখ"
-                    val end = dateRangePickerState.selectedEndDateMillis?.let {
-                        SimpleDateFormat("dd MMM, yyyy", Locale.forLanguageTag("bn-BD")).format(Date(it))
-                    } ?: "শেষের তারিখ"
-
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 4.dp),
-                        verticalArrangement = Arrangement.spacedBy(0.dp)
-                    ) {
-                        Text(
-                            text = start,
-                            color = TextWhite,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "থেকে",
-                            color = TextMuted,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Normal
-                        )
-                        Text(
-                            text = end,
-                            color = TextWhite,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    DateRangePicker(
-                        state = dateRangePickerState,
-                        title = null,
-                        headline = null,
-                        showModeToggle = false,
-                        colors = DatePickerDefaults.colors(
-                            containerColor = DashCard,
-                            titleContentColor = TextWhite,
-                            headlineContentColor = TextWhite,
-                            weekdayContentColor = TextMuted,
-                            subheadContentColor = TextMuted,
-                            navigationContentColor = TextWhite,
-                            yearContentColor = TextMuted,
-                            selectedYearContentColor = TextWhite,
-                            selectedYearContainerColor = AccentCyan,
-                            dayContentColor = TextWhite,
-                            selectedDayContentColor = Color(0xFF0F172A),
-                            selectedDayContainerColor = AccentCyan,
-                            todayContentColor = AccentCyan,
-                            todayDateBorderColor = Color.Transparent,
-                            dayInSelectionRangeContentColor = TextWhite,
-                            dayInSelectionRangeContainerColor = AccentCyan.copy(alpha = 0.2f)
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .widthIn(max = 360.dp)
-                            .align(Alignment.CenterHorizontally)
-                            .heightIn(max = (screenWidth() * 1.14f))
-                            .padding(horizontal = 8.dp)
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, bottom = 12.dp, top = 4.dp),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedButton(
-                            onClick = { showDateRangePicker = false },
-                            border = BorderStroke(1.dp, TextMuted.copy(alpha = 0.4f)),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMuted),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                            modifier = Modifier.padding(end = 8.dp)
-                        ) {
-                            Text(
-                                text = "বাতিল",
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                        }
-
-                        Button(
-                            onClick = {
-                                customStartDate = dateRangePickerState.selectedStartDateMillis
-                                customEndDate = dateRangePickerState.selectedEndDateMillis
-                                selectedDate = "custom"
-                                showDateRangePicker = false
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
-                        ) {
-                            Text(
-                                text = "নিশ্চিত করুন",
-                                color = Color(0xFF0F172A),
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                        }
-                    }
-                }
+        CustomDateRangePickerDialog(
+            onDismiss = { showDateRangePicker = false },
+            onConfirm = { startMillis, endMillis ->
+                customStartDate = startMillis
+                customEndDate = endMillis
+                selectedDate = "custom"
+                showDateRangePicker = false
             }
-        }
+        )
     }
 
     Column(
@@ -1503,4 +1391,337 @@ private fun utcMidnightToLocalMidnight(utcMs: Long): Long {
         set(java.util.Calendar.MILLISECOND, 0)
     }.timeInMillis
 }
+
+@Composable
+private fun CustomDateRangePickerDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (Long?, Long?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val calendarToday = Calendar.getInstance()
+    var currentMonth by remember { mutableStateOf(calendarToday.get(Calendar.MONTH)) }
+    var currentYear by remember { mutableStateOf(calendarToday.get(Calendar.YEAR)) }
+
+    var startDate by remember { mutableStateOf<Long?>(null) }
+    var endDate by remember { mutableStateOf<Long?>(null) }
+
+    fun handleDateClick(timeMs: Long) {
+        if (startDate == null) {
+            startDate = timeMs
+        } else if (endDate == null) {
+            if (timeMs >= startDate!!) {
+                endDate = timeMs
+            } else {
+                startDate = timeMs
+            }
+        } else {
+            startDate = timeMs
+            endDate = null
+        }
+    }
+
+    val monthNames = listOf(
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    )
+    val headerText = "${monthNames[currentMonth]} $currentYear"
+
+    val startFormatted = startDate?.let {
+        SimpleDateFormat("dd MMM, yyyy", Locale.forLanguageTag("bn-BD")).format(Date(it))
+    } ?: "শুরুর তারিখ"
+
+    val endFormatted = endDate?.let {
+        SimpleDateFormat("dd MMM, yyyy", Locale.forLanguageTag("bn-BD")).format(Date(it))
+    } ?: "শেষের তারিখ"
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .width(screenWidth() * 0.92f)
+                .wrapContentHeight(),
+            shape = RoundedCornerShape(16.dp),
+            color = Color.White
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                // ২. Header (dialog এর উপরে)
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 4.dp)
+                ) {
+                    Text(
+                        text = startFormatted,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF0F172A)
+                    )
+                    Text(
+                        text = "থেকে",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                    Text(
+                        text = endFormatted,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF0F172A)
+                    )
+                }
+
+                HorizontalDivider(
+                    color = Color.LightGray.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+
+                // ৪. Month navigation
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            if (currentMonth == 0) {
+                                currentMonth = 11
+                                currentYear -= 1
+                            } else {
+                                currentMonth -= 1
+                            }
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                            contentDescription = "Previous Month",
+                            tint = Color(0xFF0F172A)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = headerText,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF0F172A),
+                        modifier = Modifier.width(120.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    IconButton(
+                        onClick = {
+                            if (currentMonth == 11) {
+                                currentMonth = 0
+                                currentYear += 1
+                            } else {
+                                currentMonth += 1
+                            }
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = "Next Month",
+                            tint = Color(0xFF0F172A)
+                        )
+                    }
+                }
+
+                // ৩. Calendar grid
+                // Weekdays header row
+                val weekdays = listOf("S", "M", "T", "W", "T", "F", "S")
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    weekdays.forEach { day ->
+                        Box(
+                            modifier = Modifier.weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = day,
+                                fontSize = 11.sp,
+                                color = Color.Gray
+                            )
+                        }
+                    }
+                }
+
+                val calendar = Calendar.getInstance().apply {
+                    set(Calendar.YEAR, currentYear)
+                    set(Calendar.MONTH, currentMonth)
+                    set(Calendar.DAY_OF_MONTH, 1)
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+
+                val firstDayOfWeek = calendar.get(Calendar.DAY_OF_WEEK)
+                val daysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+                val prefixEmptyCells = firstDayOfWeek - 1
+                val totalCells = prefixEmptyCells + daysInMonth
+                val rowCount = (totalCells + 6) / 7
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    for (row in 0 until rowCount) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            for (col in 0 until 7) {
+                                val cellIndex = row * 7 + col
+                                if (cellIndex < prefixEmptyCells || cellIndex >= totalCells) {
+                                    Box(modifier = Modifier.weight(1f).aspectRatio(1f))
+                                } else {
+                                    val dayOfMonth = cellIndex - prefixEmptyCells + 1
+                                    val dayCalendar = Calendar.getInstance().apply {
+                                        set(Calendar.YEAR, currentYear)
+                                        set(Calendar.MONTH, currentMonth)
+                                        set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                                        set(Calendar.HOUR_OF_DAY, 0)
+                                        set(Calendar.MINUTE, 0)
+                                        set(Calendar.SECOND, 0)
+                                        set(Calendar.MILLISECOND, 0)
+                                    }
+                                    val dayMs = dayCalendar.timeInMillis
+
+                                    val isToday = dayCalendar.get(Calendar.YEAR) == calendarToday.get(Calendar.YEAR) &&
+                                                  dayCalendar.get(Calendar.MONTH) == calendarToday.get(Calendar.MONTH) &&
+                                                  dayCalendar.get(Calendar.DAY_OF_MONTH) == calendarToday.get(Calendar.DAY_OF_MONTH)
+
+                                    val isSelectedStart = startDate != null && dayMs == startDate
+                                    val isSelectedEnd = endDate != null && dayMs == endDate
+                                    val isWithinRange = startDate != null && endDate != null && dayMs > startDate!! && dayMs < endDate!!
+
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .aspectRatio(1f)
+                                            .clickable { handleDateClick(dayMs) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isWithinRange) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(28.dp)
+                                                    .background(Color(0xFFE0F7FA))
+                                            )
+                                        } else if (isSelectedStart && endDate != null) {
+                                            Row(modifier = Modifier.fillMaxSize()) {
+                                                Spacer(modifier = Modifier.weight(1f))
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(28.dp)
+                                                        .background(Color(0xFFE0F7FA))
+                                                )
+                                            }
+                                        } else if (isSelectedEnd && startDate != null) {
+                                            Row(modifier = Modifier.fillMaxSize()) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(28.dp)
+                                                        .background(Color(0xFFE0F7FA))
+                                                )
+                                                Spacer(modifier = Modifier.weight(1f))
+                                            }
+                                        }
+
+                                        if (isSelectedStart || isSelectedEnd) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .background(Color(0xFF22D3EE), CircleShape)
+                                            )
+                                        }
+
+                                        Text(
+                                            text = dayOfMonth.toString(),
+                                            fontSize = 13.sp,
+                                            fontWeight = if (isSelectedStart || isSelectedEnd) FontWeight.Bold else FontWeight.Normal,
+                                            color = when {
+                                                isSelectedStart || isSelectedEnd -> Color(0xFF0F172A)
+                                                isToday -> Color(0xFF22D3EE)
+                                                else -> Color(0xFF0F172A)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "↓ পরের মাস",
+                        fontSize = 10.sp,
+                        color = Color.Gray
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.4f)),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Gray),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Text(
+                            text = "বাতিল",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+
+                    Button(
+                        onClick = { onConfirm(startDate, endDate) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22D3EE)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            text = "নিশ্চিত করুন",
+                            color = Color(0xFF0F172A),
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 
