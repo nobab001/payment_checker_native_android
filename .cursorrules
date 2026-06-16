@@ -5,3 +5,4 @@ Every time after completing a coding task or feature modification:
 2. **Deploy and Run**: Run the application on the connected Android device.
    * Both the PC and the Android device are connected to the same Wi-Fi network.
    * If `adb devices` shows no connected devices, ask the user for their device's IP address and port to connect via `adb connect <IP>:<PORT>` (or standard wireless debugging setup), then deploy the app.
+3. **Generate Clean Debug APK**: Run `gradlew clean assembleDebug --no-build-cache --no-configuration-cache` in the `app` directory to generate a fresh, un-cached debug APK file for the user to install on their device, and provide them the link to the generated APK file located at `app/app/build/outputs/apk/debug/app-debug.apk`.

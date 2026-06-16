@@ -193,7 +193,8 @@ fun DashboardScreen(
                 }
             },
             modifier = Modifier
-                .fillMaxWidth()
+                .widthIn(max = 360.dp)
+                .fillMaxWidth(0.95f)
                 .fillMaxHeight(0.75f),
             properties = DialogProperties(usePlatformDefaultWidth = false),
             shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
@@ -213,8 +214,8 @@ fun DashboardScreen(
                     } ?: "শেষের তারিখ"
                     
                     Column(
-                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(0.dp)
                     ) {
                         Text(
                             text = start,
@@ -226,8 +227,7 @@ fun DashboardScreen(
                             text = "থেকে",
                             color = TextMuted,
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Normal,
-                            modifier = Modifier.padding(vertical = 2.dp)
+                            fontWeight = FontWeight.Normal
                         )
                         Text(
                             text = end,
@@ -258,8 +258,9 @@ fun DashboardScreen(
                 ),
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    .heightIn(max = (screenWidth() * 1.1f))
+                    .widthIn(max = 360.dp)
+                    .align(Alignment.CenterHorizontally)
+                    .heightIn(max = (screenWidth() * 1.22f))
                     .padding(start = 12.dp, end = 12.dp, bottom = 2.dp)
             )
         }
