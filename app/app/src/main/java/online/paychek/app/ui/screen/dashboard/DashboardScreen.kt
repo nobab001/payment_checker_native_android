@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -154,67 +155,32 @@ fun DashboardScreen(
     if (showDateRangePicker) {
         val dateRangePickerState = rememberDateRangePickerState()
 
-        DatePickerDialog(
+        Dialog(
             onDismissRequest = { showDateRangePicker = false },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        customStartDate = dateRangePickerState.selectedStartDateMillis
-                        customEndDate = dateRangePickerState.selectedEndDateMillis
-                        selectedDate = "custom"
-                        showDateRangePicker = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                    modifier = Modifier.padding(end = 12.dp, bottom = 8.dp)
-                ) {
-                    Text(
-                        text = "নিশ্চিত করুন",
-                        color = Color(0xFF0F172A),
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                }
-            },
-            dismissButton = {
-                OutlinedButton(
-                    onClick = { showDateRangePicker = false },
-                    border = BorderStroke(1.dp, TextMuted.copy(alpha = 0.4f)),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMuted),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                    modifier = Modifier.padding(end = 8.dp, bottom = 8.dp)
-                ) {
-                    Text(
-                        text = "বাতিল",
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                }
-            },
-            modifier = Modifier
-                .widthIn(max = 360.dp)
-                .fillMaxWidth(0.95f)
-                .fillMaxHeight(0.75f),
-            properties = DialogProperties(usePlatformDefaultWidth = false),
-            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-            colors = DatePickerDefaults.colors(
-                containerColor = DashCard
-            )
+            properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
-            DateRangePicker(
-                state = dateRangePickerState,
-                title = null,
-                headline = {
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = 360.dp)
+                    .fillMaxWidth(0.95f)
+                    .fillMaxHeight(0.75f),
+                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                color = DashCard
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                ) {
                     val start = dateRangePickerState.selectedStartDateMillis?.let {
                         SimpleDateFormat("dd MMM, yyyy", Locale.forLanguageTag("bn-BD")).format(Date(it))
                     } ?: "শুরুর তারিখ"
                     val end = dateRangePickerState.selectedEndDateMillis?.let {
                         SimpleDateFormat("dd MMM, yyyy", Locale.forLanguageTag("bn-BD")).format(Date(it))
                     } ?: "শেষের তারিখ"
-                    
+
                     Column(
-                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(0.dp)
                     ) {
                         Text(
@@ -236,33 +202,80 @@ fun DashboardScreen(
                             fontWeight = FontWeight.Bold
                         )
                     }
-                },
-                showModeToggle = false,
-                colors = DatePickerDefaults.colors(
-                    containerColor = DashCard,
-                    titleContentColor = TextWhite,
-                    headlineContentColor = TextWhite,
-                    weekdayContentColor = TextMuted,
-                    subheadContentColor = TextMuted,
-                    navigationContentColor = TextWhite,
-                    yearContentColor = TextMuted,
-                    selectedYearContentColor = TextWhite,
-                    selectedYearContainerColor = AccentCyan,
-                    dayContentColor = TextWhite,
-                    selectedDayContentColor = Color(0xFF0F172A),
-                    selectedDayContainerColor = AccentCyan,
-                    todayContentColor = AccentCyan,
-                    todayDateBorderColor = Color.Transparent,
-                    dayInSelectionRangeContentColor = TextWhite,
-                    dayInSelectionRangeContainerColor = AccentCyan.copy(alpha = 0.2f)
-                ),
-                modifier = Modifier
-                    .weight(1f)
-                    .widthIn(max = 360.dp)
-                    .align(Alignment.CenterHorizontally)
-                    .heightIn(max = (screenWidth() * 1.22f))
-                    .padding(start = 12.dp, end = 12.dp, bottom = 2.dp)
-            )
+
+                    DateRangePicker(
+                        state = dateRangePickerState,
+                        title = null,
+                        headline = null,
+                        showModeToggle = false,
+                        colors = DatePickerDefaults.colors(
+                            containerColor = DashCard,
+                            titleContentColor = TextWhite,
+                            headlineContentColor = TextWhite,
+                            weekdayContentColor = TextMuted,
+                            subheadContentColor = TextMuted,
+                            navigationContentColor = TextWhite,
+                            yearContentColor = TextMuted,
+                            selectedYearContentColor = TextWhite,
+                            selectedYearContainerColor = AccentCyan,
+                            dayContentColor = TextWhite,
+                            selectedDayContentColor = Color(0xFF0F172A),
+                            selectedDayContainerColor = AccentCyan,
+                            todayContentColor = AccentCyan,
+                            todayDateBorderColor = Color.Transparent,
+                            dayInSelectionRangeContentColor = TextWhite,
+                            dayInSelectionRangeContainerColor = AccentCyan.copy(alpha = 0.2f)
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .widthIn(max = 360.dp)
+                            .align(Alignment.CenterHorizontally)
+                            .heightIn(max = (screenWidth() * 1.14f))
+                            .padding(horizontal = 8.dp)
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, bottom = 12.dp, top = 4.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = { showDateRangePicker = false },
+                            border = BorderStroke(1.dp, TextMuted.copy(alpha = 0.4f)),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMuted),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                            modifier = Modifier.padding(end = 8.dp)
+                        ) {
+                            Text(
+                                text = "বাতিল",
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                customStartDate = dateRangePickerState.selectedStartDateMillis
+                                customEndDate = dateRangePickerState.selectedEndDateMillis
+                                selectedDate = "custom"
+                                showDateRangePicker = false
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                        ) {
+                            Text(
+                                text = "নিশ্চিত করুন",
+                                color = Color(0xFF0F172A),
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 
