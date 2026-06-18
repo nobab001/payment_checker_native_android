@@ -273,8 +273,6 @@ fun DeviceScreen(
                             templates = state.templates,
                             methods = state.methods,
                             onToggleTemplate = { viewModel.toggleTemplate(1, it) },
-                            onToggleCustomSender = { viewModel.toggleMethod(it) },
-                            onAddCustomSenderClick = { viewModel.showCustomSenderDialog(1) },
                             isRestricted = isRestricted
                         )
                     }
@@ -290,8 +288,6 @@ fun DeviceScreen(
                             templates = state.templates,
                             methods = state.methods,
                             onToggleTemplate = { viewModel.toggleTemplate(2, it) },
-                            onToggleCustomSender = { viewModel.toggleMethod(it) },
-                            onAddCustomSenderClick = { viewModel.showCustomSenderDialog(2) },
                             isRestricted = isRestricted
                         )
                     }
@@ -581,15 +577,7 @@ fun DeviceScreen(
         }
 
 
-        // ─── Dialog — Custom Sender ───────────────────────────────────────────
-        val showCustomSlot = state.showCustomSenderDialogSlot
-        if (showCustomSlot != null) {
-            CustomSenderDialog(
-                simSlot = showCustomSlot,
-                onAddCustomSender = { viewModel.addCustomSender(showCustomSlot, it) },
-                onDismiss = viewModel::dismissCustomSenderDialog
-            )
-        }
+
 
         // ─── Dialog — Role PIN Verification ──────────────────────────────────
         if (state.showRolePinDialog) {
@@ -1236,8 +1224,6 @@ private fun SimCard(
     templates: List<SmsTemplateDto>,
     methods: List<GatewayMethod>,
     onToggleTemplate: (SmsTemplateDto) -> Unit,
-    onToggleCustomSender: (GatewayMethod) -> Unit,
-    onAddCustomSenderClick: () -> Unit,
     isRestricted: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -1381,40 +1367,6 @@ private fun SimCard(
                         }
                     )
                 }
-
-                // Custom Senders
-                val customSenders = methods.filter { it.simSlot == simSlot && it.templateId == null }
-                customSenders.forEach { method ->
-                    val isSelected = method.isEnabled == 1
-                    TemplateChip(
-                        name = method.provider,
-                        dotColor = Color.Gray, // Custom senders are styled with a gray dot
-                        isSelected = isSelected,
-                        onClick = {
-                            if (!isRestricted) {
-                                onToggleCustomSender(method)
-                            }
-                        }
-                    )
-                }
-
-                // Add Custom Sender Button
-                if (!isRestricted) {
-                    IconButton(
-                        onClick = onAddCustomSenderClick,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .border(1.dp, TextMuted.copy(0.3f), CircleShape)
-                            .background(GwBg, CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "কাস্টম সেন্ডার যোগ করুন",
-                            tint = AccentCyan,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
             }
         }
     }
@@ -1472,126 +1424,7 @@ private fun TemplateChip(
 }
 
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun CustomSenderDialog(
-    simSlot: Int,
-    onAddCustomSender: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var nameInput by remember { mutableStateOf("") }
-    val isError = nameInput.length > 20
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = true)
-    ) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = GwCard,
-            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
-            tonalElevation = 8.dp,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-                .wrapContentHeight()
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(AccentCyan.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = null,
-                        tint = AccentCyan,
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-                Text(
-                    text = "কাস্টম সেন্ডার যোগ করুন",
-                    fontWeight = FontWeight.Bold,
-                    color = TextWhite,
-                    fontSize = 18.sp
-                )
-                Text(
-                    text = "যে নম্বর বা নাম (Sender ID) থেকে আসা পেমেন্ট SMS মনিটর করতে চান তা লিখুন (যেমন: 01712345678, SENDER-ID ইত্যাদি)।",
-                    color = TextMuted,
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 18.sp
-                )
-
-                OutlinedTextField(
-                    value = nameInput,
-                    onValueChange = {
-                        if (it.length <= 20) {
-                            nameInput = it
-                        }
-                    },
-                    label = { Text("সেন্ডার নাম/নম্বর", color = TextMuted) },
-                    placeholder = { Text("bKash, Nagad, 017...", color = TextMuted.copy(0.4f)) },
-                    singleLine = true,
-                    isError = isError,
-                    supportingText = {
-                        Text(
-                            text = "${nameInput.length}/20",
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.End,
-                            color = if (isError) Color(0xFFEF4444) else TextMuted
-                        )
-                    },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentCyan,
-                        unfocusedBorderColor = ToggleOff,
-                        focusedTextColor = TextWhite,
-                        unfocusedTextColor = TextWhite
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMuted),
-                        contentPadding = PaddingValues(vertical = 12.dp)
-                    ) {
-                        Text("বাতিল")
-                    }
-                    Button(
-                        onClick = {
-                            if (nameInput.trim().isNotEmpty() && nameInput.length <= 20) {
-                                onAddCustomSender(nameInput.trim())
-                                onDismiss()
-                            }
-                        },
-                        enabled = nameInput.trim().isNotEmpty() && nameInput.length <= 20,
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(vertical = 12.dp)
-                    ) {
-                        Text("যোগ করুন", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-    }
-}
 
 private fun getDotColor(providerName: String): Color {
     return when (providerName.lowercase()) {

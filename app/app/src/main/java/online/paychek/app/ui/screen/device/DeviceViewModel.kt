@@ -59,8 +59,7 @@ data class DeviceUiState(
     val templates: List<SmsTemplateDto>       = emptyList(),
     val sim1Number: String                    = "",
     val sim2Number: String                    = "",
-    val isTemplatesLoading: Boolean           = false,
-    val showCustomSenderDialogSlot: Int?      = null
+    val isTemplatesLoading: Boolean           = false
 )
 
 // =============================================================================
@@ -669,44 +668,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun addCustomSender(simSlot: Int, senderName: String) {
-        if (senderName.trim().isEmpty()) return
-        if (senderName.length > 20) return
-        
-        viewModelScope.launch {
-            _state.update { it.copy(isSaving = true) }
-            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
-            val num = if (simSlot == 1) _state.value.sim1Number else _state.value.sim2Number
-            val request = AddGatewayMethodRequest(
-                simSlot = simSlot,
-                provider = senderName.trim(),
-                templateId = null,
-                number = num.ifEmpty { null }
-            )
 
-            runCatching { api.addGatewayMethod("Bearer $token", request) }
-                .onSuccess { res ->
-                    _state.update { it.copy(isSaving = false) }
-                    if (res.isSuccessful && res.body()?.success == true) {
-                        loadGatewayMethods()
-                    } else {
-                        setError("কাস্টম সেন্ডার যোগ করতে ব্যর্থ হয়েছে (${res.code()})")
-                    }
-                }
-                .onFailure {
-                    _state.update { it.copy(isSaving = false) }
-                    setError("নেটওয়ার্ক সমস্যা: ${it.message}")
-                }
-        }
-    }
-
-    fun showCustomSenderDialog(simSlot: Int) {
-        _state.update { it.copy(showCustomSenderDialogSlot = simSlot) }
-    }
-
-    fun dismissCustomSenderDialog() {
-        _state.update { it.copy(showCustomSenderDialogSlot = null) }
-    }
 
 
 
