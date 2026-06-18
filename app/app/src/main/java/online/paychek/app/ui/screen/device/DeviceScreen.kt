@@ -43,6 +43,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.Manifest
 import android.os.Build
+import android.content.Intent
 import online.paychek.app.data.remote.dto.GatewayMethod
 import online.paychek.app.data.remote.dto.ChildDeviceDto
 import online.paychek.app.data.remote.dto.SmsTemplateDto
@@ -92,6 +93,17 @@ fun DeviceScreen(
     viewModel: DeviceViewModel = viewModel()
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    var isAccessibilityEnabled by remember { mutableStateOf(true) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
+            if (state == androidx.lifecycle.Lifecycle.State.RESUMED) {
+                isAccessibilityEnabled = online.paychek.app.utils.AccessibilityHelper.isAccessibilityServiceEnabled(context)
+            }
+        }
+    }
+
     val state       by viewModel.state.collectAsStateWithLifecycle()
     val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsStateWithLifecycle()
     val haptic      = LocalHapticFeedback.current
@@ -104,6 +116,7 @@ fun DeviceScreen(
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
+        online.paychek.app.MainActivity.isRequestingPermission = false
         prefs.edit().putBoolean("pcu_sim_auto_detected", true).apply()
         val granted = permissions[Manifest.permission.READ_PHONE_STATE] == true ||
                       (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && permissions[Manifest.permission.READ_PHONE_NUMBERS] == true)
@@ -145,6 +158,7 @@ fun DeviceScreen(
                 } else {
                     arrayOf(Manifest.permission.READ_PHONE_STATE)
                 }
+                online.paychek.app.MainActivity.isRequestingPermission = true
                 permissionLauncher.launch(permissionsToRequest)
             }
         }
@@ -183,6 +197,52 @@ fun DeviceScreen(
     ) {
         if (!isNetworkAvailable) {
             ConnectivityBanner()
+        }
+
+        if (!isAccessibilityEnabled) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFF59E0B)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .clickable {
+                        online.paychek.app.MainActivity.isRequestingPermission = true
+                        val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        context.startActivity(intent)
+                    }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Warning",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "পেমেন্ট অটো-সিঙ্ক করতে এক্সেসিবিলিটি পারমিশন দিন",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(
+                        text = "অনুমোদন করুন ➔",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
 
         Box(

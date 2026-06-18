@@ -171,6 +171,7 @@ fun ProfileSettingsScreen(
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
+        online.paychek.app.MainActivity.isRequestingPermission = false
         uri?.let {
             selectedUriForCrop = uri
         }
@@ -250,7 +251,10 @@ fun ProfileSettingsScreen(
                     primaryEmail     = state.primaryEmail,
                     subscriptionPlan = state.subscriptionPlan,
                     avatarUrl        = localAvatarPath ?: state.avatarUrl,
-                    onAvatarClick    = { imagePickerLauncher.launch("image/*") },
+                    onAvatarClick    = {
+                         online.paychek.app.MainActivity.isRequestingPermission = true
+                         imagePickerLauncher.launch("image/*")
+                     },
                     onRenewClick     = onNavigateToSubscription,
                     isRestricted     = isRestricted,
                     modifier         = Modifier.padding(horizontal = adaptivePadding(12.dp, 16.dp))

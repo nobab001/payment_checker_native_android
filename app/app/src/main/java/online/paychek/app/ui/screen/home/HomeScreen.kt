@@ -134,7 +134,7 @@ fun HomeScreen(
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        // No action required
+        online.paychek.app.MainActivity.isRequestingPermission = false
     }
 
     LaunchedEffect(Unit) {
@@ -145,6 +145,7 @@ fun HomeScreen(
             ) == PackageManager.PERMISSION_GRANTED
 
             if (!hasNotificationPermission) {
+                online.paychek.app.MainActivity.isRequestingPermission = true
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }

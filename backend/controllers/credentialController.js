@@ -20,7 +20,7 @@ async function listCredentials(req, res) {
 
     // Additional from user_credentials table
     const creds = await query(
-      "SELECT id, type, value, verified_at FROM user_credentials WHERE user_id = ? AND verified_at IS NOT NULL ORDER BY id ASC",
+      "SELECT id, type, value, verified_at FROM user_credentials WHERE user_id = ? ORDER BY id ASC",
       [userId]
     );
 
@@ -151,15 +151,15 @@ async function verifyCredential(req, res) {
     // Mark OTP as used
     await query('UPDATE otps SET used_at = NOW() WHERE id = ?', [otps[0].id]);
 
-    // Resolve type
-    const isEmail = cleanContact.includes('@');
-    const resolvedType = req.body.type || (isEmail ? 'email' : 'phone');
-
-    // Insert the verified credential record directly
-    await query(
-      "INSERT INTO user_credentials (user_id, type, value, verified_at) VALUES (?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE verified_at = NOW()",
-      [userId, resolvedType, cleanContact]
+    // Mark credential as verified
+    const result = await query(
+      "UPDATE user_credentials SET verified_at = NOW() WHERE user_id = ? AND value = ? AND verified_at IS NULL",
+      [userId, cleanContact]
     );
+
+    if (result.affectedRows === 0) {
+      return res.status(400).json({ error: 'Credential খুঁজে পাওয়া যায়নি অথবা আগে থেকেই verified।' });
+    }
 
     return res.json({ success: true, message: 'Credential সফলভাবে যাচাই ও যোগ করা হয়েছে।' });
   } catch (err) {

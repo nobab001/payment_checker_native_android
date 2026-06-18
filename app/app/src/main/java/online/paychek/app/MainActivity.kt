@@ -105,11 +105,15 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    companion object {
+        var isRequestingPermission = false
+    }
+
     override fun onStart() {
         super.onStart()
         val hasToken = SecurePreferences.decrypt(this, AppConfig.KEY_AUTH_TOKEN).isNotEmpty()
         val isProfileComplete = SecurePreferences.decrypt(this, "pcu_profile_complete") != "false"
-        if (hasToken && isProfileComplete && wasStopped) {
+        if (hasToken && isProfileComplete && wasStopped && !isRequestingPermission) {
             isAppLocked = true
         }
         wasStopped = false

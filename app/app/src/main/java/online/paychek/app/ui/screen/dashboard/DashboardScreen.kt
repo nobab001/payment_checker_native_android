@@ -99,6 +99,17 @@ fun DashboardScreen(
     val screenState by viewModel.state.collectAsStateWithLifecycle()
     val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var isAccessibilityEnabled by remember { mutableStateOf(true) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
+            if (state == androidx.lifecycle.Lifecycle.State.RESUMED) {
+                isAccessibilityEnabled = online.paychek.app.utils.AccessibilityHelper.isAccessibilityServiceEnabled(context)
+            }
+        }
+    }
+
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     var hasShownReminder by remember { mutableStateOf(false) }
     var showExpiryReminderDialog by remember { mutableStateOf(false) }
@@ -108,6 +119,7 @@ fun DashboardScreen(
     val smsPermissionsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
+        online.paychek.app.MainActivity.isRequestingPermission = false
         val granted = permissions[Manifest.permission.RECEIVE_SMS] == true &&
                       permissions[Manifest.permission.READ_SMS] == true
         if (granted) {
@@ -192,6 +204,52 @@ fun DashboardScreen(
             ConnectivityBanner()
         }
 
+        if (!isAccessibilityEnabled) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFF59E0B)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .clickable {
+                        online.paychek.app.MainActivity.isRequestingPermission = true
+                        val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        context.startActivity(intent)
+                    }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Warning",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "পেমেন্ট অটো-সিঙ্ক করতে এক্সেসিবিলিটি পারমিশন দিন",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(
+                        text = "অনুমোদন করুন ➔",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
         PullToRefreshBox(
             isRefreshing = screenState.isRefreshing,
             onRefresh    = { viewModel.onRefresh() },
@@ -216,50 +274,59 @@ fun DashboardScreen(
                     isServiceActive = screenState.isServiceActive,
                     onServiceToggle = { enable ->
                         if (enable) {
-                            val prefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
-                            val sim1Enabled = prefs.getBoolean(online.paychek.app.config.AppConfig.KEY_SIM1_ENABLED, true)
-                            val sim2Enabled = prefs.getBoolean(online.paychek.app.config.AppConfig.KEY_SIM2_ENABLED, true)
-                            val isAnySimActive = sim1Enabled || sim2Enabled
-
-                            if (!isPaid) {
+                            if (!isAccessibilityEnabled) {
                                 android.widget.Toast.makeText(
                                     context,
-                                    "SMS মনিটর চালু করতে প্যাকেজ কিনুন",
-                                    android.widget.Toast.LENGTH_LONG
-                                ).show()
-                            } else if (!isAnySimActive) {
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "ডিভাইস সেটিংসে গিয়ে SIM সক্রিয় করুন",
+                                    "প্রথমে এক্সেসিবিলিটি পারমিশন সক্রিয় করুন",
                                     android.widget.Toast.LENGTH_LONG
                                 ).show()
                             } else {
-                                val simStatus = online.paychek.app.utils.DeviceIdHelper.getSimSlotIds(context)
-                                if (simStatus == "no_sims" || simStatus == "permission_denied") {
+                                val prefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
+                                val sim1Enabled = prefs.getBoolean(online.paychek.app.config.AppConfig.KEY_SIM1_ENABLED, true)
+                                val sim2Enabled = prefs.getBoolean(online.paychek.app.config.AppConfig.KEY_SIM2_ENABLED, true)
+                                val isAnySimActive = sim1Enabled || sim2Enabled
+
+                                if (!isPaid) {
                                     android.widget.Toast.makeText(
                                         context,
-                                        "সক্রিয় সিম কার্ড এবং প্রয়োজনীয় পারমিশন ছাড়া মনিটরিং চালু করা সম্ভব নয়।",
+                                        "SMS মনিটর চালু করতে প্যাকেজ কিনুন",
+                                        android.widget.Toast.LENGTH_LONG
+                                    ).show()
+                                } else if (!isAnySimActive) {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "ডিভাইস সেটিংসে গিয়ে SIM সক্রিয় করুন",
                                         android.widget.Toast.LENGTH_LONG
                                     ).show()
                                 } else {
-                                    val hasReceiveSms = androidx.core.content.ContextCompat.checkSelfPermission(
-                                        context,
-                                        Manifest.permission.RECEIVE_SMS
-                                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                                    val hasReadSms = androidx.core.content.ContextCompat.checkSelfPermission(
-                                        context,
-                                        Manifest.permission.READ_SMS
-                                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
-                                    if (hasReceiveSms && hasReadSms) {
-                                        viewModel.toggleSmsService(true)
+                                    val simStatus = online.paychek.app.utils.DeviceIdHelper.getSimSlotIds(context)
+                                    if (simStatus == "no_sims" || simStatus == "permission_denied") {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "সক্রিয় সিম কার্ড এবং প্রয়োজনীয় পারমিশন ছাড়া মনিটরিং চালু করা সম্ভব নয়।",
+                                            android.widget.Toast.LENGTH_LONG
+                                        ).show()
                                     } else {
-                                        smsPermissionsLauncher.launch(
-                                            arrayOf(
-                                                Manifest.permission.RECEIVE_SMS,
-                                                Manifest.permission.READ_SMS
+                                        val hasReceiveSms = androidx.core.content.ContextCompat.checkSelfPermission(
+                                            context,
+                                            Manifest.permission.RECEIVE_SMS
+                                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                        val hasReadSms = androidx.core.content.ContextCompat.checkSelfPermission(
+                                            context,
+                                            Manifest.permission.READ_SMS
+                                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                                        if (hasReceiveSms && hasReadSms) {
+                                            viewModel.toggleSmsService(true)
+                                        } else {
+                                            online.paychek.app.MainActivity.isRequestingPermission = true
+                                            smsPermissionsLauncher.launch(
+                                                arrayOf(
+                                                    Manifest.permission.RECEIVE_SMS,
+                                                    Manifest.permission.READ_SMS
+                                                )
                                             )
-                                        )
+                                        }
                                     }
                                 }
                             }
@@ -584,6 +651,7 @@ fun DashboardScreen(
                 TextButton(
                     onClick = {
                         showSmsPermissionRationaleDialog = false
+                        online.paychek.app.MainActivity.isRequestingPermission = true
                         smsPermissionsLauncher.launch(
                             arrayOf(
                                 Manifest.permission.RECEIVE_SMS,
