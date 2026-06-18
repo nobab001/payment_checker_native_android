@@ -133,4 +133,22 @@ class PaymentRepository {
             Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
         }
     }
+
+    suspend fun markTransactionSoldOut(token: String, transactionId: Int): Result<Unit> {
+        return try {
+            val response = api.markTransactionSoldOut("Bearer $token", transactionId)
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body?.success == true) {
+                    Result.success(Unit)
+                } else {
+                    Result.failure(Exception(body?.message ?: "স্ট্যাটাস পরিবর্তন ব্যর্থ হয়েছে"))
+                }
+            } else {
+                Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
+        }
+    }
 }

@@ -100,7 +100,7 @@ async function paymentSmsIngest(req, res) {
     // HMAC verify সফল হওয়ার পরেই parseRawSms চালানো হয়।
     // Client-এর parsed fields (amount, trxId) সরাসরি ব্যবহার করা হয় না।
     // ────────────────────────────────────────────────────────────────────────
-    const parsed = parseRawSms(rawBody, senderHint || '');
+    const parsed = await parseRawSms(rawBody, senderHint || '');
 
     if (!parsed.success) {
       // HMAC verify সফল কিন্তু parse fail — audit table এ রাখো, reject করো
@@ -243,11 +243,16 @@ async function getSmsHistory(req, res) {
 
     const rows = await query(dataQuery, dataParams);
 
+    const mappedRows = rows.map(row => ({
+      ...row,
+      status: row.is_used === 1 ? 'SOLD_OUT' : 'READY'
+    }));
+
     console.log(`[HISTORY] User ${userId} | Page ${page} | Provider: ${provider} | Found: ${rows.length}`);
 
     return res.json({
       success:     true,
-      data:        rows,
+      data:        mappedRows,
       page:        page,
       limit:       limit,
       total_count: totalCount,
@@ -325,6 +330,11 @@ async function getDashboardStats(req, res) {
       [userId]
     );
 
+    const mappedRecentRows = recentRows.map(row => ({
+      ...row,
+      status: row.is_used === 1 ? 'SOLD_OUT' : 'READY'
+    }));
+
     console.log(`[STATS] Dashboard loaded for user: ${userId} | Today: ${todayDate} | Paid: ${isPaid} | Plan: ${activePlanName}`);
 
     return res.json({
@@ -340,7 +350,7 @@ async function getDashboardStats(req, res) {
         is_paid:             !!isPaid,
         active_plan_name:    activePlanName,
         expiry_date:         expiryDate,
-        recent_transactions: recentRows
+        recent_transactions: mappedRecentRows
       }
     });
 
@@ -351,10 +361,40 @@ async function getDashboardStats(req, res) {
 }
 
 // =============================================================================
+// POST /api/sms-history/:id/soldout
+// =============================================================================
+async function markTransactionSoldOut(req, res) {
+  try {
+    const { id } = req.params;
+    const userId = req.user.userId;
+
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'Transaction ID is required' });
+    }
+
+    const result = await query(
+      'UPDATE sms_history SET is_used = 1, used_at = NOW() WHERE id = ? AND user_id = ?',
+      [id, userId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, error: 'Transaction not found or not owned by user' });
+    }
+
+    return res.json({ success: true, message: 'Transaction marked as sold out successfully.' });
+  } catch (error) {
+    console.error('[SOLDOUT] Error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+// =============================================================================
 // Exports
 // =============================================================================
 module.exports = {
   paymentSmsIngest,
   getSmsHistory,
-  getDashboardStats
+  getDashboardStats,
+  markTransactionSoldOut
 };
+

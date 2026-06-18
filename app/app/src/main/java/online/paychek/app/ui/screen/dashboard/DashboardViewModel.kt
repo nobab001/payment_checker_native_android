@@ -217,4 +217,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             onResult(result)
         }
     }
+
+    fun markTransactionSoldOut(transactionId: Int) {
+        viewModelScope.launch {
+            val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
+            if (token.isEmpty()) return@launch
+            repository.markTransactionSoldOut(token, transactionId).onSuccess {
+                loadDashboardStats()
+            }
+        }
+    }
 }

@@ -502,7 +502,10 @@ fun DashboardScreen(
                 items(filteredList, key = { it.id }) { trx ->
                     TransactionRow(
                         item     = trx,
-                        modifier = Modifier.padding(horizontal = 16.dp)
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        onSoldOutClick = {
+                            viewModel.markTransactionSoldOut(trx.id)
+                        }
                     )
                 }
             } else if (searchQuery.isNotEmpty() || selectedProvider != null || selectedDate != null) {
@@ -928,7 +931,8 @@ private fun RecentTransactionsHeader(
 @Composable
 private fun TransactionRow(
     item: TransactionItem,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onSoldOutClick: (() -> Unit)? = null
 ) {
     val providerColor = when (item.providerTag.lowercase()) {
         "bkash"  -> BkashPink
@@ -1011,21 +1015,43 @@ private fun TransactionRow(
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(
-                            if (isSoldOut) StatusRed.copy(alpha = 0.15f)
-                            else AccentGreen.copy(alpha = 0.15f)
-                        )
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text(
-                        text     = if (isSoldOut) "SOLDOUT" else "UNUSED",
-                        color    = if (isSoldOut) StatusRed else AccentGreen,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(
+                                if (isSoldOut) StatusRed.copy(alpha = 0.15f)
+                                else AccentGreen.copy(alpha = 0.15f)
+                            )
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text     = if (isSoldOut) "SOLDOUT" else "READY",
+                            color    = if (isSoldOut) StatusRed else AccentGreen,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    if (!isSoldOut && onSoldOutClick != null) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(StatusRed.copy(alpha = 0.15f))
+                                .border(1.dp, StatusRed.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
+                                .clickable { onSoldOutClick() }
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text     = "Sold Out",
+                                color    = StatusRed,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
             }
         }

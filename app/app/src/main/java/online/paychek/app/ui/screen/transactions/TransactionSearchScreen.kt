@@ -179,7 +179,10 @@ fun TransactionSearchScreen(
                 ) { _, item ->
                     TransactionCard(
                         item     = item,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        onSoldOutClick = {
+                            viewModel.markTransactionSoldOut(item.id)
+                        }
                     )
                 }
             }
@@ -411,7 +414,8 @@ private fun SummaryRow(
 @Composable
 private fun TransactionCard(
     item: TransactionItem,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onSoldOutClick: (() -> Unit)? = null
 ) {
     val isSoldOut = item.isUsed == 1
 
@@ -508,7 +512,29 @@ private fun TransactionCard(
                         modifier = Modifier.weight(1f)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    StatusBadge(isSoldOut = isSoldOut)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        StatusBadge(isSoldOut = isSoldOut)
+                        if (!isSoldOut && onSoldOutClick != null) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(AccentRed.copy(alpha = 0.12f))
+                                    .border(0.5.dp, AccentRed.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+                                    .clickable { onSoldOutClick() }
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text       = "Sold Out",
+                                    color      = AccentRed,
+                                    fontSize   = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
                 }
 
                 Row(
@@ -549,7 +575,7 @@ private fun TransactionCard(
 private fun StatusBadge(isSoldOut: Boolean) {
     val bgColor   = if (isSoldOut) AccentRed.copy(alpha = 0.12f) else AccentGreen.copy(alpha = 0.12f)
     val textColor = if (isSoldOut) AccentRed else AccentGreen
-    val label     = if (isSoldOut) "🔴 SOLDOUT" else "✅ UNUSED"
+    val label     = if (isSoldOut) "🔴 SOLDOUT" else "✅ READY"
 
     Box(
         modifier = Modifier

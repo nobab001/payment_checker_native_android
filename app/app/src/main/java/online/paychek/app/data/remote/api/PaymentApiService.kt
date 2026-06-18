@@ -47,6 +47,12 @@ interface PaymentApiService {
         @Header("Authorization") token: String
     ): Response<DashboardStatsResponse>
 
+    @POST("sms-history/{id}/soldout")
+    suspend fun markTransactionSoldOut(
+        @Header("Authorization") token: String,
+        @Path("id") transactionId: Int
+    ): Response<CredentialActionResponse>
+
 
     @POST("v1/subscription/fcm-token")
     suspend fun updateFcmToken(

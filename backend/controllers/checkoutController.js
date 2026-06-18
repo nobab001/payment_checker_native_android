@@ -1,4 +1,5 @@
 const { query } = require('../db/connection');
+const axios = require('axios');
 
 /**
  * GET /api/checkout/:apiKey
@@ -171,18 +172,121 @@ async function verifyCheckoutPayment(req, res) {
   }
 }
 
-// Background utility to trigger webhooks
+/**
+ * POST /api/transactions/claim-check
+ * B2B claim check endpoint for merchant systems.
+ * Verifies apiKey, searches for READY transaction matching trxId (and optional amount),
+ * marks it as SOLD_OUT and posts the Webhook callback.
+ */
+async function claimCheckTransaction(req, res) {
+  try {
+    const { apiKey, trxId, amount } = req.body;
+
+    if (!apiKey || !trxId) {
+      return res.status(400).json({ success: false, error: 'Missing required parameters: apiKey, trxId' });
+    }
+
+    // 1. Fetch merchant details
+    const layouts = await query(
+      'SELECT id, user_id, callback_url FROM gateway_layouts WHERE api_key = ? AND is_active = 1 LIMIT 1',
+      [apiKey]
+    );
+
+    if (layouts.length === 0) {
+      return res.status(403).json({ success: false, error: 'Invalid API Key or Merchant inactive' });
+    }
+
+    const merchant = layouts[0];
+    const cleanTrx = trxId.trim().toUpperCase();
+
+    // 2. Query sms_history for this user/merchant matching trxId where is_used = 0 (READY)
+    let payments;
+    if (amount !== undefined && amount !== null && amount !== '') {
+      const cleanAmount = parseFloat(amount);
+      payments = await query(
+        'SELECT id, amount, trx_id, provider_tag, sender_number, sms_timestamp FROM sms_history WHERE user_id = ? AND trx_id = ? AND amount = ? AND is_used = 0 LIMIT 1',
+        [merchant.user_id, cleanTrx, cleanAmount]
+      );
+    } else {
+      payments = await query(
+        'SELECT id, amount, trx_id, provider_tag, sender_number, sms_timestamp FROM sms_history WHERE user_id = ? AND trx_id = ? AND is_used = 0 LIMIT 1',
+        [merchant.user_id, cleanTrx]
+      );
+    }
+
+    if (payments.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'TRANSACTION_NOT_FOUND',
+        message: 'No matching READY transaction found for the provided TrxID.'
+      });
+    }
+
+    const payment = payments[0];
+
+    // 3. Mark transaction as used/sold out for this merchant
+    await query(
+      'UPDATE sms_history SET is_used = 1, used_at = NOW(), used_by_merchant_id = ? WHERE id = ?',
+      [merchant.id, payment.id]
+    );
+    console.log(`[B2B CLAIM] Trx ${payment.trx_id} (৳${payment.amount}) marked SOLDOUT for merchant ID ${merchant.id}`);
+
+    // 4. Trigger Webhook callback to merchant's callback_url
+    const webhookPayload = {
+      trxId: payment.trx_id,
+      amount: payment.amount,
+      provider: payment.provider_tag,
+      sender: payment.sender_number,
+      smsTimestamp: payment.sms_timestamp,
+      merchantId: merchant.id,
+      status: 'verified',
+      timestamp: new Date()
+    };
+
+    if (merchant.callback_url) {
+      axios.post(merchant.callback_url, webhookPayload)
+        .then(response => {
+          console.log(`[B2B WEBHOOK] Webhook sent successfully to ${merchant.callback_url}, response status: ${response.status}`);
+        })
+        .catch(err => {
+          console.error(`[B2B WEBHOOK] Webhook failed for ${merchant.callback_url}:`, err.message);
+        });
+    }
+
+    // 5. Return success telemetry response
+    return res.json({
+      success: true,
+      message: 'Transaction claimed and locked successfully.',
+      data: {
+        trxId: payment.trx_id,
+        amount: payment.amount,
+        provider: payment.provider_tag,
+        sender: payment.sender_number,
+        smsTimestamp: payment.sms_timestamp,
+        claimedAt: new Date()
+      }
+    });
+
+  } catch (error) {
+    console.error('Error claiming transaction:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+// Background utility to trigger webhooks using axios
 function triggerWebhook(url, payload) {
-  // Safe mock fetch trigger, prevents crashing main threads on network errors
-  import('http').then((http) => {
-    // Standard Node.js fetch callback or axios
-    console.log(`[WEBHOOK] Posting verified payment telemetry to ${url}`);
-  }).catch(e => {
-    console.error('Webhook imports failed:', e);
-  });
+  console.log(`[WEBHOOK] Posting verified payment telemetry to ${url}`);
+  axios.post(url, payload)
+    .then(response => {
+      console.log(`[WEBHOOK] Callback success: status ${response.status}`);
+    })
+    .catch(err => {
+      console.error(`[WEBHOOK] Callback failed: ${err.message}`);
+    });
 }
 
 module.exports = {
   getCheckoutLayout,
-  verifyCheckoutPayment
+  verifyCheckoutPayment,
+  claimCheckTransaction
 };

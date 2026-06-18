@@ -194,4 +194,23 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
 
         _state.update { it.copy(displayList = filtered) }
     }
+
+    fun markTransactionSoldOut(transactionId: Int) {
+        viewModelScope.launch {
+            val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
+            if (token.isEmpty()) return@launch
+            repository.markTransactionSoldOut(token, transactionId).onSuccess {
+                _state.update { current ->
+                    val updatedRaw = current.rawList.map { item ->
+                        if (item.id == transactionId) item.copy(isUsed = 1) else item
+                    }
+                    val updatedDisplay = current.displayList.map { item ->
+                        if (item.id == transactionId) item.copy(isUsed = 1) else item
+                    }
+                    current.copy(rawList = updatedRaw, displayList = updatedDisplay)
+                }
+            }
+        }
+    }
 }
+

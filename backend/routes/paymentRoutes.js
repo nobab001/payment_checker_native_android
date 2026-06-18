@@ -8,5 +8,6 @@ const checkBillingStatus = require('../middleware/billing');
 router.post('/payment-sms-ingest', authenticateToken, checkBillingStatus, paymentController.paymentSmsIngest);
 router.get('/sms-history', authenticateToken, checkBillingStatus, paymentController.getSmsHistory);
 router.get('/dashboard/stats', authenticateToken, checkBillingStatus, paymentController.getDashboardStats);
+router.post('/sms-history/:id/soldout', authenticateToken, checkBillingStatus, paymentController.markTransactionSoldOut);
 
 module.exports = router;

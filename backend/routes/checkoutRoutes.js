@@ -5,5 +5,6 @@ const checkoutController = require('../controllers/checkoutController');
 // Public checkout endpoints (accessible by customers/shoppers without credentials)
 router.get('/checkout/:apiKey', checkoutController.getCheckoutLayout);
 router.post('/checkout/verify', checkoutController.verifyCheckoutPayment);
+router.post('/transactions/claim-check', checkoutController.claimCheckTransaction);
 
 module.exports = router;

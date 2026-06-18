@@ -167,11 +167,16 @@ class SmsReceiver(
             val sim1Enabled = prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, true)
             val sim2Enabled = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, true)
 
-            // Condition 1 & 2 (mandatory): SIM Slot filter
+            // Condition 1: SIM Slot filter (SIM Slot is active/enabled)
             if (simSlot != null) {
                 val isSimEnabled = if (simSlot == 1) sim1Enabled else sim2Enabled
                 if (!isSimEnabled) {
                     Log.d(TAG, "SMS ignored: SIM slot $simSlot is disabled in master settings.")
+                    return
+                }
+            } else {
+                if (!sim1Enabled && !sim2Enabled) {
+                    Log.d(TAG, "SMS ignored: both SIM slots are disabled.")
                     return
                 }
             }
@@ -186,96 +191,68 @@ class SmsReceiver(
 
             for (msg in messages) {
                 val sender    = msg.originatingAddress ?: continue
-                // IMMUTABILITY CONTRACT: body = msg.messageBody, assigned ONCE, NEVER modified.
-                // Any trim/normalize after this point breaks SHA-256 consistency with the server.
                 val body      = msg.messageBody       ?: continue
                 val timestamp = msg.timestampMillis
 
-                Log.d(TAG, "SMS received — From: $sender | SIM Slot: $simSlot | Length: ${body.length}")
+                Log.d(TAG, "Incoming SMS — From: $sender | SIM Slot: $simSlot | Length: ${body.length}")
 
                 val cleanSender = sender.trim().lowercase(Locale.US)
 
-                // Condition 2: Sender ID and SIM Slot must match
+                // Condition 2: Authorized Sender (bKash/Nagad) check
+                val isBkashOrNagad = cleanSender.contains("bkash") || cleanSender.contains("nagad")
+                if (!isBkashOrNagad) {
+                    Log.d(TAG, "SMS ignored: Sender $sender is not bKash or Nagad.")
+                    continue
+                }
+
+                // Condition 3: Admin matching keywords check
                 val matchingMethod = cachedMethods.firstOrNull { method ->
                     method.isEnabled == 1 &&
                     (simSlot == null || method.simSlot == simSlot) &&
+                    method.provider.trim().lowercase(Locale.US).let { it.contains("bkash") || it.contains("nagad") } &&
                     (
                         if (method.templateId == null) {
-                            // Custom Sender: exact case-insensitive check
-                            val provider = method.provider.trim().lowercase(Locale.US)
-                            cleanSender == provider
+                            cleanSender == method.provider.trim().lowercase(Locale.US)
                         } else {
-                            // Standard Template: senderId match
                             val targetSender = method.senderId?.trim()?.lowercase(Locale.US) ?: method.provider.lowercase(Locale.US)
-                            cleanSender.contains(targetSender) ||
-                            (targetSender == "rocket" && cleanSender == "16216")
+                            cleanSender.contains(targetSender)
                         }
                     )
                 }
 
                 if (matchingMethod == null) {
-                    Log.d(TAG, "Payment SMS ignored (Condition 1 & 2 not matched) — From: $sender | SIM Slot: $simSlot")
+                    Log.d(TAG, "Payment SMS ignored: No matching gateway config found for $sender")
                     continue
                 }
 
-                Log.i(TAG, "Matching gateway method found — ID: ${matchingMethod.id} | Provider: ${matchingMethod.provider}")
-
-                // Condition 3: Twin-mode logic
-                val isCustom = matchingMethod.templateId == null
-
-                if (!isCustom) {
-                    // Strict Mode (official admin template)
-                    val matchingKeyword = matchingMethod.matchingKeyword
-                    if (!matchingKeyword.isNullOrBlank()) {
-                        val keywords = matchingKeyword.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                        val hasAllKeywords = keywords.all { keyword ->
-                            body.contains(keyword, ignoreCase = true)
-                        }
-                        if (!hasAllKeywords) {
-                            Log.w(TAG, "Strict Mode matching keywords missing. Dropping SMS from $sender")
-                            continue
-                        }
+                val matchingKeyword = matchingMethod.matchingKeyword
+                if (!matchingKeyword.isNullOrBlank()) {
+                    val keywords = matchingKeyword.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    val hasAllKeywords = keywords.all { keyword ->
+                        body.contains(keyword, ignoreCase = true)
                     }
-
-                    val customRegex = matchingMethod.regexPattern
-                    val parsedPayment = if (!customRegex.isNullOrBlank()) {
-                        parseWithCustomRegex(body, customRegex, matchingMethod.provider, timestamp)
-                    } else {
-                        SmsParser.parseSms(sender, body, timestamp)
+                    if (!hasAllKeywords) {
+                        Log.w(TAG, "Matching keywords missing. Dropping SMS from $sender")
+                        continue
                     }
-
-                    if (parsedPayment != null) {
-                        val finalPayment = parsedPayment.copy(
-                            simSlot   = simSlot,
-                            simNumber = simNumber ?: matchingMethod.number
-                        )
-                        Log.i(TAG, "Payment SMS Strict Mode parsed — TrxID: ${finalPayment.trxId}")
-                        saveToOfflineQueueAndForward(context, finalPayment)
-                    } else {
-                        Log.w(TAG, "Strict Mode Regex parsing failed. Dropping SMS from $sender")
-                    }
-
-                } else {
-                    // Backup Mode (custom sender — all-pass)
-                    val bodyHash   = body.hashCode().toString(16)
-                    val dummyTrxId = "BKUP-${timestamp}-${bodyHash}".uppercase(Locale.US)
-
-                    val backupPayment = SmsParser.ParsedPayment(
-                        amount        = 0.0,
-                        trxId         = dummyTrxId,
-                        providerTag   = matchingMethod.provider,
-                        senderNumber  = sender,
-                        rawBody       = body,
-                        smsTimestamp  = timestamp,
-                        simSlot       = simSlot,
-                        simNumber     = simNumber ?: matchingMethod.number,
-                        isCustomSender = true,
-                        fullSms       = body
-                    )
-
-                    Log.i(TAG, "Backup Mode (All Pass) — TrxID: $dummyTrxId | Provider: ${matchingMethod.provider}")
-                    saveToOfflineQueueAndForward(context, backupPayment)
                 }
+
+                // Forward RAW body payload directly with zeroed amount and empty trxId
+                val finalPayment = SmsParser.ParsedPayment(
+                    amount         = 0.0,
+                    trxId          = "",
+                    providerTag    = matchingMethod.provider,
+                    senderNumber   = sender,
+                    rawBody        = body,
+                    smsTimestamp   = timestamp,
+                    simSlot        = simSlot,
+                    simNumber      = simNumber ?: matchingMethod.number,
+                    isCustomSender = matchingMethod.templateId == null,
+                    fullSms        = body
+                )
+
+                Log.i(TAG, "3 Conditions Met. Forwarding RAW SMS payload to queue. Provider: ${matchingMethod.provider}")
+                saveToOfflineQueueAndForward(context, finalPayment)
             }
 
         } catch (e: SecurityException) {
