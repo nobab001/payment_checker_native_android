@@ -32,8 +32,8 @@ async function parseRawSms(rawBody, senderHint = '') {
       ? template.matching_keyword.split(',').map(kw => kw.trim()).filter(Boolean)
       : [];
 
-    // Keyword pre-filter: সব keyword থাকলেই regex চালানো হবে
-    const keywordsMatch = matchKeywords.every(kw =>
+    // Keyword pre-filter: any of the keywords must exist (OR logic)
+    const keywordsMatch = matchKeywords.length === 0 || matchKeywords.some(kw =>
       cleanBody.toLowerCase().includes(kw.toLowerCase())
     );
     if (!keywordsMatch) continue;

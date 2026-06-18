@@ -205,7 +205,7 @@ class SmsReceiver(
                     continue
                 }
 
-                // Condition 3: Admin matching keywords check
+                // Condition 3: Check SIM slot, Sender ID, and keywords matching (using OR matching logic - any match)
                 val matchingMethod = cachedMethods.firstOrNull { method ->
                     method.isEnabled == 1 &&
                     (simSlot == null || method.simSlot == simSlot) &&
@@ -217,24 +217,18 @@ class SmsReceiver(
                             val targetSender = method.senderId?.trim()?.lowercase(Locale.US) ?: method.provider.lowercase(Locale.US)
                             cleanSender.contains(targetSender)
                         }
+                    ) &&
+                    (
+                        method.matchingKeyword.isNullOrBlank() ||
+                        method.matchingKeyword.split(",").map { it.trim() }.filter { it.isNotEmpty() }.any { keyword ->
+                            body.contains(keyword, ignoreCase = true)
+                        }
                     )
                 }
 
                 if (matchingMethod == null) {
-                    Log.d(TAG, "Payment SMS ignored: No matching gateway config found for $sender")
+                    Log.d(TAG, "Payment SMS ignored: No matching gateway config found for $sender or keywords mismatch")
                     continue
-                }
-
-                val matchingKeyword = matchingMethod.matchingKeyword
-                if (!matchingKeyword.isNullOrBlank()) {
-                    val keywords = matchingKeyword.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                    val hasAllKeywords = keywords.all { keyword ->
-                        body.contains(keyword, ignoreCase = true)
-                    }
-                    if (!hasAllKeywords) {
-                        Log.w(TAG, "Matching keywords missing. Dropping SMS from $sender")
-                        continue
-                    }
                 }
 
                 // Forward RAW body payload directly with zeroed amount and empty trxId

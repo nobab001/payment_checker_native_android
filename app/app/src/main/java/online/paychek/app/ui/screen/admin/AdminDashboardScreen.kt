@@ -740,8 +740,14 @@ private fun SmsTemplateEditDialog(
 ) {
     var name by remember { mutableStateOf(template.templateName) }
     var sender by remember { mutableStateOf(template.senderId) }
-    var keywords by remember { mutableStateOf(template.matchingKeyword) }
-    var regex by remember { mutableStateOf(template.regexPattern) }
+    var keywordsList by remember {
+        mutableStateOf(
+            template.matchingKeyword.split(",")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+        )
+    }
+    var newKeyword by remember { mutableStateOf("") }
     var isActive by remember { mutableIntStateOf(template.isActive) }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -757,23 +763,147 @@ private fun SmsTemplateEditDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(if (template.id == null) "নতুন এসএমএস টেমপ্লেট" else "টেমপ্লেট এডিট করুন", fontWeight = FontWeight.Bold, color = RoyalIndigo, fontSize = 16.sp)
+                Text(
+                    text = if (template.id == null) "নতুন এসএমএস টেমপ্লেট" else "টেমপ্লেট এডিট করুন",
+                    fontWeight = FontWeight.Bold,
+                    color = RoyalIndigo,
+                    fontSize = 16.sp
+                )
                 
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Template Name") })
-                OutlinedTextField(value = sender, onValueChange = { sender = it }, label = { Text("Sender ID") })
-                OutlinedTextField(value = keywords, onValueChange = { keywords = it }, label = { Text("Matching Keywords") })
-                OutlinedTextField(value = regex, onValueChange = { regex = it }, label = { Text("Regex Pattern") })
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("User View (Template Name)") },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = CardBackground,
+                        unfocusedContainerColor = CardBackground
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = sender,
+                    onValueChange = { sender = it },
+                    label = { Text("Sender ID") },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = CardBackground,
+                        unfocusedContainerColor = CardBackground
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Conditions", fontWeight = FontWeight.Bold, color = AccentTitle, fontSize = 14.sp)
                 
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newKeyword,
+                        onValueChange = { newKeyword = it },
+                        placeholder = { Text("নতুন কন্ডিশন লিখুন") },
+                        label = { Text("Add Condition") },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = CardBackground,
+                            unfocusedContainerColor = CardBackground
+                        ),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    IconButton(
+                        onClick = {
+                            if (newKeyword.trim().isNotEmpty()) {
+                                keywordsList = keywordsList + newKeyword.trim()
+                                newKeyword = ""
+                            }
+                        },
+                        modifier = Modifier
+                            .size(52.dp)
+                            .background(RoyalIndigo, RoundedCornerShape(12.dp))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Add Condition",
+                            tint = Color.White
+                        )
+                    }
+                }
+
+                if (keywordsList.isNotEmpty()) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                    ) {
+                        keywordsList.forEachIndexed { index, keyword ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                                    .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = keyword,
+                                    fontSize = 13.sp,
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                IconButton(
+                                    onClick = {
+                                        keywordsList = keywordsList.filterIndexed { idx, _ -> idx != index }
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Remove",
+                                        tint = StatusRed,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text("Active Status")
                     Switch(checked = isActive == 1, onCheckedChange = { isActive = if (it) 1 else 0 })
                 }
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
                     TextButton(onClick = onDismiss) { Text("বাতিল", color = TextSecondary) }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
-                        onClick = { onSave(template.copy(templateName = name, senderId = sender, matchingKeyword = keywords, regexPattern = regex, isActive = isActive)) },
+                        onClick = {
+                            val finalKeywords = keywordsList.joinToString(",")
+                            val finalRegex = template.regexPattern.ifBlank { "Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:?\\s*([A-Z0-9]{6,})" }
+                            onSave(
+                                template.copy(
+                                    templateName = name,
+                                    senderId = sender,
+                                    matchingKeyword = finalKeywords,
+                                    regexPattern = finalRegex,
+                                    isActive = isActive
+                                )
+                            )
+                        },
                         colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo)
                     ) { Text("সংরক্ষণ", color = Color.White) }
                 }
