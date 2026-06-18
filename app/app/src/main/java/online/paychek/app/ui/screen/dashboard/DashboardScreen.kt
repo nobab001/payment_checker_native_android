@@ -2,6 +2,9 @@ package online.paychek.app.ui.screen.dashboard
 
 import android.content.Intent
 import android.net.Uri
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -99,6 +102,20 @@ fun DashboardScreen(
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     var hasShownReminder by remember { mutableStateOf(false) }
     var showExpiryReminderDialog by remember { mutableStateOf(false) }
+
+    var showSmsPermissionRationaleDialog by remember { mutableStateOf(false) }
+
+    val smsPermissionsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions[Manifest.permission.RECEIVE_SMS] == true &&
+                      permissions[Manifest.permission.READ_SMS] == true
+        if (granted) {
+            viewModel.toggleSmsService(true)
+        } else {
+            showSmsPermissionRationaleDialog = true
+        }
+    }
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedProvider by remember { mutableStateOf<String?>(null) }
@@ -225,7 +242,25 @@ fun DashboardScreen(
                                         android.widget.Toast.LENGTH_LONG
                                     ).show()
                                 } else {
-                                    viewModel.toggleSmsService(true)
+                                    val hasReceiveSms = androidx.core.content.ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.RECEIVE_SMS
+                                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                    val hasReadSms = androidx.core.content.ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.READ_SMS
+                                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                                    if (hasReceiveSms && hasReadSms) {
+                                        viewModel.toggleSmsService(true)
+                                    } else {
+                                        smsPermissionsLauncher.launch(
+                                            arrayOf(
+                                                Manifest.permission.RECEIVE_SMS,
+                                                Manifest.permission.READ_SMS
+                                            )
+                                        )
+                                    }
                                 }
                             }
                         } else {
@@ -525,6 +560,45 @@ fun DashboardScreen(
                 }
             }
         }
+    }
+
+    if (showSmsPermissionRationaleDialog) {
+        AlertDialog(
+            onDismissRequest = { /* Non-dismissible */ },
+            title = {
+                Text(
+                    text = "SMS পারমিশন প্রয়োজন",
+                    fontWeight = FontWeight.Bold,
+                    color = TextWhite,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Text(
+                    text = "SMS পেমেন্ট মনিটর चालू করতে SMS পারমিশন দেওয়া আবশ্যক। অনুগ্রহ করে পারমিশন অ্যালাও করুন।",
+                    color = TextWhite,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSmsPermissionRationaleDialog = false
+                        smsPermissionsLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.RECEIVE_SMS,
+                                Manifest.permission.READ_SMS
+                            )
+                        )
+                    }
+                ) {
+                    Text("অনুমোদন দিন (Allow)", color = AccentCyan, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = DashCard,
+            shape = RoundedCornerShape(20.dp),
+            modifier = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Modifier else Modifier.border(1.dp, Color(0xFFE3E5E8), RoundedCornerShape(20.dp))
+        )
     }
 }
 }
