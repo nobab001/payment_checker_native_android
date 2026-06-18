@@ -15,6 +15,19 @@ interface GatewayApiService {
         @Header("Authorization") token: String
     ): Response<GatewayListResponse>
 
+    // ── টেমপ্লেট তালিকা লোড করা ───────────────────────────────────────────────
+    @GET("gateway/templates")
+    suspend fun getTemplates(
+        @Header("Authorization") token: String
+    ): Response<SmsTemplatesResponse>
+
+    // ── নতুন মেথড যোগ করা ──────────────────────────────────────────────────
+    @POST("gateway/methods")
+    suspend fun addGatewayMethod(
+        @Header("Authorization") token: String,
+        @Body request: AddGatewayMethodRequest
+    ): Response<AddGatewayMethodResponse>
+
     // ── Drag & Drop-এর পর Priority ক্রম সেভ করা ──────────────────────────────
     @PATCH("gateway/priority")
     suspend fun updatePriority(

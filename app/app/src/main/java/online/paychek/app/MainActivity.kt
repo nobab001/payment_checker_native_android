@@ -1,5 +1,6 @@
 package online.paychek.app
 
+import android.app.AlertDialog
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
@@ -14,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.scottyab.rootbeer.RootBeer
 import online.paychek.app.config.AppConfig
 import online.paychek.app.ui.screen.auth.pin.SecurityGateScreen
 import online.paychek.app.ui.screen.device.RemoteLockScreen
@@ -33,7 +35,39 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
+        // ─────────────────────────────────────────────────────────────────
+        // ROOT DETECTION — Layer 1: RootBeer
+        // সবার আগে চলে — Root পাওয়া গেলে App চলবে না।
+        //
+        // RootBeer checks:
+        //  • su binary presence (Magisk, SuperSU, etc.)
+        //  • Dangerous system properties (ro.debuggable, etc.)
+        //  • Test-keys build signature
+        //  • Known root app packages
+        //
+        // Future Layer 2 (optional): Play Integrity API
+        //   → isDeviceIntegrityMet() check যোগ করা যাবে independently
+        //   → Play Services dependency — তাই এখন optional রাখা হয়েছে
+        // ─────────────────────────────────────────────────────────────────
+        val rootBeer = RootBeer(this)
+        if (rootBeer.isRooted) {
+            AlertDialog.Builder(this)
+                .setTitle("নিরাপত্তা সতর্কতা")
+                .setMessage(
+                    "এই ডিভাইসে Root সনাক্ত হয়েছে।\n\n" +
+                    "নিরাপত্তার কারণে Paychek এই ডিভাইসে চলতে পারবে না। " +
+                    "Root করা ডিভাইসে আপনার HMAC Secret Key এবং পেমেন্ট " +
+                    "তথ্য নিরাপদ নাও থাকতে পারে।"
+                )
+                .setCancelable(false)
+                .setPositiveButton("বন্ধ করুন") { _, _ ->
+                    finishAffinity() // সব Activity বন্ধ করো
+                }
+                .show()
+            return // বাকি onCreate চালানো হবে না
+        }
+
         val sharedPrefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
         sharedPrefs.registerOnSharedPreferenceChangeListener(prefListener)
         isAppDeactivated = !sharedPrefs.getBoolean("pcu_is_app_active", true)

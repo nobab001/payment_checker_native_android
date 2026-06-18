@@ -16,6 +16,7 @@ import online.paychek.app.ui.screen.apicenter.CheckoutDesignerScreen
 import online.paychek.app.ui.screen.admin.AdminDashboardScreen
 import online.paychek.app.ui.screen.admin.BillingConfigScreen
 import online.paychek.app.ui.screen.profile.ProfileSettingsScreen
+import online.paychek.app.ui.screen.sync.SyncSettingsScreen
 import online.paychek.app.utils.SecurePreferences
 
 @Composable
@@ -102,6 +103,13 @@ fun MainNavigation() {
                 ProfileSettingsScreen(
                     onNavigateBack = { backStack.removeLastOrNull() },
                     onNavigateToSubscription = { backStack.add(NavKey.SubscriptionPackages) },
+                    modifier       = Modifier.fillMaxSize()
+                )
+            }
+
+            entry<NavKey.Sync> {
+                SyncSettingsScreen(
+                    onNavigateBack = { backStack.removeLastOrNull() },
                     modifier       = Modifier.fillMaxSize()
                 )
             }

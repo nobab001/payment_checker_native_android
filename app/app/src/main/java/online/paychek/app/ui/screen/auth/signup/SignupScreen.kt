@@ -33,6 +33,15 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.autofill.ContentType
 import online.paychek.app.utils.disableAutofill
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Fix 1: Hardcoded error colors — always visible on both light and dark mode.
+// background = #FFEBEE (light) / #3D1F1F (dark)
+// text       = #C62828 (dark red, high contrast on both backgrounds)
+// ─────────────────────────────────────────────────────────────────────────────
+private val ErrorContainerLight = Color(0xFFFFEBEE)
+private val ErrorContainerDark  = Color(0xFF3D1F1F)
+private val ErrorTextColor      = Color(0xFFC62828) // গাঢ় লাল — visible on both backgrounds
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SignupScreen(
@@ -47,10 +56,16 @@ fun SignupScreen(
     val focusManager = LocalFocusManager.current
     val context = androidx.compose.ui.platform.LocalContext.current
 
+    // Fix 4: Detect login type from contact passed into this screen
+    // contact is the verified identifier from OTP — email or phone
+    val isEmailLogin = remember(contact) { contact.contains("@") }
+
     // Initialize verified credentials from login/OTP
     LaunchedEffect(contact, token) {
         viewModel.initData(contact, token)
     }
+
+    val isDark = MaterialTheme.colorScheme.background == Color(0xFF0B0E14)
 
     Box(
         modifier = modifier
@@ -86,176 +101,197 @@ fun SignupScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Error Message
+            // ── Fix 1: Error Message — always readable ────────────────────
             uiState.errorMessage?.let { error ->
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Color(0xFF3D1F1F) else Color(0xFFFFEBEE)),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isDark) ErrorContainerDark else ErrorContainerLight
+                    ),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
                 ) {
-                    Text(
-                        text = error,
-                        color = StatusRed,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(12.dp),
-                        textAlign = TextAlign.Center
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        androidx.compose.material3.Icon(
+                            imageVector        = Icons.Default.Lock,
+                            contentDescription = null,
+                            tint               = ErrorTextColor,
+                            modifier           = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text       = error,
+                            color      = ErrorTextColor,  // #C62828 — গাঢ় লাল, সর্বদা দৃশ্যমান
+                            fontSize   = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 18.sp,
+                            modifier   = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
 
-            // 1. Full Name Field
+            // ── Field 1: Full Name — Fix 2: maxLength=50, Bangla placeholder ──
             OutlinedTextField(
-                value = uiState.name,
-                onValueChange = { viewModel.onNameChanged(it) },
-                placeholder = { Text("পূর্ণ নাম (Full Name)") },
+                value       = uiState.name,
+                onValueChange = { if (it.length <= 50) viewModel.onNameChanged(it) },
+                label       = { Text("পূর্ণ নাম") },
+                placeholder = { Text("আপনার পূর্ণ নাম") },  // Fix 2: Bangla placeholder
                 leadingIcon = {
                     Icon(
-                        imageVector = Icons.Default.Person,
+                        imageVector    = Icons.Default.Person,
                         contentDescription = "Name Icon",
-                        tint = RoyalIndigo
+                        tint           = RoyalIndigo
                     )
+                },
+                supportingText = {
+                    // Show character count when user is typing (> 30 chars)
+                    if (uiState.name.length > 30) {
+                        Text(
+                            text  = "${uiState.name.length}/50",
+                            color = if (uiState.name.length >= 50) ErrorTextColor
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp
+                        )
+                    }
                 },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Text,
-                    imeAction = ImeAction.Next
+                    imeAction    = ImeAction.Next
                 ),
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
-                ),
-                modifier = Modifier
+                shape      = RoundedCornerShape(12.dp),
+                colors     = signupFieldColors(),
+                modifier   = Modifier
                     .fillMaxWidth()
                     .semantics { contentType = ContentType.PersonFullName }
             )
 
-            // 2. Mobile Phone (Read-Only if prefilled)
-            OutlinedTextField(
-                value = uiState.phone ?: "",
-                onValueChange = { viewModel.onPhoneChanged(it) },
-                placeholder = { Text("মোবাইল নম্বর") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.PhoneAndroid,
-                        contentDescription = "Phone Icon",
-                        tint = if (uiState.isPhonePreFilled) Color.Gray else RoyalIndigo
-                    )
-                },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Phone,
-                    imeAction = ImeAction.Next
-                ),
-                singleLine = true,
-                readOnly = uiState.isPhonePreFilled,
-                enabled = !uiState.isPhonePreFilled,
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics { contentType = ContentType.PhoneNumber }
-            )
+            // ── Fix 4: Smart Field — Phone or Email depending on login type ──
+            // isEmailLogin=true  → logged in via email → phone field (mandatory)
+            // isEmailLogin=false → logged in via phone → email field (optional)
 
-            // 3. Email (Read-Only if prefilled)
-            OutlinedTextField(
-                value = uiState.email ?: "",
-                onValueChange = { viewModel.onEmailChanged(it) },
-                placeholder = { Text("ইমেইল ঠিকানা") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Email,
-                        contentDescription = "Email Icon",
-                        tint = if (uiState.isEmailPreFilled) Color.Gray else RoyalIndigo
-                    )
-                },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Email,
-                    imeAction = ImeAction.Next
-                ),
-                singleLine = true,
-                readOnly = uiState.isEmailPreFilled,
-                enabled = !uiState.isEmailPreFilled,
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics { contentType = ContentType.EmailAddress }
-            )
+            if (isEmailLogin) {
+                // Phone field — mandatory when email login
+                OutlinedTextField(
+                    value       = uiState.phone ?: "",
+                    onValueChange = { viewModel.onPhoneChanged(it) },
+                    label       = { Text("মোবাইল নম্বর") },
+                    placeholder = { Text("01XXXXXXXXX") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector    = Icons.Default.PhoneAndroid,
+                            contentDescription = "Phone Icon",
+                            tint           = if (uiState.isPhonePreFilled) Color.Gray else RoyalIndigo
+                        )
+                    },
+                    supportingText = {
+                        Text(
+                            text     = "বাধ্যতামূলক — Gmail দিয়ে অ্যাকাউন্ট খোলার জন্য",
+                            fontSize = 11.sp,
+                            color    = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Phone,
+                        imeAction    = ImeAction.Next
+                    ),
+                    singleLine = true,
+                    readOnly   = uiState.isPhonePreFilled,
+                    enabled    = !uiState.isPhonePreFilled,
+                    shape      = RoundedCornerShape(12.dp),
+                    colors     = signupFieldColors(),
+                    // Fix 3: Autofill বন্ধ — phone autofill enabled, email suggestion বন্ধ
+                    modifier   = Modifier
+                        .fillMaxWidth()
+                        .semantics { contentType = ContentType.PhoneNumber }
+                )
+            } else {
+                // Email field — optional when phone login
+                OutlinedTextField(
+                    value       = uiState.email ?: "",
+                    onValueChange = { viewModel.onEmailChanged(it) },
+                    label       = { Text("জিমেইল এড্রেস") },
+                    placeholder = { Text("example@gmail.com") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector    = Icons.Default.Email,
+                            contentDescription = "Email Icon",
+                            tint           = if (uiState.isEmailPreFilled) Color.Gray else RoyalIndigo
+                        )
+                    },
+                    supportingText = {
+                        Text(
+                            text     = "ঐচ্ছিক — পরেও যোগ করা যাবে",
+                            fontSize = 11.sp,
+                            color    = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Email,
+                        imeAction    = ImeAction.Next
+                    ),
+                    singleLine = true,
+                    readOnly   = uiState.isEmailPreFilled,
+                    enabled    = !uiState.isEmailPreFilled,
+                    shape      = RoundedCornerShape(12.dp),
+                    colors     = signupFieldColors(),
+                    modifier   = Modifier
+                        .fillMaxWidth()
+                        .semantics { contentType = ContentType.EmailAddress }
+                )
+            }
 
-            // 4. PIN Field (4-6 digits, numeric)
+            // ── Field: PIN (4–6 digits) ───────────────────────────────────
             OutlinedTextField(
-                value = uiState.pin,
+                value       = uiState.pin,
                 onValueChange = { viewModel.onPinChanged(it) },
+                label       = { Text("নিরাপত্তা পিন") },
                 placeholder = { Text("৪-৬ ডিজিটের নিরাপত্তা পিন (PIN)") },
                 leadingIcon = {
                     Icon(
-                        imageVector = Icons.Default.Lock,
+                        imageVector    = Icons.Default.Lock,
                         contentDescription = "PIN Icon",
-                        tint = RoyalIndigo
+                        tint           = RoyalIndigo
                     )
                 },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.NumberPassword,
-                    imeAction = ImeAction.Next
+                    imeAction    = ImeAction.Next
                 ),
                 visualTransformation = PasswordVisualTransformation(),
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
-                ),
-                modifier = Modifier
+                shape      = RoundedCornerShape(12.dp),
+                colors     = signupFieldColors(),
+                modifier   = Modifier
                     .fillMaxWidth()
                     .semantics { contentDescription = "Security PIN" }
                     .disableAutofill()
             )
 
-            // 5. Confirm PIN Field (6-digits, numeric)
+            // ── Field: Confirm PIN ────────────────────────────────────────
             OutlinedTextField(
-                value = uiState.confirmPin,
+                value       = uiState.confirmPin,
                 onValueChange = { viewModel.onConfirmPinChanged(it) },
-                placeholder = { Text("নিরাপত্তা পিনটি পুনরায় লিখুন") },
+                label       = { Text("পিন নিশ্চিত করুন") },
+                placeholder = { Text("নিরাপত্তা পিনটি পুনরায় লিখুন") },
                 leadingIcon = {
                     Icon(
-                        imageVector = Icons.Default.Lock,
+                        imageVector    = Icons.Default.Lock,
                         contentDescription = "Confirm PIN Icon",
-                        tint = RoyalIndigo
+                        tint           = RoyalIndigo
                     )
                 },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.NumberPassword,
-                    imeAction = ImeAction.Done
+                    imeAction    = ImeAction.Done
                 ),
                 keyboardActions = KeyboardActions(
                     onDone = {
@@ -265,18 +301,9 @@ fun SignupScreen(
                 ),
                 visualTransformation = PasswordVisualTransformation(),
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
-                ),
-                modifier = Modifier
+                shape      = RoundedCornerShape(12.dp),
+                colors     = signupFieldColors(),
+                modifier   = Modifier
                     .fillMaxWidth()
                     .semantics { contentDescription = "Confirm PIN" }
                     .disableAutofill()
@@ -284,10 +311,10 @@ fun SignupScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Submit Button
+            // ── Submit Button ─────────────────────────────────────────────
             if (uiState.isLoading) {
                 CircularProgressIndicator(
-                    color = RoyalIndigo,
+                    color    = RoyalIndigo,
                     modifier = Modifier.padding(8.dp)
                 )
             } else {
@@ -296,17 +323,17 @@ fun SignupScreen(
                         focusManager.clearFocus()
                         viewModel.submitSignup(context, onSignupComplete)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
-                    shape = RoundedCornerShape(12.dp),
+                    colors  = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
+                    shape   = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp)
                 ) {
                     Text(
-                        text = "অ্যাকাউন্ট তৈরি করুন",
-                        fontSize = 16.sp,
+                        text       = "অ্যাকাউন্ট তৈরি করুন",
+                        fontSize   = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color      = Color.White
                     )
                 }
             }
@@ -314,3 +341,20 @@ fun SignupScreen(
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared field colors — extracted to avoid repetition
+// ─────────────────────────────────────────────────────────────────────────────
+@Composable
+private fun signupFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor      = MaterialTheme.colorScheme.surface,
+    unfocusedContainerColor    = MaterialTheme.colorScheme.surface,
+    focusedBorderColor         = MaterialTheme.colorScheme.primary,
+    unfocusedBorderColor       = MaterialTheme.colorScheme.outlineVariant,
+    focusedTextColor           = MaterialTheme.colorScheme.onSurface,
+    unfocusedTextColor         = MaterialTheme.colorScheme.onSurface,
+    focusedPlaceholderColor    = MaterialTheme.colorScheme.onSurfaceVariant,
+    unfocusedPlaceholderColor  = MaterialTheme.colorScheme.onSurfaceVariant,
+    focusedLabelColor          = RoyalIndigo,
+    unfocusedLabelColor        = MaterialTheme.colorScheme.onSurfaceVariant
+)

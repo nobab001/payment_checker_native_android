@@ -137,38 +137,71 @@ fun SecurityGateScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.offset(x = shakeOffset.value.dp)
             ) {
+                // ── v2.0.0: Tappable Overwrite Cells ──────────────────────
+                // প্রতিটি ঘর tappable — click করলে cursor সেখানে যায়
+                // ─────────────────────────────────────────────────────────────
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    for (i in 0 until 6) {
-                        val active = i < uiState.pin.length
-                        val dotColor = when {
-                            uiState.errorMessage != null -> Color(0xFFEF4444)
-                            active -> Color(0xFF38BDF8)
-                            else -> Color(0xFF334155)
+                    for (i in 0 until SecurityGateViewModel.PIN_LENGTH) {
+                        val cellChar    = uiState.cells.getOrNull(i)
+                        val isCursor    = uiState.cursorIndex == i && !uiState.isFull && !uiState.isLoading
+                        val isFilled    = cellChar != null
+                        val hasError    = uiState.errorMessage != null
+
+                        val borderColor = when {
+                            hasError  -> Color(0xFFEF4444)
+                            isCursor  -> Color(0xFF38BDF8)
+                            isFilled  -> Color(0xFF38BDF8).copy(alpha = 0.5f)
+                            else      -> Color(0xFF334155)
                         }
-                        val dotSize = if (active) 16.dp else 12.dp
-                        val animatedSize by animateDpAsState(
-                            targetValue = dotSize,
+                        val bgColor = when {
+                            hasError  -> Color(0xFF1E0A0A)
+                            isCursor  -> Color(0xFF0F2233)
+                            isFilled  -> Color(0xFF1E2A3A)
+                            else      -> Color(0xFF1E293B)
+                        }
+
+                        val animatedBorder by animateDpAsState(
+                            targetValue = if (isCursor) 2.dp else 1.5.dp,
                             animationSpec = spring(
                                 dampingRatio = Spring.DampingRatioMediumBouncy,
-                                stiffness = Spring.StiffnessLow
+                                stiffness    = Spring.StiffnessMedium
                             ),
-                            label = "DotSize"
+                            label = "CellBorder"
                         )
 
                         Box(
                             modifier = Modifier
-                                .size(24.dp),
+                                .size(width = 38.dp, height = 46.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(bgColor)
+                                .border(animatedBorder, borderColor, RoundedCornerShape(8.dp))
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = ripple(bounded = true),
+                                    onClick = { viewModel.moveCursorTo(i) }
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(animatedSize)
-                                    .clip(CircleShape)
-                                    .background(dotColor)
-                            )
+                            if (isFilled) {
+                                Text(
+                                    text       = cellChar!!.toString(),
+                                    fontSize   = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color      = if (hasError) Color(0xFFEF4444) else Color.White
+                                )
+                            } else if (isCursor) {
+                                // cursor blink — ফাঁকা ঘরে underline দেখাও
+                                Box(
+                                    modifier = Modifier
+                                        .width(16.dp)
+                                        .height(2.dp)
+                                        .background(Color(0xFF38BDF8))
+                                        .align(Alignment.BottomCenter)
+                                )
+                            }
                         }
                     }
                 }
@@ -223,7 +256,7 @@ fun SecurityGateScreen(
                             ) {
                                 when (item) {
                                     "biometric" -> {
-                                        if (uiState.pin.length >= 4) {
+                                        if (uiState.isFull) {
                                             IconButton(
                                                 onClick = { viewModel.verifyPin(context, onUnlockSuccess) },
                                                 modifier = Modifier
@@ -289,7 +322,7 @@ fun SecurityGateScreen(
                                                     interactionSource = interactionSource,
                                                     indication = ripple(bounded = true, radius = 32.dp),
                                                     onClick = {
-                                                        viewModel.appendDigit(item, context, onUnlockSuccess)
+                                                        viewModel.overwriteDigitAtCursor(item.first(), context, onUnlockSuccess)
                                                     }
                                                 ),
                                             contentAlignment = Alignment.Center

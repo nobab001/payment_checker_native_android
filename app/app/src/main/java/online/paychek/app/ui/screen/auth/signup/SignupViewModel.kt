@@ -148,7 +148,22 @@ class SignupViewModel : ViewModel() {
                     _uiState.update { it.copy(isLoading = false, signupSuccess = true) }
                     onSuccess()
                 } else {
-                    val errorMsg = response.message() ?: "প্রোফাইল সম্পূর্ণ করতে ব্যর্থ হয়েছে।"
+                    // errorBody থেকে সার্ভারের বাংলা message পড়ো
+                    val errorMsg = try {
+                        val rawBody = response.errorBody()?.string()
+                        if (!rawBody.isNullOrBlank()) {
+                            val gson = com.google.gson.Gson()
+                            @Suppress("UNCHECKED_CAST")
+                            val map = gson.fromJson(rawBody, Map::class.java) as? Map<String, Any>
+                            map?.get("message") as? String
+                                ?: map?.get("error") as? String
+                                ?: "প্রোফাইল সম্পূর্ণ করতে ব্যর্থ হয়েছে। (${response.code()})"
+                        } else {
+                            "প্রোফাইল সম্পূর্ণ করতে ব্যর্থ হয়েছে। (${response.code()})"
+                        }
+                    } catch (ex: Exception) {
+                        "প্রোফাইল সম্পূর্ণ করতে ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।"
+                    }
                     _uiState.update { it.copy(isLoading = false, errorMessage = errorMsg) }
                 }
             } catch (e: Exception) {

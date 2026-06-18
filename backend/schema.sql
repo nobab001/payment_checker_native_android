@@ -18,19 +18,35 @@ USE `paychek_online_v2`;
 -- Core user accounts — stores profile, PIN hash, balance, role
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS `users` (
-  `id`               INT           NOT NULL AUTO_INCREMENT,
-  `name`             VARCHAR(255)  NOT NULL DEFAULT '',
-  `phone`            VARCHAR(20)   DEFAULT NULL COMMENT 'BD format: 01XXXXXXXXX',
-  `email`            VARCHAR(255)  DEFAULT NULL,
-  `pin`              VARCHAR(255)  NOT NULL DEFAULT '' COMMENT 'bcrypt hashed 6-digit PIN',
-  `balance`          DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-  `blocked`          TINYINT(1)    NOT NULL DEFAULT 0,
-  `role`             VARCHAR(20)   NOT NULL DEFAULT 'user' COMMENT 'user | admin',
-  `profile_complete` TINYINT(1)    NOT NULL DEFAULT 0 COMMENT '0=new signup pending, 1=active',
-  `sms_enabled`      TINYINT(1)    NOT NULL DEFAULT 1 COMMENT 'Admin toggle for SMS tracking',
-  `gmail_enabled`    TINYINT(1)    NOT NULL DEFAULT 0 COMMENT 'Admin toggle for Gmail tracking',
-  `created_at`       TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at`       TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `id`                  INT           NOT NULL AUTO_INCREMENT,
+  `name`                VARCHAR(255)  NOT NULL DEFAULT '',
+  `phone`               VARCHAR(20)   DEFAULT NULL COMMENT 'BD format: 01XXXXXXXXX',
+  `email`               VARCHAR(255)  DEFAULT NULL,
+  `pin`                 VARCHAR(255)  NOT NULL DEFAULT '' COMMENT 'bcrypt hashed 6-digit PIN',
+  `balance`             DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `blocked`             TINYINT(1)    NOT NULL DEFAULT 0,
+  `role`                VARCHAR(20)   NOT NULL DEFAULT 'user' COMMENT 'user | admin',
+  `profile_complete`    TINYINT(1)    NOT NULL DEFAULT 0 COMMENT '0=new signup pending, 1=active',
+  `sms_enabled`         TINYINT(1)    NOT NULL DEFAULT 1 COMMENT 'Admin toggle for SMS tracking',
+  `gmail_enabled`       TINYINT(1)    NOT NULL DEFAULT 0 COMMENT 'Admin toggle for Gmail tracking',
+
+  -- -------------------------------------------------------------------------
+  -- HMAC SECRET KEY SYSTEM (v2.0.0+)
+  -- secretKey          : per-user 64-char hex key (HMAC-SHA256 secret)
+  -- secretKeyVersion   : version counter — rotation track করার জন্য
+  -- secretKeyCreatedAt : key প্রথম তৈরির সময় — audit/debugging এর জন্য
+  --
+  -- Key Rotation Policy:
+  --   ১. নতুন key কখনো client-side generate হয় না।
+  --   ২. শুধুমাত্র server বা admin explicitly rotate করতে পারে।
+  --   ৩. প্রতি rotation এ secretKeyVersion++ এবং secretKeyCreatedAt update হয়।
+  -- -------------------------------------------------------------------------
+  `secretKey`           VARCHAR(128)  DEFAULT NULL COMMENT 'Per-user HMAC-SHA256 secret (64-char hex)',
+  `secretKeyVersion`    INT UNSIGNED  NOT NULL DEFAULT 1 COMMENT 'Key version counter for rotation tracking',
+  `secretKeyCreatedAt`  TIMESTAMP     NULL DEFAULT NULL COMMENT 'Timestamp of key generation or last rotation',
+
+  `created_at`          TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`          TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_phone` (`phone`),
   UNIQUE KEY `uniq_email` (`email`),
@@ -154,11 +170,20 @@ CREATE TABLE IF NOT EXISTS `sms_history` (
 
   -- -----------------------------------------------------------------------
   -- DEDUPLICATION KEY
-  -- Formula: sms_timestamp + '|' + sender_number + '|' + SHA2(full_sms, 256)
+  -- Formula: sms_timestamp + '|' + sender_number + '|' + SHA256(full_sms)
   -- UNIQUE constraint prevents same SMS being inserted twice
-  -- App uses ConflictAlgorithm.IGNORE equivalent on INSERT
   -- -----------------------------------------------------------------------
   `dedupe_key`      VARCHAR(512)  NOT NULL DEFAULT '' COMMENT 'Deduplication composite key',
+
+  -- -----------------------------------------------------------------------
+  -- RAW SMS INTEGRITY HASH (v2.1.0+)
+  -- raw_sms_sha256: SHA256(rawSmsBody) — server-side computed
+  -- উদ্দেশ্য ৩টি:
+  --   ১. Fast duplicate detection (HMAC verify-এর পাশাপাশি)
+  --   ২. Debugging — একই raw SMS পুনরায় এলে সহজে শনাক্ত
+  --   ৩. HMAC Verification-এর পাশাপাশি অতিরিক্ত SMS Integrity যাচাই
+  -- -----------------------------------------------------------------------
+  `raw_sms_sha256`  VARCHAR(64)   DEFAULT NULL COMMENT 'SHA256(rawSmsBody) — server-side integrity hash',
 
   -- Sync & Usage Status
   `is_synced`       TINYINT(1)    NOT NULL DEFAULT 0 COMMENT '0=pending upload, 1=sent to server',
@@ -170,15 +195,16 @@ CREATE TABLE IF NOT EXISTS `sms_history` (
 
   PRIMARY KEY (`id`),
 
-  -- Unique TrxID per user (prevents duplicate transactions from same user)
+  -- Unique deduplication key per user
   UNIQUE KEY `uniq_dedupe` (`user_id`, `dedupe_key`(255)),
 
-  -- Fast lookup indexes (blueprint: idx_parsed_user_time, idx_parsed_trx, idx_parsed_verify_lookup)
+  -- Fast lookup indexes
   INDEX `idx_user_time`         (`user_id`, `sms_timestamp`),
   INDEX `idx_user_trx`          (`user_id`, `trx_id`),
   INDEX `idx_provider`          (`user_id`, `provider_tag`),
   INDEX `idx_verify_lookup`     (`user_id`, `trx_id`, `amount`, `is_used`),
   INDEX `idx_device_sync`       (`device_id`, `is_synced`),
+  INDEX `idx_raw_sms_hash`      (`user_id`, `raw_sms_sha256`),
 
   CONSTRAINT `fk_sms_history_user`
     FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
@@ -355,17 +381,71 @@ CREATE TABLE IF NOT EXISTS `email_accounts` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
+-- TABLE 11: sms_parse_failures
+-- HMAC verify সফল কিন্তু parseRawSms() fail হওয়া SMS-এর audit log
+-- "Never silently discard verified SMS" — Audit Policy v2.1.0
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS `sms_parse_failures` (
+  `id`               INT           NOT NULL AUTO_INCREMENT,
+  `user_id`          INT           NOT NULL,
+  `device_id`        VARCHAR(255)  NOT NULL DEFAULT '',
+
+  -- Raw SMS data (HMAC already verified at this point)
+  `raw_body`         TEXT          NOT NULL COMMENT 'Original SMS text — HMAC verified',
+  `raw_body_hash`    VARCHAR(64)   NOT NULL COMMENT 'SHA256(rawBody) — for dedup and lookup',
+  `hmac_signature`   VARCHAR(128)  NOT NULL COMMENT 'Client HMAC — verified, kept for audit',
+
+  -- Parse failure details
+  `parse_error`      VARCHAR(512)  DEFAULT NULL COMMENT 'Failure reason from parseRawSms()',
+  `sms_timestamp_ms` BIGINT        DEFAULT NULL COMMENT 'Original SMS epoch ms timestamp',
+
+  -- Resolution tracking
+  `is_resolved`      TINYINT(1)    NOT NULL DEFAULT 0 COMMENT '0=pending, 1=template added/resolved',
+  `resolved_at`      TIMESTAMP     NULL DEFAULT NULL,
+  `admin_note`       TEXT          DEFAULT NULL COMMENT 'Admin note on resolution',
+
+  `created_at`       TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (`id`),
+  INDEX `idx_parse_fail_user`    (`user_id`, `created_at`),
+  INDEX `idx_parse_fail_hash`    (`raw_body_hash`),
+  INDEX `idx_parse_fail_unresolved` (`is_resolved`, `created_at`),
+  CONSTRAINT `fk_parse_fail_user`
+    FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================================================
 -- END OF SCHEMA
 -- Tables created:
---   1. users               — User profiles
+--   1. users               — User profiles + HMAC secretKey management
 --   2. otps                — OTP verification codes
 --   3. user_credentials    — Multi phone/email per account
 --   4. registered_devices  — Device tracking + Trial Lock
---   5. sms_history         — Parsed payment records (Unique TrxID)
+--   5. sms_history         — Parsed payment records + raw_sms_sha256 hash
 --   6. sms_templates       — Admin regex parsing rules
 --   6.5. checkout_view_templates — Checkout gateway display text mappings
 --   7. gateway_layouts     — Merchant checkout API sites
 --   8. global_config       — App-wide feature flags
 --   9. sms_settings        — SMS gateway provider config
 --   10. email_accounts     — SMTP email configuration details
+--   11. sms_parse_failures — HMAC-verified but unparseable SMS audit log
 -- =============================================================================
+
+-- =============================================================================
+-- PRODUCTION MIGRATION PATCH v2.1.0
+-- বিদ্যমান database-এ নতুন column ও table যোগ করার জন্য।
+-- নতুন installation-এ CREATE TABLE IF NOT EXISTS থেকে আপনাআপনি হবে।
+-- Production server-এ এই section manually run করুন (একবারই)।
+-- =============================================================================
+
+-- users table: HMAC key management columns
+ALTER TABLE `users`
+  ADD COLUMN IF NOT EXISTS `secretKey`          VARCHAR(128) DEFAULT NULL       COMMENT 'Per-user HMAC-SHA256 secret (64-char hex)',
+  ADD COLUMN IF NOT EXISTS `secretKeyVersion`   INT UNSIGNED NOT NULL DEFAULT 1  COMMENT 'Key version counter for rotation tracking',
+  ADD COLUMN IF NOT EXISTS `secretKeyCreatedAt` TIMESTAMP    NULL DEFAULT NULL   COMMENT 'Timestamp of key generation or last rotation';
+
+-- sms_history table: raw SMS integrity hash
+ALTER TABLE `sms_history`
+  ADD COLUMN IF NOT EXISTS `raw_sms_sha256` VARCHAR(64) DEFAULT NULL COMMENT 'SHA256(rawSmsBody) — server-side integrity hash';
+
+CREATE INDEX IF NOT EXISTS `idx_raw_sms_hash` ON `sms_history` (`user_id`, `raw_sms_sha256`);

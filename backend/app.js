@@ -125,6 +125,51 @@ app.listen(PORT, async () => {
       console.log('[DB] Added avatar column to users table.');
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // SCHEMA MIGRATION v2.0.0 — Per-User HMAC Secret Key
+    // users.secretKey: প্রতিটি ইউজারের জন্য unique HMAC secret (device bind এ generate হয়)
+    // ─────────────────────────────────────────────────────────────────────────
+    const secretKeyCol = await query("SHOW COLUMNS FROM `users` LIKE 'secretKey'");
+    if (secretKeyCol.length === 0) {
+      await query("ALTER TABLE `users` ADD COLUMN `secretKey` VARCHAR(128) DEFAULT NULL AFTER `fcm_token`");
+      console.log('[DB] ✅ Added secretKey column to users table.');
+    }
+
+    const secretKeyVersionCol = await query("SHOW COLUMNS FROM `users` LIKE 'secretKeyVersion'");
+    if (secretKeyVersionCol.length === 0) {
+      await query("ALTER TABLE `users` ADD COLUMN `secretKeyVersion` INT UNSIGNED NOT NULL DEFAULT 1 AFTER `secretKey`");
+      console.log('[DB] ✅ Added secretKeyVersion column to users table.');
+    }
+
+    const secretKeyCreatedAtCol = await query("SHOW COLUMNS FROM `users` LIKE 'secretKeyCreatedAt'");
+    if (secretKeyCreatedAtCol.length === 0) {
+      await query("ALTER TABLE `users` ADD COLUMN `secretKeyCreatedAt` TIMESTAMP NULL DEFAULT NULL AFTER `secretKeyVersion`");
+      console.log('[DB] ✅ Added secretKeyCreatedAt column to users table.');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SCHEMA MIGRATION v2.0.0 — sms_history trx_id unique index enforcement
+    // trx_id এ পৃথক unique index দেওয়া যাতে duplicate TrxID সম্পূর্ণরূপে ব্লক হয়
+    // ─────────────────────────────────────────────────────────────────────────
+    const smsHistoryIndexes = await query("SHOW INDEX FROM `sms_history` WHERE Key_name = 'idx_trx_id_unique'");
+    if (smsHistoryIndexes.length === 0) {
+      try {
+        await query("ALTER TABLE `sms_history` ADD UNIQUE INDEX `idx_trx_id_unique` (`trx_id`)");
+        console.log('[DB] ✅ Added UNIQUE INDEX idx_trx_id_unique on sms_history.trx_id.');
+      } catch (indexErr) {
+        // Duplicate records হলে index add fail হতে পারে — warn করো, break করো না
+        console.warn('[DB] ⚠️  Could not add trx_id UNIQUE INDEX (duplicate data may exist):', indexErr.message);
+      }
+    }
+
+    const smsUserIdIndexes = await query("SHOW INDEX FROM `sms_history` WHERE Key_name = 'idx_user_id_sms'");
+    if (smsUserIdIndexes.length === 0) {
+      await query("ALTER TABLE `sms_history` ADD INDEX `idx_user_id_sms` (`user_id`)");
+      console.log('[DB] ✅ Added INDEX idx_user_id_sms on sms_history.user_id.');
+    }
+
+    console.log('[DB] ✅ v2.0.0 Security Schema Migration Complete!');
+
     // Sync primary phone & email from users to user_credentials
     await query(`
       INSERT INTO user_credentials (user_id, type, value, verified_at)
@@ -292,7 +337,53 @@ app.listen(PORT, async () => {
     // Default existing active/parent devices to is_approved = 1 and device_role = 'owner'
     await query("UPDATE `registered_devices` SET `is_approved` = 1 WHERE `is_parent` = 1 AND `is_approved` = 0");
     await query("UPDATE `registered_devices` SET `status` = 'active', `is_approved` = 1, `device_role` = 'owner' WHERE `is_parent` = 1 AND (`device_role` = 'pending' OR `device_role` IS NULL)");
-    await query("UPDATE `registered_devices` SET `is_approved` = 1, `device_role` = 'owner' WHERE `status` = 'active' AND (`device_role` = 'pending' OR `device_role` IS NULL)");
+    // Seed default SMS templates (1 to 8) if missing
+    const defaultSmsTemplates = [
+      { id: 1, name: 'bKash Personal', sender: 'bKash', kw: 'You have received,Tk.,Ref:', regex: 'You have received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})' },
+      { id: 2, name: 'Nagad Personal', sender: 'NAGAD', kw: 'received cash in Tk,TrxID:', regex: 'received cash in Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})' },
+      { id: 3, name: 'Rocket Personal', sender: '16216', kw: 'received Tk,TrxID:', regex: 'received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})' },
+      { id: 4, name: 'Upay Personal', sender: 'upay', kw: 'received Tk,TrxID', regex: 'received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})' },
+      { id: 5, name: 'bKash Agent', sender: 'bKash', kw: 'Cash In,Tk.,Ref:', regex: 'Cash In Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})' },
+      { id: 6, name: 'Nagad Agent', sender: 'NAGAD', kw: 'Cash in received,Tk.,TrxID:', regex: 'Cash in received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})' },
+      { id: 7, name: 'Rocket Agent', sender: '16216', kw: 'Cash In received,Tk.,TrxID:', regex: 'Cash In received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})' },
+      { id: 8, name: 'Upay Agent', sender: 'upay', kw: 'Cash In received,Tk.,TrxID', regex: 'Cash In received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})' }
+    ];
+
+    for (const t of defaultSmsTemplates) {
+      await query(`
+        INSERT INTO sms_templates (id, template_name, sender_id, matching_keyword, regex_pattern, is_official, is_active)
+        VALUES (?, ?, ?, ?, ?, 1, 1)
+        ON DUPLICATE KEY UPDATE 
+          template_name = VALUES(template_name),
+          sender_id = VALUES(sender_id),
+          matching_keyword = VALUES(matching_keyword),
+          regex_pattern = VALUES(regex_pattern)
+      `, [t.id, t.name, t.sender, t.kw, t.regex]);
+    }
+    console.log('[DB] Seeding official SMS templates complete.');
+
+    // Seed default checkout view templates
+    const defaultCheckoutViews = [
+      { id: 1, single: 'নিচের বিকাশ পার্সোনাল নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় বিকাশ নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' },
+      { id: 2, single: 'নিচের নগদ নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় নগদ নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' },
+      { id: 3, single: 'নিচের রকেট নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় রকেট নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' },
+      { id: 4, single: 'নিচের উপায় নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় উপায় নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' },
+      { id: 5, single: 'নিচের বিকাশ এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় বিকাশ এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' },
+      { id: 6, single: 'নিচের নগদ এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় নগদ এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' },
+      { id: 7, single: 'নিচের রকেট এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় রকেট এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' },
+      { id: 8, single: 'নিচের উপায় এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় উপায় এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' }
+    ];
+
+    for (const cv of defaultCheckoutViews) {
+      await query(`
+        INSERT INTO checkout_view_templates (sms_template_id, single_number_instruction, multiple_number_instruction)
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE 
+          single_number_instruction = VALUES(single_number_instruction),
+          multiple_number_instruction = VALUES(multiple_number_instruction)
+      `, [cv.id, cv.single, cv.multi]);
+    }
+    console.log('[DB] Seeding checkout view templates complete.');
 
     console.log('[DB] ✅ Parent-Child Hub & RBAC Schema Migration Complete!');
 

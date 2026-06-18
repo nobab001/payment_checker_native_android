@@ -18,6 +18,8 @@ import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.data.remote.dto.PaymentIngestRequest
 import online.paychek.app.services.sms.SmsReceiver
+import online.paychek.app.services.sync.SyncWorker
+import online.paychek.app.utils.NetworkConnectivityObserver
 import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.utils.SmsParser
 import org.json.JSONArray
@@ -65,6 +67,9 @@ class SmsMonitorService : Service() {
         super.onCreate()
         Log.i(TAG, "Foreground service onCreate")
         createNotificationChannel()
+        // Schedule WorkManager fallback worker (15-min periodic recovery sync).
+        // Uses KEEP policy — safe to call multiple times, only one instance runs.
+        SyncWorker.schedule(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -98,6 +103,18 @@ class SmsMonitorService : Service() {
                 syncGatewayMethods()
                 delay(30_000L) // every 30 seconds
             }
+        }
+
+        // ── v2.0.0: Room-based pending queue sync on connectivity restore ──
+        serviceScope.launch {
+            NetworkConnectivityObserver(this@SmsMonitorService)
+                .observe()
+                .collect { isConnected ->
+                    if (isConnected) {
+                        Log.i(TAG, "[Connectivity] অনলাইন — Room SMS queue sync করা হচ্ছে")
+                        SmsReceiver.syncPendingQueue(this@SmsMonitorService)
+                    }
+                }
         }
 
         return START_STICKY // সিস্টেম kill করলে নিজে পুনরায় চালু হবে
@@ -175,7 +192,9 @@ class SmsMonitorService : Service() {
                 smsTimestamp   = parsed.smsTimestamp,
                 rawBody        = parsed.rawBody,
                 simSlot        = parsed.simSlot,
-                simNumber      = parsed.simNumber
+                simNumber      = parsed.simNumber,
+                isCustomSender = parsed.isCustomSender,
+                fullSms        = parsed.fullSms
             )
 
             Log.i(TAG, "Upload চেষ্টা — TrxID: ${parsed.trxId} | SIM: ${parsed.simSlot}")
@@ -339,6 +358,8 @@ class SmsMonitorService : Service() {
         put("smsTimestamp", p.smsTimestamp)
         put("simSlot",      p.simSlot ?: JSONObject.NULL)
         put("simNumber",    p.simNumber ?: JSONObject.NULL)
+        put("isCustomSender", p.isCustomSender)
+        put("fullSms",      p.fullSms ?: JSONObject.NULL)
     }
 
     private fun jsonToParsed(json: JSONObject): SmsParser.ParsedPayment? = try {
@@ -350,7 +371,9 @@ class SmsMonitorService : Service() {
             rawBody       = json.getString("rawBody"),
             smsTimestamp  = json.getLong("smsTimestamp"),
             simSlot       = if (json.isNull("simSlot")) null else json.getInt("simSlot"),
-            simNumber     = if (json.isNull("simNumber")) null else json.getString("simNumber")
+            simNumber     = if (json.isNull("simNumber")) null else json.getString("simNumber"),
+            isCustomSender = if (json.has("isCustomSender")) json.getBoolean("isCustomSender") else false,
+            fullSms       = if (json.has("fullSms") && !json.isNull("fullSms")) json.getString("fullSms") else null
         )
     } catch (e: Exception) {
         Log.e(TAG, "JSON parse error: ${e.message}")
@@ -440,5 +463,8 @@ class SmsMonitorService : Service() {
         releaseWakeLock()
         unregisterSmsReceiver()
         serviceScope.cancel()
+        // WorkManager survives service death by design.
+        // Only cancel if the user explicitly stopped the service.
+        SyncWorker.cancel(this)
     }
 }

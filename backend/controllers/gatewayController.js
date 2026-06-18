@@ -147,4 +147,56 @@ async function updateMethod(req, res) {
   }
 }
 
-module.exports = { getGatewayMethods, updatePriority, toggleMethod, updateMethod };
+// =============================================================================
+// GET /api/gateway/templates
+// সব সক্রিয় টেমপ্লেট লোড করা
+// =============================================================================
+async function getTemplates(req, res) {
+  try {
+    const rows = await query(
+      `SELECT id, template_name, sender_id, matching_keyword, regex_pattern, is_official, is_active
+         FROM sms_templates
+        WHERE is_active = 1`
+    );
+    return res.json({ success: true, templates: rows });
+  } catch (error) {
+    console.error('[GATEWAY] getTemplates error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+// =============================================================================
+// POST /api/gateway/methods
+// নতুন গেটওয়ে মেথড যোগ করা
+// =============================================================================
+async function addGatewayMethod(req, res) {
+  try {
+    const userId = req.user.userId;
+    const { sim_slot, provider, template_id, number } = req.body;
+
+    if (!sim_slot || !provider) {
+      return res.status(400).json({ error: 'sim_slot এবং provider আবশ্যক' });
+    }
+
+    // priority সেট করার জন্য সর্বোচ্চ priority বের করা
+    const maxPriorityResult = await query(
+      'SELECT COALESCE(MAX(priority), 0) AS max_p FROM gateway_methods WHERE user_id = ?',
+      [userId]
+    );
+    const nextPriority = maxPriorityResult[0].max_p + 1;
+
+    const result = await query(
+      `INSERT INTO gateway_methods (user_id, template_id, sim_slot, provider, number, priority, is_enabled)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [userId, template_id || null, sim_slot, provider, number || null, nextPriority]
+    );
+
+    console.log(`[GATEWAY] Gateway method added | User: ${userId} | Slot: ${sim_slot} | Provider: ${provider}`);
+    return res.json({ success: true, id: result.insertId, message: 'মেথড সফলভাবে যোগ করা হয়েছে।' });
+  } catch (error) {
+    console.error('[GATEWAY] addGatewayMethod error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+module.exports = { getGatewayMethods, updatePriority, toggleMethod, updateMethod, getTemplates, addGatewayMethod };

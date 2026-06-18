@@ -15,6 +15,10 @@ import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.data.remote.dto.*
 import online.paychek.app.utils.SecurePreferences
+import online.paychek.app.utils.NetworkConnectivityObserver
+import online.paychek.app.utils.DeviceIdHelper
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 
 // =============================================================================
 // UI State
@@ -49,7 +53,16 @@ data class DeviceUiState(
     val rolePinInput: String                  = "",
     val rolePinError: String?                 = null,
     val deviceForRoleToggle: ChildDeviceDto?  = null,
-    val targetRoleToggleValue: String         = ""
+    val targetRoleToggleValue: String         = "",
+    
+    // Redesign Device Settings UI fields
+    val templates: List<SmsTemplateDto>       = emptyList(),
+    val sim1Number: String                    = "",
+    val sim2Number: String                    = "",
+    val isTemplatesLoading: Boolean           = false,
+    val showCustomSenderDialogSlot: Int?      = null,
+    val showMoreTemplatesDialogSlot: Int?     = null,
+    val searchQuery: String                   = ""
 )
 
 // =============================================================================
@@ -59,6 +72,14 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
     private val api   = RetrofitClient.gatewayApiService
     private val prefs = application.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+    private val connectivityObserver = NetworkConnectivityObserver(application)
+
+    val isNetworkAvailable = connectivityObserver.observe()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = connectivityObserver.isNetworkAvailable()
+        )
 
     private val _state = MutableStateFlow(DeviceUiState())
     val state: StateFlow<DeviceUiState> = _state.asStateFlow()
@@ -68,8 +89,43 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     init {
         val sim1 = prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, true)
         val sim2 = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, true)
-        _state.update { it.copy(sim1Enabled = sim1, sim2Enabled = sim2, isLoading = true) }
-        loadGatewayMethods()
+        
+        // Load cached methods to show offline/instantly
+        val cachedJson = prefs.getString(AppConfig.KEY_GATEWAY_METHODS_CACHE, null)
+        val cachedList = if (!cachedJson.isNullOrEmpty()) {
+            try {
+                val type = object : com.google.gson.reflect.TypeToken<List<GatewayMethod>>() {}.type
+                com.google.gson.Gson().fromJson<List<GatewayMethod>>(cachedJson, type)
+            } catch (e: Exception) {
+                emptyList()
+            }
+        } else emptyList()
+
+        val cachedSim1Num = cachedList.find { it.simSlot == 1 && !it.number.isNullOrEmpty() }?.number ?: ""
+        val cachedSim2Num = cachedList.find { it.simSlot == 2 && !it.number.isNullOrEmpty() }?.number ?: ""
+
+        _state.update { 
+            it.copy(
+                sim1Enabled = sim1, 
+                sim2Enabled = sim2, 
+                methods = cachedList,
+                sim1Number = cachedSim1Num,
+                sim2Number = cachedSim2Num,
+                isLoading = cachedList.isEmpty()
+            ) 
+        }
+
+        viewModelScope.launch {
+            isNetworkAvailable.collect { available ->
+                if (available) {
+                    loadGatewayMethods()
+                    loadTemplates()
+                    if (_state.value.selectedSubTab == 1) {
+                        loadChildDevices()
+                    }
+                }
+            }
+        }
     }
 
     private fun saveMethodsToCache(methods: List<GatewayMethod>) {
@@ -90,8 +146,18 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 .onSuccess { res ->
                     if (res.isSuccessful && res.body()?.success == true) {
                         val sorted = (res.body()!!.data).sortedBy { it.priority }
-                        _state.update { it.copy(methods = sorted, isLoading = false) }
+                        val sim1Num = sorted.find { it.simSlot == 1 && !it.number.isNullOrEmpty() }?.number ?: _state.value.sim1Number
+                        val sim2Num = sorted.find { it.simSlot == 2 && !it.number.isNullOrEmpty() }?.number ?: _state.value.sim2Number
+                        _state.update { 
+                            it.copy(
+                                methods = sorted, 
+                                sim1Number = sim1Num,
+                                sim2Number = sim2Num,
+                                isLoading = false
+                            ) 
+                        }
                         saveMethodsToCache(sorted)
+                        validateAndSyncSimToggles()
                     } else {
                         setError("মেথড লোড ব্যর্থ হয়েছে (${res.code()})")
                     }
@@ -152,11 +218,14 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
             saveMethodsToCache(updated)
             current.copy(methods = updated)
         }
+        validateAndSyncSimToggles()
 
         viewModelScope.launch {
             val token = getToken() ?: return@launch
             runCatching {
                 api.toggleMethod("Bearer $token", method.id, ToggleRequest(newEnabled))
+            }.onSuccess {
+                validateAndSyncSimToggles()
             }.onFailure {
                 _state.update { current ->
                     val updated = current.methods.map {
@@ -165,6 +234,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                     saveMethodsToCache(updated)
                     current.copy(methods = updated)
                 }
+                validateAndSyncSimToggles()
             }
         }
     }
@@ -451,6 +521,203 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                     _state.update { it.copy(isSaving = false, rolePinError = "নেটওয়ার্ক সমস্যা: ${exception.message}") }
                 }
         }
+    }
+
+    fun autoDetectSimNumbers() {
+        viewModelScope.launch {
+            val context = getApplication<Application>().applicationContext
+            val (sim1Num, sim2Num) = DeviceIdHelper.getSimNumbers(context)
+            if (!sim1Num.isNullOrBlank() && _state.value.sim1Number.isBlank()) {
+                onSimNumberChanged(1, sim1Num)
+            }
+            if (!sim2Num.isNullOrBlank() && _state.value.sim2Number.isBlank()) {
+                onSimNumberChanged(2, sim2Num)
+            }
+        }
+    }
+
+    private var sim1NumberDebounceJob: Job? = null
+    private var sim2NumberDebounceJob: Job? = null
+
+    fun onSimNumberChanged(simSlot: Int, num: String) {
+        val cleanNum = num.take(11).filter { it.isDigit() }
+        _state.update {
+            if (simSlot == 1) it.copy(sim1Number = cleanNum)
+            else it.copy(sim2Number = cleanNum)
+        }
+
+        if (simSlot == 1) {
+            sim1NumberDebounceJob?.cancel()
+            sim1NumberDebounceJob = viewModelScope.launch {
+                delay(1500)
+                saveSimNumberToServer(1, cleanNum)
+            }
+        } else {
+            sim2NumberDebounceJob?.cancel()
+            sim2NumberDebounceJob = viewModelScope.launch {
+                delay(1500)
+                saveSimNumberToServer(2, cleanNum)
+            }
+        }
+    }
+
+    private suspend fun saveSimNumberToServer(simSlot: Int, number: String) {
+        val token = getToken() ?: return
+        val methodsToUpdate = _state.value.methods.filter { it.simSlot == simSlot }
+        
+        methodsToUpdate.forEach { method ->
+            runCatching {
+                api.updateMethod(
+                    "Bearer $token",
+                    method.id,
+                    UpdateMethodRequest(number = number, displayName = method.displayName)
+                )
+            }.onSuccess { res ->
+                if (res.isSuccessful) {
+                    _state.update { current ->
+                        val updated = current.methods.map {
+                            if (it.id == method.id) it.copy(number = number) else it
+                        }
+                        saveMethodsToCache(updated)
+                        current.copy(methods = updated)
+                    }
+                }
+            }
+        }
+        validateAndSyncSimToggles()
+    }
+
+    fun validateAndSyncSimToggles() {
+        val stateVal = _state.value
+        val sim1Num = stateVal.sim1Number
+        val sim2Num = stateVal.sim2Number
+        val methods = stateVal.methods
+
+        val hasActiveMethodSim1 = methods.any { it.simSlot == 1 && it.isEnabled == 1 }
+        val hasActiveMethodSim2 = methods.any { it.simSlot == 2 && it.isEnabled == 1 }
+
+        val isSim1Valid = sim1Num.length == 11 && hasActiveMethodSim1
+        val isSim2Valid = sim2Num.length == 11 && hasActiveMethodSim2
+
+        val newSim1Enabled = if (isSim1Valid) stateVal.sim1Enabled else false
+        val newSim2Enabled = if (isSim2Valid) stateVal.sim2Enabled else false
+
+        if (newSim1Enabled != stateVal.sim1Enabled || newSim2Enabled != stateVal.sim2Enabled) {
+            prefs.edit().apply {
+                putBoolean(AppConfig.KEY_SIM1_ENABLED, newSim1Enabled)
+                putBoolean(AppConfig.KEY_SIM2_ENABLED, newSim2Enabled)
+                apply()
+            }
+            _state.update {
+                it.copy(
+                    sim1Enabled = newSim1Enabled,
+                    sim2Enabled = newSim2Enabled
+                )
+            }
+        }
+    }
+
+    fun loadTemplates() {
+        viewModelScope.launch {
+            _state.update { it.copy(isTemplatesLoading = true) }
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+            runCatching { api.getTemplates("Bearer $token") }
+                .onSuccess { res ->
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        val list = res.body()!!.templates
+                        _state.update { it.copy(templates = list, isTemplatesLoading = false) }
+                    } else {
+                        _state.update { it.copy(isTemplatesLoading = false) }
+                    }
+                }
+                .onFailure {
+                    _state.update { it.copy(isTemplatesLoading = false) }
+                }
+        }
+    }
+
+    fun toggleTemplate(simSlot: Int, template: SmsTemplateDto) {
+        val existingMethod = _state.value.methods.find { it.simSlot == simSlot && it.templateId == template.id }
+        if (existingMethod != null) {
+            toggleMethod(existingMethod)
+        } else {
+            viewModelScope.launch {
+                _state.update { it.copy(isSaving = true) }
+                val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+                val num = if (simSlot == 1) _state.value.sim1Number else _state.value.sim2Number
+                val request = AddGatewayMethodRequest(
+                    simSlot = simSlot,
+                    provider = template.templateName,
+                    templateId = template.id,
+                    number = num.ifEmpty { null }
+                )
+
+                runCatching { api.addGatewayMethod("Bearer $token", request) }
+                    .onSuccess { res ->
+                        _state.update { it.copy(isSaving = false) }
+                        if (res.isSuccessful && res.body()?.success == true) {
+                            loadGatewayMethods()
+                        } else {
+                            setError("মেথড যোগ করতে ব্যর্থ হয়েছে (${res.code()})")
+                        }
+                    }
+                    .onFailure {
+                        _state.update { it.copy(isSaving = false) }
+                        setError("নেটওয়ার্ক সমস্যা: ${it.message}")
+                    }
+            }
+        }
+    }
+
+    fun addCustomSender(simSlot: Int, senderName: String) {
+        if (senderName.trim().isEmpty()) return
+        if (senderName.length > 20) return
+        
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+            val num = if (simSlot == 1) _state.value.sim1Number else _state.value.sim2Number
+            val request = AddGatewayMethodRequest(
+                simSlot = simSlot,
+                provider = senderName.trim(),
+                templateId = null,
+                number = num.ifEmpty { null }
+            )
+
+            runCatching { api.addGatewayMethod("Bearer $token", request) }
+                .onSuccess { res ->
+                    _state.update { it.copy(isSaving = false) }
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        loadGatewayMethods()
+                    } else {
+                        setError("কাস্টম সেন্ডার যোগ করতে ব্যর্থ হয়েছে (${res.code()})")
+                    }
+                }
+                .onFailure {
+                    _state.update { it.copy(isSaving = false) }
+                    setError("নেটওয়ার্ক সমস্যা: ${it.message}")
+                }
+        }
+    }
+
+    fun showCustomSenderDialog(simSlot: Int) {
+        _state.update { it.copy(showCustomSenderDialogSlot = simSlot) }
+    }
+
+    fun dismissCustomSenderDialog() {
+        _state.update { it.copy(showCustomSenderDialogSlot = null) }
+    }
+
+    fun showMoreTemplatesDialog(simSlot: Int) {
+        _state.update { it.copy(showMoreTemplatesDialogSlot = simSlot, searchQuery = "") }
+    }
+
+    fun dismissMoreTemplatesDialog() {
+        _state.update { it.copy(showMoreTemplatesDialogSlot = null, searchQuery = "") }
+    }
+
+    fun onSearchQueryChanged(query: String) {
+        _state.update { it.copy(searchQuery = query) }
     }
 
     private fun setError(msg: String) {

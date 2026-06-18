@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
@@ -198,8 +199,23 @@ fun DashboardScreen(
                     isServiceActive = screenState.isServiceActive,
                     onServiceToggle = { enable ->
                         if (enable) {
+                            val prefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
+                            val sim1Enabled = prefs.getBoolean(online.paychek.app.config.AppConfig.KEY_SIM1_ENABLED, true)
+                            val sim2Enabled = prefs.getBoolean(online.paychek.app.config.AppConfig.KEY_SIM2_ENABLED, true)
+                            val isAnySimActive = sim1Enabled || sim2Enabled
+
                             if (!isPaid) {
-                                onNavigateToSubscription()
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "SMS মনিটর চালু করতে প্যাকেজ কিনুন",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            } else if (!isAnySimActive) {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "ডিভাইস সেটিংসে গিয়ে SIM সক্রিয় করুন",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
                             } else {
                                 val simStatus = online.paychek.app.utils.DeviceIdHelper.getSimSlotIds(context)
                                 if (simStatus == "no_sims" || simStatus == "permission_denied") {
@@ -1399,6 +1415,7 @@ private fun CustomDateRangePickerDialog(
     val calendarToday = Calendar.getInstance()
     var startDate by remember { mutableStateOf<Long?>(null) }
     var endDate by remember { mutableStateOf<Long?>(null) }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = 6)
 
     fun handleDateClick(timeMs: Long) {
         if (startDate == null) {
@@ -1445,7 +1462,7 @@ private fun CustomDateRangePickerDialog(
     ) {
         Surface(
             modifier = Modifier
-                .width(screenWidth() * 0.92f)
+                .fillMaxWidth(0.95f)
                 .wrapContentHeight(),
             shape = RoundedCornerShape(16.dp),
             color = Color.White
@@ -1453,20 +1470,22 @@ private fun CustomDateRangePickerDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(horizontal = 16.dp, vertical = 20.dp)
             ) {
                 // ২. Header (dialog এর উপরে)
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 4.dp)
+                        .padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 12.dp)
                 ) {
                     Text(
                         text = startFormatted,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF0F172A)
+                        color = Color(0xFF0F172A),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = "থেকে",
@@ -1477,7 +1496,9 @@ private fun CustomDateRangePickerDialog(
                         text = endFormatted,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF0F172A)
+                        color = Color(0xFF0F172A),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
@@ -1486,36 +1507,17 @@ private fun CustomDateRangePickerDialog(
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
 
-                // ৩. Calendar grid
-                // Weekdays header row (stays fixed at the top)
-                val weekdays = listOf("S", "M", "T", "W", "T", "F", "S")
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    weekdays.forEach { day ->
-                        Box(
-                            modifier = Modifier.weight(1f),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = day,
-                                fontSize = 11.sp,
-                                color = Color.Gray
-                            )
-                        }
-                    }
-                }
+                val screenWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp
+                val cellHeight = (screenWidthDp * 0.95f - 32.dp) / 7
+                val calendarHeight = cellHeight * 4.5f + 48.dp
 
                 // Vertical scrollable months list
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(208.dp), // Height to make exactly 4.5 rows visible!
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                        .height(calendarHeight),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(monthsList) { monthYearPair ->
                         val (month, year) = monthYearPair
@@ -1523,14 +1525,41 @@ private fun CustomDateRangePickerDialog(
                             // Month Title
                             Text(
                                 text = "${monthNames[month]} $year",
-                                fontSize = 14.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF0F172A),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 8.dp),
+                                    .padding(top = 2.dp, bottom = 1.dp),
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Weekdays Row inside each month
+                            val weekdays = listOf("S", "M", "T", "W", "T", "F", "S")
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 1.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                weekdays.forEach { day ->
+                                    Box(
+                                        modifier = Modifier.weight(1f),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = day,
+                                            fontSize = 11.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(2.dp))
 
                             val calendar = Calendar.getInstance().apply {
                                 set(Calendar.YEAR, year)
@@ -1549,7 +1578,7 @@ private fun CustomDateRangePickerDialog(
                             val rowCount = (totalCells + 6) / 7
 
                             Column(
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                                verticalArrangement = Arrangement.spacedBy(0.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 for (row in 0 until rowCount) {
@@ -1561,7 +1590,7 @@ private fun CustomDateRangePickerDialog(
                                         for (col in 0 until 7) {
                                             val cellIndex = row * 7 + col
                                             if (cellIndex < prefixEmptyCells || cellIndex >= totalCells) {
-                                                Box(modifier = Modifier.weight(1f).aspectRatio(1f))
+                                                Box(modifier = Modifier.weight(1f).height(34.dp))
                                             } else {
                                                 val dayOfMonth = cellIndex - prefixEmptyCells + 1
                                                 val dayCalendar = Calendar.getInstance().apply {
@@ -1586,7 +1615,7 @@ private fun CustomDateRangePickerDialog(
                                                 Box(
                                                     modifier = Modifier
                                                         .weight(1f)
-                                                        .aspectRatio(1f)
+                                                        .height(34.dp)
                                                         .clickable { handleDateClick(dayMs) },
                                                     contentAlignment = Alignment.Center
                                                 ) {
@@ -1629,7 +1658,7 @@ private fun CustomDateRangePickerDialog(
 
                                                     Text(
                                                         text = dayOfMonth.toString(),
-                                                        fontSize = 13.sp,
+                                                        fontSize = 12.sp,
                                                         fontWeight = if (isSelectedStart || isSelectedEnd) FontWeight.Bold else FontWeight.Normal,
                                                         color = when {
                                                             isSelectedStart || isSelectedEnd -> Color(0xFF0F172A)
@@ -1651,7 +1680,7 @@ private fun CustomDateRangePickerDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 16.dp, bottom = 4.dp),
+                        .padding(top = 20.dp, bottom = 4.dp),
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {

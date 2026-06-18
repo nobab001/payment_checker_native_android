@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 
 import androidx.compose.foundation.BorderStroke
+import online.paychek.app.utils.adaptivePadding
+import online.paychek.app.utils.adaptiveTextSize
 
 // =============================================================================
 // Design Tokens (matches Premium Dark theme)
@@ -72,14 +74,14 @@ fun ApiIntegrationScreen(
         containerColor = ApiBg,
         topBar = {
             TopAppBar(
-                modifier = Modifier.height(56.dp),
+                modifier = Modifier.height(adaptivePadding(48.dp, 56.dp)),
                 windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
                 title = {
                     Text(
                         "API ইন্টিগ্রেশন ড্যাশবোর্ড",
                         color = TextWhite,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
+                        fontSize = adaptiveTextSize(14.sp, 16.sp)
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = ApiCard),
@@ -109,7 +111,7 @@ fun ApiIntegrationScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .verticalScroll(scrollState)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = adaptivePadding(12.dp, 16.dp), vertical = adaptivePadding(10.dp, 12.dp)),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
 
@@ -126,7 +128,7 @@ fun ApiIntegrationScreen(
                         .fillMaxWidth()
                         .background(GradientBtn)
                         .clickable { onNavigateToCheckout() }
-                        .padding(horizontal = 20.dp, vertical = 16.dp)
+                        .padding(horizontal = adaptivePadding(16.dp, 20.dp), vertical = adaptivePadding(12.dp, 16.dp))
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -150,7 +152,7 @@ fun ApiIntegrationScreen(
                                 Text(
                                     "Check Out Page",
                                     color = Color.White,
-                                    fontSize = 15.sp,
+                                    fontSize = adaptiveTextSize(13.sp, 15.sp),
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
@@ -173,7 +175,7 @@ fun ApiIntegrationScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(adaptivePadding(12.dp, 16.dp)),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(
@@ -181,7 +183,7 @@ fun ApiIntegrationScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(Icons.Default.VpnKey, null, tint = AccentCyan, modifier = Modifier.size(20.dp))
-                        Text("ডেভেলপার এপিআই ক্রেডেনশিয়াল", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("ডেভেলপার এপিআই ক্রেডেনশিয়াল", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = adaptiveTextSize(12.sp, 14.sp))
                     }
 
                     HorizontalDivider(color = ApiCardAlt)
@@ -281,7 +283,7 @@ fun ApiIntegrationScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(adaptivePadding(12.dp, 16.dp)),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(
@@ -289,7 +291,7 @@ fun ApiIntegrationScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(Icons.Default.SettingsInputComponent, null, tint = AccentGreen, modifier = Modifier.size(20.dp))
-                        Text("ওয়েবহুক কনফিগারেশন (Webhook)", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("ওয়েবহুক কনফিগারেশন (Webhook)", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = adaptiveTextSize(12.sp, 14.sp))
                     }
 
                     HorizontalDivider(color = ApiCardAlt)
@@ -350,7 +352,7 @@ fun ApiIntegrationScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(adaptivePadding(12.dp, 16.dp)),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(
@@ -358,7 +360,7 @@ fun ApiIntegrationScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(Icons.Default.BarChart, null, tint = AccentCyan, modifier = Modifier.size(20.dp))
-                        Text("এপিআই ব্যবহারের স্ট্যাটস (আজ)", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("এপিআই ব্যবহারের স্ট্যাটস (আজ)", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = adaptiveTextSize(12.sp, 14.sp))
                     }
 
                     HorizontalDivider(color = ApiCardAlt)
@@ -369,15 +371,15 @@ fun ApiIntegrationScreen(
                     ) {
                         Column(horizontalAlignment = Alignment.Start) {
                             Text("মোট এপিআই কল", color = TextMuted, fontSize = 11.sp)
-                            Text("২,৫৮০ বার", color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text("২,৫৮০ বার", color = TextWhite, fontSize = adaptiveTextSize(14.sp, 16.sp), fontWeight = FontWeight.Bold)
                         }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("সফলতার হার", color = TextMuted, fontSize = 11.sp)
-                            Text("৯৯.৮%", color = AccentGreen, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text("৯৯.৮%", color = AccentGreen, fontSize = adaptiveTextSize(14.sp, 16.sp), fontWeight = FontWeight.Bold)
                         }
                         Column(horizontalAlignment = Alignment.End) {
                             Text("গড় রেসপন্স টাইম", color = TextMuted, fontSize = 11.sp)
-                            Text("১৪৫ ms", color = TextWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text("১৪৫ ms", color = TextWhite, fontSize = adaptiveTextSize(14.sp, 16.sp), fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -391,7 +393,7 @@ fun ApiIntegrationScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(adaptivePadding(12.dp, 16.dp)),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(
@@ -399,7 +401,7 @@ fun ApiIntegrationScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(Icons.Default.Code, null, tint = AccentCyan, modifier = Modifier.size(20.dp))
-                        Text("কুইক ইন্টিগ্রেশন (Node.js SDK)", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("কুইক ইন্টিগ্রেশন (Node.js SDK)", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = adaptiveTextSize(12.sp, 14.sp))
                     }
 
                     HorizontalDivider(color = ApiCardAlt)
@@ -409,7 +411,7 @@ fun ApiIntegrationScreen(
                             .fillMaxWidth()
                             .background(ApiBg, RoundedCornerShape(8.dp))
                             .border(1.dp, ApiCardAlt, RoundedCornerShape(8.dp))
-                            .padding(10.dp)
+                            .padding(adaptivePadding(8.dp, 10.dp))
                     ) {
                         Text(
                             text = """

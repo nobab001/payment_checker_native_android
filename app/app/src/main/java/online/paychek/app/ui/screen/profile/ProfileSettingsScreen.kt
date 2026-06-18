@@ -72,6 +72,8 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.zIndex
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import online.paychek.app.utils.adaptivePadding
+import online.paychek.app.utils.adaptiveTextSize
 
 
 // =============================================================================
@@ -237,7 +239,7 @@ fun ProfileSettingsScreen(
                 modifier            = Modifier
                     .fillMaxSize()
                     .verticalScroll(scroll),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(adaptivePadding(12.dp, 16.dp))
             ) {
                 Spacer(Modifier.height(4.dp))
 
@@ -251,13 +253,13 @@ fun ProfileSettingsScreen(
                     onAvatarClick    = { imagePickerLauncher.launch("image/*") },
                     onRenewClick     = onNavigateToSubscription,
                     isRestricted     = isRestricted,
-                    modifier         = Modifier.padding(horizontal = 16.dp)
+                    modifier         = Modifier.padding(horizontal = adaptivePadding(12.dp, 16.dp))
                 )
 
                 // ── Section 2: Linked Credentials ─────────────────────────
                 ProfileCredentialsCard(
                     isRestricted   = isRestricted,
-                    modifier       = Modifier.padding(horizontal = 16.dp)
+                    modifier       = Modifier.padding(horizontal = adaptivePadding(12.dp, 16.dp))
                 )
 
                 // ── Section 3: Security PIN ────────────────────────────────
@@ -265,7 +267,7 @@ fun ProfileSettingsScreen(
                     onChangePin    = { viewModel.openChangePinDialog() },
                     onForgotPin    = { viewModel.openResetPinDialog() },
                     isRestricted   = isRestricted,
-                    modifier       = Modifier.padding(horizontal = 16.dp)
+                    modifier       = Modifier.padding(horizontal = adaptivePadding(12.dp, 16.dp))
                 )
 
                 // Theme is now managed solely via the one-tap top bar icon
@@ -350,7 +352,7 @@ private fun ProfileTopBar(
                 "প্রোফাইল সেটিংস",
                 color      = TextW,
                 fontWeight = FontWeight.Bold,
-                fontSize   = 16.sp
+                fontSize   = adaptiveTextSize(14.sp, 16.sp)
             )
         },
         navigationIcon = {
@@ -458,7 +460,7 @@ private fun ProfileHeaderCard(
                     Text(
                         text       = userName.ifEmpty { "মার্চেন্ট" },
                         color      = Color.White,
-                        fontSize   = 20.sp,
+                        fontSize   = adaptiveTextSize(18.sp, 20.sp),
                         fontWeight = FontWeight.Bold
                     )
                     
@@ -469,7 +471,7 @@ private fun ProfileHeaderCard(
                         Text(
                             text       = "Plan: $subscriptionPlan",
                             color      = PsCyan,
-                            fontSize   = 13.sp,
+                            fontSize   = adaptiveTextSize(11.sp, 13.sp),
                             fontWeight = FontWeight.SemiBold
                         )
                         // Renew/Subscription glassmorphic button
@@ -495,7 +497,7 @@ private fun ProfileHeaderCard(
                         Text(
                             text     = primaryPhone,
                             color    = Color.White.copy(alpha = 0.75f),
-                            fontSize = 13.sp
+                            fontSize = adaptiveTextSize(11.sp, 13.sp)
                         )
                     }
 
@@ -504,7 +506,7 @@ private fun ProfileHeaderCard(
                         Text(
                             text     = primaryEmail,
                             color    = Color.White.copy(alpha = 0.60f),
-                            fontSize = 13.sp
+                            fontSize = adaptiveTextSize(11.sp, 13.sp)
                         )
                     }
                 }
@@ -535,7 +537,7 @@ private fun SecurityPinCard(
         Text(
             text     = "আপনার পেমেন্ট গেটওয়ে নিরাপদ রাখতে একটি শক্তিশালী ৬-সংখ্যার PIN ব্যবহার করুন।",
             color    = TextM,
-            fontSize = 12.sp,
+            fontSize = adaptiveTextSize(11.sp, 12.sp),
             lineHeight = 18.sp
         )
         Spacer(Modifier.height(14.dp))
@@ -546,12 +548,12 @@ private fun SecurityPinCard(
             colors         = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
             shape          = RoundedCornerShape(14.dp),
             border         = androidx.compose.foundation.BorderStroke(1.dp, if (isRestricted) PsAmber.copy(alpha = 0.3f) else PsAmber),
-            modifier       = Modifier.fillMaxWidth(),
+            modifier       = Modifier.fillMaxWidth().height(adaptivePadding(48.dp, 56.dp)),
             contentPadding = PaddingValues(vertical = 14.dp)
         ) {
             Icon(Icons.Default.Key, null, tint = if (isRestricted) PsAmber.copy(alpha = 0.4f) else PsAmber, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text("পিন পরিবর্তন করুন", color = if (isRestricted) PsAmber.copy(alpha = 0.4f) else PsAmber, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text("পিন পরিবর্তন করুন", color = if (isRestricted) PsAmber.copy(alpha = 0.4f) else PsAmber, fontWeight = FontWeight.Bold, fontSize = adaptiveTextSize(12.sp, 14.sp))
         }
         Spacer(Modifier.height(8.dp))
         // Forgot PIN button
@@ -562,7 +564,7 @@ private fun SecurityPinCard(
         ) {
             Icon(Icons.AutoMirrored.Filled.HelpOutline, null, tint = if (isRestricted) TextM.copy(alpha = 0.4f) else TextM, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
-            Text("পিন ভুলে গেছেন? OTP দিয়ে রিসেট করুন", color = if (isRestricted) TextM.copy(alpha = 0.4f) else TextM, fontSize = 13.sp)
+            Text("পিন ভুলে গেছেন? OTP দিয়ে রিসেট করুন", color = if (isRestricted) TextM.copy(alpha = 0.4f) else TextM, fontSize = adaptiveTextSize(11.sp, 13.sp))
         }
     }
 }
@@ -586,7 +588,7 @@ private fun PsSection(
         border   = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         modifier = modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(18.dp)) {
+        Column(modifier = Modifier.padding(adaptivePadding(14.dp, 18.dp))) {
             // Header row
             Row(
                 verticalAlignment    = Alignment.CenterVertically,
@@ -605,7 +607,7 @@ private fun PsSection(
                 Text(
                     text       = title,
                     color      = TextW,
-                    fontSize   = 14.sp,
+                    fontSize   = adaptiveTextSize(12.sp, 14.sp),
                     fontWeight = FontWeight.Bold,
                     modifier   = Modifier.weight(1f)
                 )
@@ -697,6 +699,31 @@ private fun AddCredentialDialog(
 
                     // OTP input (visible after send)
                     AnimatedVisibility(visible = state.addCredentialOtpSent) {
+                        val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+                        // Hidden BasicTextField state (declared outside / above the Box modifier so it is in scope)
+                        var addCredOtpState by remember {
+                            val padded = state.addCredentialOtpCode.padEnd(6, ' ')
+                            val firstEmpty = state.addCredentialOtpCode.indexOf(' ')
+                            val selIndex = if (firstEmpty != -1) firstEmpty else minOf(state.addCredentialOtpCode.length, 5)
+                            mutableStateOf(
+                                TextFieldValue(
+                                    text = padded,
+                                    selection = TextRange(selIndex, selIndex + 1)
+                                )
+                            )
+                        }
+                        LaunchedEffect(state.addCredentialOtpCode) {
+                            val padded = state.addCredentialOtpCode.padEnd(6, ' ')
+                            if (padded != addCredOtpState.text) {
+                                val firstEmpty = state.addCredentialOtpCode.indexOf(' ')
+                                val selIndex = if (firstEmpty != -1) firstEmpty else minOf(state.addCredentialOtpCode.length, 5)
+                                addCredOtpState = TextFieldValue(
+                                    text = padded,
+                                    selection = TextRange(selIndex, selIndex + 1)
+                                )
+                            }
+                        }
+
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -705,6 +732,12 @@ private fun AddCredentialDialog(
                                     indication = null
                                 ) {
                                     addCredentialOtpFocusRequester.requestFocus()
+                                    keyboardController?.show()
+                                    val firstEmpty = state.addCredentialOtpCode.indexOf(' ')
+                                    val selIndex = if (firstEmpty != -1) firstEmpty else minOf(state.addCredentialOtpCode.length, 5)
+                                    addCredOtpState = addCredOtpState.copy(
+                                        selection = TextRange(selIndex, selIndex + 1)
+                                    )
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -715,21 +748,31 @@ private fun AddCredentialDialog(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 for (i in 0 until 6) {
-                                    val char = state.addCredentialOtpCode.getOrNull(i)?.toString() ?: ""
-                                    val isFocused = state.addCredentialOtpCode.length == i || (i == 5 && state.addCredentialOtpCode.length == 6)
+                                    val char = state.addCredentialOtpCode.getOrNull(i)?.toString() ?: " "
+                                    val isFocused = (addCredOtpState.selection.start == i) || (i == 5 && addCredOtpState.selection.start == 6)
 
                                     Box(
                                         modifier = Modifier
                                             .size(width = 40.dp, height = 48.dp)
                                             .background(
-                                                color = if (char.isNotEmpty()) Color.White.copy(alpha = 0.05f) else PsCardAlt,
+                                                color = if (char.isNotBlank()) Color.White.copy(alpha = 0.05f) else PsCardAlt,
                                                 shape = RoundedCornerShape(10.dp)
                                             )
                                             .border(
                                                 width = if (isFocused) 2.dp else 1.dp,
                                                 color = if (isFocused) accent else PsCardAlt,
                                                 shape = RoundedCornerShape(10.dp)
-                                            ),
+                                            )
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = null
+                                            ) {
+                                                addCredentialOtpFocusRequester.requestFocus()
+                                                keyboardController?.show()
+                                                addCredOtpState = addCredOtpState.copy(
+                                                    selection = TextRange(i, i + 1)
+                                                )
+                                            },
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Row(
@@ -743,64 +786,119 @@ private fun AddCredentialDialog(
                                                 color = TextW,
                                                 textAlign = TextAlign.Center
                                             )
-                                            if (isFocused && char.isNotEmpty()) {
+                                            if (isFocused && (addCredOtpState.selection.start == i || (i == 5 && addCredOtpState.selection.start == 6)) && char.isNotBlank()) {
                                                 BlinkingCursor(color = accent)
                                             }
                                         }
-                                        if (isFocused && char.isEmpty()) {
+                                        if (isFocused && char.isBlank()) {
                                             BlinkingCursor(color = accent)
                                         }
                                     }
                                 }
                             }
 
-                            // Hidden BasicTextField capturing keyboard & clipboard actions (layered on top)
-                            var addCredOtpState by remember {
-                                mutableStateOf(
-                                    TextFieldValue(
-                                        text = state.addCredentialOtpCode,
-                                        selection = TextRange(state.addCredentialOtpCode.length)
-                                    )
-                                )
-                            }
-                            LaunchedEffect(state.addCredentialOtpCode) {
-                                if (state.addCredentialOtpCode != addCredOtpState.text) {
-                                    addCredOtpState = TextFieldValue(
-                                        text = state.addCredentialOtpCode,
-                                        selection = TextRange(state.addCredentialOtpCode.length)
-                                    )
-                                }
+                            val emptyTextToolbar = object : androidx.compose.ui.platform.TextToolbar {
+                                override fun showMenu(
+                                    rect: androidx.compose.ui.geometry.Rect,
+                                    onCopy: (() -> Unit)?,
+                                    onPaste: (() -> Unit)?,
+                                    onCut: (() -> Unit)?,
+                                    onSelectAll: (() -> Unit)?
+                                ) {}
+                                override fun hide() {}
+                                override val status: androidx.compose.ui.platform.TextToolbarStatus = androidx.compose.ui.platform.TextToolbarStatus.Hidden
                             }
 
-                            BasicTextField(
-                                value = addCredOtpState,
-                                onValueChange = { newValue ->
-                                    val digits = newValue.text.filter { it.isDigit() }
-                                    val sanitized = digits.take(6)
-                                    if (sanitized != state.addCredentialOtpCode) {
-                                        viewModel.onAddCredentialOtpChange(sanitized)
-                                    }
-                                    addCredOtpState = newValue.copy(
-                                        text = sanitized,
-                                        selection = TextRange(sanitized.length)
-                                    )
-                                },
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number,
-                                    imeAction = ImeAction.Done
-                                ),
-                                textStyle = androidx.compose.ui.text.TextStyle(
-                                    color = Color.Transparent,
-                                    fontSize = 14.sp,
-                                    textAlign = TextAlign.Center
-                                ),
-                                cursorBrush = SolidColor(Color.Transparent),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .align(Alignment.BottomCenter)
-                                    .height(20.dp)
-                                    .focusRequester(addCredentialOtpFocusRequester)
-                            )
+                            CompositionLocalProvider(androidx.compose.ui.platform.LocalTextToolbar provides emptyTextToolbar) {
+                                BasicTextField(
+                                    value = addCredOtpState,
+                                    onValueChange = { newValue ->
+                                        val oldText = addCredOtpState.text
+                                        val newText = newValue.text
+                                        val oldSelection = addCredOtpState.selection
+
+                                        val (sanitized, targetSelection) = if (newText.length < oldText.length) {
+                                            val i = oldSelection.start
+                                            val isBoxEmpty = oldSelection.collapsed || i >= oldText.length || oldText[i] == ' '
+
+                                            if (!isBoxEmpty) {
+                                                val sb = StringBuilder(oldText)
+                                                if (i >= 0 && i < oldText.length) {
+                                                    sb.setCharAt(i, ' ')
+                                                }
+                                                val updatedText = sb.toString()
+                                                val sel = TextRange(i, i + 1)
+                                                Pair(updatedText, sel)
+                                            } else {
+                                                val deleteIndex = i - 1
+                                                val sb = StringBuilder(oldText)
+                                                if (deleteIndex >= 0 && deleteIndex < oldText.length) {
+                                                    sb.setCharAt(deleteIndex, ' ')
+                                                }
+                                                val updatedText = sb.toString()
+                                                val newCursor = maxOf(0, deleteIndex)
+                                                val sel = TextRange(newCursor, newCursor + 1)
+                                                Pair(updatedText, sel)
+                                            }
+                                        } else if (newText != oldText) {
+                                            val insertedLength = newText.length - oldText.length + (oldSelection.end - oldSelection.start)
+                                            if (insertedLength > 0 && oldSelection.start < 6) {
+                                                val insertedText = newText.substring(oldSelection.start, minOf(oldSelection.start + insertedLength, newText.length))
+                                                val digitsOnly = insertedText.filter { it.isDigit() }
+                                                if (digitsOnly.isNotEmpty()) {
+                                                    val sb = StringBuilder(oldText)
+                                                    for (idx in 0 until digitsOnly.length) {
+                                                        val targetIdx = oldSelection.start + idx
+                                                        if (targetIdx < 6) {
+                                                            sb.setCharAt(targetIdx, digitsOnly[idx])
+                                                        }
+                                                    }
+                                                    val updatedText = sb.toString()
+                                                    val nextIndex = oldSelection.start + digitsOnly.length
+                                                    val sel = if (nextIndex < 6) {
+                                                        TextRange(nextIndex, nextIndex + 1)
+                                                    } else {
+                                                        TextRange(5, 6)
+                                                    }
+                                                    Pair(updatedText, sel)
+                                                } else {
+                                                    Pair(oldText, oldSelection)
+                                                }
+                                            } else {
+                                                Pair(oldText, oldSelection)
+                                            }
+                                        } else {
+                                            Pair(oldText, oldSelection)
+                                        }
+
+                                        if (sanitized != state.addCredentialOtpCode) {
+                                            viewModel.onAddCredentialOtpChange(sanitized)
+                                        }
+                                        addCredOtpState = TextFieldValue(
+                                            text = sanitized,
+                                            selection = targetSelection
+                                        )
+                                        if (newText.length < oldText.length) {
+                                            addCredentialOtpFocusRequester.requestFocus()
+                                            keyboardController?.show()
+                                        }
+                                    },
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Number,
+                                        imeAction = ImeAction.Done
+                                    ),
+                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                        color = Color.Transparent,
+                                        fontSize = 1.sp,
+                                        textAlign = TextAlign.Center
+                                    ),
+                                    cursorBrush = SolidColor(Color.Transparent),
+                                    modifier = Modifier
+                                        .size(1.dp)
+                                        .alpha(0f)
+                                        .focusRequester(addCredentialOtpFocusRequester)
+                                )
+                            }
                         }
                     }
 
@@ -827,7 +925,7 @@ private fun AddCredentialDialog(
                             shape = RoundedCornerShape(10.dp),
                             border = androidx.compose.foundation.BorderStroke(1.dp, PsCyan.copy(alpha = 0.5f)),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = TextM),
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            modifier = Modifier.weight(1f).fillMaxWidth().height(adaptivePadding(48.dp, 56.dp)),
                             contentPadding = PaddingValues(vertical = 12.dp)
                         ) {
                             Text("বাতিল")
@@ -839,7 +937,7 @@ private fun AddCredentialDialog(
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = accent),
                             shape  = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            modifier = Modifier.weight(1f).fillMaxWidth().height(adaptivePadding(48.dp, 56.dp)),
                             contentPadding = PaddingValues(vertical = 12.dp)
                         ) {
                             Text(
@@ -930,7 +1028,7 @@ private fun ChangePinDialog(
                         ) {
                             OutlinedButton(
                                 onClick = { viewModel.dismissChangePinDialog() },
-                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                modifier = Modifier.weight(1f).fillMaxWidth().height(adaptivePadding(48.dp, 56.dp)),
                                 shape = RoundedCornerShape(10.dp),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, PsCyan.copy(alpha = 0.5f)),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = TextM),
@@ -942,7 +1040,7 @@ private fun ChangePinDialog(
                                 onClick = { viewModel.submitChangePin() },
                                 colors  = ButtonDefaults.buttonColors(containerColor = PsAmber),
                                 shape   = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                modifier = Modifier.weight(1f).fillMaxWidth().height(adaptivePadding(48.dp, 56.dp)),
                                 contentPadding = PaddingValues(vertical = 12.dp)
                             ) {
                                 Text("সংরক্ষণ করুন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -1029,6 +1127,30 @@ private fun ResetPinDialog(
 
                     AnimatedVisibility(visible = state.resetPinOtpSent) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            // Hidden BasicTextField state (declared outside / above the Box modifier so it is in scope)
+                            var resetPinOtpState by remember {
+                                val padded = state.resetPinOtpCode.padEnd(6, ' ')
+                                val firstEmpty = state.resetPinOtpCode.indexOf(' ')
+                                val selIndex = if (firstEmpty != -1) firstEmpty else minOf(state.resetPinOtpCode.length, 5)
+                                mutableStateOf(
+                                    TextFieldValue(
+                                        text = padded,
+                                        selection = TextRange(selIndex, selIndex + 1)
+                                    )
+                                )
+                            }
+                            LaunchedEffect(state.resetPinOtpCode) {
+                                val padded = state.resetPinOtpCode.padEnd(6, ' ')
+                                if (padded != resetPinOtpState.text) {
+                                    val firstEmpty = state.resetPinOtpCode.indexOf(' ')
+                                    val selIndex = if (firstEmpty != -1) firstEmpty else minOf(state.resetPinOtpCode.length, 5)
+                                    resetPinOtpState = TextFieldValue(
+                                        text = padded,
+                                        selection = TextRange(selIndex, selIndex + 1)
+                                    )
+                                }
+                            }
+
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1037,6 +1159,11 @@ private fun ResetPinDialog(
                                         indication = null
                                     ) {
                                         resetPinOtpFocusRequester.requestFocus()
+                                        val firstEmpty = state.resetPinOtpCode.indexOf(' ')
+                                        val selIndex = if (firstEmpty != -1) firstEmpty else minOf(state.resetPinOtpCode.length, 5)
+                                        resetPinOtpState = resetPinOtpState.copy(
+                                            selection = TextRange(selIndex, selIndex + 1)
+                                        )
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -1047,23 +1174,32 @@ private fun ResetPinDialog(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     for (i in 0 until 6) {
-                                        val char = state.resetPinOtpCode.getOrNull(i)?.toString() ?: ""
-                                        val isFocused = state.resetPinOtpCode.length == i || (i == 5 && state.resetPinOtpCode.length == 6)
+                                        val char = state.resetPinOtpCode.getOrNull(i)?.toString() ?: " "
+                                        val isFocused = (resetPinOtpState.selection.start == i) || (i == 5 && resetPinOtpState.selection.start == 6)
 
                                         Box(
                                             modifier = Modifier
                                                 .size(width = 40.dp, height = 48.dp)
                                                 .background(
-                                                    color = if (char.isNotEmpty()) Color.White.copy(0.05f) else PsCardAlt,
+                                                    color = if (char.isNotBlank()) Color.White.copy(0.05f) else PsCardAlt,
                                                     shape = RoundedCornerShape(10.dp)
                                                 )
                                                 .border(
                                                     width = if (isFocused) 2.dp else 1.dp,
                                                     color = if (isFocused) PsGreen else PsCardAlt,
                                                     shape = RoundedCornerShape(10.dp)
-                                                ),
+                                                )
+                                                .clickable(
+                                                    interactionSource = remember { MutableInteractionSource() },
+                                                    indication = null
+                                                ) {
+                                                    resetPinOtpFocusRequester.requestFocus()
+                                                    resetPinOtpState = resetPinOtpState.copy(
+                                                        selection = TextRange(i, i + 1)
+                                                    )
+                                                },
                                             contentAlignment = Alignment.Center
-                                         ) {
+                                        ) {
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.Center
@@ -1075,64 +1211,115 @@ private fun ResetPinDialog(
                                                     color = TextW,
                                                     textAlign = TextAlign.Center
                                                 )
-                                                if (isFocused && char.isNotEmpty()) {
+                                                if (isFocused && (resetPinOtpState.selection.start == i || (i == 5 && resetPinOtpState.selection.start == 6)) && char.isNotBlank()) {
                                                     BlinkingCursor(color = PsGreen)
                                                 }
                                             }
-                                            if (isFocused && char.isEmpty()) {
+                                            if (isFocused && char.isBlank()) {
                                                 BlinkingCursor(color = PsGreen)
                                             }
                                         }
                                     }
                                 }
 
-                                // Hidden BasicTextField capturing keyboard & clipboard actions (layered on top)
-                                var resetPinOtpState by remember {
-                                    mutableStateOf(
-                                        TextFieldValue(
-                                            text = state.resetPinOtpCode,
-                                            selection = TextRange(state.resetPinOtpCode.length)
-                                        )
-                                    )
-                                }
-                                LaunchedEffect(state.resetPinOtpCode) {
-                                    if (state.resetPinOtpCode != resetPinOtpState.text) {
-                                        resetPinOtpState = TextFieldValue(
-                                            text = state.resetPinOtpCode,
-                                            selection = TextRange(state.resetPinOtpCode.length)
-                                        )
-                                    }
+                                val emptyTextToolbar = object : androidx.compose.ui.platform.TextToolbar {
+                                    override fun showMenu(
+                                        rect: androidx.compose.ui.geometry.Rect,
+                                        onCopy: (() -> Unit)?,
+                                        onPaste: (() -> Unit)?,
+                                        onCut: (() -> Unit)?,
+                                        onSelectAll: (() -> Unit)?
+                                    ) {}
+                                    override fun hide() {}
+                                    override val status: androidx.compose.ui.platform.TextToolbarStatus = androidx.compose.ui.platform.TextToolbarStatus.Hidden
                                 }
 
-                                BasicTextField(
-                                    value = resetPinOtpState,
-                                    onValueChange = { newValue ->
-                                        val digits = newValue.text.filter { it.isDigit() }
-                                        val sanitized = digits.take(6)
-                                        if (sanitized != state.resetPinOtpCode) {
-                                            viewModel.onResetPinOtpChange(sanitized)
-                                        }
-                                        resetPinOtpState = newValue.copy(
-                                            text = sanitized,
-                                            selection = TextRange(sanitized.length)
-                                        )
-                                    },
-                                    keyboardOptions = KeyboardOptions(
-                                        keyboardType = KeyboardType.Number,
-                                        imeAction = ImeAction.Done
-                                    ),
-                                    textStyle = androidx.compose.ui.text.TextStyle(
-                                        color = Color.Transparent,
-                                        fontSize = 14.sp,
-                                        textAlign = TextAlign.Center
-                                    ),
-                                    cursorBrush = SolidColor(Color.Transparent),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .align(Alignment.BottomCenter)
-                                        .height(20.dp)
-                                        .focusRequester(resetPinOtpFocusRequester)
-                                )
+                                CompositionLocalProvider(androidx.compose.ui.platform.LocalTextToolbar provides emptyTextToolbar) {
+                                    BasicTextField(
+                                        value = resetPinOtpState,
+                                        onValueChange = { newValue ->
+                                            val oldText = resetPinOtpState.text
+                                            val newText = newValue.text
+                                            val oldSelection = resetPinOtpState.selection
+
+                                            val (sanitized, targetSelection) = if (newText.length < oldText.length) {
+                                                val i = oldSelection.start
+                                                val isBoxEmpty = oldSelection.collapsed || i >= oldText.length || oldText[i] == ' '
+
+                                                if (!isBoxEmpty) {
+                                                    val sb = StringBuilder(oldText)
+                                                    if (i >= 0 && i < oldText.length) {
+                                                        sb.setCharAt(i, ' ')
+                                                    }
+                                                    val updatedText = sb.toString()
+                                                    val sel = TextRange(i, i + 1)
+                                                    Pair(updatedText, sel)
+                                                } else {
+                                                    val deleteIndex = i - 1
+                                                    val sb = StringBuilder(oldText)
+                                                    if (deleteIndex >= 0 && deleteIndex < oldText.length) {
+                                                        sb.setCharAt(deleteIndex, ' ')
+                                                    }
+                                                    val updatedText = sb.toString()
+                                                    val newCursor = maxOf(0, deleteIndex)
+                                                    val sel = TextRange(newCursor, newCursor + 1)
+                                                    Pair(updatedText, sel)
+                                                }
+                                            } else if (newText != oldText) {
+                                                val insertedLength = newText.length - oldText.length + (oldSelection.end - oldSelection.start)
+                                                if (insertedLength > 0 && oldSelection.start < 6) {
+                                                    val insertedText = newText.substring(oldSelection.start, minOf(oldSelection.start + insertedLength, newText.length))
+                                                    val digitsOnly = insertedText.filter { it.isDigit() }
+                                                    if (digitsOnly.isNotEmpty()) {
+                                                        val sb = StringBuilder(oldText)
+                                                        for (idx in 0 until digitsOnly.length) {
+                                                            val targetIdx = oldSelection.start + idx
+                                                            if (targetIdx < 6) {
+                                                                sb.setCharAt(targetIdx, digitsOnly[idx])
+                                                            }
+                                                        }
+                                                        val updatedText = sb.toString()
+                                                        val nextIndex = oldSelection.start + digitsOnly.length
+                                                        val sel = if (nextIndex < 6) {
+                                                            TextRange(nextIndex, nextIndex + 1)
+                                                        } else {
+                                                            TextRange(5, 6)
+                                                        }
+                                                        Pair(updatedText, sel)
+                                                    } else {
+                                                        Pair(oldText, oldSelection)
+                                                    }
+                                                } else {
+                                                    Pair(oldText, oldSelection)
+                                                }
+                                            } else {
+                                                Pair(oldText, oldSelection)
+                                            }
+
+                                            if (sanitized != state.resetPinOtpCode) {
+                                                viewModel.onResetPinOtpChange(sanitized)
+                                            }
+                                            resetPinOtpState = TextFieldValue(
+                                                text = sanitized,
+                                                selection = targetSelection
+                                            )
+                                        },
+                                        keyboardOptions = KeyboardOptions(
+                                            keyboardType = KeyboardType.Number,
+                                            imeAction = ImeAction.Done
+                                        ),
+                                        textStyle = androidx.compose.ui.text.TextStyle(
+                                            color = Color.Transparent,
+                                            fontSize = 1.sp,
+                                            textAlign = TextAlign.Center
+                                        ),
+                                        cursorBrush = SolidColor(Color.Transparent),
+                                        modifier = Modifier
+                                            .size(1.dp)
+                                            .alpha(0f)
+                                            .focusRequester(resetPinOtpFocusRequester)
+                                    )
+                                }
                             }
                             PinField("নতুন PIN (৪-৬ ডিজিট)", state.resetPinNewPin, viewModel::onResetPinNewPinChange)
                         }
@@ -1147,7 +1334,7 @@ private fun ResetPinDialog(
                     ) {
                         OutlinedButton(
                             onClick = { viewModel.dismissResetPinDialog() },
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            modifier = Modifier.weight(1f).fillMaxWidth().height(adaptivePadding(48.dp, 56.dp)),
                             shape = RoundedCornerShape(10.dp),
                             border = androidx.compose.foundation.BorderStroke(1.dp, PsCyan.copy(alpha = 0.5f)),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = TextM),
@@ -1162,7 +1349,7 @@ private fun ResetPinDialog(
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = PsGreen),
                             shape  = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            modifier = Modifier.weight(1f).fillMaxWidth().height(adaptivePadding(48.dp, 56.dp)),
                             contentPadding = PaddingValues(vertical = 12.dp)
                         ) {
                             Text(
@@ -1442,7 +1629,7 @@ private fun ImageCropperDialog(
                 ) {
                     OutlinedButton(
                         onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).height(adaptivePadding(48.dp, 56.dp)),
                         border = androidx.compose.foundation.BorderStroke(1.dp, PsCyan),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = PsCyan),
                         shape = RoundedCornerShape(12.dp)
@@ -1477,7 +1664,7 @@ private fun ImageCropperDialog(
                                 }
                             }
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).height(adaptivePadding(48.dp, 56.dp)),
                         colors = ButtonDefaults.buttonColors(containerColor = PsCyan),
                         shape = RoundedCornerShape(12.dp)
                     ) {

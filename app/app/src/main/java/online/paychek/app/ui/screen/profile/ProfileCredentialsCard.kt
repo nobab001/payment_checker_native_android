@@ -24,6 +24,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.window.DialogProperties
 import online.paychek.app.data.remote.dto.CredentialItem
 import online.paychek.app.data.repository.CredentialRepository
+import online.paychek.app.utils.adaptivePadding
+import online.paychek.app.utils.adaptiveTextSize
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.graphics.SolidColor
@@ -104,7 +106,7 @@ fun ProfileCredentialsCard(
         border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         colors = CardDefaults.cardColors(containerColor = PsCard)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(adaptivePadding(10.dp, 14.dp))) {
             Text(
                 text = "Login Credentials (${viewModel.linkedPhones.size + viewModel.linkedEmails.size}/10)",
                 fontWeight = FontWeight.Bold,
@@ -119,7 +121,7 @@ fun ProfileCredentialsCard(
                     text = "লিঙ্কড মোবাইল নম্বর (${viewModel.linkedPhones.size}/৫)",
                     color = TextW,
                     fontWeight = FontWeight.Medium,
-                    fontSize = 14.sp
+                    fontSize = adaptiveTextSize(12.sp, 14.sp)
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 if (!isRestricted && viewModel.linkedPhones.size < 5) {
@@ -173,7 +175,7 @@ fun ProfileCredentialsCard(
                     text = "লিঙ্কড জিমেইল অ্যাড্রেস (${viewModel.linkedEmails.size}/৫)",
                     color = TextW,
                     fontWeight = FontWeight.Medium,
-                    fontSize = 14.sp
+                    fontSize = adaptiveTextSize(12.sp, 14.sp)
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 if (!isRestricted && viewModel.linkedEmails.size < 5) {
@@ -281,6 +283,31 @@ fun ProfileCredentialsCard(
                             fontSize = 13.sp,
                             modifier = Modifier.padding(bottom = 12.dp)
                         )
+                        val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+                        // Hidden BasicTextField state (declared outside / above the Box modifier so it is in scope)
+                        var otpValueState by remember {
+                            val padded = otpValue.padEnd(6, ' ')
+                            val firstEmpty = otpValue.indexOf(' ')
+                            val selIndex = if (firstEmpty != -1) firstEmpty else minOf(otpValue.length, 5)
+                            mutableStateOf(
+                                TextFieldValue(
+                                    text = padded,
+                                    selection = TextRange(selIndex, selIndex + 1)
+                                )
+                            )
+                        }
+                        LaunchedEffect(otpValue) {
+                            val padded = otpValue.padEnd(6, ' ')
+                            if (padded != otpValueState.text) {
+                                val firstEmpty = otpValue.indexOf(' ')
+                                val selIndex = if (firstEmpty != -1) firstEmpty else minOf(otpValue.length, 5)
+                                otpValueState = TextFieldValue(
+                                    text = padded,
+                                    selection = TextRange(selIndex, selIndex + 1)
+                                )
+                            }
+                        }
+
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -289,6 +316,12 @@ fun ProfileCredentialsCard(
                                     indication = null
                                 ) {
                                     otpFocusRequester.requestFocus()
+                                    keyboardController?.show()
+                                    val firstEmpty = otpValue.indexOf(' ')
+                                    val selIndex = if (firstEmpty != -1) firstEmpty else minOf(otpValue.length, 5)
+                                    otpValueState = otpValueState.copy(
+                                        selection = TextRange(selIndex, selIndex + 1)
+                                    )
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -299,21 +332,31 @@ fun ProfileCredentialsCard(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 for (i in 0 until 6) {
-                                    val char = otpValue.getOrNull(i)?.toString() ?: ""
-                                    val isFocused = otpValue.length == i || (i == 5 && otpValue.length == 6)
+                                    val char = otpValue.getOrNull(i)?.toString() ?: " "
+                                    val isFocused = (otpValueState.selection.start == i) || (i == 5 && otpValueState.selection.start == 6)
 
                                     Box(
                                         modifier = Modifier
                                             .size(width = 40.dp, height = 48.dp)
                                             .background(
-                                                color = if (char.isNotEmpty()) Color.White.copy(0.05f) else PsCardAlt,
+                                                color = if (char.isNotBlank()) Color.White.copy(alpha = 0.05f) else PsCardAlt,
                                                 shape = RoundedCornerShape(10.dp)
                                             )
                                             .border(
                                                 width = if (isFocused) 2.dp else 1.dp,
                                                 color = if (isFocused) PsCyan else PsCardAlt,
                                                 shape = RoundedCornerShape(10.dp)
-                                            ),
+                                            )
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = null
+                                            ) {
+                                                otpFocusRequester.requestFocus()
+                                                keyboardController?.show()
+                                                otpValueState = otpValueState.copy(
+                                                    selection = TextRange(i, i + 1)
+                                                )
+                                            },
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Row(
@@ -327,64 +370,119 @@ fun ProfileCredentialsCard(
                                                 color = TextW,
                                                 textAlign = TextAlign.Center
                                             )
-                                            if (isFocused && char.isNotEmpty()) {
+                                            if (isFocused && (otpValueState.selection.start == i || (i == 5 && otpValueState.selection.start == 6)) && char.isNotBlank()) {
                                                 BlinkingCursor(color = PsCyan)
                                             }
                                         }
-                                        if (isFocused && char.isEmpty()) {
+                                        if (isFocused && char.isBlank()) {
                                             BlinkingCursor(color = PsCyan)
                                         }
                                     }
                                 }
                             }
 
-                            // Hidden BasicTextField capturing keyboard & clipboard actions (layered on top)
-                            var otpValueState by remember {
-                                mutableStateOf(
-                                    TextFieldValue(
-                                        text = otpValue,
-                                        selection = TextRange(otpValue.length)
-                                    )
-                                )
-                            }
-                            LaunchedEffect(otpValue) {
-                                if (otpValue != otpValueState.text) {
-                                    otpValueState = TextFieldValue(
-                                        text = otpValue,
-                                        selection = TextRange(otpValue.length)
-                                    )
-                                }
+                            val emptyTextToolbar = object : androidx.compose.ui.platform.TextToolbar {
+                                override fun showMenu(
+                                    rect: androidx.compose.ui.geometry.Rect,
+                                    onCopy: (() -> Unit)?,
+                                    onPaste: (() -> Unit)?,
+                                    onCut: (() -> Unit)?,
+                                    onSelectAll: (() -> Unit)?
+                                ) {}
+                                override fun hide() {}
+                                override val status: androidx.compose.ui.platform.TextToolbarStatus = androidx.compose.ui.platform.TextToolbarStatus.Hidden
                             }
 
-                            BasicTextField(
-                                value = otpValueState,
-                                onValueChange = { newValue ->
-                                    val digits = newValue.text.filter { it.isDigit() }
-                                    val sanitized = digits.take(6)
-                                    if (sanitized != otpValue) {
-                                        otpValue = sanitized
-                                    }
-                                    otpValueState = newValue.copy(
-                                        text = sanitized,
-                                        selection = TextRange(sanitized.length)
-                                    )
-                                },
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number,
-                                    imeAction = ImeAction.Done
-                                ),
-                                textStyle = androidx.compose.ui.text.TextStyle(
-                                    color = Color.Transparent,
-                                    fontSize = 14.sp,
-                                    textAlign = TextAlign.Center
-                                ),
-                                cursorBrush = SolidColor(Color.Transparent),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .align(Alignment.BottomCenter)
-                                    .height(20.dp)
-                                    .focusRequester(otpFocusRequester)
-                            )
+                            CompositionLocalProvider(androidx.compose.ui.platform.LocalTextToolbar provides emptyTextToolbar) {
+                                BasicTextField(
+                                    value = otpValueState,
+                                    onValueChange = { newValue ->
+                                        val oldText = otpValueState.text
+                                        val newText = newValue.text
+                                        val oldSelection = otpValueState.selection
+
+                                        val (sanitized, targetSelection) = if (newText.length < oldText.length) {
+                                            val i = oldSelection.start
+                                            val isBoxEmpty = oldSelection.collapsed || i >= oldText.length || oldText[i] == ' '
+
+                                            if (!isBoxEmpty) {
+                                                val sb = StringBuilder(oldText)
+                                                if (i >= 0 && i < oldText.length) {
+                                                    sb.setCharAt(i, ' ')
+                                                }
+                                                val updatedText = sb.toString()
+                                                val sel = TextRange(i, i + 1)
+                                                Pair(updatedText, sel)
+                                            } else {
+                                                val deleteIndex = i - 1
+                                                val sb = StringBuilder(oldText)
+                                                if (deleteIndex >= 0 && deleteIndex < oldText.length) {
+                                                    sb.setCharAt(deleteIndex, ' ')
+                                                }
+                                                val updatedText = sb.toString()
+                                                val newCursor = maxOf(0, deleteIndex)
+                                                val sel = TextRange(newCursor, newCursor + 1)
+                                                Pair(updatedText, sel)
+                                            }
+                                        } else if (newText != oldText) {
+                                            val insertedLength = newText.length - oldText.length + (oldSelection.end - oldSelection.start)
+                                            if (insertedLength > 0 && oldSelection.start < 6) {
+                                                val insertedText = newText.substring(oldSelection.start, minOf(oldSelection.start + insertedLength, newText.length))
+                                                val digitsOnly = insertedText.filter { it.isDigit() }
+                                                if (digitsOnly.isNotEmpty()) {
+                                                    val sb = StringBuilder(oldText)
+                                                    for (idx in 0 until digitsOnly.length) {
+                                                        val targetIdx = oldSelection.start + idx
+                                                        if (targetIdx < 6) {
+                                                            sb.setCharAt(targetIdx, digitsOnly[idx])
+                                                        }
+                                                    }
+                                                    val updatedText = sb.toString()
+                                                    val nextIndex = oldSelection.start + digitsOnly.length
+                                                    val sel = if (nextIndex < 6) {
+                                                        TextRange(nextIndex, nextIndex + 1)
+                                                    } else {
+                                                        TextRange(5, 6)
+                                                    }
+                                                    Pair(updatedText, sel)
+                                                } else {
+                                                    Pair(oldText, oldSelection)
+                                                }
+                                            } else {
+                                                Pair(oldText, oldSelection)
+                                            }
+                                        } else {
+                                            Pair(oldText, oldSelection)
+                                        }
+
+                                        if (sanitized != otpValue) {
+                                            otpValue = sanitized
+                                        }
+                                        otpValueState = TextFieldValue(
+                                            text = sanitized,
+                                            selection = targetSelection
+                                        )
+                                        if (newText.length < oldText.length) {
+                                            otpFocusRequester.requestFocus()
+                                            keyboardController?.show()
+                                        }
+                                    },
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Number,
+                                        imeAction = ImeAction.Done
+                                    ),
+                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                        color = Color.Transparent,
+                                        fontSize = 1.sp,
+                                        textAlign = TextAlign.Center
+                                    ),
+                                    cursorBrush = SolidColor(Color.Transparent),
+                                    modifier = Modifier
+                                        .size(1.dp)
+                                        .alpha(0f)
+                                        .focusRequester(otpFocusRequester)
+                                )
+                            }
                         }
                     }
 

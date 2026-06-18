@@ -2,6 +2,7 @@ plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
   alias(libs.plugins.kotlin.serialization)
+  alias(libs.plugins.ksp)
 }
 
 android {
@@ -96,4 +97,21 @@ dependencies {
 
   // Biometric authentication
   implementation(libs.androidx.biometric)
+
+  // Room (Offline-First SMS Queue — v2.0.0)
+  implementation(libs.room.runtime)
+  implementation(libs.room.ktx)
+  ksp(libs.room.compiler)
+
+  // WorkManager (Fallback offline queue sync — Phase 2)
+  // Acts as recovery-only fallback; foreground service handles real-time sync.
+  implementation(libs.work.runtime.ktx)
+
+  // Security-Crypto (EncryptedSharedPreferences for secretKey storage)
+  implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+  // Root Detection — Layer 1: RootBeer (lightweight, no Google Play Services dependency)
+  // Architecture: RootBeer first → Play Integrity API (optional layer 2, future)
+  // RootBeer detects: su binary, Magisk, dangerous props, test-keys, etc.
+  implementation("com.scottyab:rootbeer-lib:0.1.0")
 }

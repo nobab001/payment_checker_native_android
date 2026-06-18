@@ -33,6 +33,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import online.paychek.app.data.remote.dto.TransactionItem
+import online.paychek.app.ui.components.ConnectivityBanner
+import online.paychek.app.utils.adaptivePadding
+import online.paychek.app.utils.adaptiveTextSize
+import online.paychek.app.utils.screenWidth
 import online.paychek.app.ui.theme.*
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
@@ -62,6 +66,7 @@ fun TransactionSearchScreen(
     viewModel: TransactionSearchViewModel = viewModel()
 ) {
     val state        by viewModel.state.collectAsStateWithLifecycle()
+    val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsStateWithLifecycle()
     val listState    = rememberLazyListState()
     val focusManager = LocalFocusManager.current
 
@@ -76,13 +81,22 @@ fun TransactionSearchScreen(
         if (shouldLoadMore.value) viewModel.loadNextPage()
     }
 
-    PullToRefreshBox(
-        isRefreshing = false,
-        onRefresh    = { viewModel.onRefresh() },
-        modifier     = modifier
+    Column(
+        modifier = modifier
             .fillMaxSize()
             .background(HistBg)
     ) {
+        if (!isNetworkAvailable) {
+            ConnectivityBanner()
+        }
+
+        PullToRefreshBox(
+            isRefreshing = false,
+            onRefresh    = { viewModel.onRefresh() },
+            modifier     = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
         LazyColumn(
             state               = listState,
             modifier            = Modifier.fillMaxSize(),
@@ -137,13 +151,15 @@ fun TransactionSearchScreen(
             }
 
             // ─── ৬. Error State ────────────────────────────────────────────
-            state.errorMessage?.let { msg ->
-                item {
-                    HistoryErrorCard(
-                        message = msg,
-                        onRetry = { viewModel.onRefresh() },
-                        modifier = Modifier.padding(16.dp)
-                    )
+            if (isNetworkAvailable) {
+                state.errorMessage?.let { msg ->
+                    item {
+                        HistoryErrorCard(
+                            message = msg,
+                            onRetry = { viewModel.onRefresh() },
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
                 }
             }
 
@@ -201,6 +217,7 @@ fun TransactionSearchScreen(
             }
         }
     }
+}
 }
 
 // =============================================================================
@@ -266,9 +283,9 @@ private fun SearchBox(
         onValueChange = onQueryChange,
         placeholder   = {
             Text(
-                text     = "ট্রানজেকশন আইডি বা নম্বর দিয়ে সার্চ করুন...",
+                text     = "ট্রানজেকশন আইডি বা নম্বর...",
                 color    = TextMuted,
-                fontSize = 13.sp
+                fontSize = adaptiveTextSize(11.sp, 13.sp)
             )
         },
         leadingIcon = {
@@ -292,6 +309,7 @@ private fun SearchBox(
             }
         } else null,
         singleLine    = true,
+        textStyle = androidx.compose.ui.text.TextStyle(fontSize = adaptiveTextSize(11.sp, 13.sp)),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { onDone() }),
         colors = OutlinedTextFieldDefaults.colors(
@@ -338,7 +356,7 @@ private fun M3FilterChipsRow(
                 label = {
                     Text(
                         text = "$label ${filter.emoji}",
-                        fontSize = 13.sp,
+                        fontSize = adaptiveTextSize(11.sp, 13.sp),
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                     )
                 },

@@ -1,88 +1,183 @@
 const { query } = require('../db/connection');
 const crypto = require('crypto');
+const { verifyHmac } = require('../utils/verifyHmac');
+const { parseRawSms } = require('../utils/parseRawSms');
+const {
+    HTTP_PARSE_FAIL,
+    HTTP_DUPLICATE,
+    assertRawBodyIntegrity,
+} = require('../utils/smsSecuritySpec');
 
 // =============================================================================
-// Helper
+// Helper — SHA-256(rawBody, 'utf8') -> lowercase hex
+// Canonical spec: smsSecuritySpec.js Section 3
 // =============================================================================
 
 function sha256(data) {
-  return crypto.createHash('sha256').update(data).digest('hex');
+  return crypto.createHash('sha256').update(data, 'utf8').digest('hex');
 }
 
 // =============================================================================
 // POST /api/payment-sms-ingest
-// Android থেকে পার্স করা SMS ডেটা গ্রহণ করে ডাটাবেজে সংরক্ষণ করে।
+// Android থেকে RAW SMS + HMAC Signature গ্রহণ করে, cryptographically যাচাই
+// করে, server-side parse করে, ডাটাবেজে সংরক্ষণ করে।
 //
-// ডুপ্লিকেট সুরক্ষা (আপনার নির্দেশ অনুযায়ী):
-//  ১. INSERT IGNORE ব্যবহার — একই dedupe_key দ্বিতীয়বার insert হবে না
-//  ২. affectedRows === 0 মানে duplicate — পুরনো রেকর্ড স্পর্শ করা হয় না
-//  ৩. is_used (SOLDOUT) স্ট্যাটাস কোনোভাবেই রিসেট হয় না — INSERT IGNORE
-//     বিদ্যমান রো আপডেট করে না, শুধু নতুন insert বাদ দেয়
+// Execution Order (বাধ্যতামূলক):
+//  1. Input validation
+//  2. DB থেকে user secretKey লোড
+//  3. HMAC verify — fail হলে সরাসরি 403, কোনো parse নেই
+//  4. rawBodyHash = SHA256(rawBody) — integrity tracking
+//  5. parseRawSms() — server-side — client data trust করা হয় না
+//  6. Parse fail হলে sms_parse_failures audit table এ insert, 422 return
+//  7. INSERT IGNORE — dedupe_key দিয়ে duplicate prevention
+//
+// Deduplication:
+//  Formula: smsTimestamp + '|' + senderNumber + '|' + SHA256(rawBody)
+//  UNIQUE constraint prevents same SMS being inserted twice.
+//  is_used (SOLDOUT) কোনোভাবেই রিসেট হয় না।
 // =============================================================================
 async function paymentSmsIngest(req, res) {
   try {
-    const {
-      amount,
-      trxId,
-      providerTag,
-      senderNumber,
-      receiverNumber,
-      smsTimestamp, // Epoch milliseconds
-      rawBody,
-      fullSms,
-      simSlot,
-      simNumber
-    } = req.body;
-
     const userId   = req.user.userId;
     const deviceId = req.user.deviceId || 'unknown_device';
 
-    const originalBody = fullSms || rawBody;
-
-    if (amount === undefined || amount === null || !trxId || !providerTag || !smsTimestamp || !originalBody) {
-      return res.status(400).json({ error: 'প্রয়োজনীয় ফিল্ড অনুপস্থিত' });
-    }
-
-    const dateObj          = new Date(Number(smsTimestamp));
-    const formattedTimestamp = dateObj.toISOString().slice(0, 19).replace('T', ' ');
-    const formattedDate    = dateObj.toISOString().slice(0, 10);
-
-    // Deduplication Key গঠন
-    const bodyHash = sha256(originalBody);
-    const dedupeKey = `${smsTimestamp}|${senderNumber || ''}|${bodyHash}`;
+    const { rawBody, hmacSignature, senderHint, smsTimestamp, simSlot, simNumber } = req.body;
 
     // ────────────────────────────────────────────────────────────────────────
-    // DUPLICATE SAFETY — INSERT IGNORE
-    // এই কমান্ড কখনো বিদ্যমান রেকর্ড আপডেট করে না।
+    // STEP 1: Input Validation
+    // rawBody ও hmacSignature ছাড়া কিছু accept করা হবে না
+    // ────────────────────────────────────────────────────────────────────────
+    if (!rawBody || typeof rawBody !== 'string' || rawBody.trim().length === 0) {
+      return res.status(400).json({ error: 'rawBody অনুপস্থিত বা খালি' });
+    }
+    if (!hmacSignature || typeof hmacSignature !== 'string') {
+      return res.status(400).json({ error: 'hmacSignature অনুপস্থিত' });
+    }
+    if (!smsTimestamp) {
+      return res.status(400).json({ error: 'smsTimestamp অনুপস্থিত' });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // STEP 2: User-এর secretKey ডাটাবেজ থেকে লোড করো
+    // Client-এর পাঠানো key কখনো trust করা হয় না — সবসময় DB থেকে নাও
+    // ────────────────────────────────────────────────────────────────────────
+    const userRows = await query('SELECT secretKey FROM users WHERE id = ? LIMIT 1', [userId]);
+    const secretKey = userRows[0]?.secretKey;
+
+    if (!secretKey) {
+      console.warn(`[INGEST] ⛔ No secretKey — userId: ${userId}. Device re-bind required.`);
+      return res.status(403).json({
+        error: 'HMAC_KEY_NOT_FOUND',
+        message: 'আপনার ডিভাইসের HMAC Key পাওয়া যায়নি। অনুগ্রহ করে আবার লগইন করুন।'
+      });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // STEP 3: HMAC Verification — সবার আগে, parse করার আগে
+    // এটা fail হলে সরাসরি 403 — কোনো parsing বা business logic নয়
+    //
+    // Canonical Formula (Android ও Node.js উভয়েই একই):
+    //   HMAC-SHA256(key=UTF-8(secretKey), input=UTF-8(rawBody)) → lowercase hex
+    // ────────────────────────────────────────────────────────────────────────
+    const hmacResult = verifyHmac(rawBody, hmacSignature, secretKey);
+
+    if (!hmacResult.valid) {
+      console.warn(`[INGEST] ⛔ HMAC INVALID — userId: ${userId} | deviceId: ${deviceId} | error: ${hmacResult.error}`);
+      return res.status(403).json({
+        error: 'HMAC_INVALID',
+        message: 'অনুরোধটি cryptographically যাচাই করা যায়নি। সম্ভাব্য কারণ: SMS body পরিবর্তিত হয়েছে।'
+      });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // STEP 4: rawBodyHash — fast duplicate detection ও integrity tracking
+    // Server-side compute — client-এর পাঠানো hash কখনো trust করা হয় না
+    // ────────────────────────────────────────────────────────────────────────
+    const rawBodyHash = sha256(rawBody.trim());
+
+    // ────────────────────────────────────────────────────────────────────────
+    // STEP 5: Server-side SMS Parsing
+    // HMAC verify সফল হওয়ার পরেই parseRawSms চালানো হয়।
+    // Client-এর parsed fields (amount, trxId) সরাসরি ব্যবহার করা হয় না।
+    // ────────────────────────────────────────────────────────────────────────
+    const parsed = parseRawSms(rawBody, senderHint || '');
+
+    if (!parsed.success) {
+      // HMAC verify সফল কিন্তু parse fail — audit table এ রাখো, reject করো
+      // "Never silently discard verified SMS" — audit policy
+      console.warn(`[INGEST] ⚠️ PARSE_FAILED (HMAC OK) — userId: ${userId} | body[:80]: ${rawBody.substring(0, 80)}`);
+
+      try {
+        await query(
+          `INSERT INTO sms_parse_failures
+             (user_id, device_id, raw_body, raw_body_hash, hmac_signature, parse_error, sms_timestamp_ms, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [
+            userId,
+            deviceId,
+            rawBody,
+            rawBodyHash,
+            hmacSignature,
+            parsed.error || 'No matching template',
+            Number(smsTimestamp)
+          ]
+        );
+      } catch (auditErr) {
+        // Audit insert fail করলে main flow block হবে না — শুধু log
+        console.error('[INGEST] Audit insert failed (non-critical):', auditErr.message);
+      }
+
+      return res.status(422).json({
+        error: 'SMS_PARSE_FAILED',
+        message: 'SMS format চেনা যায়নি। এই বার্তাটি audit log এ সংরক্ষিত হয়েছে।',
+        hint: 'Admin-কে এই SMS format সম্পর্কে জানান — নতুন template যোগ করা হবে।'
+      });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // STEP 6: Timestamp ও Deduplication Key তৈরি
+    // ────────────────────────────────────────────────────────────────────────
+    const dateObj            = new Date(Number(smsTimestamp));
+    const formattedTimestamp = dateObj.toISOString().slice(0, 19).replace('T', ' ');
+    const formattedDate      = dateObj.toISOString().slice(0, 10);
+
+    // Deduplication Key Formula: smsTimestamp + '|' + senderNumber + '|' + SHA256(rawBody)
+    const dedupeKey = `${smsTimestamp}|${parsed.senderNumber || ''}|${rawBodyHash}`;
+
+    // ────────────────────────────────────────────────────────────────────────
+    // STEP 7: DUPLICATE SAFETY — INSERT IGNORE
+    // একই dedupe_key দ্বিতীয়বার insert হবে না।
     // is_used = 1 (SOLDOUT) থাকলে সেটি অপরিবর্তিত থাকবে।
+    // raw_sms_sha256: fast lookup ও debugging এর জন্য সংরক্ষণ করা হচ্ছে।
     // ────────────────────────────────────────────────────────────────────────
     const result = await query(
       `INSERT IGNORE INTO sms_history (
         user_id, device_id, sim_slot, sim_number, provider_tag, amount,
         trx_id, sender_number, receiver_number, sms_timestamp, sms_date,
-        full_sms, dedupe_key, is_synced, is_used
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)`,
+        full_sms, dedupe_key, raw_sms_sha256, is_synced, is_used
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)`,
       [
         userId,
         deviceId,
-        simSlot  || null,
+        simSlot   || null,
         simNumber || null,
-        providerTag,
-        amount,
-        trxId.toUpperCase(),
-        senderNumber   || null,
-        receiverNumber || null,
+        parsed.provider,
+        parsed.amount,
+        parsed.trxId || '',
+        parsed.senderNumber || null,
+        null, // receiverNumber — server-side parse এ available নেই এই version এ
         formattedTimestamp,
         formattedDate,
-        originalBody,
-        dedupeKey
+        rawBody,
+        dedupeKey,
+        rawBodyHash
       ]
     );
 
     const isDuplicate = result.affectedRows === 0;
 
     if (isDuplicate) {
-      console.log(`[INGEST] Duplicate blocked — TrxID: ${trxId} | User: ${userId}`);
+      console.log(`[INGEST] Duplicate blocked — hash: ${rawBodyHash.substring(0, 16)}… | User: ${userId}`);
       return res.json({
         success: true,
         isDuplicate: true,
@@ -90,7 +185,7 @@ async function paymentSmsIngest(req, res) {
       });
     }
 
-    console.log(`[INGEST] ✅ Saved — TrxID: ${trxId} | ৳${amount} | SIM: ${simSlot} | User: ${userId}`);
+    console.log(`[INGEST] ✅ Saved — Provider: ${parsed.provider} | ৳${parsed.amount} | TrxID: ${parsed.trxId} | SIM: ${simSlot} | User: ${userId}`);
     return res.json({
       success: true,
       isDuplicate: false,
@@ -131,13 +226,13 @@ async function getSmsHistory(req, res) {
     // ── মূল ডেটা Query ─────────────────────────────────────────────────────
     const dataQuery = useFilter
       ? `SELECT id, provider_tag, amount, trx_id, sender_number, sim_slot,
-                sms_timestamp, is_used, created_at
+                sms_timestamp, is_used, created_at, full_sms
            FROM sms_history
           WHERE user_id = ? AND provider_tag = ?
           ORDER BY sms_timestamp DESC
           LIMIT ? OFFSET ?`
       : `SELECT id, provider_tag, amount, trx_id, sender_number, sim_slot,
-                sms_timestamp, is_used, created_at
+                sms_timestamp, is_used, created_at, full_sms
            FROM sms_history
           WHERE user_id = ?
           ORDER BY sms_timestamp DESC
@@ -222,7 +317,7 @@ async function getDashboardStats(req, res) {
     // ── সর্বশেষ ৫টি ট্রানজেকশন ─────────────────────────────────────────────
     const recentRows = await query(
       `SELECT id, provider_tag, amount, trx_id, sender_number,
-              sim_slot, sms_timestamp, is_used, created_at
+              sim_slot, sms_timestamp, is_used, created_at, full_sms
          FROM sms_history
         WHERE user_id = ?
         ORDER BY sms_timestamp DESC

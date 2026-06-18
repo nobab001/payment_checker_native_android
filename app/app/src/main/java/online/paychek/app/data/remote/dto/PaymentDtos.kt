@@ -15,7 +15,12 @@ data class PaymentIngestRequest(
     val smsTimestamp: Long,     // Epoch milliseconds
     val rawBody: String,
     val simSlot: Int?,          // 1 বা 2
-    val simNumber: String?      // SIM ফোন নম্বর
+    val simNumber: String?,     // SIM ফোন নম্বর
+    @SerializedName("is_custom_sender") val isCustomSender: Boolean = false,
+    @SerializedName("full_sms") val fullSms: String? = null,
+    // v2.0.0 — HMAC security fields (nullable for backward compat)
+    @SerializedName("hmacSignature") val hmacSignature: String? = null,
+    @SerializedName("isOfflineSync") val isOfflineSync: Boolean = false
 )
 
 data class PaymentIngestResponse(
@@ -55,7 +60,10 @@ data class TransactionItem(
     val isUsed: Int,                    // 0 = UNUSED | 1 = SOLDOUT
 
     @SerializedName("created_at")
-    val createdAt: String?
+    val createdAt: String?,
+
+    @SerializedName("full_sms")
+    val fullSms: String?
 )
 
 /**

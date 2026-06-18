@@ -13,7 +13,9 @@ object SmsParser {
         val rawBody: String,
         val smsTimestamp: Long,
         val simSlot: Int? = null,      // 1 বা 2 — কোন SIM স্লট থেকে এলো
-        val simNumber: String? = null  // ওই SIM-এর ফোন নম্বর (যদি পাওয়া যায়)
+        val simNumber: String? = null, // ওই SIM-এর ফোন নম্বর (যদি পাওয়া যায়)
+        val isCustomSender: Boolean = false,
+        val fullSms: String? = null
     )
 
     // Regex Patterns

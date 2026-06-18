@@ -7,6 +7,12 @@ const billing    = require('../middleware/billing');
 // GET  /api/gateway/methods           → সব মেথড লোড (priority অনুযায়ী)
 router.get('/gateway/methods',               auth, billing, gw.getGatewayMethods);
 
+// GET  /api/gateway/templates         → সব অ্যাক্টিভ টেমপ্লেট লোড
+router.get('/gateway/templates',             auth, billing, gw.getTemplates);
+
+// POST /api/gateway/methods           → নতুন মেথড যোগ করা
+router.post('/gateway/methods',              auth, auth.restrictDevice, billing, gw.addGatewayMethod);
+
 // PATCH /api/gateway/priority          → Drag & Drop পর priority ক্রম সেভ
 router.patch('/gateway/priority',            auth, auth.restrictDevice, billing, gw.updatePriority);
 

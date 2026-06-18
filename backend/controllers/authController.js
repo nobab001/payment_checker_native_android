@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const axios = require('axios');
+const crypto = require('crypto');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_987654321';
 const TRIAL_DEFAULT_DAYS = parseInt(process.env.TRIAL_DEFAULT_DAYS || '7', 10);
@@ -128,6 +129,18 @@ async function checkContact(req, res) {
 
     // যদি এই deviceId দিয়ে কোনো অ্যাকাউন্ট অলরেডি লিংকড পাওয়া যায়
     if (linkedUserId) {
+      const userExists = await query('SELECT id FROM users WHERE id = ? LIMIT 1', [linkedUserId]);
+      if (userExists.length === 0) {
+        console.log(`[Device Binding] User ${linkedUserId} does not exist (deleted). Unbinding device...`);
+        if (deviceId) {
+          await query('DELETE FROM registered_devices WHERE user_id = ?', [linkedUserId]);
+        }
+        await query('DELETE FROM device_trial_logs WHERE user_id = ?', [linkedUserId]);
+        linkedUserId = null;
+      }
+    }
+
+    if (linkedUserId) {
       const rawCreds = await getRawCredentials(linkedUserId);
       const isOwner = rawCreds.some(c => c.toLowerCase() === cleanedContact.toLowerCase());
       if (isOwner) {
@@ -160,6 +173,27 @@ async function checkContact(req, res) {
 }
 
 /**
+ * Helper: cleanupIncompleteAccounts  [Fix 2 — Option B]
+ * Deletes users where profile_complete=0 AND created_at > 24 hours ago.
+ * ON DELETE CASCADE on user_credentials and registered_devices handles child rows.
+ * Non-fatal — logged only, never throws.
+ */
+async function cleanupIncompleteAccounts() {
+  try {
+    const result = await query(
+      `DELETE FROM users
+       WHERE profile_complete = 0
+         AND created_at < NOW() - INTERVAL 24 HOUR`
+    );
+    if (result.affectedRows > 0) {
+      console.log(`[Cleanup] Removed ${result.affectedRows} incomplete account(s) older than 24h`);
+    }
+  } catch (err) {
+    console.error('[Cleanup] cleanupIncompleteAccounts error:', err.message);
+  }
+}
+
+/**
  * 2. POST /api/send-otp
  * Sends/generates OTP for an existing user (Login Flow).
  * Returns HTTP 404 with action SHOW_NOT_FOUND_DIALOG if account is missing.
@@ -167,9 +201,13 @@ async function checkContact(req, res) {
 async function sendOtp(req, res) {
   try {
     const { contact, deviceId, androidId, hardwareFingerprint, simSlotIds } = req.body;
+
     const cleanedContact = contact ? contact.trim() : '';
 
     const adminSecretUsername = process.env.ADMIN_SECRET_USERNAME || 'admin';
+
+    // Fix 2: Run cleanup on every login attempt (non-blocking)
+    cleanupIncompleteAccounts().catch(() => {});
 
     // 👑 ADMIN BYPASS
     if (cleanedContact === adminSecretUsername) {
@@ -184,20 +222,24 @@ async function sendOtp(req, res) {
       }
     }
 
-    // ── DEVICE-BINDING GATEKEEPER (সবার আগে প্রায়োরিটি) ─────────────────
+    // ── DEVICE-BINDING GATEKEEPER ────────────────────────────
     if (deviceId) {
-      const { abused, userId: abuseUserId } = await isTrialAbused(
-        deviceId,
-        androidId,
-        hardwareFingerprint,
-        simSlotIds,
-        targetUserId
-      );
-      if (abused) {
-        const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
+      const boundDevices = await query('SELECT user_id FROM registered_devices WHERE device_id = ? LIMIT 1', [deviceId]);
+      let linkedUserId = boundDevices.length > 0 ? boundDevices[0].user_id : null;
+      if (linkedUserId) {
+        const userExists = await query('SELECT id FROM users WHERE id = ? LIMIT 1', [linkedUserId]);
+        if (userExists.length === 0) {
+          console.log(`[Device Binding] User ${linkedUserId} does not exist (deleted). Cleaning up registered_devices...`);
+          await query('DELETE FROM registered_devices WHERE user_id = ?', [linkedUserId]);
+          await query('DELETE FROM device_trial_logs WHERE user_id = ?', [linkedUserId]);
+          linkedUserId = null;
+        }
+      }
+      if (linkedUserId && parseInt(linkedUserId, 10) !== parseInt(targetUserId, 10)) {
+        const { boundPhones, boundEmails } = await getBoundCredentials(linkedUserId);
         return res.status(403).json({
           success: false,
-          action:  'DEVICE_ALREADY_BOUND',
+          action: 'DEVICE_ALREADY_BOUND',
           message: 'ডিভাইস লিংক নোটিশ: নিরাপত্তা ও পলিসিগত কারণে আমাদের সিস্টেমে একটি hardware ডিভাইসের সাথে কেবল একটি মূল অ্যাকাউন্টই যুক্ত রাখা সম্ভব। আপনার এই ডিভাইসটি ইতিমধ্যে নিচের অ্যাকাউন্টটির সাথে নিবন্ধিত ও লিংক করা রয়েছে। অনুগ্রহ করে পূর্বের লিংক করা অ্যাকাউন্টটি ব্যবহার করে লগইন সম্পন্ন করুন। এই ডিভাইসে নতুন কোনো অ্যাকাউন্ট তৈরি বা অন্য অ্যাকাউন্ট ব্যবহার করা যাবে না।',
           boundPhones,
           boundEmails
@@ -262,6 +304,10 @@ async function registerSendOtp(req, res) {
     const { contact, deviceId, androidId, hardwareFingerprint, simSlotIds } = req.body;
 
     const cleanedContact = contact ? contact.trim() : '';
+
+    // Fix 2: Non-blocking cleanup of stale incomplete accounts on every OTP request
+    cleanupIncompleteAccounts().catch(() => {});
+
     let targetUserId = null;
     if (cleanedContact) {
       const userRecord = await findUserByContact(cleanedContact);
@@ -270,11 +316,21 @@ async function registerSendOtp(req, res) {
       }
     }
 
-    // ── DEVICE-BINDING GATEKEEPER (সবার আগে প্রায়োরিটি) ─────────────────
+    // ── DEVICE-BINDING GATEKEEPER ────────────────────────────
     if (deviceId) {
-      const { abused, userId: abuseUserId } = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds, targetUserId);
-      if (abused) {
-        const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
+      const boundDevices = await query('SELECT user_id FROM registered_devices WHERE device_id = ? LIMIT 1', [deviceId]);
+      let linkedUserId = boundDevices.length > 0 ? boundDevices[0].user_id : null;
+      if (linkedUserId) {
+        const userExists = await query('SELECT id FROM users WHERE id = ? LIMIT 1', [linkedUserId]);
+        if (userExists.length === 0) {
+          console.log(`[Device Binding] User ${linkedUserId} does not exist (deleted). Cleaning up registered_devices...`);
+          await query('DELETE FROM registered_devices WHERE user_id = ?', [linkedUserId]);
+          await query('DELETE FROM device_trial_logs WHERE user_id = ?', [linkedUserId]);
+          linkedUserId = null;
+        }
+      }
+      if (linkedUserId && parseInt(linkedUserId, 10) !== parseInt(targetUserId, 10)) {
+        const { boundPhones, boundEmails } = await getBoundCredentials(linkedUserId);
         return res.status(403).json({
           success: false,
           action: 'DEVICE_ALREADY_BOUND',
@@ -289,14 +345,23 @@ async function registerSendOtp(req, res) {
       return res.status(400).json({ error: 'Contact is required' });
     }
 
-    // Ensure contact is NOT already registered
-    const userRecord = await findUserByContact(cleanedContact);
+    // Fix 3: Same-contact retry — check profile_complete before blocking
+    const existingUser = await findUserByContact(cleanedContact);
 
-    if (userRecord) {
-      return res.status(400).json({
-        success: false,
-        message: 'এই মোবাইল বা ইমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট খোলা হয়েছে।'
-      });
+    if (existingUser) {
+      if (existingUser.profile_complete === 0) {
+        // Incomplete signup: OTP verified but signup form was never submitted.
+        // Delete the stale record so the user can retry with a fresh OTP.
+        await query('DELETE FROM users WHERE id = ?', [existingUser.id]);
+        console.log('[Register] Deleted incomplete account id=' + existingUser.id + ' — contact: ' + cleanedContact);
+        // Fall through → send fresh OTP below
+      } else {
+        // profile_complete = 1 → active, fully completed account
+        return res.status(400).json({
+          success: false,
+          message: 'এই মোবাইল বা ইমেইল দিয়ে ইতিমধ্যে অ্যাকাউন্ট খোলা হয়েছে।'
+        });
+      }
     }
 
     const otpCode = generateOtpCode();
@@ -375,40 +440,25 @@ async function verifyOtp(req, res) {
         return res.status(401).json({ error: 'Wrong Password', message: 'Wrong Password' });
       }
 
-      // Generate JWT token
       const token = jwt.sign(
-          { userId: 0, role: 'admin', deviceId: deviceId || 'admin-device' },
-          JWT_SECRET,
-          { expiresIn: '99y' }
-        );
+        { userId: 0, role: 'admin', deviceId: deviceId || 'admin-device' },
+        JWT_SECRET,
+        { expiresIn: '99y' }
+      );
 
       return res.json({
         token,
         requiresSecurityPin: false,
         user: {
-          id: 0,
-          name: 'Global Admin',
-          phone: adminSecretUsername,
-          email: 'admin@paychek.online',
-          role: 'admin',
-          balance: 0.00,
-          blocked: false,
-          profileComplete: true,
-          smsEnabled: true,
-          gmailEnabled: true
+          id: 0, name: 'Global Admin', phone: adminSecretUsername,
+          email: 'admin@paychek.online', role: 'admin', balance: 0.00,
+          blocked: false, profileComplete: true, smsEnabled: true, gmailEnabled: true
         },
         device: {
-          id: 0,
-          userId: 0,
-          deviceId: deviceId || 'admin-device',
-          deviceName: 'Admin Dashboard Console',
-          status: 'active',
-          isParent: true,
-          isApproved: true,
-          deviceRole: 'owner',
-          isTrialLocked: false,
-          trialExpiresAt: null,
-          lockReason: null
+          id: 0, userId: 0, deviceId: deviceId || 'admin-device',
+          deviceName: 'Admin Dashboard Console', status: 'active',
+          isParent: true, isApproved: true, deviceRole: 'owner',
+          isTrialLocked: false, trialExpiresAt: null, lockReason: null
         }
       });
     }
@@ -426,17 +476,29 @@ async function verifyOtp(req, res) {
       }
     }
 
-    // ── DEVICE-BINDING GATEKEEPER (সবার আগে প্রায়োরিটি) ─────────────────
-    const { abused, userId: abuseUserId } = await isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotIds, targetUserId);
-    if (abused) {
-      const { boundPhones, boundEmails } = await getBoundCredentials(abuseUserId);
-      return res.status(403).json({
-        success: false,
-        action: 'DEVICE_ALREADY_BOUND',
-        message: 'ডিভাইস লিংক নোটিশ: নিরাপত্তা ও পলিসিগত কারণে আমাদের সিস্টেমে একটি hardware ডিভাইসের সাথে কেবল একটি মূল অ্যাকাউন্টই যুক্ত রাখা সম্ভব। আপনার এই ডিভাইসটি ইতিমধ্যে নিচের অ্যাকাউন্টটির সাথে নিবন্ধিত ও লিংক করা রয়েছে। অনুগ্রহ করে পূর্বের লিংক করা অ্যাকাউন্টটি ব্যবহার করে লগইন সম্পন্ন করুন। এই ডিভাইসে নতুন কোনো অ্যাকাউন্ট তৈরি বা অন্য অ্যাকাউন্ট ব্যবহার করা যাবে না।',
-        boundPhones,
-        boundEmails
-      });
+    // ── DEVICE-BINDING GATEKEEPER ────────────────────────────
+    if (deviceId) {
+      const boundDevices = await query('SELECT user_id FROM registered_devices WHERE device_id = ? LIMIT 1', [deviceId]);
+      let linkedUserId = boundDevices.length > 0 ? boundDevices[0].user_id : null;
+      if (linkedUserId) {
+        const userExists = await query('SELECT id FROM users WHERE id = ? LIMIT 1', [linkedUserId]);
+        if (userExists.length === 0) {
+          console.log(`[Device Binding] User ${linkedUserId} does not exist (deleted). Cleaning up registered_devices...`);
+          await query('DELETE FROM registered_devices WHERE user_id = ?', [linkedUserId]);
+          await query('DELETE FROM device_trial_logs WHERE user_id = ?', [linkedUserId]);
+          linkedUserId = null;
+        }
+      }
+      if (linkedUserId && parseInt(linkedUserId, 10) !== parseInt(targetUserId, 10)) {
+        const { boundPhones, boundEmails } = await getBoundCredentials(linkedUserId);
+        return res.status(403).json({
+          success: false,
+          action: 'DEVICE_ALREADY_BOUND',
+          message: 'ডিভাইস লিঙ্ক নোটিশ: নিরাপত্তা ও পলিসিগত কারণে আমাদের সিস্টেমে একটি hardware ডিভাইসের সাথে কেবল একটি মূল অ্যাকাউন্টই যুক্ত রাখা সম্ভব।',
+          boundPhones,
+          boundEmails
+        });
+      }
     }
 
     if (!contact || !code) {
@@ -444,53 +506,78 @@ async function verifyOtp(req, res) {
     }
 
     const cleanedCode = code.trim();
-
-    // Check OTP record
     const otps = await query(
       'SELECT * FROM otps WHERE contact = ? AND code = ? AND expires_at > NOW() AND used_at IS NULL ORDER BY id DESC LIMIT 1',
       [cleanedContact, cleanedCode]
     );
-
     if (otps.length === 0) {
-      return res.status(400).json({ error: 'ভুল ওটিপি কোড অথবা ওটিপির মেয়াদ শেষ হয়ে গেছে।' });
+      return res.status(400).json({ error: 'ভুল ওটিপি কোড অথবা ওটিপির মেয়াদ শেষ হয়ে গেছে।' });
     }
-
-    // Mark OTP as used
     await query('UPDATE otps SET used_at = NOW() WHERE id = ?', [otps[0].id]);
 
-    // Check if user exists, if not, create new pending user
+    // Check if user exists, if not, create new pending user (profile_complete=0)
     let user = await findUserByContact(cleanedContact);
+    let isNewUser = false;
     if (!user) {
+      isNewUser = true;
       const isEmail = cleanedContact.includes('@');
-      
       const insertResult = await query(
-        'INSERT INTO users (name, phone, email, role, profile_complete, is_paid, active_plan_name, expiry_date) VALUES (?, ?, ?, ?, ?, 0, \'FREE_LEVEL\', NULL)',
-        ['', isEmail ? null : cleanedContact, isEmail ? cleanedContact : null, 'user', 0]
+        "INSERT INTO users (name, phone, email, role, profile_complete, is_paid, active_plan_name, expiry_date) VALUES (?, ?, ?, ?, 0, 0, 'FREE_LEVEL', NULL)",
+        ['', isEmail ? null : cleanedContact, isEmail ? cleanedContact : null, 'user']
       );
-
       const newUserId = insertResult.insertId;
-      // Sync verified contact to user_credentials
       await query(
         'INSERT INTO user_credentials (user_id, type, value, verified_at) VALUES (?, ?, ?, NOW())',
         [newUserId, isEmail ? 'email' : 'phone', cleanedContact]
       );
-
       const newUsers = await query('SELECT * FROM users WHERE id = ? LIMIT 1', [newUserId]);
       user = newUsers[0];
     }
 
     // Check blocked status
     if (user.blocked) {
-      return res.status(403).json({ error: 'আপনার অ্যাকাউন্টটি ব্লক করা হয়েছে। অনুগ্রহ করে অ্যাডমিনের সাথে যোগাযোগ করুন।' });
+      return res.status(403).json({ error: 'আপনার অ্যাকাউন্টটি ব্লক করা হয়েছে। অনুগ্রহ করে অ্যাডমিনের সাথে যোগাযোগ করুন।' });
     }
 
-    // Retrieve default trial days from global configs
+    // ── Fix 1: Device binding gated on profile completion ────────────────────
+    // NEW user (profile_complete=0): Do NOT bind device yet.
+    //   Return a PROFILE_PENDING token — completeProfile() will bind the device.
+    // EXISTING user (profile_complete=1): Proceed with full device registration.
+    // ─────────────────────────────────────────────────────────────────────────
+    if (isNewUser || user.profile_complete === 0) {
+      // Generate a short-lived pending-signup token (no device, no secretKey yet)
+      const pendingToken = jwt.sign(
+        {
+          userId:   user.id,
+          role:     user.role,
+          deviceId: deviceId, // stored so completeProfile can use it
+          phase:    'PROFILE_PENDING'
+        },
+        JWT_SECRET,
+        { expiresIn: '2h' }  // short-lived — just for the signup form session
+      );
+      console.log(`[AUTH] New user OTP verified — returning PROFILE_PENDING token (userId=${user.id})`);
+      return res.json({
+        token:              pendingToken,
+        requiresSecurityPin: false,
+        phase:              'PROFILE_PENDING', // App checks this to navigate to SignupScreen
+        user: {
+          id:              user.id,
+          name:            user.name,
+          phone:           user.phone,
+          email:           user.email,
+          role:            user.role,
+          profileComplete: false
+        }
+      });
+    }
+
+    // ── Existing user: full device registration flow (unchanged) ─────────────
     const trialDaysConfig = await query(
       "SELECT config_value FROM global_config WHERE config_key = 'trial_days' LIMIT 1"
     );
     const trialDays = trialDaysConfig.length > 0 ? parseInt(trialDaysConfig[0].config_value, 10) : TRIAL_DEFAULT_DAYS;
 
-    // Check if device is already registered for this user
     let device;
     const devices = await query(
       'SELECT * FROM registered_devices WHERE user_id = ? AND device_id = ? LIMIT 1',
@@ -498,7 +585,6 @@ async function verifyOtp(req, res) {
     );
 
     if (devices.length === 0) {
-      // First device for user becomes parent and auto-approved, others become child and pending approval
       const userDevicesCount = await query(
         'SELECT COUNT(*) as count FROM registered_devices WHERE user_id = ?',
         [user.id]
@@ -506,7 +592,6 @@ async function verifyOtp(req, res) {
       
       const isParent = userDevicesCount[0].count === 0 ? 1 : 0;
 
-      // Plan limit check for child devices
       if (isParent === 0) {
         if (user.is_paid === 0 || user.active_plan_name === 'FREE_LEVEL') {
           return res.status(403).json({
@@ -516,7 +601,6 @@ async function verifyOtp(req, res) {
           });
         }
         
-        // Fetch plan limits
         const plans = await query(
           "SELECT max_devices FROM subscription_plans WHERE plan_name = ? LIMIT 1",
           [user.active_plan_name]
@@ -533,7 +617,6 @@ async function verifyOtp(req, res) {
       }
 
       const initialStatus = isParent ? 'active' : 'pending';
-
       const trialStartedAt = new Date();
       const trialExpiresAt = new Date();
       trialExpiresAt.setDate(trialStartedAt.getDate() + trialDays);
@@ -543,35 +626,36 @@ async function verifyOtp(req, res) {
           (user_id, device_id, device_name, device_model, android_version, status, is_parent, is_approved, device_role, trial_started_at, trial_expires_at, is_trial_locked) 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          user.id,
-          deviceId,
+          user.id, deviceId,
           isParent ? 'Main Phone' : 'Co-Parent Device',
           deviceModel || 'Unknown Model',
           androidVersion || 'Android',
-          initialStatus,
-          isParent,
-          isParent ? 1 : 0,
+          initialStatus, isParent, isParent ? 1 : 0,
           isParent ? 'owner' : 'pending',
-          trialStartedAt,
-          trialExpiresAt,
-          0
+          trialStartedAt, trialExpiresAt, 0
         ]
       );
 
-      // Device trial logs insertion removed from verifyOtp. Will be recorded on completeProfile.
-
       const freshDevices = await query('SELECT * FROM registered_devices WHERE id = ?', [insertDeviceResult.insertId]);
       device = freshDevices[0];
+
+      if (isParent === 1) {
+        const existingKey = await query("SELECT secretKey FROM users WHERE id = ? LIMIT 1", [user.id]);
+        if (!existingKey[0]?.secretKey) {
+          const newSecretKey = crypto.randomBytes(32).toString('hex');
+          await query("UPDATE users SET secretKey = ? WHERE id = ?", [newSecretKey, user.id]);
+          user.secretKey = newSecretKey;
+          console.log(`[AUTH] ✅ Generated secretKey for existing parent re-login (userId=${user.id})`);
+        }
+      }
     } else {
       device = devices[0];
 
-      // Update last seen & model
       await query(
         'UPDATE registered_devices SET last_seen_at = NOW(), device_model = ?, android_version = ? WHERE id = ?',
         [deviceModel, androidVersion, device.id]
       );
 
-      // Verify trial locked status
       if (device.trial_expires_at && new Date(device.trial_expires_at) < new Date() && !device.is_trial_locked) {
         await query(
           "UPDATE registered_devices SET is_trial_locked = 1, lock_reason = 'trial_expired' WHERE id = ?",
@@ -579,6 +663,28 @@ async function verifyOtp(req, res) {
         );
         device.is_trial_locked = 1;
         device.lock_reason = 'trial_expired';
+      }
+
+      if (device.is_parent === 1) {
+        const keyRow = await query(
+          'SELECT secretKey, secretKeyVersion FROM users WHERE id = ? LIMIT 1',
+          [user.id]
+        );
+        const existingSecretKey = keyRow[0]?.secretKey;
+        if (existingSecretKey) {
+          user.secretKey        = existingSecretKey;
+          user.secretKeyVersion = keyRow[0]?.secretKeyVersion || 1;
+          console.log(`[AUTH] 🔑 Returning existing secretKey (v${user.secretKeyVersion}) for parent re-login — userId: ${user.id}`);
+        } else {
+          const newKey = crypto.randomBytes(32).toString('hex');
+          await query(
+            'UPDATE users SET secretKey = ?, secretKeyCreatedAt = NOW(), secretKeyVersion = 1 WHERE id = ?',
+            [newKey, user.id]
+          );
+          user.secretKey        = newKey;
+          user.secretKeyVersion = 1;
+          console.log(`[AUTH] ⚠️ Generated missing secretKey for legacy parent device — userId: ${user.id}`);
+        }
       }
     }
 
@@ -592,6 +698,13 @@ async function verifyOtp(req, res) {
     return res.json({
       token,
       requiresSecurityPin: !!user.pin,
+      // ── v2.1.0: secretKey — parent device login/reinstall সময়ে return করা হয় ──
+      // নতুন bind: verifyOtp এর is_parent===1 branch এ generate ও return হয়
+      // Reinstall recovery: existing-device branch এ DB থেকে তুলে return হয়
+      // Child device: secretKey পাঠানো হয় না (is_parent === 0)
+      ...(device.is_parent === 1 && user.secretKey
+        ? { secretKey: user.secretKey, secretKeyVersion: user.secretKeyVersion || 1 }
+        : {}),
       user: {
         id: user.id,
         name: user.name,
@@ -700,30 +813,108 @@ async function completeProfile(req, res) {
       [name.trim(), hashedPin, finalPhone, finalEmail, userId]
     );
 
-    // Auto-insert 8 default gateway methods (4 Personal on SIM 1, 4 Agent on SIM 2)
+    // Sync verified phone/email to user_credentials table so the user can log in with either
+    if (finalPhone) {
+      await query(
+        "INSERT INTO user_credentials (user_id, type, value, verified_at) VALUES (?, 'phone', ?, NOW()) ON DUPLICATE KEY UPDATE verified_at = NOW()",
+        [userId, finalPhone]
+      );
+    }
+    if (finalEmail) {
+      await query(
+        "INSERT INTO user_credentials (user_id, type, value, verified_at) VALUES (?, 'email', ?, NOW()) ON DUPLICATE KEY UPDATE verified_at = NOW()",
+        [userId, finalEmail]
+      );
+    }
+
+    // Auto-insert default gateway methods dynamically from official templates
     const existingMethods = await query(
       'SELECT id FROM gateway_methods WHERE user_id = ? LIMIT 1',
       [userId]
     );
 
     if (existingMethods.length === 0) {
-      await query(
-        `INSERT INTO gateway_methods (user_id, template_id, sim_slot, provider, priority) VALUES 
-          (?, 1, 1, 'bKash', 1),
-          (?, 2, 1, 'Nagad', 2),
-          (?, 3, 1, 'Rocket', 3),
-          (?, 4, 1, 'Upay', 4),
-          (?, 5, 2, 'bKash', 5),
-          (?, 6, 2, 'Nagad', 6),
-          (?, 7, 2, 'Rocket', 7),
-          (?, 8, 2, 'Upay', 8)`,
-        [userId, userId, userId, userId, userId, userId, userId, userId]
+      const officialTemplates = await query(
+        'SELECT id, template_name FROM sms_templates WHERE is_official = 1'
       );
+      if (officialTemplates.length > 0) {
+        const insertParams = [];
+        const valuePlaceholders = [];
+        let priority = 1;
+        for (const tmpl of officialTemplates) {
+          let provider = 'bKash';
+          if (tmpl.template_name.toLowerCase().includes('nagad')) provider = 'Nagad';
+          else if (tmpl.template_name.toLowerCase().includes('rocket')) provider = 'Rocket';
+          else if (tmpl.template_name.toLowerCase().includes('upay')) provider = 'Upay';
+
+          let simSlot = 1;
+          if (tmpl.template_name.toLowerCase().includes('agent')) simSlot = 2;
+
+          valuePlaceholders.push('(?, ?, ?, ?, ?)');
+          insertParams.push(userId, tmpl.id, simSlot, provider, priority++);
+        }
+
+        if (valuePlaceholders.length > 0) {
+          await query(
+            `INSERT INTO gateway_methods (user_id, template_id, sim_slot, provider, priority) VALUES ${valuePlaceholders.join(', ')}`,
+            insertParams
+          );
+        }
+      }
     }
 
     // Fetch updated user details
     const updatedUsers = await query('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
     const updatedUser = updatedUsers[0];
+
+    // ── Fix 1: Device bind happens HERE (not in verifyOtp) for new users ─────
+    // JWT phase='PROFILE_PENDING' path: deviceId was embedded in the token.
+    // Bind the device now that profile is fully complete.
+    const jwtPhase = req.user.phase || null;
+    if (jwtPhase === 'PROFILE_PENDING' && deviceId) {
+      try {
+        const existingDevice = await query(
+          'SELECT id FROM registered_devices WHERE user_id = ? AND device_id = ? LIMIT 1',
+          [userId, deviceId]
+        );
+        if (existingDevice.length === 0) {
+          const trialDaysConfig = await query(
+            "SELECT config_value FROM global_config WHERE config_key = 'trial_days' LIMIT 1"
+          );
+          const trialDays = trialDaysConfig.length > 0
+            ? parseInt(trialDaysConfig[0].config_value, 10)
+            : TRIAL_DEFAULT_DAYS;
+
+          const trialStartedAt = new Date();
+          const trialExpiresAt = new Date();
+          trialExpiresAt.setDate(trialStartedAt.getDate() + trialDays);
+
+          await query(
+            `INSERT INTO registered_devices
+              (user_id, device_id, device_name, device_model, android_version,
+               status, is_parent, is_approved, device_role,
+               trial_started_at, trial_expires_at, is_trial_locked)
+             VALUES (?, ?, 'Main Phone', 'Unknown Model', 'Android', 'active', 1, 1, 'owner', ?, ?, 0)`,
+            [userId, deviceId, trialStartedAt, trialExpiresAt]
+          );
+          console.log(`[AUTH] ✅ Device bound on completeProfile (userId=${userId}, deviceId=${deviceId})`);
+
+          // Generate secretKey now that device is bound
+          const keyCheck = await query('SELECT secretKey FROM users WHERE id = ? LIMIT 1', [userId]);
+          if (!keyCheck[0]?.secretKey) {
+            const newSecretKey = crypto.randomBytes(32).toString('hex');
+            await query(
+              'UPDATE users SET secretKey = ?, secretKeyCreatedAt = NOW(), secretKeyVersion = 1 WHERE id = ?',
+              [newSecretKey, userId]
+            );
+            console.log(`[AUTH] ✅ secretKey generated on completeProfile (userId=${userId})`);
+          }
+        }
+      } catch (bindErr) {
+        console.error('[AUTH] Device bind in completeProfile failed:', bindErr.message);
+        // Non-fatal for the response — user profile is already saved
+      }
+    }
 
     // Record device trial logs on completion of profile
     if (androidId || deviceId || hardwareFingerprint || fingerprint) {
@@ -762,6 +953,14 @@ async function completeProfile(req, res) {
     });
   } catch (error) {
     console.error('Error completing profile:', error);
+    try {
+      console.log(`[AUTH] Rolling back profile completion for user ${userId} due to error...`);
+      await query('UPDATE users SET profile_complete = 0 WHERE id = ?', [userId]);
+      await query('DELETE FROM gateway_methods WHERE user_id = ?', [userId]);
+      await query('DELETE FROM registered_devices WHERE user_id = ? AND status = "active"', [userId]);
+    } catch (cleanupErr) {
+      console.error('[AUTH] Failed to cleanup incomplete profile record:', cleanupErr.message);
+    }
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 }
@@ -828,6 +1027,18 @@ async function isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotId
 
     // If there is a linked user for this device:
     if (linkedUserId) {
+      const userExists = await query('SELECT id FROM users WHERE id = ? LIMIT 1', [linkedUserId]);
+      if (userExists.length === 0) {
+        console.log(`[Device Binding] User ${linkedUserId} does not exist (deleted). Cleaning up trial logs...`);
+        if (safeDeviceId) {
+          await query('DELETE FROM registered_devices WHERE user_id = ?', [linkedUserId]);
+        }
+        await query('DELETE FROM device_trial_logs WHERE user_id = ?', [linkedUserId]);
+        linkedUserId = null;
+      }
+    }
+
+    if (linkedUserId) {
       if (targetUserId !== null) {
         // If a contact ID is provided, verify ownership
         if (parseInt(targetUserId, 10) === parseInt(linkedUserId, 10)) {
@@ -840,12 +1051,9 @@ async function isTrialAbused(deviceId, androidId, hardwareFingerprint, simSlotId
         }
       } else {
         // If checking device trial / login on app startup (targetUserId is null):
-        // Block only if the device has expired or is trial-locked
-        if (isLockedOrExpired) {
-          return { abused: true, userId: linkedUserId };
-        } else {
-          return { abused: false, userId: null };
-        }
+        // Do not block at GATE 1 (checkDeviceLogin) because we don't know the contact yet.
+        // Let them pass to GATE 2 (checkContact) where they will be verified by contact ownership.
+        return { abused: false, userId: null };
       }
     }
 
@@ -967,16 +1175,9 @@ async function checkDeviceTrial(req, res) {
         device.lock_reason = 'trial_expired';
       }
 
-      if (device.is_trial_locked) {
-        const { boundPhones: lkPhones, boundEmails: lkEmails } = await getBoundCredentials(device.user_id);
-        return res.status(403).json({
-          success: false,
-          action: 'DEVICE_ALREADY_BOUND',
-          message: 'ডিভাইস লিংক নোটিশ: নিরাপত্তা ও পলিসিগত কারণে আমাদের সিস্টেমে একটি hardware ডিভাইসের সাথে কেবল একটি মূল অ্যাকাউন্টই যুক্ত রাখা সম্ভব। আপনার এই ডিভাইসটি ইতিমধ্যে নিচের অ্যাকাউন্টটির সাথে নিবন্ধিত ও লিংক করা রয়েছে। অনুগ্রহ করে পূর্বের লিংক করা অ্যাকাউন্টটি ব্যবহার করে লগইন সম্পন্ন করুন। এই ডিভাইসে নতুন কোনো অ্যাকাউন্ট তৈরি বা অন্য অ্যাকাউন্ট ব্যবহার করা যাবে না।',
-          boundPhones: lkPhones,
-          boundEmails: lkEmails
-        });
-      }
+      // Do NOT block the owner at GATE 1 (login page) even if the trial is expired/locked.
+      // The owner must be able to log in to add balance and purchase a package.
+      // GATE 2 (checkContact) will block unauthorized users from this device.
 
       return res.json({
         success: true,

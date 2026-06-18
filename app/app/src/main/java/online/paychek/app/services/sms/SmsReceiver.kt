@@ -7,20 +7,36 @@ import android.os.Build
 import android.provider.Telephony
 import android.telephony.SubscriptionManager
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import online.paychek.app.config.AppConfig
+import online.paychek.app.data.local.AppDatabase
+import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.data.remote.dto.GatewayMethod
+import online.paychek.app.domain.usecase.sms.ProcessIncomingSmsUseCase
+import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.utils.SmsParser
 import java.util.Locale
 import java.util.regex.Pattern
 
 /**
- * SmsReceiver — ইনকামিং SMS ধরে, ৩-স্তরের হ্যাকিং ফিল্টার প্রয়োগ করে এবং ডাইনামিক ফিল্টারিং নিশ্চিত করে।
+ * SmsReceiver — Incoming SMS filter with 3-layer security and dynamic twin-mode logic.
  *
- * সিকিউরিটি ফিল্টারিং লজিক:
- *  ১. কন্ডিশন ১ ও ২ (বাধ্যতামূলক): SIM Slot এবং Sender ID গ্রাহকের সক্রিয় কনফিগারের সাথে ম্যাচ করতে হবে।
- *  ২. কন্ডিশন ৩ (Twin-Mode Logic):
- *     - অফিশিয়াল প্রোভাইডার (Strict Mode): matchingKeyword ভেরিফিকেশন এবং regex_pattern দিয়ে ট্রানজেকশন আইডি ও অ্যামাউন্ট পার্স।
- *     - কাস্টম প্রোভাইডার (Backup Mode): কোনো Regex বা কিওয়ার্ড চেক ছাড়াই ডামি ট্রানজেকশন আইডি (BKUP-timestamp-hash) ও ০৳ অ্যামাউন্ট দিয়ে সরাসরি সেন্ট্রাল ডাটাবেজে ব্যাকআপ।
+ * Security filtering logic:
+ *  1. Condition 1 & 2 (mandatory): SIM Slot and Sender ID must match the active config.
+ *  2. Condition 3 (twin-mode):
+ *     - Official provider (Strict Mode): matchingKeyword verification + regex parse.
+ *     - Custom provider (Backup Mode): dummy TrxID (BKUP-timestamp-hash), 0 amount, direct backup.
+ *
+ * Phase 5 refactor:
+ *  saveToOfflineQueueAndForward() now delegates entirely to ProcessIncomingSmsUseCase.execute().
+ *  All crypto, hashing, and Room insert logic has been removed from this class.
+ *  SmsReceiver is now ONLY responsible for:
+ *   - Receiving and filtering incoming broadcasts
+ *   - Parsing SMS into ParsedPayment
+ *   - Handing ParsedPayment to the use case
+ *   - Hosting syncPendingQueue() for backward compatibility
  */
 class SmsReceiver(
     private val onPaymentSmsReceived: ((SmsParser.ParsedPayment) -> Unit)? = null
@@ -29,6 +45,109 @@ class SmsReceiver(
     companion object {
         private const val TAG = "SmsReceiver"
         private const val EXTRA_SUBSCRIPTION_ID = "subscription"
+        // EncryptedSharedPreferences key for per-user secretKey
+        const val KEY_HMAC_SECRET = "pcu_hmac_secret_key_v2"
+
+        // -----------------------------------------------------------------------
+        // GUARD: SHA-256 computation is ONLY done via HmacHelper.sha256Hex().
+        // Never compute SHA-256 of rawBody here — there is ONE canonical location.
+        // -----------------------------------------------------------------------
+
+        /**
+         * calculateNextRetryMs — exponential backoff delay for failed queue items.
+         * retryCount 0 = first failure, caps at 6 hours after the 4th attempt.
+         *
+         * Schedule: 30s -> 2min -> 10min -> 1hr -> 6hr (cap)
+         */
+        fun calculateNextRetryMs(retryCount: Int, nowMs: Long): Long {
+            val delayMs = when (retryCount) {
+                0    -> 30_000L       // 30 seconds
+                1    -> 120_000L      // 2 minutes
+                2    -> 600_000L      // 10 minutes
+                3    -> 3_600_000L    // 1 hour
+                else -> 21_600_000L   // 6 hours (cap)
+            }
+            return nowMs + delayMs
+        }
+
+        /**
+         * syncPendingQueue — pushes pending SMS items as soon as connectivity is available.
+         * Call this when ConnectivityService.observe() emits true.
+         *
+         * Retry policy:
+         *  - HTTP 2xx          -> markAsSynced()
+         *  - HTTP 422          -> markPermanentlyFailed() — server parse failed, retrying is pointless
+         *  - Other HTTP error  -> markRetryFailed() with exponential backoff
+         *  - Network exception -> markRetryFailed() with exponential backoff
+         */
+        fun syncPendingQueue(context: Context) {
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val db  = AppDatabase.getInstance(context)
+                    val dao = db.pendingSmsDao()
+                    val nowMs = System.currentTimeMillis()
+                    val pendingItems = dao.getPendingItemsForRetry(nowMs)
+                    if (pendingItems.isEmpty()) return@launch
+
+                    Log.i(TAG, "[Sync] ${pendingItems.size} pending SMS sync starting...")
+
+                    val token = SecurePreferences.decrypt(context, AppConfig.KEY_AUTH_TOKEN)
+                    if (token.isBlank()) {
+                        Log.w(TAG, "[Sync] Token missing — sync skipped")
+                        return@launch
+                    }
+
+                    for (item in pendingItems) {
+                        try {
+                            val response = RetrofitClient.paymentApiService.ingestPaymentSms(
+                                token = "Bearer $token",
+                                request = online.paychek.app.data.remote.dto.PaymentIngestRequest(
+                                    amount         = item.amount,
+                                    trxId          = item.trxId,
+                                    providerTag    = item.providerTag,
+                                    senderNumber   = item.senderNumber ?: "",
+                                    receiverNumber = null,
+                                    smsTimestamp   = item.smsTimestamp,
+                                    rawBody        = item.rawBody,
+                                    simSlot        = item.simSlot,
+                                    simNumber      = item.simNumber,
+                                    hmacSignature  = item.hmacSignature,
+                                    isOfflineSync  = true
+                                )
+                            )
+                            when {
+                                response.isSuccessful -> {
+                                    dao.markAsSynced(item.id)
+                                    Log.i(TAG, "[Sync] OK TrxID ${item.trxId} synced successfully")
+                                }
+                                response.code() == 422 -> {
+                                    // Server HMAC OK but parse failed — retrying will NEVER succeed.
+                                    // Remove from queue permanently.
+                                    dao.markPermanentlyFailed(item.id, nowMs)
+                                    Log.e(TAG, "[Sync] PERMANENT FAIL TrxID ${item.trxId} (422 SMS_PARSE_FAILED) — removed from queue")
+                                }
+                                else -> {
+                                    val nextRetry = calculateNextRetryMs(item.retryCount, nowMs)
+                                    dao.markRetryFailed(item.id, nowMs, nextRetry)
+                                    Log.w(TAG, "[Sync] FAIL TrxID ${item.trxId}: HTTP ${response.code()} — retry #${item.retryCount + 1} scheduled at $nextRetry")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            // Network-level failure — apply exponential backoff
+                            val nextRetry = calculateNextRetryMs(item.retryCount, nowMs)
+                            dao.markRetryFailed(item.id, nowMs, nextRetry)
+                            Log.e(TAG, "[Sync] EXCEPTION TrxID ${item.trxId}: ${e.message} — retry at $nextRetry")
+                        }
+                    }
+
+                    // Clean up synced entries older than 7 days
+                    val cutoff = nowMs - (7L * 24 * 60 * 60 * 1000)
+                    dao.deleteSyncedBefore(cutoff)
+                } catch (e: Exception) {
+                    Log.e(TAG, "[Sync] Queue sync failed: ${e.message}", e)
+                }
+            }
+        }
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -38,18 +157,17 @@ class SmsReceiver(
             val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
             if (messages.isNullOrEmpty()) return
 
-            // ─── SIM Slot সনাক্তকরণ ──────────────────────────────────────
+            // SIM Slot identification
             val subscriptionId = intent.getIntExtra(EXTRA_SUBSCRIPTION_ID, -1)
-            val simSlot        = resolveSimSlot(context, subscriptionId) // 1, 2, বা null
+            val simSlot        = resolveSimSlot(context, subscriptionId) // 1, 2, or null
             val simNumber      = resolveSimNumber(context, subscriptionId)
-            // ─────────────────────────────────────────────────────────────
 
-            // লোকাল SharedPreferences থেকে কনফিগ ও গেটওয়ে মেথড ক্যাশ লোড করা
+            // Load config and gateway method cache from SharedPreferences
             val prefs = context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
             val sim1Enabled = prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, true)
             val sim2Enabled = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, true)
 
-            // ১. SIM Slot ফিল্টার (কন্ডিশন ১ ও ২ - বাধ্যতামূলক)
+            // Condition 1 & 2 (mandatory): SIM Slot filter
             if (simSlot != null) {
                 val isSimEnabled = if (simSlot == 1) sim1Enabled else sim2Enabled
                 if (!isSimEnabled) {
@@ -68,49 +186,47 @@ class SmsReceiver(
 
             for (msg in messages) {
                 val sender    = msg.originatingAddress ?: continue
+                // IMMUTABILITY CONTRACT: body = msg.messageBody, assigned ONCE, NEVER modified.
+                // Any trim/normalize after this point breaks SHA-256 consistency with the server.
                 val body      = msg.messageBody       ?: continue
                 val timestamp = msg.timestampMillis
 
-                Log.d(TAG, "SMS ধরা হয়েছে — From: $sender | SIM Slot: $simSlot | Length: ${body.length}")
+                Log.d(TAG, "SMS received — From: $sender | SIM Slot: $simSlot | Length: ${body.length}")
 
                 val cleanSender = sender.trim().lowercase(Locale.US)
 
-                // ২. কন্ডিশন ১ ও ২ (বাধ্যতামূলক): Sender ID এবং SIM Slot মিলতে হবে
-                // (যে মেথডটি চালু আছে এবং যার simSlot ও sender আইডি ম্যাচ করে)
+                // Condition 2: Sender ID and SIM Slot must match
                 val matchingMethod = cachedMethods.firstOrNull { method ->
                     method.isEnabled == 1 &&
                     (simSlot == null || method.simSlot == simSlot) &&
                     (
-                        // অফিসিয়াল প্রোভাইডার চেক
-                        if (isOfficialProvider(method.provider) || method.isOfficial == 1) {
-                            val targetSender = method.senderId?.trim()?.lowercase(Locale.US) ?: method.provider.lowercase(Locale.US)
-                            cleanSender.contains(targetSender) || 
-                            (targetSender == "rocket" && cleanSender == "16216")
-                        } else {
-                            // কাস্টম প্রোভাইডার (Backup Mode) -> সেন্ডার আইডি বা ডিসপ্লে নেম বা প্রোভাইডার হুবহু মিলতে হবে
-                            val targetSender = method.senderId?.trim()?.lowercase(Locale.US) ?: ""
-                            val displayName = method.displayName?.trim()?.lowercase(Locale.US) ?: ""
+                        if (method.templateId == null) {
+                            // Custom Sender: exact case-insensitive check
                             val provider = method.provider.trim().lowercase(Locale.US)
-                            cleanSender == targetSender || cleanSender == displayName || cleanSender == provider
+                            cleanSender == provider
+                        } else {
+                            // Standard Template: senderId match
+                            val targetSender = method.senderId?.trim()?.lowercase(Locale.US) ?: method.provider.lowercase(Locale.US)
+                            cleanSender.contains(targetSender) ||
+                            (targetSender == "rocket" && cleanSender == "16216")
                         }
                     )
                 }
 
                 if (matchingMethod == null) {
-                    Log.d(TAG, "পেমেন্ট এসএমএস ইগনোর (কন্ডিশন ১ ও ২ মিলেনি) — From: $sender | SIM Slot: $simSlot")
+                    Log.d(TAG, "Payment SMS ignored (Condition 1 & 2 not matched) — From: $sender | SIM Slot: $simSlot")
                     continue
                 }
 
-                Log.i(TAG, "ম্যাচিং গেটওয়ে মেথড পাওয়া গেছে — ID: ${matchingMethod.id} | Provider: ${matchingMethod.provider}")
+                Log.i(TAG, "Matching gateway method found — ID: ${matchingMethod.id} | Provider: ${matchingMethod.provider}")
 
-                // ৩. কন্ডিশন ৩ (টুইন-মোড লজিক)
-                val isOfficial = isOfficialProvider(matchingMethod.provider) || (matchingMethod.isOfficial == 1)
+                // Condition 3: Twin-mode logic
+                val isCustom = matchingMethod.templateId == null
 
-                if (isOfficial) {
-                    // ── ক) Strict Mode (অফিসিয়াল এডমিন টেমপ্লেট) ────────────────
+                if (!isCustom) {
+                    // Strict Mode (official admin template)
                     val matchingKeyword = matchingMethod.matchingKeyword
                     if (!matchingKeyword.isNullOrBlank()) {
-                        // কিওয়ার্ড ভেরিফিকেশন (সবগুলো কিওয়ার্ড কমা দিয়ে আলাদা করে বডিতে থাকতে হবে)
                         val keywords = matchingKeyword.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                         val hasAllKeywords = keywords.all { keyword ->
                             body.contains(keyword, ignoreCase = true)
@@ -121,12 +237,10 @@ class SmsReceiver(
                         }
                     }
 
-                    // Regex দিয়ে ট্রানজেকশন পার্স করা (কাস্টম বা ডিফল্ট)
                     val customRegex = matchingMethod.regexPattern
                     val parsedPayment = if (!customRegex.isNullOrBlank()) {
                         parseWithCustomRegex(body, customRegex, matchingMethod.provider, timestamp)
                     } else {
-                        // ডিফল্ট হার্ডকোডেড রেজেক্স ফ্যালব্যাক
                         SmsParser.parseSms(sender, body, timestamp)
                     }
 
@@ -135,44 +249,67 @@ class SmsReceiver(
                             simSlot   = simSlot,
                             simNumber = simNumber ?: matchingMethod.number
                         )
-                        Log.i(TAG, "✅ পেমেন্ট SMS Strict Mode পার্স সফল — TrxID: ${finalPayment.trxId}")
-                        onPaymentSmsReceived?.invoke(finalPayment)
+                        Log.i(TAG, "Payment SMS Strict Mode parsed — TrxID: ${finalPayment.trxId}")
+                        saveToOfflineQueueAndForward(context, finalPayment)
                     } else {
                         Log.w(TAG, "Strict Mode Regex parsing failed. Dropping SMS from $sender")
                     }
 
                 } else {
-                    // ── খ) Backup Mode (কাস্টম সেন্ডার আইডি - All Pass) ────────
-                    // কোনো কন্ডিশন ছাড়া রিড করে ডামি TrxID সহ সেন্ট্রাল ডাটাবেজে পাঠিয়ে দেবে
-                    val bodyHash = body.hashCode().toString(16)
+                    // Backup Mode (custom sender — all-pass)
+                    val bodyHash   = body.hashCode().toString(16)
                     val dummyTrxId = "BKUP-${timestamp}-${bodyHash}".uppercase(Locale.US)
-                    
+
                     val backupPayment = SmsParser.ParsedPayment(
-                        amount = 0.0,
-                        trxId = dummyTrxId,
-                        providerTag = matchingMethod.provider,
-                        senderNumber = sender,
-                        rawBody = body,
-                        smsTimestamp = timestamp,
-                        simSlot = simSlot,
-                        simNumber = simNumber ?: matchingMethod.number
+                        amount        = 0.0,
+                        trxId         = dummyTrxId,
+                        providerTag   = matchingMethod.provider,
+                        senderNumber  = sender,
+                        rawBody       = body,
+                        smsTimestamp  = timestamp,
+                        simSlot       = simSlot,
+                        simNumber     = simNumber ?: matchingMethod.number,
+                        isCustomSender = true,
+                        fullSms       = body
                     )
 
-                    Log.i(TAG, "✅ Backup Mode (All Pass) — TrxID: $dummyTrxId | Provider: ${matchingMethod.provider}")
-                    onPaymentSmsReceived?.invoke(backupPayment)
+                    Log.i(TAG, "Backup Mode (All Pass) — TrxID: $dummyTrxId | Provider: ${matchingMethod.provider}")
+                    saveToOfflineQueueAndForward(context, backupPayment)
                 }
             }
 
         } catch (e: SecurityException) {
-            Log.e(TAG, "SecurityException — SIM পড়ার অনুমতি নেই: ${e.message}")
+            Log.e(TAG, "SecurityException — no SIM read permission: ${e.message}")
         } catch (e: Exception) {
-            Log.e(TAG, "SMS প্রসেস করতে ত্রুটি: ", e)
+            Log.e(TAG, "Error processing SMS: ", e)
         }
     }
 
-    private fun isOfficialProvider(provider: String): Boolean {
-        val clean = provider.trim().lowercase(Locale.US)
-        return clean == "bkash" || clean == "nagad" || clean == "rocket" || clean == "upay"
+    // -------------------------------------------------------------------------
+    // Phase 5: Delegate to ProcessIncomingSmsUseCase.
+    // This method is now a thin dispatcher:
+    //   1. Invoke the UI/service callback (unchanged — no regression)
+    //   2. Launch the use case on IO dispatcher
+    //
+    // Removed from this method:
+    //   - rawBody blank guard   (now in ProcessIncomingSmsUseCase)
+    //   - HMAC generation       (now in ProcessIncomingSmsUseCase)
+    //   - SHA-256 rawBodyHash   (now in ProcessIncomingSmsUseCase)
+    //   - PendingSmsEntity build (now in ProcessIncomingSmsUseCase)
+    //   - Room insert           (now in ProcessIncomingSmsUseCase)
+    //   - Network check         (now in ProcessIncomingSmsUseCase via ConnectivityService)
+    // -------------------------------------------------------------------------
+    private fun saveToOfflineQueueAndForward(context: Context, payment: SmsParser.ParsedPayment) {
+        // Invoke existing callback first — foreground service UI won't break
+        onPaymentSmsReceived?.invoke(payment)
+
+        // Delegate the entire queue pipeline to the domain use case
+        CoroutineScope(Dispatchers.IO).launch {
+            val result = ProcessIncomingSmsUseCase(context).execute(payment)
+            result.onFailure { e ->
+                Log.e(TAG, "[Queue] Pipeline failed for TrxID ${payment.trxId}: ${e.message}")
+            }
+        }
     }
 
     private fun parseWithCustomRegex(body: String, patternStr: String, providerTag: String, timestamp: Long): SmsParser.ParsedPayment? {
@@ -183,7 +320,7 @@ class SmsReceiver(
                 val groupCount = matcher.groupCount()
                 val amountStr = matcher.group(1)?.replace(",", "") ?: "0.0"
                 val amount = amountStr.toDoubleOrNull() ?: 0.0
-                
+
                 val trxId: String
                 val senderNumber: String
 
@@ -197,11 +334,11 @@ class SmsReceiver(
 
                 if (trxId.isNotEmpty()) {
                     SmsParser.ParsedPayment(
-                        amount = amount,
-                        trxId = trxId.uppercase(Locale.US),
-                        providerTag = providerTag,
+                        amount       = amount,
+                        trxId        = trxId.uppercase(Locale.US),
+                        providerTag  = providerTag,
                         senderNumber = senderNumber,
-                        rawBody = body,
+                        rawBody      = body,
                         smsTimestamp = timestamp
                     )
                 } else null
@@ -212,9 +349,9 @@ class SmsReceiver(
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // subscriptionId → Physical SIM Slot (1 বা 2) রূপান্তর
-    // ──────────────────────────────────────────────────────────────────────────
+    // -------------------------------------------------------------------------
+    // subscriptionId -> Physical SIM Slot (1 or 2)
+    // -------------------------------------------------------------------------
     private fun resolveSimSlot(context: Context, subscriptionId: Int): Int? {
         if (subscriptionId == -1) return null
         return try {
@@ -229,17 +366,17 @@ class SmsReceiver(
                 null
             }
         } catch (e: SecurityException) {
-            Log.w(TAG, "SIM slot পড়তে permission নেই: ${e.message}")
+            Log.w(TAG, "No permission to read SIM slot: ${e.message}")
             null
         } catch (e: Exception) {
-            Log.w(TAG, "SIM slot resolve করা যায়নি: ${e.message}")
+            Log.w(TAG, "Could not resolve SIM slot: ${e.message}")
             null
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // subscriptionId → SIM ফোন নম্বর রিড (পাওয়া না গেলে null)
-    // ──────────────────────────────────────────────────────────────────────────
+    // -------------------------------------------------------------------------
+    // subscriptionId -> SIM phone number (null if unavailable)
+    // -------------------------------------------------------------------------
     private fun resolveSimNumber(context: Context, subscriptionId: Int): String? {
         if (subscriptionId == -1) return null
         return try {

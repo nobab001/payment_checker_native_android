@@ -100,6 +100,22 @@ data class SimToggleRequest(
 )
 
 // =============================================================================
+// Add Gateway Method — নতুন মেথড যোগ করা
+// =============================================================================
+data class AddGatewayMethodRequest(
+    @SerializedName("sim_slot") val simSlot: Int,
+    @SerializedName("provider") val provider: String,
+    @SerializedName("template_id") val templateId: Int?,
+    @SerializedName("number") val number: String?
+)
+
+data class AddGatewayMethodResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("id") val id: Int?,
+    @SerializedName("message") val message: String?
+)
+
+// =============================================================================
 // Parent-Child Control Hub DTOs
 // =============================================================================
 data class ChildDeviceDto(

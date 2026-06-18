@@ -11,6 +11,7 @@ import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.dto.TransactionItem
 import online.paychek.app.data.repository.PaymentRepository
 import online.paychek.app.utils.SecurePreferences
+import online.paychek.app.utils.NetworkConnectivityObserver
 
 // =============================================================================
 // Provider Filter Options
@@ -50,6 +51,14 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
 
     private val repository = PaymentRepository()
     private val prefs      = application.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+    private val connectivityObserver = NetworkConnectivityObserver(application)
+
+    val isNetworkAvailable = connectivityObserver.observe()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = connectivityObserver.isNetworkAvailable()
+        )
 
     private val _state = MutableStateFlow(TransactionSearchState())
     val state: StateFlow<TransactionSearchState> = _state.asStateFlow()
@@ -65,7 +74,13 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
             }
             .launchIn(viewModelScope)
 
-        loadFirstPage()
+        viewModelScope.launch {
+            isNetworkAvailable.collect { available ->
+                if (available) {
+                    loadFirstPage()
+                }
+            }
+        }
     }
 
     fun onSearchQueryChanged(query: String) {

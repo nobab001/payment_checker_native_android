@@ -16,6 +16,9 @@ import online.paychek.app.data.remote.dto.*
 import online.paychek.app.data.repository.PaymentRepository
 import online.paychek.app.services.foreground.SmsMonitorService
 import online.paychek.app.utils.SecurePreferences
+import online.paychek.app.utils.NetworkConnectivityObserver
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 
 // =============================================================================
 // UI State — Dashboard স্ক্রিনের সম্পূর্ণ অবস্থা
@@ -51,6 +54,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val repository = PaymentRepository()
     private val prefs      = application.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+    private val connectivityObserver = NetworkConnectivityObserver(application)
+
+    val isNetworkAvailable = connectivityObserver.observe()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = connectivityObserver.isNetworkAvailable()
+        )
 
     private val _state = MutableStateFlow(DashboardScreenState())
     val state: StateFlow<DashboardScreenState> = _state.asStateFlow()
@@ -61,8 +72,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val userName = prefs.getString("pcu_user_name", "ব্যবহারকারী") ?: "ব্যবহারকারী"
         _state.update { it.copy(isServiceActive = isActive, userName = userName) }
 
-        loadDashboardStats()
-        loadPlans()
+        viewModelScope.launch {
+            isNetworkAvailable.collect { available ->
+                if (available) {
+                    loadDashboardStats()
+                    loadPlans()
+                }
+            }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
