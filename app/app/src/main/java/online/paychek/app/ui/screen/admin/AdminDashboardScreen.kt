@@ -893,13 +893,12 @@ private fun SmsTemplateEditDialog(
                     Button(
                         onClick = {
                             val finalKeywords = keywordsList.joinToString(",")
-                            val finalRegex = template.regexPattern.ifBlank { "Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:?\\s*([A-Z0-9]{6,})" }
                             onSave(
                                 template.copy(
                                     templateName = name,
                                     senderId = sender,
                                     matchingKeyword = finalKeywords,
-                                    regexPattern = finalRegex,
+                                    regexPattern = "",
                                     isActive = isActive
                                 )
                             )

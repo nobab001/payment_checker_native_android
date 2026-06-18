@@ -84,23 +84,23 @@ async function getSmsTemplates(req, res) {
 
 async function saveSmsTemplate(req, res) {
   try {
-    const { id, template_name, sender_id, matching_keyword, regex_pattern, is_active } = req.body;
-    if (!template_name || !sender_id || !regex_pattern) {
+    const { id, template_name, sender_id, matching_keyword, is_active } = req.body;
+    if (!template_name || !sender_id) {
       return res.status(400).json({ error: 'Missing required template fields' });
     }
 
     if (id) {
       await query(
         `UPDATE sms_templates 
-         SET template_name = ?, sender_id = ?, matching_keyword = ?, regex_pattern = ?, is_active = ? 
+         SET template_name = ?, sender_id = ?, matching_keyword = ?, is_active = ? 
          WHERE id = ? AND is_official = 1`,
-        [template_name, sender_id, matching_keyword || '', regex_pattern, is_active === undefined ? 1 : (is_active ? 1 : 0), id]
+        [template_name, sender_id, matching_keyword || '', is_active === undefined ? 1 : (is_active ? 1 : 0), id]
       );
     } else {
       await query(
-        `INSERT INTO sms_templates (template_name, sender_id, matching_keyword, regex_pattern, is_official, is_active) 
-         VALUES (?, ?, ?, ?, 1, ?)`,
-        [template_name, sender_id, matching_keyword || '', regex_pattern, is_active === undefined ? 1 : (is_active ? 1 : 0)]
+        `INSERT INTO sms_templates (template_name, sender_id, matching_keyword, is_official, is_active) 
+         VALUES (?, ?, ?, 1, ?)`,
+        [template_name, sender_id, matching_keyword || '', is_active === undefined ? 1 : (is_active ? 1 : 0)]
       );
     }
     return res.json({ success: true, message: 'SMS Template saved successfully.' });

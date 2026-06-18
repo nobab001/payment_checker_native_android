@@ -45,8 +45,8 @@ async function parseRawSms(rawBody, senderHint = '') {
     }
 
     try {
-      // Create RegExp object from regex_pattern
-      const regex = new RegExp(template.regex_pattern, 'is');
+      // Use unified hardcoded payment parser regex instead of dynamic database regex_pattern
+      const regex = /Tk\s*([\d,]+(?:\.\d+)?)\s*from\s*([\d*Xx]+).*?TrxID:?\s*([A-Z0-9]{6,})/is;
       const match = regex.exec(cleanBody);
       if (!match) continue;
 
