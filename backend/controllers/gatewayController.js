@@ -10,7 +10,7 @@ async function getGatewayMethods(req, res) {
 
     const rows = await query(
       `SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.is_enabled, gm.priority, gm.template_id,
-              t.sender_id, t.matching_keyword, t.regex_pattern, COALESCE(t.is_official, 1) AS is_official,
+              t.sender_id, t.matching_keyword, '' AS regex_pattern, COALESCE(t.is_official, 1) AS is_official,
               cvt.single_number_instruction, cvt.multiple_number_instruction
          FROM gateway_methods gm
     LEFT JOIN sms_templates t ON gm.template_id = t.id
@@ -154,7 +154,7 @@ async function updateMethod(req, res) {
 async function getTemplates(req, res) {
   try {
     const rows = await query(
-      `SELECT id, template_name, sender_id, matching_keyword, regex_pattern, is_official, is_active
+      `SELECT id, template_name, sender_id, matching_keyword, '' AS regex_pattern, is_official, is_active
          FROM sms_templates
         WHERE is_active = 1`
     );

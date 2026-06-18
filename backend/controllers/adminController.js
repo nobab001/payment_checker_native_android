@@ -73,7 +73,7 @@ async function getSmsTemplates(req, res) {
     const mapped = templates.map(t => ({
       ...t,
       matching_keyword: t.matching_keyword || '',
-      regex_pattern: t.regex_pattern || ''
+      regex_pattern: ''
     }));
     return res.json({ success: true, templates: mapped });
   } catch (err) {

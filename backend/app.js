@@ -339,26 +339,25 @@ app.listen(PORT, async () => {
     await query("UPDATE `registered_devices` SET `status` = 'active', `is_approved` = 1, `device_role` = 'owner' WHERE `is_parent` = 1 AND (`device_role` = 'pending' OR `device_role` IS NULL)");
     // Seed default SMS templates (1 to 8) if missing
     const defaultSmsTemplates = [
-      { id: 1, name: 'bKash Personal', sender: 'bKash', kw: 'You have received,Tk.,Ref:', regex: 'You have received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})' },
-      { id: 2, name: 'Nagad Personal', sender: 'NAGAD', kw: 'received cash in Tk,TrxID:', regex: 'received cash in Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})' },
-      { id: 3, name: 'Rocket Personal', sender: '16216', kw: 'received Tk,TrxID:', regex: 'received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})' },
-      { id: 4, name: 'Upay Personal', sender: 'upay', kw: 'received Tk,TrxID', regex: 'received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})' },
-      { id: 5, name: 'bKash Agent', sender: 'bKash', kw: 'Cash In,Tk.,Ref:', regex: 'Cash In Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})' },
-      { id: 6, name: 'Nagad Agent', sender: 'NAGAD', kw: 'Cash in received,Tk.,TrxID:', regex: 'Cash in received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})' },
-      { id: 7, name: 'Rocket Agent', sender: '16216', kw: 'Cash In received,Tk.,TrxID:', regex: 'Cash In received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})' },
-      { id: 8, name: 'Upay Agent', sender: 'upay', kw: 'Cash In received,Tk.,TrxID', regex: 'Cash In received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})' }
+      { id: 1, name: 'bKash Personal', sender: 'bKash', kw: 'You have received,Tk.,Ref:' },
+      { id: 2, name: 'Nagad Personal', sender: 'NAGAD', kw: 'received cash in Tk,TrxID:' },
+      { id: 3, name: 'Rocket Personal', sender: '16216', kw: 'received Tk,TrxID:' },
+      { id: 4, name: 'Upay Personal', sender: 'upay', kw: 'received Tk,TrxID' },
+      { id: 5, name: 'bKash Agent', sender: 'bKash', kw: 'Cash In,Tk.,Ref:' },
+      { id: 6, name: 'Nagad Agent', sender: 'NAGAD', kw: 'Cash in received,Tk.,TrxID:' },
+      { id: 7, name: 'Rocket Agent', sender: '16216', kw: 'Cash In received,Tk.,TrxID:' },
+      { id: 8, name: 'Upay Agent', sender: 'upay', kw: 'Cash In received,Tk.,TrxID' }
     ];
 
     for (const t of defaultSmsTemplates) {
       await query(`
-        INSERT INTO sms_templates (id, template_name, sender_id, matching_keyword, regex_pattern, is_official, is_active)
-        VALUES (?, ?, ?, ?, ?, 1, 1)
+        INSERT INTO sms_templates (id, template_name, sender_id, matching_keyword, is_official, is_active)
+        VALUES (?, ?, ?, ?, 1, 1)
         ON DUPLICATE KEY UPDATE 
           template_name = VALUES(template_name),
           sender_id = VALUES(sender_id),
-          matching_keyword = VALUES(matching_keyword),
-          regex_pattern = VALUES(regex_pattern)
-      `, [t.id, t.name, t.sender, t.kw, t.regex]);
+          matching_keyword = VALUES(matching_keyword)
+      `, [t.id, t.name, t.sender, t.kw]);
     }
     console.log('[DB] Seeding official SMS templates complete.');
 

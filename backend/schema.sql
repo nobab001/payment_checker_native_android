@@ -220,7 +220,6 @@ CREATE TABLE IF NOT EXISTS `sms_templates` (
   `template_name`    VARCHAR(128) NOT NULL COMMENT 'Display name e.g. bKash Personal',
   `sender_id`        VARCHAR(64)  NOT NULL DEFAULT '' COMMENT 'Sender address to match e.g. bKash',
   `matching_keyword` VARCHAR(255) DEFAULT NULL COMMENT 'Comma-separated keywords required for strict verification',
-  `regex_pattern`    TEXT         DEFAULT NULL COMMENT 'Regex pattern for parsing trx_id and amount',
   `is_official`      TINYINT(1)   NOT NULL DEFAULT 1 COMMENT '1 = Official admin template, 0 = Custom user template',
   `is_active`        TINYINT(1)   NOT NULL DEFAULT 1,
   `created_at`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -299,20 +298,19 @@ CREATE TABLE IF NOT EXISTS `gateway_layouts` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Default templates
-INSERT INTO `sms_templates` (`id`, `template_name`, `sender_id`, `matching_keyword`, `regex_pattern`, `is_official`, `is_active`) VALUES
-  (1, 'bKash Personal', 'bKash', 'You have received,Tk.,Ref:', 'You have received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})', 1, 1),
-  (2, 'Nagad Personal', 'NAGAD', 'received cash in Tk,TrxID:', 'received cash in Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})', 1, 1),
-  (3, 'Rocket Personal', '16216', 'received Tk,TrxID:', 'received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})', 1, 1),
-  (4, 'Upay Personal', 'upay', 'received Tk,TrxID', 'received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})', 1, 1),
-  (5, 'bKash Agent', 'bKash', 'Cash In,Tk.,Ref:', 'Cash In Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})', 1, 1),
-  (6, 'Nagad Agent', 'NAGAD', 'Cash in received,Tk.,TrxID:', 'Cash in received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})', 1, 1),
-  (7, 'Rocket Agent', '16216', 'Cash In received,Tk.,TrxID:', 'Cash In received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})', 1, 1),
-  (8, 'Upay Agent', 'upay', 'Cash In received,Tk.,TrxID', 'Cash In received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})', 1, 1)
+INSERT INTO `sms_templates` (`id`, `template_name`, `sender_id`, `matching_keyword`, `is_official`, `is_active`) VALUES
+  (1, 'bKash Personal', 'bKash', 'You have received,Tk.,Ref:', 1, 1),
+  (2, 'Nagad Personal', 'NAGAD', 'received cash in Tk,TrxID:', 1, 1),
+  (3, 'Rocket Personal', '16216', 'received Tk,TrxID:', 1, 1),
+  (4, 'Upay Personal', 'upay', 'received Tk,TrxID', 1, 1),
+  (5, 'bKash Agent', 'bKash', 'Cash In,Tk.,Ref:', 1, 1),
+  (6, 'Nagad Agent', 'NAGAD', 'Cash in received,Tk.,TrxID:', 1, 1),
+  (7, 'Rocket Agent', '16216', 'Cash In received,Tk.,TrxID:', 1, 1),
+  (8, 'Upay Agent', 'upay', 'Cash In received,Tk.,TrxID', 1, 1)
 ON DUPLICATE KEY UPDATE 
   `template_name` = VALUES(`template_name`),
   `sender_id` = VALUES(`sender_id`),
   `matching_keyword` = VALUES(`matching_keyword`),
-  `regex_pattern` = VALUES(`regex_pattern`),
   `is_official` = VALUES(`is_official`),
   `is_active` = VALUES(`is_active`);
 
