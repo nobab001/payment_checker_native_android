@@ -519,6 +519,8 @@ fun ProfileCredentialsCard(
                                 } else {
                                     viewModel.verifyAndLinkCredential(inputValue, inputType, otpValue) {
                                         showAddDialog = false
+                                        inputValue = ""
+                                        otpValue = ""
                                         Toast.makeText(context, "ক্রেডেনশিয়াল সফলভাবে লিঙ্ক করা হয়েছে!", Toast.LENGTH_SHORT).show()
                                     }
                                 }
