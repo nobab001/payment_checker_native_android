@@ -153,7 +153,15 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
 
     fun dismissAddCredentialDialog() {
         timerJob?.cancel()
-        _state.update { it.copy(showAddCredentialDialog = false) }
+        _state.update {
+            it.copy(
+                showAddCredentialDialog = false,
+                addCredentialContact = "",
+                addCredentialOtpCode = "",
+                addCredentialOtpSent = false,
+                errorMessage = null
+            )
+        }
     }
 
     fun onAddCredentialContactChange(value: String) {

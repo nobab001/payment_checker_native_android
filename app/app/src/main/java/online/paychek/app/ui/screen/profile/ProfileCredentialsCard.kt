@@ -225,6 +225,9 @@ fun ProfileCredentialsCard(
         Dialog(
             onDismissRequest = {
                 showAddDialog = false
+                inputValue = ""
+                otpValue = ""
+                viewModel.isOtpSentForLinking = false
                 viewModel.clearError()
             },
             properties = DialogProperties(usePlatformDefaultWidth = true)
@@ -496,6 +499,9 @@ fun ProfileCredentialsCard(
                         OutlinedButton(
                             onClick = {
                                 showAddDialog = false
+                                inputValue = ""
+                                otpValue = ""
+                                viewModel.isOtpSentForLinking = false
                                 viewModel.clearError()
                             },
                             modifier = Modifier.weight(1f).fillMaxWidth(),

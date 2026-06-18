@@ -18,7 +18,7 @@ async function findUserByContact(contact) {
   const cleaned = contact.trim();
   // Lookup exclusively in user_credentials
   const cred = await query(
-    'SELECT user_id FROM user_credentials WHERE value = ? LIMIT 1',
+    'SELECT user_id FROM user_credentials WHERE value = ? AND verified_at IS NOT NULL LIMIT 1',
     [cleaned]
   );
   if (cred.length > 0) {
