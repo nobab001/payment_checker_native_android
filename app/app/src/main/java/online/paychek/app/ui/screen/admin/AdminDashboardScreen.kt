@@ -218,6 +218,8 @@ fun AdminDashboardScreen(
     showCheckoutDialog?.let { checkout ->
         CheckoutTemplateEditDialog(
             checkout = checkout,
+            smsTemplates = uiState.smsTemplates,
+            checkoutTemplates = uiState.checkoutTemplates,
             onDismiss = { showCheckoutDialog = null },
             onSave = {
                 viewModel.saveCheckoutTemplate(it)
@@ -496,7 +498,16 @@ private fun GatewaysAndTemplatesTab(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("Checkout Instructions Mapping", fontWeight = FontWeight.Bold, color = AccentTitle, fontSize = 16.sp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Checkout Instructions Mapping", fontWeight = FontWeight.Bold, color = AccentTitle, fontSize = 16.sp)
+                    IconButton(onClick = { onEditCheckout(CheckoutTemplateDto(null, 0, null, "", "")) }) {
+                        Icon(Icons.Default.AddCircle, "Add Instruction", tint = RoyalIndigo)
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
                 if (uiState.checkoutTemplates.isEmpty()) {
                     Text("কোনো নির্দেশিকা ম্যাপিং নেই।", fontSize = 13.sp, color = TextSecondary)
@@ -1025,9 +1036,14 @@ private fun SmsSettingsEditDialog(
 @Composable
 private fun CheckoutTemplateEditDialog(
     checkout: CheckoutTemplateDto,
+    smsTemplates: List<SmsTemplateDto>,
+    checkoutTemplates: List<CheckoutTemplateDto>,
     onDismiss: () -> Unit,
     onSave: (CheckoutTemplateDto) -> Unit
 ) {
+    var selectedSmsTemplateId by remember { mutableStateOf(checkout.smsTemplateId) }
+    var selectedTemplateName by remember { mutableStateOf(checkout.templateName ?: "") }
+    var dropdownExpanded by remember { mutableStateOf(false) }
     var singleInstruction by remember { mutableStateOf(checkout.singleInstruction) }
     var multipleInstruction by remember { mutableStateOf(checkout.multipleInstruction) }
 
@@ -1044,8 +1060,77 @@ private fun CheckoutTemplateEditDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("চেকআউট নির্দেশিকা এডিট", fontWeight = FontWeight.Bold, color = RoyalIndigo, fontSize = 16.sp)
-                Text("Template: ${checkout.templateName ?: checkout.smsTemplateId}", fontSize = 13.sp, color = TextSecondary)
+                Text(
+                    text = if (checkout.id == null) "চেকআউট নির্দেশিকা যুক্ত করুন" else "চেকআউট নির্দেশিকা এডিট",
+                    fontWeight = FontWeight.Bold,
+                    color = RoyalIndigo,
+                    fontSize = 16.sp
+                )
+
+                if (checkout.id == null) {
+                    val unmapped = remember(smsTemplates, checkoutTemplates) {
+                        smsTemplates.filter { t ->
+                            t.id != null && !checkoutTemplates.any { c -> c.smsTemplateId == t.id }
+                        }
+                    }
+
+                    if (unmapped.isEmpty()) {
+                        Text(
+                            text = "সব সক্রিয় টেমপ্লেটে ইতিমধ্যে নির্দেশিকা ম্যাপ করা হয়েছে।",
+                            color = StatusRed,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    } else {
+                        Text(
+                            text = "SMS টেমপ্লেট নির্বাচন করুন:",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                            color = AccentTitle
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { dropdownExpanded = true }
+                                .border(1.dp, TextSecondary.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 12.dp, vertical = 14.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (selectedSmsTemplateId == 0) "টেমপ্লেট সিলেক্ট করুন..." else selectedTemplateName,
+                                    color = if (selectedSmsTemplateId == 0) TextSecondary else TextPrimary
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = "Expand",
+                                    tint = TextSecondary
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = dropdownExpanded,
+                                onDismissRequest = { dropdownExpanded = false },
+                                modifier = Modifier.fillMaxWidth(0.7f)
+                            ) {
+                                unmapped.forEach { temp ->
+                                    DropdownMenuItem(
+                                        text = { Text(temp.templateName) },
+                                        onClick = {
+                                            selectedSmsTemplateId = temp.id!!
+                                            selectedTemplateName = temp.templateName
+                                            dropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Text("Template: ${checkout.templateName ?: checkout.smsTemplateId}", fontSize = 13.sp, color = TextSecondary)
+                }
 
                 OutlinedTextField(
                     value = singleInstruction,
@@ -1064,7 +1149,16 @@ private fun CheckoutTemplateEditDialog(
                     TextButton(onClick = onDismiss) { Text("বাতিল", color = TextSecondary) }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
-                        onClick = { onSave(checkout.copy(singleInstruction = singleInstruction, multipleInstruction = multipleInstruction)) },
+                        onClick = {
+                            onSave(
+                                checkout.copy(
+                                    smsTemplateId = selectedSmsTemplateId,
+                                    singleInstruction = singleInstruction,
+                                    multipleInstruction = multipleInstruction
+                                )
+                            )
+                        },
+                        enabled = selectedSmsTemplateId > 0 && singleInstruction.trim().isNotEmpty() && multipleInstruction.trim().isNotEmpty(),
                         colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo)
                     ) { Text("সংরক্ষণ", color = Color.White) }
                 }
