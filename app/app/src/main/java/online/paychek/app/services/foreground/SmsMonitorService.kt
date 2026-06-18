@@ -18,6 +18,7 @@ import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.data.remote.dto.PaymentIngestRequest
 import online.paychek.app.services.sms.SmsReceiver
+import online.paychek.app.services.sync.SmsPollWorker
 import online.paychek.app.services.sync.SyncWorker
 import online.paychek.app.utils.NetworkConnectivityObserver
 import online.paychek.app.utils.SecurePreferences
@@ -31,11 +32,15 @@ import java.util.Locale
 /**
  * SmsMonitorService — প্রোডাকশন-রেডি Foreground Service
  *
- * নতুন ফিচার (ধাপ ১):
- *  ১. SIM Slot সংখ্যা সহ ingest request পাঠানো হয়
- *  ২. Offline Queue — নেটওয়ার্ক না থাকলে SharedPrefs-এ JSON সেভ, পরে retry
- *  ৩. Notification-এ সর্বশেষ পেমেন্টের সময় দেখানো হয়
- *  ৪. START_STICKY — সিস্টেম kill করলে নিজে থেকে পুনরায় চালু হয়
+ * ডুয়েল-গার্ড আর্কিটেকচার:
+ *  বার্ড-১ (প্রাইমারি): SmsReceiver — OS BroadcastReceiver (real-time, immediate)
+ *  বার্ড-২ (ফলব্যাক): SmsPollWorker — ContentProvider inbox polling (15-min WorkManager)
+ *
+ *  উভয় গার্ড সর্বদা সাথে সক্রিয় থাকে। Android 14/15-এ OEM battery kill
+ *  বা broadcast throttle হলেও Guard-2 পেমেন্ট SMS miss হতে দেয় না।
+ *
+ *  Dedup: rawBodyHash UNIQUE index দুটি guard থেকে একই SMS duplicate
+ *  process হতে দেয় না।
  */
 class SmsMonitorService : Service() {
 
@@ -67,9 +72,10 @@ class SmsMonitorService : Service() {
         super.onCreate()
         Log.i(TAG, "Foreground service onCreate")
         createNotificationChannel()
-        // Schedule WorkManager fallback worker (15-min periodic recovery sync).
-        // Uses KEEP policy — safe to call multiple times, only one instance runs.
+        // Guard-1: SyncWorker — 15-min offline queue flush fallback
         SyncWorker.schedule(this)
+        // Guard-2: SmsPollWorker — 15-min ContentProvider inbox poll
+        SmsPollWorker.schedule(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -463,8 +469,9 @@ class SmsMonitorService : Service() {
         releaseWakeLock()
         unregisterSmsReceiver()
         serviceScope.cancel()
-        // WorkManager survives service death by design.
-        // Only cancel if the user explicitly stopped the service.
+        // Guard-1 SyncWorker — cancel on explicit user stop
         SyncWorker.cancel(this)
+        // Guard-2 SmsPollWorker — cancel on explicit user stop
+        SmsPollWorker.cancel(this)
     }
 }

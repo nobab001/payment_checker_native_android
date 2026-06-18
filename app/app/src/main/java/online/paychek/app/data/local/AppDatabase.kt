@@ -7,7 +7,9 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import online.paychek.app.data.local.dao.PendingSmsDao
+import online.paychek.app.data.local.dao.SeenSmsCursorDao
 import online.paychek.app.data.local.entity.PendingSmsEntity
+import online.paychek.app.data.local.entity.SeenSmsCursorEntity
 
 /**
  * AppDatabase — Room Database Singleton
@@ -23,13 +25,17 @@ import online.paychek.app.data.local.entity.PendingSmsEntity
  * ============================================================================
  */
 @Database(
-    entities = [PendingSmsEntity::class],
-    version = 2,          // v1 → v2: rawBodyHash column + retry columns
+    entities = [
+        PendingSmsEntity::class,
+        SeenSmsCursorEntity::class   // v3: Guard-2 ContentProvider polling cursor
+    ],
+    version = 3,          // v2 → v3: sms_seen_cursor table for Guard-2 SMS inbox polling
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun pendingSmsDao(): PendingSmsDao
+    abstract fun seenSmsCursorDao(): SeenSmsCursorDao
 
     companion object {
         @Volatile
@@ -89,6 +95,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // ─────────────────────────────────────────────────────────────────
+        // MIGRATION 2 → 3
+        // Changes:
+        //  • sms_seen_cursor টেবিল যোগ (Guard-2 ContentProvider polling cursor)
+        //
+        // ⚠️ Purely additive — existing pending_sms_queue data অক্ষুণ্ণ থাকে।
+        // ─────────────────────────────────────────────────────────────────
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS sms_seen_cursor (
+                        id          INTEGER NOT NULL PRIMARY KEY,
+                        lastSeenSmsId  INTEGER NOT NULL DEFAULT 0,
+                        lastScannedAt  INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         /**
          * Thread-safe singleton instance।
          * Context হিসেবে Application context পাস করতে হবে।
@@ -101,7 +128,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "paychek_offline_queue.db"
                 )
                     // ✅ Explicit migrations — data কখনো destroy হবে না
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     // ⛔ fallbackToDestructiveMigration REMOVED — Production-unsafe
                     //    এই line যোগ করলে App Update-এ offline queue মুছে যাবে
                     .build()

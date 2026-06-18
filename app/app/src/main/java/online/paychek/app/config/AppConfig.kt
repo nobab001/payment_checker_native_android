@@ -46,6 +46,8 @@ object AppConfig {
     // -----------------------------------------------------------------------
     const val DEVICE_POLL_INTERVAL_MS   = 12_000L   // 12 seconds
     const val SYNC_WORKER_INTERVAL_MIN  = 15L        // 15 minutes
+    const val SMS_POLL_WORKER_INTERVAL_MIN = 15L     // Guard-2: ContentProvider polling interval
+    const val SMS_INBOX_SCAN_LIMIT      = 50         // Guard-2: এক ব্যাচে সর্বোচ্চ কতটি SMS স্ক্যান করবে
 
     // -----------------------------------------------------------------------
     // HTTP Headers
