@@ -86,7 +86,11 @@
         <service
             android:name=".services.foreground.SmsMonitorService"
             android:foregroundServiceType="dataSync|specialUse"
-            android:exported="false" />
+            android:exported="false">
+            <property 
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_TYPE" 
+                android:value="আমাদের পেমেন্ট চেকার অ্যাপের অফলাইন মার্চেন্টদের জন্য ব্যাকগ্রাউন্ডে SMS ContentProvider ইনবক্স স্ক্যানিং সিঙ্ক নিশ্চিত করতে specialUse টাইপটি আবশ্যক।" />
+        </service>
 
     </application>
 
