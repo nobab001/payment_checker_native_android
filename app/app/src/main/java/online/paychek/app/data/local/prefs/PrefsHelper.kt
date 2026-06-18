@@ -58,11 +58,13 @@ object PrefsHelper {
     // Gateway method cache (JSON string)
     // -------------------------------------------------------------------------
 
-    fun getGatewayMethodsCache(context: Context): String =
-        prefs(context).getString(AppConfig.KEY_GATEWAY_METHODS_CACHE, "[]") ?: "[]"
+    fun getGatewayMethodsCache(context: Context): String {
+        val decrypted = online.paychek.app.utils.SecurePreferences.decrypt(context, AppConfig.KEY_GATEWAY_METHODS_CACHE)
+        return decrypted.ifEmpty { "[]" }
+    }
 
     fun setGatewayMethodsCache(context: Context, json: String) {
-        prefs(context).edit().putString(AppConfig.KEY_GATEWAY_METHODS_CACHE, json).apply()
+        online.paychek.app.utils.SecurePreferences.encrypt(context, AppConfig.KEY_GATEWAY_METHODS_CACHE, json)
     }
 
     // -------------------------------------------------------------------------

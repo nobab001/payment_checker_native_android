@@ -13,9 +13,10 @@ async function getGatewayMethods(req, res) {
               t.sender_id, t.matching_keyword, '' AS regex_pattern, COALESCE(t.is_official, 1) AS is_official,
               cvt.single_number_instruction, cvt.multiple_number_instruction
          FROM gateway_methods gm
-    LEFT JOIN sms_templates t ON gm.template_id = t.id
+    LEFT JOIN sms_templates t ON gm.template_id = t.id AND t.is_active = 1
     LEFT JOIN checkout_view_templates cvt ON cvt.sms_template_id = t.id
         WHERE gm.user_id = ?
+          AND (gm.template_id IS NULL OR t.id IS NOT NULL)
         ORDER BY gm.priority ASC, gm.sim_slot ASC`,
       [userId]
     );

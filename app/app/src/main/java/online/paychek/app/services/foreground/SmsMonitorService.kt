@@ -306,7 +306,7 @@ class SmsMonitorService : Service() {
             if (response.isSuccessful && response.body() != null) {
                 val methods = response.body()!!.data
                 val json = com.google.gson.Gson().toJson(methods)
-                sharedPrefs.edit().putString(AppConfig.KEY_GATEWAY_METHODS_CACHE, json).apply()
+                online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(this, json)
                 Log.i(TAG, "✅ গেটওয়ে মেথড কনফিগ সফলভাবে সিঙ্ক করা হয়েছে (মোট: ${methods.size})")
             }
         } catch (e: Exception) {

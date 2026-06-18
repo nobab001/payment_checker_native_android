@@ -60,9 +60,7 @@ data class DeviceUiState(
     val sim1Number: String                    = "",
     val sim2Number: String                    = "",
     val isTemplatesLoading: Boolean           = false,
-    val showCustomSenderDialogSlot: Int?      = null,
-    val showMoreTemplatesDialogSlot: Int?     = null,
-    val searchQuery: String                   = ""
+    val showCustomSenderDialogSlot: Int?      = null
 )
 
 // =============================================================================
@@ -91,8 +89,8 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         val sim2 = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, true)
         
         // Load cached methods to show offline/instantly
-        val cachedJson = prefs.getString(AppConfig.KEY_GATEWAY_METHODS_CACHE, null)
-        val cachedList = if (!cachedJson.isNullOrEmpty()) {
+        val cachedJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(application)
+        val cachedList = if (cachedJson.isNotEmpty() && cachedJson != "[]") {
             try {
                 val type = object : com.google.gson.reflect.TypeToken<List<GatewayMethod>>() {}.type
                 com.google.gson.Gson().fromJson<List<GatewayMethod>>(cachedJson, type)
@@ -131,7 +129,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     private fun saveMethodsToCache(methods: List<GatewayMethod>) {
         try {
             val json = com.google.gson.Gson().toJson(methods)
-            prefs.edit().putString(AppConfig.KEY_GATEWAY_METHODS_CACHE, json).apply()
+            online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(getApplication(), json)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -158,6 +156,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                         }
                         saveMethodsToCache(sorted)
                         validateAndSyncSimToggles()
+                        performDropSync()
                     } else {
                         setError("মেথড লোড ব্যর্থ হয়েছে (${res.code()})")
                     }
@@ -626,6 +625,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                     if (res.isSuccessful && res.body()?.success == true) {
                         val list = res.body()!!.templates
                         _state.update { it.copy(templates = list, isTemplatesLoading = false) }
+                        performDropSync()
                     } else {
                         _state.update { it.copy(isTemplatesLoading = false) }
                     }
@@ -708,19 +708,44 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(showCustomSenderDialogSlot = null) }
     }
 
-    fun showMoreTemplatesDialog(simSlot: Int) {
-        _state.update { it.copy(showMoreTemplatesDialogSlot = simSlot, searchQuery = "") }
-    }
 
-    fun dismissMoreTemplatesDialog() {
-        _state.update { it.copy(showMoreTemplatesDialogSlot = null, searchQuery = "") }
-    }
-
-    fun onSearchQueryChanged(query: String) {
-        _state.update { it.copy(searchQuery = query) }
-    }
 
     private fun setError(msg: String) {
         _state.update { it.copy(isLoading = false, isSaving = false, errorMessage = msg) }
+    }
+
+    private fun performDropSync() {
+        val currentTemplates = _state.value.templates
+        val currentMethods = _state.value.methods
+        
+        // Skip check if templates are still loading or empty (unless loading has finished)
+        if (currentTemplates.isEmpty() && _state.value.isTemplatesLoading) return
+        
+        val activeTemplateIds = currentTemplates.mapNotNull { it.id }.toSet()
+        
+        val methodsToDrop = currentMethods.filter { method ->
+            method.templateId != null && !activeTemplateIds.contains(method.templateId)
+        }
+        
+        if (methodsToDrop.isNotEmpty()) {
+            val updatedMethods = currentMethods.filterNot { it in methodsToDrop }
+            _state.update { it.copy(methods = updatedMethods) }
+            saveMethodsToCache(updatedMethods)
+            validateAndSyncSimToggles()
+            
+            // Notify backend about deactivation of these dropped methods
+            val token = getToken()
+            if (token != null) {
+                viewModelScope.launch {
+                    methodsToDrop.forEach { method ->
+                        if (method.isEnabled == 1) {
+                            runCatching {
+                                api.toggleMethod("Bearer $token", method.id, ToggleRequest(0))
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

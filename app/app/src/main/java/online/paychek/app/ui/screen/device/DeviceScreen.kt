@@ -275,7 +275,6 @@ fun DeviceScreen(
                             onToggleTemplate = { viewModel.toggleTemplate(1, it) },
                             onToggleCustomSender = { viewModel.toggleMethod(it) },
                             onAddCustomSenderClick = { viewModel.showCustomSenderDialog(1) },
-                            onMoreTemplatesClick = { viewModel.showMoreTemplatesDialog(1) },
                             isRestricted = isRestricted
                         )
                     }
@@ -293,7 +292,6 @@ fun DeviceScreen(
                             onToggleTemplate = { viewModel.toggleTemplate(2, it) },
                             onToggleCustomSender = { viewModel.toggleMethod(it) },
                             onAddCustomSenderClick = { viewModel.showCustomSenderDialog(2) },
-                            onMoreTemplatesClick = { viewModel.showMoreTemplatesDialog(2) },
                             isRestricted = isRestricted
                         )
                     }
@@ -582,19 +580,6 @@ fun DeviceScreen(
             }
         }
 
-        // ─── Dialog — More Templates ──────────────────────────────────────────
-        val showMoreSlot = state.showMoreTemplatesDialogSlot
-        if (showMoreSlot != null) {
-            MoreTemplatesDialog(
-                simSlot = showMoreSlot,
-                searchQuery = state.searchQuery,
-                onSearchQueryChange = viewModel::onSearchQueryChanged,
-                templates = state.templates,
-                methods = state.methods,
-                onToggleTemplate = { viewModel.toggleTemplate(showMoreSlot, it) },
-                onDismiss = viewModel::dismissMoreTemplatesDialog
-            )
-        }
 
         // ─── Dialog — Custom Sender ───────────────────────────────────────────
         val showCustomSlot = state.showCustomSenderDialogSlot
@@ -1253,7 +1238,6 @@ private fun SimCard(
     onToggleTemplate: (SmsTemplateDto) -> Unit,
     onToggleCustomSender: (GatewayMethod) -> Unit,
     onAddCustomSenderClick: () -> Unit,
-    onMoreTemplatesClick: () -> Unit,
     isRestricted: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -1381,16 +1365,8 @@ private fun SimCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Determine visible standard templates
-                val first5 = templates.take(5)
-                val configuredNotFirst5 = templates.filter { t ->
-                    t.id != null && 
-                    !first5.any { it.id == t.id } && 
-                    methods.any { it.simSlot == simSlot && it.templateId == t.id }
-                }
-                val visibleStandardTemplates = first5 + configuredNotFirst5
-
-                visibleStandardTemplates.forEach { template ->
+                // Render all templates dynamically from the database live list
+                templates.forEach { template ->
                     val method = methods.find { it.simSlot == simSlot && it.templateId == template.id }
                     val isSelected = method != null && method.isEnabled == 1
                     
@@ -1438,16 +1414,6 @@ private fun SimCard(
                             modifier = Modifier.size(18.dp)
                         )
                     }
-                }
-
-                // More Templates Button if available
-                if (templates.size > 5) {
-                    TemplateChip(
-                        name = "আরো দেখুন",
-                        dotColor = AccentCyan,
-                        isSelected = false,
-                        onClick = onMoreTemplatesClick
-                    )
                 }
             }
         }
@@ -1505,144 +1471,6 @@ private fun TemplateChip(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun MoreTemplatesDialog(
-    simSlot: Int,
-    searchQuery: String,
-    onSearchQueryChange: (String) -> Unit,
-    templates: List<SmsTemplateDto>,
-    methods: List<GatewayMethod>,
-    onToggleTemplate: (SmsTemplateDto) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val filteredTemplates = remember(templates, searchQuery) {
-        templates.filter {
-            it.templateName.contains(searchQuery, ignoreCase = true) ||
-            it.senderId.contains(searchQuery, ignoreCase = true)
-        }
-    }
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = true)
-    ) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = GwCard,
-            border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
-            tonalElevation = 8.dp,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-                .wrapContentHeight()
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(
-                    text = "সব পেমেন্ট পদ্ধতি (SIM $simSlot)",
-                    fontWeight = FontWeight.Bold,
-                    color = TextWhite,
-                    fontSize = 18.sp
-                )
-                
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = onSearchQueryChange,
-                    placeholder = { Text("সার্চ করুন...", color = TextMuted.copy(0.4f)) },
-                    leadingIcon = {
-                        Icon(Icons.Default.Search, null, tint = AccentCyan, modifier = Modifier.size(18.dp))
-                    },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentCyan,
-                        unfocusedBorderColor = TextMuted.copy(0.3f),
-                        focusedTextColor = TextWhite,
-                        unfocusedTextColor = TextWhite,
-                        focusedContainerColor = GwBg,
-                        unfocusedContainerColor = GwBg
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 240.dp)
-                ) {
-                    if (filteredTemplates.isEmpty()) {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("কোনো পদ্ধতি পাওয়া যায়নি", color = TextMuted, fontSize = 14.sp)
-                        }
-                    } else {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            items(filteredTemplates) { template ->
-                                val method = methods.find { it.simSlot == simSlot && it.templateId == template.id }
-                                val isSelected = method != null && method.isEnabled == 1
-                                
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(if (isSelected) AccentCyan.copy(alpha = 0.08f) else Color.Transparent)
-                                        .clickable { onToggleTemplate(template) }
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(8.dp)
-                                                .clip(CircleShape)
-                                                .background(getDotColor(template.templateName))
-                                        )
-                                        Column {
-                                            Text(template.templateName, color = TextWhite, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                            Text(template.senderId, color = TextMuted, fontSize = 11.sp)
-                                        }
-                                    }
-                                    Checkbox(
-                                        checked = isSelected,
-                                        onCheckedChange = { onToggleTemplate(template) },
-                                        colors = CheckboxDefaults.colors(
-                                            checkedColor = AccentCyan,
-                                            checkmarkColor = Color(0xFF0F172A)
-                                        )
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Button(
-                    onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    contentPadding = PaddingValues(vertical = 12.dp)
-                ) {
-                    Text("বন্ধ করুন", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

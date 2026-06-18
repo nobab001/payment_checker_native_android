@@ -4,6 +4,7 @@ app/.gradle/
 app/build/
 app/app/build/
 app/local.properties
+debug/
 
 # IDE files
 .idea/
