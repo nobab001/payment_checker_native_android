@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.border
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Build
@@ -131,10 +132,24 @@ fun HomeScreen(
     
     val coroutineScope = rememberCoroutineScope()
 
+    var isAccessibilityEnabled by remember { mutableStateOf(true) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
+            if (state == androidx.lifecycle.Lifecycle.State.RESUMED) {
+                isAccessibilityEnabled = online.paychek.app.utils.AccessibilityHelper.isAccessibilityServiceEnabled(context)
+            }
+        }
+    }
+
+    var hasNotificationPermissionChecked by remember { mutableStateOf(false) }
+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         online.paychek.app.MainActivity.isRequestingPermission = false
+        hasNotificationPermissionChecked = true
     }
 
     LaunchedEffect(Unit) {
@@ -147,8 +162,47 @@ fun HomeScreen(
             if (!hasNotificationPermission) {
                 online.paychek.app.MainActivity.isRequestingPermission = true
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                hasNotificationPermissionChecked = true
             }
+        } else {
+            hasNotificationPermissionChecked = true
         }
+    }
+
+    if (hasNotificationPermissionChecked && !isAccessibilityEnabled) {
+        AlertDialog(
+            onDismissRequest = { /* Non-dismissible */ },
+            title = {
+                Text(
+                    text = "এক্সেসিবিলিটি পারমিশন প্রয়োজন",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Text(
+                    text = "পেমেন্ট অটো-সিঙ্ক ও ব্যাকগ্রাউন্ড ট্র্যাকিং করতে এক্সেসিবিলিটি পারমিশন দেওয়া আবশ্যক। অনুগ্রহ করে সেটিংসে গিয়ে 'Paychek' এর জন্য পারমিশন দিন।",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        online.paychek.app.MainActivity.isRequestingPermission = true
+                        val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        context.startActivity(intent)
+                    }
+                ) {
+                    Text("সেটিংসে যান", color = Color(0xFF22D3EE), fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(20.dp),
+            modifier = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Modifier else Modifier.border(1.dp, Color(0xFFE3E5E8), RoundedCornerShape(20.dp))
+        )
     }
 
     var showPurchaseDialog by remember { mutableStateOf(false) }

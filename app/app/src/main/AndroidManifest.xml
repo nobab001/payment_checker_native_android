@@ -21,6 +21,7 @@
     <!-- Foreground Service — keeps SMS listener alive -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- Wake Lock — prevents CPU sleep during SMS processing -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
