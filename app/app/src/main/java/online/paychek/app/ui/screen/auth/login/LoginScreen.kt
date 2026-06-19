@@ -23,6 +23,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -62,11 +63,14 @@ import androidx.compose.animation.core.*
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.zIndex
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.draw.shadow
 import kotlinx.coroutines.launch
 
@@ -363,9 +367,25 @@ fun LoginScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(PremiumBackground),
+            .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.TopCenter
     ) {
+        // Decorative background gradient blobs for a premium/modern feel
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(320.dp)
+                .align(Alignment.TopCenter)
+                .background(
+                    brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -377,7 +397,9 @@ fun LoginScreen(
             if (uiState.isMaintenanceMode) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = StatusOrange),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Row(
@@ -400,8 +422,19 @@ fun LoginScreen(
                 }
             }
 
-            // 2. Logo Header — Section 1 (Top)
-            Spacer(modifier = Modifier.height(80.dp))
+            // 2. Logo Header & Brand Identity
+            Spacer(modifier = Modifier.height(72.dp))
+
+            val infiniteTransition = rememberInfiniteTransition(label = "LogoScaleTransition")
+            val logoScale by infiniteTransition.animateFloat(
+                initialValue = 1.0f,
+                targetValue = 1.05f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 2000, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "LogoScale"
+            )
 
             AnimatedVisibility(
                 visible = true,
@@ -410,22 +443,40 @@ fun LoginScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(90.dp)
-                        .clip(RoundedCornerShape(22.dp))
-                        .background(PremiumPrimary)
-                        .shadow(elevation = 8.dp, shape = RoundedCornerShape(22.dp), clip = false),
+                        .size(96.dp)
+                        .graphicsLayer(scaleX = logoScale, scaleY = logoScale)
+                        .clip(RoundedCornerShape(26.dp))
+                        .background(
+                            brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.primary,
+                                    MaterialTheme.colorScheme.primaryContainer
+                                )
+                            )
+                        )
+                        .shadow(
+                            elevation = 8.dp,
+                            shape = RoundedCornerShape(26.dp),
+                            clip = false,
+                            spotColor = MaterialTheme.colorScheme.primary
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(26.dp)
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.AccountBalanceWallet,
                         contentDescription = "Wallet Logo",
-                        tint = Color.White,
-                        modifier = Modifier.size(46.dp)
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(48.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             AnimatedVisibility(
                 visible = true,
@@ -434,27 +485,9 @@ fun LoginScreen(
             ) {
                 Text(
                     text = "Payment Checker",
-                    fontSize = 34.sp,
+                    fontSize = 32.sp,
                     fontWeight = FontWeight.Bold,
-                    color = PremiumPrimary,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            AnimatedVisibility(
-                visible = true,
-                enter = fadeIn(animationSpec = tween(700, delayMillis = 250)),
-                label = "SubtitleFade"
-            ) {
-                Text(
-                    text = "SMS Payment Verification System",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = PremiumTextSecondary,
+                    color = MaterialTheme.colorScheme.onBackground,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -465,612 +498,705 @@ fun LoginScreen(
 
             AnimatedVisibility(
                 visible = true,
-                enter = fadeIn(animationSpec = tween(700, delayMillis = 350)),
-                label = "TaglineFade"
+                enter = fadeIn(animationSpec = tween(700, delayMillis = 250)),
+                label = "SubtitleFade"
             ) {
                 Text(
-                    text = "Secure • Fast • Reliable",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 0.5.sp,
-                    color = PremiumPrimary,
+                    text = "SMS Payment Verification System",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
 
-            // Shift input box down for breathing room below the title
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            // Contact Input Box
-            OutlinedTextField(
-                value = uiState.contact,
-                onValueChange = { viewModel.onContactChanged(it) },
-                placeholder = { Text(
-                    text = "মোবাইল নাম্বার অথবা জিমেইল এড্রেসটি লিখুন।",
-                    fontSize = 14.sp,
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn(animationSpec = tween(700, delayMillis = 350)),
+                label = "TaglineFade"
+            ) {
+                Text(
+                    text = "Secure • Fast • Reliable",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.5.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
-                ) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = "Contact Icon",
-                        tint = PremiumPrimary
-                    )
-                },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Email,
-                    imeAction = if (uiState.isOtpSent) ImeAction.Next else ImeAction.Done
-                ),
-                keyboardActions = KeyboardActions(
-                    onDone = {
-                        focusManager.clearFocus()
-                        viewModel.checkContactAndRequestOtp(context)
-                    }
-                ),
-                singleLine = true,
-                readOnly = uiState.isOtpSent,
-                textStyle = androidx.compose.ui.text.TextStyle(
-                    fontSize = 14.sp
-                ),
-                shape = RoundedCornerShape(18.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedBorderColor = PremiumPrimary,
-                    unfocusedBorderColor = Color(0xFFE5E7EB),
-                    focusedTextColor = PremiumPrimary,
-                    unfocusedTextColor = PremiumPrimary,
-                    focusedPlaceholderColor = PremiumTextSecondary,
-                    unfocusedPlaceholderColor = PremiumTextSecondary
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(58.dp)
-            )
-
-            // OTP Fields Section (Dynamic Animation)
-            AnimatedVisibility(
-                visible = uiState.isOtpSent || isBypass,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    AnimatedVisibility(
-                        visible = !isBypass,
-                        enter = fadeIn(),
-                        exit = fadeOut()
-                    ) {
-                        Text(
-                            text = "৬ ডিজিটের ওটিপি (OTP) পাঠানো হয়েছে।",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    if (isBypass) {
-                        OutlinedTextField(
-                            value = uiState.otpCode,
-                            onValueChange = { viewModel.onOtpChanged(it) },
-                            placeholder = { Text("এডমিন পাসওয়ার্ড লিখুন") },
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Password,
-                                imeAction = ImeAction.Done
-                            ),
-                            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                            keyboardActions = KeyboardActions(
-                                onDone = {
-                                    focusManager.clearFocus()
-                                    val duration = if (adminBypassOpenedAt != null) {
-                                        (System.currentTimeMillis() - adminBypassOpenedAt!!) / 1000
-                                    } else {
-                                        null
-                                    }
-                                    viewModel.verifyOtp(context, duration) { res ->
-                                        verificationResult = res
-                                    }
-                                }
-                            ),
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
-                        val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-                        val coroutineScope = rememberCoroutineScope()
-                        // Hidden BasicTextField state (declared outside / above the Box modifier so it is in scope)
-                        var otpValueState by remember {
-                            val padded = uiState.otpCode.padEnd(6, ' ')
-                            val firstEmpty = uiState.otpCode.indexOf(' ')
-                            val selIndex = if (firstEmpty != -1) firstEmpty else minOf(uiState.otpCode.length, 5)
-                            mutableStateOf(
-                                TextFieldValue(
-                                    text = padded,
-                                    selection = TextRange(selIndex, selIndex + 1)
-                                )
-                            )
-                        }
-                        LaunchedEffect(uiState.otpCode) {
-                            val padded = uiState.otpCode.padEnd(6, ' ')
-                            if (padded != otpValueState.text) {
-                                val firstEmpty = uiState.otpCode.indexOf(' ')
-                                val selIndex = if (firstEmpty != -1) firstEmpty else minOf(uiState.otpCode.length, 5)
-                                otpValueState = TextFieldValue(
-                                    text = padded,
-                                    selection = TextRange(selIndex, selIndex + 1)
-                                )
-                            }
-                        }
-
-                        // Custom 6-digit OTP input boxes (centered text, auto-paste, backspace traversal built-in via hidden field)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(
-                                    interactionSource = otpInteractionSource,
-                                    indication = null
-                                ) {
-                                    coroutineScope.launch {
-                                        focusRequester.requestFocus()
-                                        keyboardController?.show()
-                                    }
-                                    val firstEmpty = uiState.otpCode.indexOf(' ')
-                                    val selIndex = if (firstEmpty != -1) firstEmpty else minOf(uiState.otpCode.length, 5)
-                                    otpValueState = otpValueState.copy(
-                                        selection = TextRange(selIndex, selIndex + 1)
-                                    )
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            // Visual OTP Boxes
-                            val otpBoxWidth = screenWidth() / 7.5f
-                            val otpBoxHeight = otpBoxWidth * 1.1f
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(adaptivePadding(4.dp, 6.dp), Alignment.CenterHorizontally),
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                for (i in 0 until 6) {
-                                    val char = uiState.otpCode.getOrNull(i)?.toString() ?: " "
-                                    val isFocused = (otpValueState.selection.start == i) || (i == 5 && otpValueState.selection.start == 6)
-
-                                    Box(
-                                        modifier = Modifier
-                                            .size(width = otpBoxWidth, height = otpBoxHeight)
-                                            .background(
-                                                color = if (char.isNotBlank()) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant,
-                                                shape = RoundedCornerShape(12.dp)
-                                            )
-                                            .border(
-                                                width = if (isFocused) 2.dp else 1.dp,
-                                                color = if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                                                shape = RoundedCornerShape(12.dp)
-                                            )
-                                            .clickable(
-                                                interactionSource = remember { MutableInteractionSource() },
-                                                indication = null
-                                            ) {
-                                                coroutineScope.launch {
-                                                    focusRequester.requestFocus()
-                                                    keyboardController?.show()
-                                                }
-                                                otpValueState = otpValueState.copy(
-                                                    selection = TextRange(i, i + 1)
-                                                )
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.Center
-                                        ) {
-                                            Text(
-                                                text = char,
-                                                fontSize = adaptiveTextSize(16.sp, 20.sp),
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.primary,
-                                                textAlign = TextAlign.Center
-                                            )
-                                            if (isFocused && (otpValueState.selection.start == i || (i == 5 && otpValueState.selection.start == 6)) && char.isNotBlank()) {
-                                                BlinkingCursor(color = MaterialTheme.colorScheme.primary)
-                                            }
-                                        }
-                                        if (isFocused && char.isBlank()) {
-                                            BlinkingCursor(color = MaterialTheme.colorScheme.primary)
-                                        }
-                                    }
-                                }
-                            }
-
-                            val emptyTextToolbar = object : androidx.compose.ui.platform.TextToolbar {
-                                override fun showMenu(
-                                    rect: androidx.compose.ui.geometry.Rect,
-                                    onCopy: (() -> Unit)?,
-                                    onPaste: (() -> Unit)?,
-                                    onCut: (() -> Unit)?,
-                                    onSelectAll: (() -> Unit)?
-                                ) {}
-                                override fun hide() {}
-                                override val status: androidx.compose.ui.platform.TextToolbarStatus = androidx.compose.ui.platform.TextToolbarStatus.Hidden
-                            }
-
-                            CompositionLocalProvider(androidx.compose.ui.platform.LocalTextToolbar provides emptyTextToolbar) {
-                                BasicTextField(
-                                    value = otpValueState,
-                                    onValueChange = { newValue ->
-                                        val oldText = otpValueState.text
-                                        val newText = newValue.text
-                                        val oldSelection = otpValueState.selection
-
-                                        val (sanitized, targetSelection) = if (newText.length < oldText.length) {
-                                            val i = oldSelection.start
-                                            val isBoxEmpty = oldSelection.collapsed || i >= oldText.length || oldText[i] == ' '
-
-                                            if (!isBoxEmpty) {
-                                                val sb = StringBuilder(oldText)
-                                                if (i >= 0 && i < oldText.length) {
-                                                    sb.setCharAt(i, ' ')
-                                                }
-                                                val updatedText = sb.toString()
-                                                val sel = TextRange(i, i + 1)
-                                                Pair(updatedText, sel)
-                                            } else {
-                                                val deleteIndex = i - 1
-                                                val sb = StringBuilder(oldText)
-                                                if (deleteIndex >= 0 && deleteIndex < oldText.length) {
-                                                    sb.setCharAt(deleteIndex, ' ')
-                                                }
-                                                val updatedText = sb.toString()
-                                                val newCursor = maxOf(0, deleteIndex)
-                                                val sel = TextRange(newCursor, newCursor + 1)
-                                                Pair(updatedText, sel)
-                                            }
-                                        } else if (newText != oldText) {
-                                            val insertedLength = newText.length - oldText.length + (oldSelection.end - oldSelection.start)
-                                            if (insertedLength > 0 && oldSelection.start < 6) {
-                                                val insertedText = newText.substring(oldSelection.start, minOf(oldSelection.start + insertedLength, newText.length))
-                                                val digitsOnly = insertedText.filter { it.isDigit() }
-                                                if (digitsOnly.isNotEmpty()) {
-                                                    val sb = StringBuilder(oldText)
-                                                    for (idx in 0 until digitsOnly.length) {
-                                                        val targetIdx = oldSelection.start + idx
-                                                        if (targetIdx < 6) {
-                                                            sb.setCharAt(targetIdx, digitsOnly[idx])
-                                                        }
-                                                    }
-                                                    val updatedText = sb.toString()
-                                                    val nextIndex = oldSelection.start + digitsOnly.length
-                                                    val sel = if (nextIndex < 6) {
-                                                        TextRange(nextIndex, nextIndex + 1)
-                                                    } else {
-                                                        TextRange(5, 6)
-                                                    }
-                                                    Pair(updatedText, sel)
-                                                } else {
-                                                    Pair(oldText, oldSelection)
-                                                }
-                                            } else {
-                                                Pair(oldText, oldSelection)
-                                            }
-                                        } else {
-                                            Pair(oldText, oldSelection)
-                                        }
-
-                                        if (sanitized != uiState.otpCode) {
-                                            viewModel.onOtpChanged(sanitized)
-                                        }
-                                        otpValueState = TextFieldValue(
-                                            text = sanitized,
-                                            selection = targetSelection
-                                        )
-                                        if (newText.length < oldText.length) {
-                                            coroutineScope.launch {
-                                                focusRequester.requestFocus()
-                                                keyboardController?.show()
-                                            }
-                                        }
-                                        if (sanitized.all { it.isDigit() } && sanitized.length == 6) {
-                                            focusManager.clearFocus()
-                                            viewModel.verifyOtp(context) { res ->
-                                                verificationResult = res
-                                            }
-                                        }
-                                    },
-                                    keyboardOptions = KeyboardOptions(
-                                        keyboardType = KeyboardType.Number,
-                                        imeAction = ImeAction.Done
-                                    ),
-                                    keyboardActions = KeyboardActions(
-                                        onDone = {
-                                            focusManager.clearFocus()
-                                            viewModel.verifyOtp(context) { res ->
-                                                verificationResult = res
-                                            }
-                                        }
-                                    ),
-                                    textStyle = androidx.compose.ui.text.TextStyle(
-                                        color = Color.Transparent,
-                                        fontSize = 1.sp,
-                                        textAlign = TextAlign.Center
-                                    ),
-                                    cursorBrush = SolidColor(Color.Transparent),
-                                    modifier = Modifier
-                                        .size(1.dp)
-                                        .alpha(0f)
-                                        .focusRequester(focusRequester)
-                                )
-                            }
-                        }
-                    }
-
-                    // Timer & Resend Row
-                    AnimatedVisibility(
-                        visible = !isBypass,
-                        enter = fadeIn(),
-                        exit = fadeOut()
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (uiState.timerSeconds > 0) {
-                                Text(
-                                    text = "${uiState.timerSeconds} সেকেন্ড পর আবার পাঠান",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            } else {
-                                TextButton(
-                                    onClick = { viewModel.resendOtp(context) },
-                                    contentPadding = PaddingValues(0.dp)
-                                ) {
-                                    Text(
-                                        text = "কোড আবার পাঠান",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = RoyalIndigo
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Main Action Buttons
-            if (uiState.isLoading) {
-                CircularProgressIndicator(
-                    color = RoyalIndigo,
-                    modifier = Modifier.padding(vertical = 16.dp)
                 )
-            } else {
-                Button(
-                    onClick = {
-                        focusManager.clearFocus()
-                        if (!uiState.isOtpSent && !isBypass) {
-                            viewModel.checkContactAndRequestOtp(context)
-                        } else {
-                            val duration = if (isBypass && adminBypassOpenedAt != null) {
-                                (System.currentTimeMillis() - adminBypassOpenedAt!!) / 1000
-                            } else {
-                                null
-                            }
-                            viewModel.verifyOtp(context, duration) { res ->
-                                verificationResult = res
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = PremiumPrimary),
-                    shape = RoundedCornerShape(18.dp),
-                    enabled = !uiState.isTrialBlocked,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .shadow(elevation = 6.dp, shape = RoundedCornerShape(18.dp), clip = false)
-                ) {
-                    Text(
-                        text = if (uiState.isOtpSent || isBypass) "লগইন করুন" else "যাচাই করুন",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
             }
 
-            // Spacer — gives the social section a balanced, premium gap from the verify button
-            Spacer(modifier = Modifier.height(50.dp))
+            // Spacing to push inputs slightly down as requested
+            Spacer(modifier = Modifier.height(32.dp))
 
-            // 4. Social / Support section — Section 3 (Bottom)
+            // 3. Flat Form Container
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 40.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(24.dp)
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    HorizontalDivider(
-                        modifier = Modifier.weight(1f),
-                        color = Color(0xFFE5E7EB)
-                    )
-                    Text(
-                        text = "আমাদের সাথে থাকুন",
-                        fontSize = 16.sp,
-                        color = PremiumTextSecondary,
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.weight(1f),
-                        color = Color(0xFFE5E7EB)
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                // WhatsApp — only shown when link is configured
-                val waLink = uiState.whatsappSupportLink
-                if (waLink.isNotBlank()) {
-                    SocialItem(
-                        name = "WhatsApp",
-                        iconColor = Color(0xFF25D366),
-                        iconBg = Color(0xFFE8F9EE),
-                        icon = ImageVector.vectorResource(id = R.drawable.ic_whatsapp),
-                        onClick = {
-                            val rawLink = waLink.trim()
-                            val finalUrl = when {
-                                rawLink.startsWith("http://") || rawLink.startsWith("https://") -> rawLink
-                                rawLink.all { it.isDigit() || it == '+' || it == ' ' || it == '-' } -> {
-                                    val cleanNumber = rawLink.filter { it.isDigit() }
-                                    "https://wa.me/$cleanNumber"
+                    // Contact Input Box
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = uiState.contact,
+                            onValueChange = { newValue ->
+                                val filtered = newValue.replace(Regex("^\\+?88"), "").replace(" ", "").replace("-", "")
+                                viewModel.onContactChanged(filtered)
+                            },
+                            placeholder = {
+                                Text(
+                                    text = "মোবাইল নাম্বার অথবা জিমেইল এড্রেস",
+                                    fontSize = 14.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = "Contact Icon",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            trailingIcon = {
+                                val contact = uiState.contact.trim()
+                                val isValidEmail = android.util.Patterns.EMAIL_ADDRESS.matcher(contact).matches()
+                                val isValidPhone = contact.length == 11 && contact.all { it.isDigit() } && contact.startsWith("01")
+                                if (isValidEmail || isValidPhone) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = "Valid Input",
+                                        tint = StatusGreen,
+                                        modifier = Modifier.size(20.dp)
+                                    )
                                 }
-                                else -> "https://wa.me/$rawLink"
+                            },
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Email,
+                                imeAction = if (uiState.isOtpSent) ImeAction.Next else ImeAction.Done
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    focusManager.clearFocus()
+                                    viewModel.checkContactAndRequestOtp(context)
+                                }
+                            ),
+                            singleLine = true,
+                            readOnly = uiState.isOtpSent,
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                fontSize = 14.sp
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(58.dp)
+                        )
+
+                        // Email suggestions
+                        val contact = uiState.contact
+                        AnimatedVisibility(visible = contact.contains("@") && !contact.substringAfter("@").contains(".")) {
+                            val domains = listOf("gmail.com", "yahoo.com", "outlook.com")
+                            val query = contact.substringAfter("@")
+                            val suggestions = domains.filter { it.startsWith(query, ignoreCase = true) }
+                            if (suggestions.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    suggestions.forEach { domain ->
+                                        AssistChip(
+                                            onClick = {
+                                                val prefix = contact.substringBefore("@")
+                                                viewModel.onContactChanged("$prefix@$domain")
+                                            },
+                                            label = { Text("@$domain") }
+                                        )
+                                    }
+                                }
                             }
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
-                            context.startActivity(intent)
                         }
-                    )
-                }
+                    }
 
-                // Facebook
-                val fbLink = uiState.facebookSupportLink
-                if (fbLink.isNotBlank()) {
-                    SocialItem(
-                        name = "Facebook",
-                        iconColor = Color(0xFF1877F2),
-                        iconBg = Color(0xFFE8F1FF),
-                        icon = Icons.Default.Person,
-                        onClick = {
-                            val rawLink = fbLink.trim()
-                            val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
-                            context.startActivity(intent)
-                        }
-                    )
-                }
+                    // OTP Fields Section (Dynamic Animation)
+                    AnimatedVisibility(
+                        visible = uiState.isOtpSent || isBypass,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            AnimatedVisibility(
+                                visible = !isBypass,
+                                enter = fadeIn() + expandVertically(),
+                                exit = fadeOut() + shrinkVertically()
+                              ) {
+                                  Text(
+                                      text = "৬ ডিজিটের ওটিপি (OTP) পাঠানো হয়েছে।",
+                                      fontSize = 12.sp,
+                                      fontWeight = FontWeight.Medium,
+                                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                                  )
+                              }
 
-                // Telegram
-                val tgLink = uiState.telegramSupportLink
-                if (tgLink.isNotBlank()) {
-                    SocialItem(
-                        name = "Telegram",
-                        iconColor = Color(0xFF24A1DE),
-                        iconBg = Color(0xFFE5F6FD),
-                        icon = Icons.AutoMirrored.Filled.Send,
-                        onClick = {
-                            val rawLink = tgLink.trim()
-                            val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
-                            context.startActivity(intent)
-                        }
-                    )
-                }
+                              if (isBypass) {
+                                  OutlinedTextField(
+                                      value = uiState.otpCode,
+                                      onValueChange = { viewModel.onOtpChanged(it) },
+                                      placeholder = { Text("এডমিন পাসওয়ার্ড লিখুন", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                      keyboardOptions = KeyboardOptions(
+                                          keyboardType = KeyboardType.Password,
+                                          imeAction = ImeAction.Done
+                                      ),
+                                      visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                      keyboardActions = KeyboardActions(
+                                          onDone = {
+                                              focusManager.clearFocus()
+                                              val duration = if (adminBypassOpenedAt != null) {
+                                                  (System.currentTimeMillis() - adminBypassOpenedAt!!) / 1000
+                                              } else {
+                                                  null
+                                              }
+                                              viewModel.verifyOtp(context, duration) { res ->
+                                                  verificationResult = res
+                                              }
+                                          }
+                                      ),
+                                      singleLine = true,
+                                      shape = RoundedCornerShape(14.dp),
+                                      colors = OutlinedTextFieldDefaults.colors(
+                                          focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                          unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                          focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                          unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                          focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                          unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                                      ),
+                                      modifier = Modifier.fillMaxWidth()
+                                  )
+                              } else {
+                                  val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+                                  val coroutineScope = rememberCoroutineScope()
+                                  
+                                  var otpValueState by remember {
+                                      val padded = uiState.otpCode.padEnd(6, ' ')
+                                      val firstEmpty = uiState.otpCode.indexOf(' ')
+                                      val selIndex = if (firstEmpty != -1) firstEmpty else minOf(uiState.otpCode.length, 5)
+                                      mutableStateOf(
+                                          TextFieldValue(
+                                              text = padded,
+                                              selection = TextRange(selIndex, selIndex + 1)
+                                          )
+                                      )
+                                  }
+                                  LaunchedEffect(uiState.otpCode) {
+                                      val padded = uiState.otpCode.padEnd(6, ' ')
+                                      if (padded != otpValueState.text) {
+                                          val firstEmpty = uiState.otpCode.indexOf(' ')
+                                          val selIndex = if (firstEmpty != -1) firstEmpty else minOf(uiState.otpCode.length, 5)
+                                          otpValueState = TextFieldValue(
+                                              text = padded,
+                                              selection = TextRange(selIndex, selIndex + 1)
+                                          )
+                                      }
+                                  }
 
-                // YouTube
-                val ytLink = uiState.youtubeSupportLink
-                if (ytLink.isNotBlank()) {
-                    SocialItem(
-                        name = "YouTube",
-                        iconColor = Color(0xFFFF0000),
-                        iconBg = Color(0xFFFFEBEE),
-                        icon = Icons.Default.PlayArrow,
-                        onClick = {
-                            val rawLink = ytLink.trim()
-                            val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
-                            context.startActivity(intent)
-                        }
-                    )
-                }
-            }
-            }
-        }
+                                  Box(
+                                      modifier = Modifier
+                                          .fillMaxWidth()
+                                          .clickable(
+                                              interactionSource = otpInteractionSource,
+                                              indication = null
+                                          ) {
+                                              coroutineScope.launch {
+                                                  focusRequester.requestFocus()
+                                                  keyboardController?.show()
+                                              }
+                                              val firstEmpty = uiState.otpCode.indexOf(' ')
+                                              val selIndex = if (firstEmpty != -1) firstEmpty else minOf(uiState.otpCode.length, 5)
+                                              otpValueState = otpValueState.copy(
+                                                  selection = TextRange(selIndex, selIndex + 1)
+                                              )
+                                          },
+                                      contentAlignment = Alignment.Center
+                                  ) {
+                                      val otpBoxWidth = screenWidth() / 7.5f
+                                      val otpBoxHeight = otpBoxWidth * 1.1f
+                                      Row(
+                                          horizontalArrangement = Arrangement.spacedBy(adaptivePadding(4.dp, 6.dp), Alignment.CenterHorizontally),
+                                          verticalAlignment = Alignment.CenterVertically,
+                                          modifier = Modifier.fillMaxWidth()
+                                      ) {
+                                          for (i in 0 until 6) {
+                                              val char = uiState.otpCode.getOrNull(i)?.toString() ?: " "
+                                              val isFocused = (otpValueState.selection.start == i) || (i == 5 && otpValueState.selection.start == 6)
 
-        // Floating Error Message overlay (Top-overlay banner)
-        AnimatedVisibility(
-            visible = uiState.errorMessage != null,
-            enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
-            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 16.dp)
-                .zIndex(99f)
-        ) {
-            uiState.errorMessage?.let { error ->
-                FloatingErrorBanner(message = error)
-            }
-        }
-    }
-}
+                                              Box(
+                                                  modifier = Modifier
+                                                      .size(width = otpBoxWidth, height = otpBoxHeight)
+                                                      .background(
+                                                          color = Color.Transparent,
+                                                          shape = RoundedCornerShape(12.dp)
+                                                      )
+                                                      .border(
+                                                          width = if (isFocused) 2.dp else 1.dp,
+                                                          color = if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                                          shape = RoundedCornerShape(12.dp)
+                                                      )
+                                                      .clickable(
+                                                          interactionSource = remember { MutableInteractionSource() },
+                                                          indication = null
+                                                      ) {
+                                                          coroutineScope.launch {
+                                                              focusRequester.requestFocus()
+                                                              keyboardController?.show()
+                                                          }
+                                                          otpValueState = otpValueState.copy(
+                                                              selection = TextRange(i, i + 1)
+                                                          )
+                                                      },
+                                                  contentAlignment = Alignment.Center
+                                              ) {
+                                                  Row(
+                                                      verticalAlignment = Alignment.CenterVertically,
+                                                      horizontalArrangement = Arrangement.Center
+                                                  ) {
+                                                      Text(
+                                                          text = char,
+                                                          fontSize = adaptiveTextSize(16.sp, 20.sp),
+                                                          fontWeight = FontWeight.Bold,
+                                                          color = MaterialTheme.colorScheme.primary,
+                                                          textAlign = TextAlign.Center
+                                                      )
+                                                      if (isFocused && (otpValueState.selection.start == i || (i == 5 && otpValueState.selection.start == 6)) && char.isNotBlank()) {
+                                                          BlinkingCursor(color = MaterialTheme.colorScheme.primary)
+                                                      }
+                                                  }
+                                                  if (isFocused && char.isBlank()) {
+                                                      BlinkingCursor(color = MaterialTheme.colorScheme.primary)
+                                                  }
+                                              }
+                                          }
+                                      }
 
-@Composable
-fun SocialItem(
-    name: String,
-    iconColor: Color,
-    iconBg: Color,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier
-            .width(80.dp)
-            .height(108.dp)
-            .clickable { onClick() }
-    ) {
-        Box(
-            modifier = Modifier
-                .size(72.dp)
-                .clip(CircleShape)
-                .background(iconBg)
-                .border(
-                    width = 1.dp,
-                    color = iconColor.copy(alpha = 0.2f),
-                    shape = CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = name,
-                tint = iconColor,
-                modifier = Modifier.size(30.dp)
-            )
-        }
-        Text(
-            text = name,
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.Medium,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Visible
-        )
-    }
-}
+                                      val emptyTextToolbar = object : androidx.compose.ui.platform.TextToolbar {
+                                          override fun showMenu(
+                                              rect: androidx.compose.ui.geometry.Rect,
+                                              onCopy: (() -> Unit)?,
+                                              onPaste: (() -> Unit)?,
+                                              onCut: (() -> Unit)?,
+                                              onSelectAll: (() -> Unit)?
+                                          ) {}
+                                          override fun hide() {}
+                                          override val status: androidx.compose.ui.platform.TextToolbarStatus = androidx.compose.ui.platform.TextToolbarStatus.Hidden
+                                      }
+
+                                      CompositionLocalProvider(androidx.compose.ui.platform.LocalTextToolbar provides emptyTextToolbar) {
+                                          BasicTextField(
+                                              value = otpValueState,
+                                              onValueChange = { newValue ->
+                                                  val oldText = otpValueState.text
+                                                  val newText = newValue.text
+                                                  val oldSelection = otpValueState.selection
+
+                                                  val (sanitized, targetSelection) = if (newText.length < oldText.length) {
+                                                      val i = oldSelection.start
+                                                      val isBoxEmpty = oldSelection.collapsed || i >= oldText.length || oldText[i] == ' '
+
+                                                      if (!isBoxEmpty) {
+                                                          val sb = StringBuilder(oldText)
+                                                          if (i >= 0 && i < oldText.length) {
+                                                              sb.setCharAt(i, ' ')
+                                                          }
+                                                          val updatedText = sb.toString()
+                                                          val sel = TextRange(i, i + 1)
+                                                          Pair(updatedText, sel)
+                                                      } else {
+                                                          val deleteIndex = i - 1
+                                                          val sb = StringBuilder(oldText)
+                                                          if (deleteIndex >= 0 && deleteIndex < oldText.length) {
+                                                              sb.setCharAt(deleteIndex, ' ')
+                                                          }
+                                                          val updatedText = sb.toString()
+                                                          val newCursor = maxOf(0, deleteIndex)
+                                                          val sel = TextRange(newCursor, newCursor + 1)
+                                                          Pair(updatedText, sel)
+                                                      }
+                                                  } else if (newText != oldText) {
+                                                      val insertedLength = newText.length - oldText.length + (oldSelection.end - oldSelection.start)
+                                                      if (insertedLength > 0 && oldSelection.start < 6) {
+                                                          val insertedText = newText.substring(oldSelection.start, minOf(oldSelection.start + insertedLength, newText.length))
+                                                          val digitsOnly = insertedText.filter { it.isDigit() }
+                                                          if (digitsOnly.isNotEmpty()) {
+                                                              val sb = StringBuilder(oldText)
+                                                              for (idx in 0 until digitsOnly.length) {
+                                                                  val targetIdx = oldSelection.start + idx
+                                                                  if (targetIdx < 6) {
+                                                                      sb.setCharAt(targetIdx, digitsOnly[idx])
+                                                                  }
+                                                              }
+                                                              val updatedText = sb.toString()
+                                                              val nextIndex = oldSelection.start + digitsOnly.length
+                                                              val sel = if (nextIndex < 6) {
+                                                                  TextRange(nextIndex, nextIndex + 1)
+                                                              } else {
+                                                                  TextRange(5, 6)
+                                                              }
+                                                              Pair(updatedText, sel)
+                                                          } else {
+                                                              Pair(oldText, oldSelection)
+                                                          }
+                                                      } else {
+                                                          Pair(oldText, oldSelection)
+                                                      }
+                                                  } else {
+                                                      Pair(oldText, oldSelection)
+                                                  }
+
+                                                  if (sanitized != uiState.otpCode) {
+                                                      viewModel.onOtpChanged(sanitized)
+                                                  }
+                                                  otpValueState = TextFieldValue(
+                                                      text = sanitized,
+                                                      selection = targetSelection
+                                                  )
+                                                  if (newText.length < oldText.length) {
+                                                      coroutineScope.launch {
+                                                          focusRequester.requestFocus()
+                                                          keyboardController?.show()
+                                                      }
+                                                  }
+                                                  if (sanitized.all { it.isDigit() } && sanitized.length == 6) {
+                                                      focusManager.clearFocus()
+                                                      viewModel.verifyOtp(context) { res ->
+                                                          verificationResult = res
+                                                      }
+                                                  }
+                                              },
+                                              keyboardOptions = KeyboardOptions(
+                                                  keyboardType = KeyboardType.Number,
+                                                  imeAction = ImeAction.Done
+                                              ),
+                                              keyboardActions = KeyboardActions(
+                                                  onDone = {
+                                                      focusManager.clearFocus()
+                                                      viewModel.verifyOtp(context) { res ->
+                                                          verificationResult = res
+                                                      }
+                                                  }
+                                              ),
+                                              textStyle = androidx.compose.ui.text.TextStyle(
+                                                  color = Color.Transparent,
+                                                  fontSize = 1.sp,
+                                                  textAlign = TextAlign.Center
+                                              ),
+                                              cursorBrush = SolidColor(Color.Transparent),
+                                              modifier = Modifier
+                                                  .size(1.dp)
+                                                  .alpha(0f)
+                                                  .focusRequester(focusRequester)
+                                          )
+                                      }
+                                  }
+                              }
+
+                              // Timer & Resend Row
+                              AnimatedVisibility(
+                                  visible = !isBypass,
+                                  enter = fadeIn() + expandVertically(),
+                                  exit = fadeOut() + shrinkVertically()
+                              ) {
+                                  Row(
+                                      modifier = Modifier.fillMaxWidth(),
+                                      horizontalArrangement = Arrangement.SpaceBetween,
+                                      verticalAlignment = Alignment.CenterVertically
+                                  ) {
+                                      if (uiState.timerSeconds > 0) {
+                                          Text(
+                                              text = "${uiState.timerSeconds} সেকেন্ড পর আবার পাঠান",
+                                              fontSize = 12.sp,
+                                              fontWeight = FontWeight.Medium,
+                                              color = MaterialTheme.colorScheme.onSurfaceVariant
+                                          )
+                                      } else {
+                                          TextButton(
+                                              onClick = { viewModel.resendOtp(context) },
+                                              contentPadding = PaddingValues(0.dp)
+                                          ) {
+                                              Text(
+                                                  text = "কোড আবার পাঠান",
+                                                  fontSize = 13.sp,
+                                                  fontWeight = FontWeight.Bold,
+                                                  color = MaterialTheme.colorScheme.primary
+                                              )
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      }
+
+                      // Main Action Buttons
+                      if (uiState.isLoading) {
+                          CircularProgressIndicator(
+                              color = MaterialTheme.colorScheme.primary,
+                              modifier = Modifier.padding(vertical = 8.dp)
+                          )
+                      } else {
+                          Button(
+                              onClick = {
+                                  focusManager.clearFocus()
+                                  if (!uiState.isOtpSent && !isBypass) {
+                                      viewModel.checkContactAndRequestOtp(context)
+                                  } else {
+                                      val duration = if (isBypass && adminBypassOpenedAt != null) {
+                                          (System.currentTimeMillis() - adminBypassOpenedAt!!) / 1000
+                                      } else {
+                                          null
+                                      }
+                                      viewModel.verifyOtp(context, duration) { res ->
+                                          verificationResult = res
+                                      }
+                                  }
+                              },
+                              colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                              shape = RoundedCornerShape(16.dp),
+                              enabled = !uiState.isTrialBlocked,
+                              modifier = Modifier
+                                  .fillMaxWidth()
+                                  .height(52.dp)
+                                  .shadow(
+                                      elevation = 4.dp,
+                                      shape = RoundedCornerShape(16.dp),
+                                      clip = false,
+                                      spotColor = MaterialTheme.colorScheme.primary
+                                  )
+                          ) {
+                              Text(
+                                  text = if (uiState.isOtpSent || isBypass) "লগইন করুন" else "যাচাই করুন",
+                                  fontSize = 16.sp,
+                                  fontWeight = FontWeight.Bold,
+                                  color = MaterialTheme.colorScheme.onPrimary
+                              )
+                          }
+                  }
+              }
+
+              // Spacer — compact gap between the form container and the social support footer
+              Spacer(modifier = Modifier.height(24.dp))
+
+              // 4. Social / Support section
+              Column(
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .padding(bottom = 60.dp), // leaves safety bottom margin
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                  verticalArrangement = Arrangement.spacedBy(16.dp)
+              ) {
+                  Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      verticalAlignment = Alignment.CenterVertically
+                  ) {
+                      HorizontalDivider(
+                          modifier = Modifier.weight(1f),
+                          color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                      )
+                      Text(
+                          text = "আমাদের সাথে থাকুন",
+                          fontSize = 14.sp,
+                          fontWeight = FontWeight.Medium,
+                          color = MaterialTheme.colorScheme.onSurfaceVariant,
+                          modifier = Modifier.padding(horizontal = 12.dp)
+                      )
+                      HorizontalDivider(
+                          modifier = Modifier.weight(1f),
+                          color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                      )
+                  }
+
+                  Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+                      verticalAlignment = Alignment.CenterVertically
+                  ) {
+                      // WhatsApp
+                      val waLink = uiState.whatsappSupportLink
+                      if (waLink.isNotBlank()) {
+                          SocialItem(
+                              name = "WhatsApp",
+                              iconColor = Color(0xFF25D366),
+                              iconBg = Color(0xFF25D366).copy(alpha = 0.1f),
+                              icon = ImageVector.vectorResource(id = R.drawable.ic_whatsapp),
+                              modifier = Modifier.weight(1f),
+                              onClick = {
+                                  val rawLink = waLink.trim()
+                                  val finalUrl = when {
+                                      rawLink.startsWith("http://") || rawLink.startsWith("https://") -> rawLink
+                                      rawLink.all { it.isDigit() || it == '+' || it == ' ' || it == '-' } -> {
+                                          val cleanNumber = rawLink.filter { it.isDigit() }
+                                          "https://wa.me/$cleanNumber"
+                                      }
+                                      else -> "https://wa.me/$rawLink"
+                                  }
+                                  val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
+                                  context.startActivity(intent)
+                              }
+                          )
+                      }
+
+                      // Facebook
+                      val fbLink = uiState.facebookSupportLink
+                      if (fbLink.isNotBlank()) {
+                          SocialItem(
+                              name = "Facebook",
+                              iconColor = Color(0xFF1877F2),
+                              iconBg = Color(0xFF1877F2).copy(alpha = 0.1f),
+                              icon = Icons.Default.Person,
+                              modifier = Modifier.weight(1f),
+                              onClick = {
+                                  val rawLink = fbLink.trim()
+                                  val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
+                                  val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
+                                  context.startActivity(intent)
+                              }
+                          )
+                      }
+
+                      // Telegram
+                      val tgLink = uiState.telegramSupportLink
+                      if (tgLink.isNotBlank()) {
+                          SocialItem(
+                              name = "Telegram",
+                              iconColor = Color(0xFF24A1DE),
+                              iconBg = Color(0xFF24A1DE).copy(alpha = 0.1f),
+                              icon = Icons.AutoMirrored.Filled.Send,
+                              modifier = Modifier.weight(1f),
+                              onClick = {
+                                  val rawLink = tgLink.trim()
+                                  val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
+                                  val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
+                                  context.startActivity(intent)
+                              }
+                          )
+                      }
+
+                      // YouTube
+                      val ytLink = uiState.youtubeSupportLink
+                      if (ytLink.isNotBlank()) {
+                          SocialItem(
+                              name = "YouTube",
+                              iconColor = Color(0xFFFF0000),
+                              iconBg = Color(0xFFFF0000).copy(alpha = 0.1f),
+                              icon = Icons.Default.PlayArrow,
+                              modifier = Modifier.weight(1f),
+                              onClick = {
+                                  val rawLink = ytLink.trim()
+                                  val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
+                                  val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
+                                  context.startActivity(intent)
+                              }
+                          )
+                      }
+                  }
+              }
+          }
+
+          // Floating Error Message overlay (Top-overlay banner)
+          AnimatedVisibility(
+              visible = uiState.errorMessage != null,
+              enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
+              exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
+              modifier = Modifier
+                  .align(Alignment.TopCenter)
+                  .windowInsetsPadding(WindowInsets.statusBars)
+                  .padding(top = 16.dp)
+                  .zIndex(99f)
+          ) {
+              uiState.errorMessage?.let { error ->
+                  FloatingErrorBanner(message = error)
+              }
+          }
+      }
+  }
+
+  @Composable
+  fun SocialItem(
+      name: String,
+      iconColor: Color,
+      iconBg: Color,
+      icon: androidx.compose.ui.graphics.vector.ImageVector,
+      modifier: Modifier = Modifier,
+      onClick: () -> Unit
+  ) {
+      val interactionSource = remember { MutableInteractionSource() }
+      val isPressed by interactionSource.collectIsPressedAsState()
+      val scale by animateFloatAsState(
+          targetValue = if (isPressed) 0.92f else 1.0f,
+          animationSpec = spring(
+              dampingRatio = Spring.DampingRatioMediumBouncy,
+              stiffness = Spring.StiffnessLow
+          ),
+          label = "SocialItemScale"
+      )
+
+      Column(
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(6.dp),
+          modifier = modifier
+              .graphicsLayer(scaleX = scale, scaleY = scale)
+              .clickable(
+                  interactionSource = interactionSource,
+                  indication = null
+              ) { onClick() }
+      ) {
+          Box(
+              modifier = Modifier
+                  .size(48.dp)
+                  .clip(CircleShape)
+                  .background(iconBg)
+                  .border(
+                      width = 1.dp,
+                      color = iconColor.copy(alpha = 0.2f),
+                      shape = CircleShape
+                  ),
+              contentAlignment = Alignment.Center
+          ) {
+              Icon(
+                  imageVector = icon,
+                  contentDescription = name,
+                  tint = iconColor,
+                  modifier = Modifier.size(24.dp)
+              )
+          }
+          Text(
+              text = name,
+              fontSize = 12.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              fontWeight = FontWeight.Medium,
+              textAlign = TextAlign.Center,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
+          )
+      }
+  }
 
 @Composable
 fun PremiumRegisterDialog(
