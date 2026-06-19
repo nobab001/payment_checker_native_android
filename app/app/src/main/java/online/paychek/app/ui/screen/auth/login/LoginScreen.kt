@@ -1035,11 +1035,14 @@ fun SocialItem(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.clickable { onClick() }
+        modifier = Modifier
+            .width(80.dp)
+            .height(108.dp)
+            .clickable { onClick() }
     ) {
         Box(
             modifier = Modifier
-                .size(68.dp)
+                .size(72.dp)
                 .clip(CircleShape)
                 .background(iconBg)
                 .border(
@@ -1060,7 +1063,11 @@ fun SocialItem(
             text = name,
             fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.Medium
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Visible
         )
     }
 }
