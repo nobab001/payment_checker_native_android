@@ -219,27 +219,28 @@ fun DeviceScreen(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Warning,
                             contentDescription = "Warning",
                             tint = Color.White,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(24.dp)
                         )
                         Text(
-                            text = "পেমেন্ট অটো-সিঙ্ক করতে এক্সেসিবিলিটি পারমিশন দিন",
+                            text = "স্বয়ংক্রিয় পেমেন্ট ট্র্যাকিং সচল করতে অ্যাক্সেসিবিলিটি পারমিশন অনুমোদন করুন। (যদি Restricted Settings দেখায়, তবে হোম স্ক্রিন থেকে অ্যাপ আইকনে চাপ দিয়ে ধরে App Info-তে যান এবং ডানদিকের উপরের ৩-ডট মেনু থেকে Allow Restricted Settings সচল করুন)",
                             color = Color.White,
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 18.sp
                         )
                     }
-                    Text(
-                        text = "অনুমোদন করুন ➔",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }

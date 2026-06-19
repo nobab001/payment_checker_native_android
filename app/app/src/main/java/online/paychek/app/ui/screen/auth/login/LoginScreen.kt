@@ -390,7 +390,7 @@ fun LoginScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 0.dp),
+                .padding(horizontal = 16.dp, vertical = 0.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // 1. Maintenance Banner
@@ -538,7 +538,7 @@ fun LoginScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp),
+                    .padding(vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -738,8 +738,7 @@ fun LoginScreen(
                                           },
                                       contentAlignment = Alignment.Center
                                   ) {
-                                      val otpBoxWidth = screenWidth() / 7.5f
-                                      val otpBoxHeight = otpBoxWidth * 1.1f
+                                      val otpBoxSize = 48.dp
                                       Row(
                                           horizontalArrangement = Arrangement.spacedBy(adaptivePadding(4.dp, 6.dp), Alignment.CenterHorizontally),
                                           verticalAlignment = Alignment.CenterVertically,
@@ -751,7 +750,7 @@ fun LoginScreen(
 
                                               Box(
                                                   modifier = Modifier
-                                                      .size(width = otpBoxWidth, height = otpBoxHeight)
+                                                      .size(otpBoxSize)
                                                       .background(
                                                           color = Color.Transparent,
                                                           shape = RoundedCornerShape(12.dp)
