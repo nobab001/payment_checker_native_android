@@ -196,8 +196,22 @@ class SmsPollWorker(
                     continue
                 }
 
-                // ── RAW SMS payload তৈরি ─────────────────────────────────
-                val payment = SmsParser.ParsedPayment(
+                // Forward RAW SMS payload directly with parsed amount and trxId
+                val payment = SmsParser.parseWithDynamicRegex(
+                    body = candidate.body,
+                    regexPattern = matchingMethod.regexPattern,
+                    providerTag = matchingMethod.provider,
+                    senderNumber = candidate.sender,
+                    timestamp = candidate.timestamp,
+                    simSlot = simSlot,
+                    simNumber = simNumber ?: matchingMethod.number,
+                    isCustomSender = matchingMethod.templateId == null
+                ) ?: SmsParser.parseSms(candidate.sender, candidate.body, candidate.timestamp)?.copy(
+                    simSlot = simSlot,
+                    simNumber = simNumber ?: matchingMethod.number,
+                    isCustomSender = matchingMethod.templateId == null,
+                    providerTag = matchingMethod.provider
+                ) ?: SmsParser.ParsedPayment(
                     amount         = 0.0,
                     trxId          = "",
                     providerTag    = matchingMethod.provider,
@@ -210,7 +224,7 @@ class SmsPollWorker(
                     fullSms        = candidate.body
                 )
 
-                Log.i(TAG, "[Guard-2] Match — '${matchingMethod.provider}' | SIM: $simSlot | Processing via use case")
+                Log.i(TAG, "[Guard-2] 3 Conditions Met. Forwarding RAW payload to queue. Provider: ${matchingMethod.provider} | SIM: $simSlot | Processing via use case")
 
                 // ── ProcessIncomingSmsUseCase দিয়ে pipeline এ push করা ──
                 // rawBodyHash UNIQUE index Guard-1 এর duplicate silently ignore করবে

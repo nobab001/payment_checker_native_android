@@ -20,7 +20,7 @@ object SmsParser {
 
     // Regex Patterns
     private val bkashPattern = Pattern.compile(
-        "You have received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})",
+        "(?:You have received Tk|Cash In Tk)\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})",
         Pattern.CASE_INSENSITIVE or Pattern.DOTALL
     )
 
@@ -66,6 +66,56 @@ object SmsParser {
                     ?: matchPattern(body, rocketPattern, "Rocket", timestamp)
                     ?: matchPattern(body, upayPattern, "Upay", timestamp)
             }
+        }
+    }
+
+    fun parseWithDynamicRegex(
+        body: String,
+        regexPattern: String?,
+        providerTag: String,
+        senderNumber: String,
+        timestamp: Long,
+        simSlot: Int?,
+        simNumber: String?,
+        isCustomSender: Boolean
+    ): ParsedPayment? {
+        if (regexPattern.isNullOrBlank()) return null
+        return try {
+            val pattern = Pattern.compile(regexPattern, Pattern.CASE_INSENSITIVE or Pattern.DOTALL)
+            val matcher = pattern.matcher(body)
+            if (matcher.find()) {
+                val groupCount = matcher.groupCount()
+                val amountStr = matcher.group(1)?.replace(",", "") ?: "0.0"
+                val amount = amountStr.toDoubleOrNull() ?: 0.0
+
+                val trxId: String
+                val parsedSender: String
+
+                if (groupCount >= 3) {
+                    parsedSender = matcher.group(2) ?: senderNumber
+                    trxId = matcher.group(3) ?: ""
+                } else {
+                    trxId = if (groupCount >= 2) matcher.group(2) ?: "" else ""
+                    parsedSender = senderNumber
+                }
+
+                if (trxId.isNotEmpty()) {
+                    ParsedPayment(
+                        amount = amount,
+                        trxId = trxId.uppercase(Locale.US),
+                        providerTag = providerTag,
+                        senderNumber = senderNumber,
+                        rawBody = body,
+                        smsTimestamp = timestamp,
+                        simSlot = simSlot,
+                        simNumber = simNumber,
+                        isCustomSender = isCustomSender,
+                        fullSms = body
+                    )
+                } else null
+            } else null
+        } catch (e: Exception) {
+            null
         }
     }
 

@@ -223,8 +223,22 @@ class SmsReceiver(
                     continue
                 }
 
-                // Forward RAW body payload directly with zeroed amount and empty trxId
-                val finalPayment = SmsParser.ParsedPayment(
+                // Forward RAW body payload directly with parsed amount and trxId
+                val finalPayment = SmsParser.parseWithDynamicRegex(
+                    body = body,
+                    regexPattern = matchingMethod.regexPattern,
+                    providerTag = matchingMethod.provider,
+                    senderNumber = sender,
+                    timestamp = timestamp,
+                    simSlot = simSlot,
+                    simNumber = simNumber ?: matchingMethod.number,
+                    isCustomSender = matchingMethod.templateId == null
+                ) ?: SmsParser.parseSms(sender, body, timestamp)?.copy(
+                    simSlot = simSlot,
+                    simNumber = simNumber ?: matchingMethod.number,
+                    isCustomSender = matchingMethod.templateId == null,
+                    providerTag = matchingMethod.provider
+                ) ?: SmsParser.ParsedPayment(
                     amount         = 0.0,
                     trxId          = "",
                     providerTag    = matchingMethod.provider,
@@ -248,20 +262,6 @@ class SmsReceiver(
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Phase 5: Delegate to ProcessIncomingSmsUseCase.
-    // This method is now a thin dispatcher:
-    //   1. Invoke the UI/service callback (unchanged — no regression)
-    //   2. Launch the use case on IO dispatcher
-    //
-    // Removed from this method:
-    //   - rawBody blank guard   (now in ProcessIncomingSmsUseCase)
-    //   - HMAC generation       (now in ProcessIncomingSmsUseCase)
-    //   - SHA-256 rawBodyHash   (now in ProcessIncomingSmsUseCase)
-    //   - PendingSmsEntity build (now in ProcessIncomingSmsUseCase)
-    //   - Room insert           (now in ProcessIncomingSmsUseCase)
-    //   - Network check         (now in ProcessIncomingSmsUseCase via ConnectivityService)
-    // -------------------------------------------------------------------------
     private fun saveToOfflineQueueAndForward(context: Context, payment: SmsParser.ParsedPayment) {
         // Invoke existing callback first — foreground service UI won't break
         onPaymentSmsReceived?.invoke(payment)
