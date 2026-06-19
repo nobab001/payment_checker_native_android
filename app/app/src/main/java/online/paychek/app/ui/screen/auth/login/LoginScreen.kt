@@ -816,7 +816,7 @@ fun LoginScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
             // Main Action Buttons
             if (uiState.isLoading) {
@@ -1003,7 +1003,7 @@ fun SocialItem(
     ) {
         Box(
             modifier = Modifier
-                .size(adaptivePadding(52.dp, 60.dp))
+                .size(adaptivePadding(44.dp, 52.dp))
                 .clip(CircleShape)
                 .background(iconBg)
                 .border(
