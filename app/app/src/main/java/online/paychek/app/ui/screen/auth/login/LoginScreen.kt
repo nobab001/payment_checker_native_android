@@ -357,17 +357,18 @@ fun LoginScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = adaptivePadding(16.dp, 24.dp), vertical = adaptivePadding(12.dp, 16.dp)),
+            .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.TopCenter
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth(),
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(60.dp))
             // 1. Maintenance Banner
             if (uiState.isMaintenanceMode) {
                 Card(
@@ -395,17 +396,15 @@ fun LoginScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 2. Logo Header
+            // 2. Logo Header — Section 1 (Top)
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(64.dp)
-                        .clip(RoundedCornerShape(16.dp))
+                        .size(80.dp)
+                        .clip(RoundedCornerShape(20.dp))
                         .background(RoyalIndigo),
                     contentAlignment = Alignment.Center
                 ) {
@@ -413,13 +412,15 @@ fun LoginScreen(
                         imageVector = Icons.Default.AccountBalanceWallet,
                         contentDescription = "Wallet Logo",
                         tint = Color.White,
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(44.dp)
                     )
                 }
 
+                Spacer(modifier = Modifier.height(16.dp))
+
                 Text(
                     text = "Payment Checker",
-                    fontSize = 26.sp,
+                    fontSize = adaptiveTextSize(22.sp, 26.sp),
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.primary,
                     textAlign = TextAlign.Center,
@@ -429,7 +430,7 @@ fun LoginScreen(
 
                 Text(
                     text = "SMS পেমেন্ট ট্র্যাকার",
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
@@ -438,7 +439,7 @@ fun LoginScreen(
 
                 Text(
                     text = "পার্সোনাল এবং বিজনেস সলিউশন",
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary,
                     textAlign = TextAlign.Center,
@@ -447,7 +448,8 @@ fun LoginScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            // Spacer pushes Section 2 to the middle of the screen
+            Spacer(modifier = Modifier.weight(1f, fill = false))
 
             // Error Message display is removed from layout Column to prevent displacement
 
@@ -494,7 +496,9 @@ fun LoginScreen(
                     focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
                 ),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
             )
 
             // OTP Fields Section (Dynamic Animation)
@@ -817,13 +821,13 @@ fun LoginScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Main Action Buttons
             if (uiState.isLoading) {
                 CircularProgressIndicator(
                     color = RoyalIndigo,
-                    modifier = Modifier.padding(top = 16.dp)
+                    modifier = Modifier.padding(vertical = 16.dp)
                 )
             } else {
                 Button(
@@ -847,8 +851,7 @@ fun LoginScreen(
                     enabled = !uiState.isTrialBlocked,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(52.dp)
-                        .padding(top = 16.dp)
+                        .height(56.dp)
                 ) {
                     Text(
                         text = if (uiState.isOtpSent || isBypass) "লগইন করুন" else "যাচাই করুন",
@@ -859,34 +862,42 @@ fun LoginScreen(
                 }
             }
 
-            // 4. Social / Support divider
-            Row(
+            // Push social section to the bottom of the screen
+            Spacer(modifier = Modifier.weight(1f, fill = false))
+
+            // 4. Social / Support section — Section 3 (Bottom)
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(top = 32.dp, bottom = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                HorizontalDivider(
-                    modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-                Text(
-                    text = "আমাদের সাথে থাকুন",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-                HorizontalDivider(
-                    modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-            }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    HorizontalDivider(
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                    Text(
+                        text = "আমাদের সাথে থাকুন",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                 // WhatsApp — only shown when link is configured
                 val waLink = uiState.whatsappSupportLink
                 if (waLink.isNotBlank()) {
@@ -962,6 +973,7 @@ fun LoginScreen(
                     )
                 }
             }
+            }
         }
 
         // Floating Error Message overlay (Top-overlay banner)
@@ -996,7 +1008,7 @@ fun SocialItem(
     ) {
         Box(
             modifier = Modifier
-                .size(adaptivePadding(48.dp, 56.dp))
+                .size(adaptivePadding(52.dp, 60.dp))
                 .clip(CircleShape)
                 .background(iconBg)
                 .border(
