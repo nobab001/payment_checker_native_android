@@ -364,11 +364,10 @@ fun LoginScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp),
+                .padding(horizontal = 24.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+            verticalArrangement = Arrangement.Center
         ) {
-            Spacer(modifier = Modifier.height(60.dp))
             // 1. Maintenance Banner
             if (uiState.isMaintenanceMode) {
                 Card(
@@ -448,10 +447,8 @@ fun LoginScreen(
                 )
             }
 
-            // Spacer pushes Section 2 to the middle of the screen
-            Spacer(modifier = Modifier.weight(1f, fill = false))
-
-            // Error Message display is removed from layout Column to prevent displacement
+            // Shift input box down for breathing room below the title
+            Spacer(modifier = Modifier.height(32.dp))
 
             // Contact Input Box
             OutlinedTextField(
@@ -819,7 +816,7 @@ fun LoginScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Main Action Buttons
             if (uiState.isLoading) {
@@ -860,14 +857,14 @@ fun LoginScreen(
                 }
             }
 
-            // Push social section to the bottom of the screen
-            Spacer(modifier = Modifier.weight(1f))
+            // Spacer — gives the social section a balanced, premium gap from the verify button
+            Spacer(modifier = Modifier.height(24.dp))
 
             // 4. Social / Support section — Section 3 (Bottom)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 32.dp, bottom = 32.dp),
+                    .padding(top = 8.dp, bottom = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
