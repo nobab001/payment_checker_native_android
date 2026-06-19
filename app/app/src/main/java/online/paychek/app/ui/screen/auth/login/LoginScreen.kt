@@ -49,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -364,9 +365,9 @@ fun LoginScreen(
             modifier = Modifier
                 .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Spacer(modifier = Modifier.height(50.dp))
+            Spacer(modifier = Modifier.height(28.dp))
             // 1. Maintenance Banner
             if (uiState.isMaintenanceMode) {
                 Card(
@@ -394,42 +395,59 @@ fun LoginScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // 2. Logo Header
-            Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(RoyalIndigo),
-                contentAlignment = Alignment.Center
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.AccountBalanceWallet,
-                    contentDescription = "Wallet Logo",
-                    tint = Color.White,
-                    modifier = Modifier.size(40.dp)
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(RoyalIndigo),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AccountBalanceWallet,
+                        contentDescription = "Wallet Logo",
+                        tint = Color.White,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+
+                Text(
+                    text = "Payment Checker",
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Text(
+                    text = "SMS পেমেন্ট ট্র্যাকার",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Text(
+                    text = "পার্সোনাল এবং বিজনেস সলিউশন",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = "Payment Checker",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.primary,
-                textAlign = TextAlign.Center
-            )
-
-            Text(
-                text = "SMS পেমেন্ট ট্র্যাকার",
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Error Message display is removed from layout Column to prevent displacement
 
@@ -438,8 +456,10 @@ fun LoginScreen(
                 value = uiState.contact,
                 onValueChange = { viewModel.onContactChanged(it) },
                 placeholder = { Text(
-                    text = "মোবাইল নম্বর / Gmail",
-                    fontSize = adaptiveTextSize(13.sp, 15.sp)
+                    text = "মোবাইল নাম্বার অথবা জিমেইল এড্রেসটি লিখুন।",
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 ) },
                 leadingIcon = {
                     Icon(
@@ -460,7 +480,9 @@ fun LoginScreen(
                 ),
                 singleLine = true,
                 readOnly = uiState.isOtpSent,
-                textStyle = androidx.compose.ui.text.TextStyle(fontSize = adaptiveTextSize(13.sp, 15.sp)),
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    fontSize = 14.sp
+                ),
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.surface,
@@ -491,7 +513,7 @@ fun LoginScreen(
                         exit = fadeOut()
                     ) {
                         Text(
-                            text = "আমরা আপনার দেওয়া ঠিকানায় ৬ ডিজিটের ওটিপি পাঠিয়েছি।",
+                            text = "৬ ডিজিটের ওটিপি (OTP) পাঠানো হয়েছে।",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -801,7 +823,7 @@ fun LoginScreen(
             if (uiState.isLoading) {
                 CircularProgressIndicator(
                     color = RoyalIndigo,
-                    modifier = Modifier.padding(8.dp)
+                    modifier = Modifier.padding(top = 16.dp)
                 )
             } else {
                 Button(
@@ -826,6 +848,7 @@ fun LoginScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp)
+                        .padding(top = 16.dp)
                 ) {
                     Text(
                         text = if (uiState.isOtpSent || isBypass) "লগইন করুন" else "যাচাই করুন",

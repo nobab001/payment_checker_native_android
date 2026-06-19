@@ -56,6 +56,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Warning
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bottom Navigation Tab সংজ্ঞা
@@ -170,42 +171,8 @@ fun HomeScreen(
         }
     }
 
-    if (hasNotificationPermissionChecked && !isAccessibilityEnabled) {
-        AlertDialog(
-            onDismissRequest = { /* Non-dismissible */ },
-            title = {
-                Text(
-                    text = "এক্সেসিবিলিটি পারমিশন প্রয়োজন",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    fontSize = 18.sp
-                )
-            },
-            text = {
-                Text(
-                    text = "পেমেন্ট অটো-সিঙ্ক ও ব্যাকগ্রাউন্ড ট্র্যাকিং করতে এক্সেসিবিলিটি পারমিশন দেওয়া আবশ্যক। অনুগ্রহ করে সেটিংসে গিয়ে 'Paychek' এর জন্য পারমিশন দিন।",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 14.sp
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        online.paychek.app.MainActivity.isRequestingPermission = true
-                        val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                        context.startActivity(intent)
-                    }
-                ) {
-                    Text("সেটিংসে যান", color = Color(0xFF22D3EE), fontWeight = FontWeight.Bold)
-                }
-            },
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(20.dp),
-            modifier = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Modifier else Modifier.border(1.dp, Color(0xFFE3E5E8), RoundedCornerShape(20.dp))
-        )
-    }
-
     var showPurchaseDialog by remember { mutableStateOf(false) }
+
     var plansList by remember { mutableStateOf<List<online.paychek.app.data.remote.dto.SubscriptionPlanDto>>(emptyList()) }
     var purchaseLoading by remember { mutableStateOf(false) }
 
@@ -303,33 +270,6 @@ fun HomeScreen(
         }
     }
 
-    if (showPurchaseDialog) {
-        online.paychek.app.ui.screen.dashboard.SubscriptionPurchaseDialog(
-            plans = plansList,
-            isLoading = purchaseLoading,
-            onDismiss = { showPurchaseDialog = false },
-            onPurchase = { planName ->
-                coroutineScope.launch {
-                    purchaseLoading = true
-                    val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
-                    val result = online.paychek.app.data.repository.PaymentRepository().purchaseSubscription(token, planName)
-                    result.fold(
-                        onSuccess = {
-                            prefs.edit().putString("pcu_account_level", planName).apply()
-                            android.widget.Toast.makeText(context, "${planName} প্যাকেজ সক্রিয় হয়েছে।", android.widget.Toast.LENGTH_SHORT).show()
-                            showPurchaseDialog = false
-                            onNavigate(AppNavKey.ApiCenter)
-                        },
-                        onFailure = { error ->
-                            android.widget.Toast.makeText(context, error.message ?: "প্যাকেজ ক্রয় ব্যর্থ হয়েছে।", android.widget.Toast.LENGTH_LONG).show()
-                        }
-                    )
-                    purchaseLoading = false
-                }
-            }
-        )
-    }
-
     val onNavigateToApiCenter: () -> Unit = {
         val accountLevel = prefs.getString("pcu_account_level", "FREE_LEVEL") ?: "FREE_LEVEL"
         if (accountLevel == "FREE_LEVEL") {
@@ -381,7 +321,7 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "এই ডিভাইসটি এখনও অনুমোদিত নয়। অনুগ্রহ করে আপনার অন্য কোনো সচল ডিভাইস থেকে পিন দিয়ে এটি অনুমোদন করুন।",
+                    text = "এই ডিভাইসটি এখনও অনুমোদিত নয়। অনুগ্রহ করে আপনার অন্য কোনো সচল ডিভাইস থেকে পিন দিয়ে এটি অনুমোদন করুন।",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     lineHeight = 20.sp,
@@ -471,7 +411,7 @@ fun HomeScreen(
                                             SecurePreferences.encrypt(context, "pcu_device_role", "owner")
                                             deviceRole = "owner"
                                         } else {
-                                            submitRoleError = "অনুমোদন জমা দেওয়া যায়নি"
+                                            submitRoleError = "অনুমোদন জমা দেওয়া যায়নি"
                                         }
                                     } catch (e: Exception) {
                                         submitRoleError = "নেটওয়ার্ক ত্রুটি: ${e.localizedMessage}"
@@ -516,7 +456,7 @@ fun HomeScreen(
                                             SecurePreferences.encrypt(context, "pcu_device_role", "restricted")
                                             deviceRole = "restricted"
                                         } else {
-                                            submitRoleError = "অনুমোদন জমা দেওয়া যায়নি"
+                                            submitRoleError = "অনুমোদন জমা দেওয়া যায়নি"
                                         }
                                     } catch (e: Exception) {
                                         submitRoleError = "নেটওয়ার্ক ত্রুটি: ${e.localizedMessage}"
@@ -733,7 +673,7 @@ fun HomeScreen(
                                             )
                                         )
                                         if (response.isSuccessful && response.body()?.success == true) {
-                                            android.widget.Toast.makeText(context, "ডিভাইসটি সফলভাবে অনুমোদন করা হয়েছে।", android.widget.Toast.LENGTH_SHORT).show()
+                                            android.widget.Toast.makeText(context, "ডিভাইসটি সফলভাবে অনুমোদন করা হয়েছে।", android.widget.Toast.LENGTH_SHORT).show()
                                             pendingDevices = pendingDevices.filter { it.deviceId != deviceToApprove.deviceId }
                                             showPinApprovalDialogForDevice = null
                                             pinApprovalInput = ""
@@ -780,6 +720,54 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            // Top accessibility banner — replaces the old blocking AlertDialog.
+            // Shown only on the HOME tab because DeviceScreen renders its own banner.
+            if (hasNotificationPermissionChecked && !isAccessibilityEnabled && selectedTab == HomeTab.HOME) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF59E0B)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .clickable {
+                            online.paychek.app.MainActivity.isRequestingPermission = true
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                            context.startActivity(intent)
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Warning",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "পেমেন্ট অটো-সিঙ্ক করতে এক্সেসিবিলিটি পারমিশন দিন",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = "অনুমোদন করুন ➔",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
             // Top notification banner for owner devices with pending requests
             if (isApproved && deviceRole == "owner" && pendingDevices.isNotEmpty()) {
                 Card(
@@ -807,7 +795,7 @@ fun HomeScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                             Text(
-                                text = "অনুমোদনের জন্য ${pendingDevices.size}টি ডিভাইস পেন্ডিং রয়েছে",
+                                text = "অনুমোদনের জন্য ${pendingDevices.size}টি ডিভাইস পেন্ডিং রয়েছে",
                                 color = Color.White,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold

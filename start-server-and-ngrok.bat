@@ -6,7 +6,7 @@ echo ===================================================
 
 :: Start Backend Server in a new window
 echo Launching Backend Server...
-start "Paychek Backend Server" cmd /k "cd /d "%~dp0backend" && npm run dev"
+start "Paychek Backend Server" cmd /k "cd /d ""%~dp0backend"" && npm run dev"
 
 :: Start Ngrok Tunnel in another window
 echo Launching Ngrok Tunnel...

@@ -42,6 +42,9 @@ android {
 
 kotlin {
     jvmToolchain(17)
+    // Pin the Java toolchain lookup to the JDK that's bundled with Android Studio
+    // (JBR). This avoids the "Could not download toolchain" error when network
+    // access for foojay-resolver is unavailable.
 }
 
 dependencies {

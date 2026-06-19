@@ -4,7 +4,7 @@ process.env.TZ = 'Asia/Dhaka';
 const express = require('express');
 const cors = require('cors');
 const cron = require('node-cron');
-const { query } = require('./db/connection');
+const { query, ensureDatabaseExists, ensureGatewayMethodsTable } = require('./db/connection');
 require('dotenv').config();
 
 const authRoutes        = require('./routes/authRoutes');
@@ -90,6 +90,46 @@ app.listen(PORT, async () => {
   console.log(`=============================================`);
 
   try {
+    // Make sure the target database exists before running any schema migrations.
+    await ensureDatabaseExists();
+
+    // Defensive guard against ghost / missing gateway_methods table.
+    await ensureGatewayMethodsTable();
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Auto-install the canonical schema (idempotent — uses IF NOT EXISTS)
+    // Reads `schema.sql`, strips CREATE DATABASE / USE statements, executes
+    // each CREATE TABLE on the active connection. Safe to re-run.
+    // ─────────────────────────────────────────────────────────────────────────
+    const fs   = require('fs');
+    const path = require('path');
+    const schemaPath = path.join(__dirname, 'schema.sql');
+    if (fs.existsSync(schemaPath)) {
+      console.log('[DB] Auto-installing schema from schema.sql…');
+      const rawSchema = fs.readFileSync(schemaPath, 'utf8');
+      // Split on `;` boundaries (rough but safe for our DDL — no procedures/triggers)
+      const allStmts = rawSchema
+        .split(/;\s*(?=$|\n)/m)
+        .map(s => s.trim())
+        .filter(s => s.length > 0 && !/^(--|\/\*)/.test(s))
+        .filter(s => {
+          const u = s.toUpperCase();
+          return !u.startsWith('CREATE DATABASE') && !u.startsWith('USE ');
+        });
+      for (const stmt of allStmts) {
+        try {
+          await query(stmt);
+        } catch (e) {
+          if (e.code === 'ER_TABLE_EXISTS_ERROR') continue;
+          // Log and continue — we don't want a stray seed INSERT to block startup
+          console.warn('[DB] Schema stmt warning:', e.message);
+        }
+      }
+      console.log(`[DB] ✅ Schema install complete (${allStmts.length} statements processed).`);
+    } else {
+      console.warn('[DB] schema.sql not found at', schemaPath, '— skipping auto-install.');
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Initialize anti-abuse table
     // ─────────────────────────────────────────────────────────────────────────

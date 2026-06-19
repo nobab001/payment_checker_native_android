@@ -36,14 +36,15 @@ class LoginViewModel : ViewModel() {
                     val configs = response.body()!!.configs
                     val isMaintenance = configs["maintenance_mode"] == "true"
                     val adminUser = configs["admin_secret_username"] ?: "admin"
+                    val current = _uiState.value
                     _uiState.update {
                         it.copy(
                             isMaintenanceMode = isMaintenance,
                             adminSecretUsername = adminUser,
-                            whatsappSupportLink = configs["whatsapp_support_link"]?.takeIf { lnk -> lnk.isNotBlank() } ?: "",
-                            telegramSupportLink = configs["telegram_support_link"]?.takeIf { lnk -> lnk.isNotBlank() } ?: "",
-                            facebookSupportLink = configs["facebook_support_link"]?.takeIf { lnk -> lnk.isNotBlank() } ?: "",
-                            youtubeSupportLink  = configs["youtube_support_link"]?.takeIf { lnk -> lnk.isNotBlank() } ?: ""
+                            whatsappSupportLink = configs["whatsapp_support_link"]?.takeIf { lnk -> lnk.isNotBlank() } ?: current.whatsappSupportLink,
+                            telegramSupportLink = configs["telegram_support_link"]?.takeIf { lnk -> lnk.isNotBlank() } ?: current.telegramSupportLink,
+                            facebookSupportLink = configs["facebook_support_link"]?.takeIf { lnk -> lnk.isNotBlank() } ?: current.facebookSupportLink,
+                            youtubeSupportLink  = configs["youtube_support_link"]?.takeIf { lnk -> lnk.isNotBlank() } ?: current.youtubeSupportLink
                         )
                     }
                 }
