@@ -198,18 +198,10 @@ class SmsReceiver(
 
                 val cleanSender = sender.trim().lowercase(Locale.US)
 
-                // Condition 2: Authorized Sender (bKash/Nagad) check
-                val isBkashOrNagad = cleanSender.contains("bkash") || cleanSender.contains("nagad")
-                if (!isBkashOrNagad) {
-                    Log.d(TAG, "SMS ignored: Sender $sender is not bKash or Nagad.")
-                    continue
-                }
-
-                // Condition 3: Check SIM slot, Sender ID, and keywords matching (using OR matching logic - any match)
+                // Condition 2: Check SIM slot, Sender ID, and keywords matching (Dynamic)
                 val matchingMethod = cachedMethods.firstOrNull { method ->
                     method.isEnabled == 1 &&
                     (simSlot == null || method.simSlot == simSlot) &&
-                    method.provider.trim().lowercase(Locale.US).let { it.contains("bkash") || it.contains("nagad") } &&
                     (
                         if (method.templateId == null) {
                             cleanSender == method.provider.trim().lowercase(Locale.US)

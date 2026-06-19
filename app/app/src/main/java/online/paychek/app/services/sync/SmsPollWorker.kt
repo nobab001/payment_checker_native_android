@@ -151,13 +151,7 @@ class SmsPollWorker(
             try {
                 val cleanSender = candidate.sender.trim().lowercase(Locale.US)
 
-                // ── Sender pre-filter (bKash/Nagad only) ─────────────────
-                val isBkashOrNagad = cleanSender.contains("bkash") || cleanSender.contains("nagad")
-                if (!isBkashOrNagad) {
-                    Log.d(TAG, "[Guard-2] Skip — sender '${candidate.sender}' not bKash/Nagad")
-                    continue
-                }
-
+                // ── Sender pre-filter (Dynamic) ─────────────────
                 // ── SIM slot resolve করা ─────────────────────────────────
                 val simSlot   = resolveSimSlotFromSubId(candidate.subscriptionId)
                 val simNumber = resolveSimNumberFromSubId(candidate.subscriptionId)
@@ -180,9 +174,6 @@ class SmsPollWorker(
                 val matchingMethod = cachedMethods.firstOrNull { method ->
                     method.isEnabled == 1 &&
                     (simSlot == null || method.simSlot == simSlot) &&
-                    method.provider.trim().lowercase(Locale.US).let {
-                        it.contains("bkash") || it.contains("nagad")
-                    } &&
                     (
                         if (method.templateId == null) {
                             cleanSender == method.provider.trim().lowercase(Locale.US)
