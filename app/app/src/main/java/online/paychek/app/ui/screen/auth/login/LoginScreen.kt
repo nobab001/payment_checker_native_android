@@ -496,9 +496,7 @@ fun LoginScreen(
                     focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
                 ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
+                modifier = Modifier.fillMaxWidth()
             )
 
             // OTP Fields Section (Dynamic Animation)
@@ -863,7 +861,7 @@ fun LoginScreen(
             }
 
             // Push social section to the bottom of the screen
-            Spacer(modifier = Modifier.weight(1f, fill = false))
+            Spacer(modifier = Modifier.weight(1f))
 
             // 4. Social / Support section — Section 3 (Bottom)
             Column(
