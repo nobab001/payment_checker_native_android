@@ -67,7 +67,13 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.zIndex
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.ui.draw.shadow
 import kotlinx.coroutines.launch
+
+// Premium Material 3 design palette — local to this screen
+private val PremiumPrimary = Color(0xFF1F2A8A)
+private val PremiumBackground = Color(0xFFF8F9FC)
+private val PremiumTextSecondary = Color(0xFF6B7280)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -357,16 +363,15 @@ fun LoginScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(PremiumBackground),
         contentAlignment = Alignment.TopCenter
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .padding(horizontal = 24.dp, vertical = 0.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // 1. Maintenance Banner
             if (uiState.isMaintenanceMode) {
@@ -396,51 +401,79 @@ fun LoginScreen(
             }
 
             // 2. Logo Header — Section 1 (Top)
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            Spacer(modifier = Modifier.height(80.dp))
+
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn(animationSpec = tween(700)),
+                label = "LogoFade"
             ) {
                 Box(
                     modifier = Modifier
-                        .size(80.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(RoyalIndigo),
+                        .size(90.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(PremiumPrimary)
+                        .shadow(elevation = 8.dp, shape = RoundedCornerShape(22.dp), clip = false),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.AccountBalanceWallet,
                         contentDescription = "Wallet Logo",
                         tint = Color.White,
-                        modifier = Modifier.size(44.dp)
+                        modifier = Modifier.size(46.dp)
                     )
                 }
+            }
 
-                Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
+            AnimatedVisibility(
+                visible = true,
+                enter = slideInVertically(animationSpec = tween(700, delayMillis = 150), initialOffsetY = { it / 4 }) + fadeIn(animationSpec = tween(700, delayMillis = 150)),
+                label = "TitleSlide"
+            ) {
                 Text(
                     text = "Payment Checker",
-                    fontSize = adaptiveTextSize(22.sp, 26.sp),
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 34.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = PremiumPrimary,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
 
+            Spacer(modifier = Modifier.height(10.dp))
+
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn(animationSpec = tween(700, delayMillis = 250)),
+                label = "SubtitleFade"
+            ) {
                 Text(
-                    text = "SMS পেমেন্ট ট্র্যাকার",
+                    text = "SMS Payment Verification System",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = PremiumTextSecondary,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn(animationSpec = tween(700, delayMillis = 350)),
+                label = "TaglineFade"
+            ) {
+                Text(
+                    text = "Secure • Fast • Reliable",
                     fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Text(
-                    text = "পার্সোনাল এবং বিজনেস সলিউশন",
-                    fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary,
+                    letterSpacing = 0.5.sp,
+                    color = PremiumPrimary,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -448,7 +481,7 @@ fun LoginScreen(
             }
 
             // Shift input box down for breathing room below the title
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(40.dp))
 
             // Contact Input Box
             OutlinedTextField(
@@ -464,7 +497,7 @@ fun LoginScreen(
                     Icon(
                         imageVector = Icons.Default.Person,
                         contentDescription = "Contact Icon",
-                        tint = RoyalIndigo
+                        tint = PremiumPrimary
                     )
                 },
                 keyboardOptions = KeyboardOptions(
@@ -482,18 +515,20 @@ fun LoginScreen(
                 textStyle = androidx.compose.ui.text.TextStyle(
                     fontSize = 14.sp
                 ),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(18.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    focusedBorderColor = PremiumPrimary,
+                    unfocusedBorderColor = Color(0xFFE5E7EB),
+                    focusedTextColor = PremiumPrimary,
+                    unfocusedTextColor = PremiumPrimary,
+                    focusedPlaceholderColor = PremiumTextSecondary,
+                    unfocusedPlaceholderColor = PremiumTextSecondary
                 ),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(58.dp)
             )
 
             // OTP Fields Section (Dynamic Animation)
@@ -841,16 +876,17 @@ fun LoginScreen(
                             }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
-                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = PremiumPrimary),
+                    shape = RoundedCornerShape(18.dp),
                     enabled = !uiState.isTrialBlocked,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp)
+                        .shadow(elevation = 6.dp, shape = RoundedCornerShape(18.dp), clip = false)
                 ) {
                     Text(
                         text = if (uiState.isOtpSent || isBypass) "লগইন করুন" else "যাচাই করুন",
-                        fontSize = 16.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
@@ -858,15 +894,15 @@ fun LoginScreen(
             }
 
             // Spacer — gives the social section a balanced, premium gap from the verify button
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(50.dp))
 
             // 4. Social / Support section — Section 3 (Bottom)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp, bottom = 16.dp),
+                    .padding(bottom = 40.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -874,23 +910,23 @@ fun LoginScreen(
                 ) {
                     HorizontalDivider(
                         modifier = Modifier.weight(1f),
-                        color = MaterialTheme.colorScheme.outlineVariant
+                        color = Color(0xFFE5E7EB)
                     )
                     Text(
                         text = "আমাদের সাথে থাকুন",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 16.sp,
+                        color = PremiumTextSecondary,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                     HorizontalDivider(
                         modifier = Modifier.weight(1f),
-                        color = MaterialTheme.colorScheme.outlineVariant
+                        color = Color(0xFFE5E7EB)
                     )
                 }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+                    horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                 // WhatsApp — only shown when link is configured
@@ -998,12 +1034,12 @@ fun SocialItem(
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.clickable { onClick() }
     ) {
         Box(
             modifier = Modifier
-                .size(adaptivePadding(44.dp, 52.dp))
+                .size(68.dp)
                 .clip(CircleShape)
                 .background(iconBg)
                 .border(
@@ -1017,12 +1053,12 @@ fun SocialItem(
                 imageVector = icon,
                 contentDescription = name,
                 tint = iconColor,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(30.dp)
             )
         }
         Text(
             text = name,
-            fontSize = 11.sp,
+            fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Medium
         )
