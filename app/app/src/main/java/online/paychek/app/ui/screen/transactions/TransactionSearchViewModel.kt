@@ -36,6 +36,8 @@ data class TransactionSearchState(
     val hasMore:            Boolean = true,
     val isInitialLoading:   Boolean = true,
     val isLoadingMore:      Boolean = false,
+    val startDate: String? = null,
+    val endDate: String? = null,
     val errorMessage: String? = null
 )
 
@@ -104,6 +106,22 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
         fetchPage(page = 1)
     }
 
+    fun onDateRangeChanged(start: String?, end: String?) {
+        _state.update {
+            it.copy(
+                startDate        = start,
+                endDate          = end,
+                rawList          = emptyList(),
+                displayList      = emptyList(),
+                currentPage      = 1,
+                hasMore          = true,
+                isInitialLoading = true,
+                errorMessage     = null
+            )
+        }
+        fetchPage(page = 1)
+    }
+
     private fun loadFirstPage() {
         _state.update {
             it.copy(
@@ -148,7 +166,9 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                 token    = token,
                 page     = page,
                 limit    = PAGE_SIZE,
-                provider = provider
+                provider = provider,
+                startDate = _state.value.startDate,
+                endDate = _state.value.endDate
             )
 
             result.fold(

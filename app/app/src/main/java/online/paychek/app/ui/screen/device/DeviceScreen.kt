@@ -510,6 +510,36 @@ fun DeviceScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    // Staff PIN TextField
+                    if (!isOwnerRole) {
+                        OutlinedTextField(
+                            value = state.remoteDeviceEditPin,
+                            onValueChange = viewModel::onRemoteDeviceEditPinChanged,
+                            label = { Text("স্টাফ ডিভাইসের পিনকোড (ঐচ্ছিক)", color = TextMuted) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Lock, null, tint = AccentCyan, modifier = Modifier.size(18.dp))
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = AccentCyan,
+                                unfocusedBorderColor = TextMuted.copy(0.3f),
+                                focusedTextColor = TextWhite,
+                                unfocusedTextColor = TextWhite,
+                                focusedContainerColor = GwBg,
+                                unfocusedContainerColor = GwBg
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            text = "যদি স্টাফ এর জন্য কোনো পিন কোড না দেন, তবে মালিকের মূল পিন দিয়ে আনলক করা যাবে।",
+                            color = TextMuted,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                        )
+                    }
+
                     HorizontalDivider(color = TextMuted.copy(0.15f))
 
                     // SIM 1 Config row

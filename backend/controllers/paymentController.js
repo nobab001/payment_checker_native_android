@@ -1,4 +1,4 @@
-const { query } = require('../db/connection');
+const prisma = require('../db/prisma');
 const crypto = require('crypto');
 const { verifyHmac } = require('../utils/verifyHmac');
 const { parseRawSms } = require('../utils/parseRawSms');
@@ -21,32 +21,15 @@ function sha256(data) {
 // POST /api/payment-sms-ingest
 // Android থেকে RAW SMS + HMAC Signature গ্রহণ করে, cryptographically যাচাই
 // করে, server-side parse করে, ডাটাবেজে সংরক্ষণ করে।
-//
-// Execution Order (বাধ্যতামূলক):
-//  1. Input validation
-//  2. DB থেকে user secretKey লোড
-//  3. HMAC verify — fail হলে সরাসরি 403, কোনো parse নেই
-//  4. rawBodyHash = SHA256(rawBody) — integrity tracking
-//  5. parseRawSms() — server-side — client data trust করা হয় না
-//  6. Parse fail হলে sms_parse_failures audit table এ insert, 422 return
-//  7. INSERT IGNORE — dedupe_key দিয়ে duplicate prevention
-//
-// Deduplication:
-//  Formula: smsTimestamp + '|' + senderNumber + '|' + SHA256(rawBody)
-//  UNIQUE constraint prevents same SMS being inserted twice.
-//  is_used (SOLDOUT) কোনোভাবেই রিসেট হয় না।
 // =============================================================================
 async function paymentSmsIngest(req, res) {
   try {
     const userId   = req.user.userId;
     const deviceId = req.user.deviceId || 'unknown_device';
 
-    const { rawBody, hmacSignature, senderHint, smsTimestamp, simSlot, simNumber } = req.body;
+    const { rawBody, hmacSignature, senderNumber, smsTimestamp, simSlot, simNumber } = req.body;
 
-    // ────────────────────────────────────────────────────────────────────────
     // STEP 1: Input Validation
-    // rawBody ও hmacSignature ছাড়া কিছু accept করা হবে না
-    // ────────────────────────────────────────────────────────────────────────
     if (!rawBody || typeof rawBody !== 'string' || rawBody.trim().length === 0) {
       return res.status(400).json({ error: 'rawBody অনুপস্থিত বা খালি' });
     }
@@ -57,12 +40,12 @@ async function paymentSmsIngest(req, res) {
       return res.status(400).json({ error: 'smsTimestamp অনুপস্থিত' });
     }
 
-    // ────────────────────────────────────────────────────────────────────────
     // STEP 2: User-এর secretKey ডাটাবেজ থেকে লোড করো
-    // Client-এর পাঠানো key কখনো trust করা হয় না — সবসময় DB থেকে নাও
-    // ────────────────────────────────────────────────────────────────────────
-    const userRows = await query('SELECT secretKey FROM users WHERE id = ? LIMIT 1', [userId]);
-    const secretKey = userRows[0]?.secretKey;
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { secretKey: true }
+    });
+    const secretKey = user?.secretKey;
 
     if (!secretKey) {
       console.warn(`[INGEST] ⛔ No secretKey — userId: ${userId}. Device re-bind required.`);
@@ -72,13 +55,7 @@ async function paymentSmsIngest(req, res) {
       });
     }
 
-    // ────────────────────────────────────────────────────────────────────────
-    // STEP 3: HMAC Verification — সবার আগে, parse করার আগে
-    // এটা fail হলে সরাসরি 403 — কোনো parsing বা business logic নয়
-    //
-    // Canonical Formula (Android ও Node.js উভয়েই একই):
-    //   HMAC-SHA256(key=UTF-8(secretKey), input=UTF-8(rawBody)) → lowercase hex
-    // ────────────────────────────────────────────────────────────────────────
+    // STEP 3: HMAC Verification
     const hmacResult = verifyHmac(rawBody, hmacSignature, secretKey);
 
     if (!hmacResult.valid) {
@@ -89,41 +66,29 @@ async function paymentSmsIngest(req, res) {
       });
     }
 
-    // ────────────────────────────────────────────────────────────────────────
-    // STEP 4: rawBodyHash — fast duplicate detection ও integrity tracking
-    // Server-side compute — client-এর পাঠানো hash কখনো trust করা হয় না
-    // ────────────────────────────────────────────────────────────────────────
+    // STEP 4: rawBodyHash
     const rawBodyHash = sha256(rawBody.trim());
 
-    // ────────────────────────────────────────────────────────────────────────
     // STEP 5: Server-side SMS Parsing
-    // HMAC verify সফল হওয়ার পরেই parseRawSms চালানো হয়।
-    // Client-এর parsed fields (amount, trxId) সরাসরি ব্যবহার করা হয় না।
-    // ────────────────────────────────────────────────────────────────────────
-    const parsed = await parseRawSms(rawBody, senderHint || '');
+    console.log(`[INGEST DEBUG] Raw Body: ${rawBody} | Sender Number: ${senderNumber}`);
+    const parsed = await parseRawSms(rawBody, senderNumber || '');
 
     if (!parsed.success) {
-      // HMAC verify সফল কিন্তু parse fail — audit table এ রাখো, reject করো
-      // "Never silently discard verified SMS" — audit policy
       console.warn(`[INGEST] ⚠️ PARSE_FAILED (HMAC OK) — userId: ${userId} | body[:80]: ${rawBody.substring(0, 80)}`);
 
       try {
-        await query(
-          `INSERT INTO sms_parse_failures
-             (user_id, device_id, raw_body, raw_body_hash, hmac_signature, parse_error, sms_timestamp_ms, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
-          [
-            userId,
-            deviceId,
-            rawBody,
-            rawBodyHash,
-            hmacSignature,
-            parsed.error || 'No matching template',
-            Number(smsTimestamp)
-          ]
-        );
+        await prisma.sms_parse_failures.create({
+          data: {
+            user_id: userId,
+            device_id: deviceId,
+            raw_body: rawBody,
+            raw_body_hash: rawBodyHash,
+            hmac_signature: hmacSignature,
+            parse_error: parsed.error || 'No matching template',
+            sms_timestamp_ms: Number(smsTimestamp)
+          }
+        });
       } catch (auditErr) {
-        // Audit insert fail করলে main flow block হবে না — শুধু log
         console.error('[INGEST] Audit insert failed (non-critical):', auditErr.message);
       }
 
@@ -134,63 +99,53 @@ async function paymentSmsIngest(req, res) {
       });
     }
 
-    // ────────────────────────────────────────────────────────────────────────
     // STEP 6: Timestamp ও Deduplication Key তৈরি
-    // ────────────────────────────────────────────────────────────────────────
     const dateObj            = new Date(Number(smsTimestamp));
-    const formattedTimestamp = dateObj.toISOString().slice(0, 19).replace('T', ' ');
     const formattedDate      = dateObj.toISOString().slice(0, 10);
-
-    // Deduplication Key Formula: smsTimestamp + '|' + senderNumber + '|' + SHA256(rawBody)
     const dedupeKey = `${smsTimestamp}|${parsed.senderNumber || ''}|${rawBodyHash}`;
 
-    // ────────────────────────────────────────────────────────────────────────
-    // STEP 7: DUPLICATE SAFETY — INSERT IGNORE
-    // একই dedupe_key দ্বিতীয়বার insert হবে না।
-    // is_used = 1 (SOLDOUT) থাকলে সেটি অপরিবর্তিত থাকবে।
-    // raw_sms_sha256: fast lookup ও debugging এর জন্য সংরক্ষণ করা হচ্ছে।
-    // ────────────────────────────────────────────────────────────────────────
-    const result = await query(
-      `INSERT IGNORE INTO sms_history (
-        user_id, device_id, sim_slot, sim_number, provider_tag, amount,
-        trx_id, sender_number, receiver_number, sms_timestamp, sms_date,
-        full_sms, dedupe_key, raw_sms_sha256, is_synced, is_used
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)`,
-      [
-        userId,
-        deviceId,
-        simSlot   || null,
-        simNumber || null,
-        parsed.provider,
-        parsed.amount,
-        parsed.trxId || '',
-        parsed.senderNumber || null,
-        null, // receiverNumber — server-side parse এ available নেই এই version এ
-        formattedTimestamp,
-        formattedDate,
-        rawBody,
-        dedupeKey,
-        rawBodyHash
-      ]
-    );
-
-    const isDuplicate = result.affectedRows === 0;
-
-    if (isDuplicate) {
-      console.log(`[INGEST] Duplicate blocked — hash: ${rawBodyHash.substring(0, 16)}… | User: ${userId}`);
+    // STEP 7: DUPLICATE SAFETY — INSERT
+    try {
+      await prisma.sms_history.create({
+        data: {
+          user_id: userId,
+          device_id: deviceId,
+          sim_slot: simSlot ? parseInt(simSlot, 10) : null,
+          sim_number: simNumber ? String(simNumber) : null,
+          provider_tag: parsed.provider,
+          amount: parsed.amount,
+          trx_id: parsed.trxId || '',
+          sender_number: parsed.senderNumber || null,
+          receiver_number: null,
+          sms_timestamp: dateObj,
+          sms_date: new Date(formattedDate),
+          full_sms: rawBody,
+          dedupe_key: dedupeKey,
+          raw_sms_sha256: rawBodyHash,
+          is_synced: 1,
+          is_used: 0
+        }
+      });
+      
+      console.log(`[INGEST] ✅ Saved — Provider: ${parsed.provider} | ৳${parsed.amount} | TrxID: ${parsed.trxId} | SIM: ${simSlot} | User: ${userId}`);
       return res.json({
         success: true,
-        isDuplicate: true,
-        message: 'ডুপ্লিকেট ট্রানজেকশন — পূর্বের স্ট্যাটাস অপরিবর্তিত রাখা হয়েছে।'
+        isDuplicate: false,
+        message: 'ট্রানজেকশন সফলভাবে সংরক্ষিত হয়েছে।'
       });
-    }
 
-    console.log(`[INGEST] ✅ Saved — Provider: ${parsed.provider} | ৳${parsed.amount} | TrxID: ${parsed.trxId} | SIM: ${simSlot} | User: ${userId}`);
-    return res.json({
-      success: true,
-      isDuplicate: false,
-      message: 'ট্রানজেকশন সফলভাবে সংরক্ষিত হয়েছে।'
-    });
+    } catch (dbErr) {
+      // Prisma P2002 is Unique Constraint Violation (equivalent to INSERT IGNORE triggering)
+      if (dbErr.code === 'P2002') {
+        console.log(`[INGEST] Duplicate blocked — hash: ${rawBodyHash.substring(0, 16)}… | User: ${userId}`);
+        return res.json({
+          success: true,
+          isDuplicate: true,
+          message: 'ডুপ্লিকেট ট্রানজেকশন — পূর্বের স্ট্যাটাস অপরিবর্তিত রাখা হয়েছে।'
+        });
+      }
+      throw dbErr; // Rethrow if it's not a duplicate error
+    }
 
   } catch (error) {
     console.error('[INGEST] Error:', error);
@@ -199,53 +154,139 @@ async function paymentSmsIngest(req, res) {
 }
 
 // =============================================================================
+// POST /api/payment-sms-ingest/bulk
+// =============================================================================
+async function paymentSmsIngestBulk(req, res) {
+  try {
+    const userId = req.user.userId;
+    const deviceId = req.user.deviceId || 'unknown_device';
+    const { items } = req.body;
+
+    if (!items || !Array.isArray(items)) {
+      return res.status(400).json({ error: 'items array is required' });
+    }
+
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { secretKey: true }
+    });
+    const secretKey = user?.secretKey;
+
+    if (!secretKey) {
+      return res.status(403).json({ error: 'HMAC_KEY_NOT_FOUND' });
+    }
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const item of items) {
+      const { rawBody, hmacSignature, senderNumber, smsTimestamp, simSlot, simNumber } = item;
+      
+      if (!rawBody || !hmacSignature || !smsTimestamp) {
+        failCount++;
+        continue;
+      }
+
+      const hmacResult = verifyHmac(rawBody, hmacSignature, secretKey);
+      if (!hmacResult.valid) {
+        failCount++;
+        continue;
+      }
+
+      const rawBodyHash = sha256(rawBody.trim());
+      const parsed = await parseRawSms(rawBody, senderNumber || '');
+
+      if (!parsed.success) {
+        try {
+          await prisma.sms_parse_failures.create({
+            data: {
+              user_id: userId, device_id: deviceId, raw_body: rawBody, raw_body_hash: rawBodyHash,
+              hmac_signature: hmacSignature, parse_error: parsed.error || 'No match', sms_timestamp_ms: Number(smsTimestamp)
+            }
+          });
+        } catch (e) {}
+        failCount++;
+        continue;
+      }
+
+      const dateObj = new Date(Number(smsTimestamp));
+      const formattedDate = dateObj.toISOString().slice(0, 10);
+      const dedupeKey = `${smsTimestamp}|${parsed.senderNumber || ''}|${rawBodyHash}`;
+
+      try {
+        await prisma.sms_history.create({
+          data: {
+            user_id: userId, device_id: deviceId, sim_slot: simSlot ? parseInt(simSlot, 10) : null,
+            sim_number: simNumber ? String(simNumber) : null, provider_tag: parsed.provider,
+            amount: parsed.amount, trx_id: parsed.trxId || '', sender_number: parsed.senderNumber || null,
+            sms_timestamp: dateObj, sms_date: new Date(formattedDate), full_sms: rawBody,
+            dedupe_key: dedupeKey, raw_sms_sha256: rawBodyHash, is_synced: 1, is_used: 0
+          }
+        });
+        successCount++;
+      } catch (dbErr) {
+        if (dbErr.code === 'P2002') {
+          successCount++; // Count duplicates as success for the queue clearer
+        } else {
+          failCount++;
+        }
+      }
+    }
+
+    return res.json({ success: true, processed: successCount, failed: failCount });
+  } catch (error) {
+    console.error('[INGEST BULK] Error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+
+// =============================================================================
 // GET /api/sms-history
 // পেজিনেটেড ট্রানজেকশন লিস্ট রিটার্ন করে।
-// Query params: page (default 1), limit (default 20), provider (default 'all')
 // =============================================================================
 async function getSmsHistory(req, res) {
   try {
     const userId   = req.user.userId;
     const page     = Math.max(1, parseInt(req.query.page)  || 1);
-    const limit    = Math.min(50, parseInt(req.query.limit) || 20); // সর্বোচ্চ ৫০
+    const limit    = Math.min(50, parseInt(req.query.limit) || 20);
     const provider = req.query.provider || 'all';
     const offset   = (page - 1) * limit;
 
-    // ── Provider ফিল্টার সংযুক্ত করা ──────────────────────────────────────
     const allowedProviders = ['bKash', 'Nagad', 'Rocket', 'Upay'];
     const useFilter = allowedProviders.includes(provider);
 
-    // ── মোট সংখ্যা (pagination metadata) ──────────────────────────────────
-    const countQuery = useFilter
-      ? `SELECT COUNT(*) AS total FROM sms_history WHERE user_id = ? AND provider_tag = ?`
-      : `SELECT COUNT(*) AS total FROM sms_history WHERE user_id = ?`;
-    const countParams = useFilter ? [userId, provider] : [userId];
-    const countResult = await query(countQuery, countParams);
-    const totalCount  = countResult[0]?.total || 0;
+    const whereClause = { user_id: userId };
+    if (useFilter) {
+      whereClause.provider_tag = provider;
+    }
 
-    // ── মূল ডেটা Query ─────────────────────────────────────────────────────
-    const dataQuery = useFilter
-      ? `SELECT id, provider_tag, amount, trx_id, sender_number, sim_slot,
-                sms_timestamp, is_used, created_at, full_sms
-           FROM sms_history
-          WHERE user_id = ? AND provider_tag = ?
-          ORDER BY sms_timestamp DESC
-          LIMIT ? OFFSET ?`
-      : `SELECT id, provider_tag, amount, trx_id, sender_number, sim_slot,
-                sms_timestamp, is_used, created_at, full_sms
-           FROM sms_history
-          WHERE user_id = ?
-          ORDER BY sms_timestamp DESC
-          LIMIT ? OFFSET ?`;
-    const dataParams = useFilter
-      ? [userId, provider, limit, offset]
-      : [userId, limit, offset];
+    if (req.query.startDate && req.query.endDate) {
+      whereClause.sms_date = {
+        gte: new Date(req.query.startDate),
+        lte: new Date(req.query.endDate)
+      };
+    }
 
-    const rows = await query(dataQuery, dataParams);
+    const totalCount = await prisma.sms_history.count({
+      where: whereClause
+    });
+
+    const rows = await prisma.sms_history.findMany({
+      where: whereClause,
+      select: {
+        id: true, provider_tag: true, amount: true, trx_id: true, sender_number: true,
+        sim_slot: true, sms_timestamp: true, is_used: true, created_at: true, full_sms: true
+      },
+      orderBy: { sms_timestamp: 'desc' },
+      skip: offset,
+      take: limit
+    });
 
     const mappedRows = rows.map(row => ({
       ...row,
-      status: row.is_used === 1 ? 'SOLD_OUT' : 'READY'
+      status: row.is_used ? 'SOLD_OUT' : 'READY',
+      amount: Number(row.amount)
     }));
 
     console.log(`[HISTORY] User ${userId} | Page ${page} | Provider: ${provider} | Found: ${rows.length}`);
@@ -268,71 +309,62 @@ async function getSmsHistory(req, res) {
 // =============================================================================
 // GET /api/dashboard/stats
 // Dashboard-এর জন্য aggregate statistics রিটার্ন করে।
-// আজকের ডেটা BD সময় (UTC+6) হিসেবে গণনা করা হয়।
 // =============================================================================
 async function getDashboardStats(req, res) {
   try {
     const userId = req.user.userId;
 
-    // আজকের তারিখ BD Timezone (UTC+6) অনুযায়ী
     const now = new Date();
-    const bdOffset = 6 * 60; // ৬ ঘণ্টা
+    const bdOffset = 6 * 60;
     const bdNow = new Date(now.getTime() + bdOffset * 60 * 1000);
-    const todayDate = bdNow.toISOString().slice(0, 10); // 'YYYY-MM-DD'
+    const todayDate = bdNow.toISOString().slice(0, 10);
 
-    // ── সব-সময়ের Aggregate Stats ───────────────────────────────────────────
-    const [totalRow] = await query(
-      `SELECT
+    const totalStats = await prisma.$queryRaw`
+      SELECT
          COALESCE(SUM(amount), 0)  AS total_earnings,
          COUNT(*)                   AS total_transactions,
          SUM(is_used = 0)           AS unused_count,
          SUM(is_used = 1)           AS soldout_count
        FROM sms_history
-       WHERE user_id = ?`,
-      [userId]
-    );
+       WHERE user_id = ${userId}
+    `;
+    const totalRow = totalStats[0] || {};
 
-    // ── আজকের Stats ────────────────────────────────────────────────────────
-    const [todayRow] = await query(
-      `SELECT
+    const todayStats = await prisma.$queryRaw`
+      SELECT
          COALESCE(SUM(amount), 0) AS today_earnings,
          COUNT(*)                  AS today_transactions
        FROM sms_history
-       WHERE user_id = ? AND sms_date = ?`,
-      [userId, todayDate]
-    );
+       WHERE user_id = ${userId} AND sms_date = ${todayDate}
+    `;
+    const todayRow = todayStats[0] || {};
 
-    // ── সক্রিয় ডিভাইস সংখ্যা ──────────────────────────────────────────────
-    const [deviceRow] = await query(
-      `SELECT COUNT(*) AS active_devices
-         FROM registered_devices
-        WHERE user_id = ? AND status = 'active'`,
-      [userId]
-    );
+    const activeDevices = await prisma.registered_devices.count({
+      where: { user_id: userId, status: 'active' }
+    });
 
-    // ── সাবস্ক্রিপশন স্ট্যাটাস (Subscription Status) ───────────────────────
-    const [userRow] = await query(
-      `SELECT is_paid, active_plan_name, expiry_date FROM users WHERE id = ? LIMIT 1`,
-      [userId]
-    );
+    const userRow = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { is_paid: true, active_plan_name: true, expiry_date: true, secretKey: true, secretKeyVersion: true }
+    });
     const isPaid = userRow ? userRow.is_paid : 0;
     const activePlanName = userRow ? userRow.active_plan_name : 'FREE_LEVEL';
     const expiryDate = userRow ? userRow.expiry_date : null;
 
-    // ── সর্বশেষ ৫টি ট্রানজেকশন ─────────────────────────────────────────────
-    const recentRows = await query(
-      `SELECT id, provider_tag, amount, trx_id, sender_number,
-              sim_slot, sms_timestamp, is_used, created_at, full_sms
-         FROM sms_history
-        WHERE user_id = ?
-        ORDER BY sms_timestamp DESC
-        LIMIT 5`,
-      [userId]
-    );
+    const recentRows = await prisma.sms_history.findMany({
+      where: { user_id: userId },
+      select: {
+        id: true, provider_tag: true, amount: true, trx_id: true, sender_number: true,
+        sim_slot: true, sms_timestamp: true, is_used: true, created_at: true, full_sms: true
+      },
+      orderBy: { sms_timestamp: 'desc' },
+      take: 20
+    });
 
     const mappedRecentRows = recentRows.map(row => ({
       ...row,
-      status: row.is_used === 1 ? 'SOLD_OUT' : 'READY'
+      status: row.is_used ? 'SOLD_OUT' : 'READY',
+      amount: Number(row.amount)
     }));
 
     console.log(`[STATS] Dashboard loaded for user: ${userId} | Today: ${todayDate} | Paid: ${isPaid} | Plan: ${activePlanName}`);
@@ -340,16 +372,18 @@ async function getDashboardStats(req, res) {
     return res.json({
       success: true,
       data: {
-        total_earnings:      parseFloat(totalRow.total_earnings)  || 0,
-        today_earnings:      parseFloat(todayRow.today_earnings)  || 0,
-        total_transactions:  totalRow.total_transactions  || 0,
-        today_transactions:  todayRow.today_transactions  || 0,
-        unused_count:        totalRow.unused_count        || 0,
-        soldout_count:       totalRow.soldout_count       || 0,
-        active_devices:      deviceRow.active_devices     || 0,
+        total_earnings:      Number(totalRow.total_earnings)  || 0,
+        today_earnings:      Number(todayRow.today_earnings)  || 0,
+        total_transactions:  Number(totalRow.total_transactions)  || 0,
+        today_transactions:  Number(todayRow.today_transactions)  || 0,
+        unused_count:        Number(totalRow.unused_count)        || 0,
+        soldout_count:       Number(totalRow.soldout_count)       || 0,
+        active_devices:      activeDevices || 0,
         is_paid:             !!isPaid,
         active_plan_name:    activePlanName,
         expiry_date:         expiryDate,
+        secretKey:           userRow ? userRow.secretKey : null,
+        secretKeyVersion:    userRow ? userRow.secretKeyVersion : 1,
         recent_transactions: mappedRecentRows
       }
     });
@@ -372,12 +406,12 @@ async function markTransactionSoldOut(req, res) {
       return res.status(400).json({ success: false, error: 'Transaction ID is required' });
     }
 
-    const result = await query(
-      'UPDATE sms_history SET is_used = 1, used_at = NOW() WHERE id = ? AND user_id = ?',
-      [id, userId]
-    );
+    const result = await prisma.sms_history.updateMany({
+      where: { id: parseInt(id), user_id: userId },
+      data: { is_used: 1, used_at: new Date() }
+    });
 
-    if (result.affectedRows === 0) {
+    if (result.count === 0) {
       return res.status(404).json({ success: false, error: 'Transaction not found or not owned by user' });
     }
 
@@ -393,8 +427,8 @@ async function markTransactionSoldOut(req, res) {
 // =============================================================================
 module.exports = {
   paymentSmsIngest,
+  paymentSmsIngestBulk,
   getSmsHistory,
   getDashboardStats,
   markTransactionSoldOut
 };
-

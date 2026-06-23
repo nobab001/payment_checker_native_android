@@ -144,6 +144,23 @@ fun LoginScreen(
                 "pcu_device_role",
                 res.device.deviceRole
             )
+            online.paychek.app.utils.SecurePreferences.encrypt(
+                context,
+                online.paychek.app.config.AppConfig.KEY_IS_OWNER_DEVICE,
+                if (res.device.isOwnerDevice) "true" else "false"
+            )
+            online.paychek.app.utils.SecurePreferences.encrypt(
+                context,
+                online.paychek.app.config.AppConfig.KEY_DEVICE_SPECIFIC_PIN,
+                res.device.deviceSpecificPin ?: ""
+            )
+            if (!res.secretKey.isNullOrBlank()) {
+                online.paychek.app.utils.SecurePreferences.encrypt(
+                    context,
+                    online.paychek.app.services.sms.SmsReceiver.KEY_HMAC_SECRET,
+                    res.secretKey
+                )
+            }
             if (res.user.role == "admin") {
                 online.paychek.app.utils.SecurePreferences.encrypt(context, "pcu_profile_complete", "true")
                 onNavigateToAdminDashboard(res.token)
@@ -423,7 +440,7 @@ fun LoginScreen(
             }
 
             // 2. Logo Header & Brand Identity
-            Spacer(modifier = Modifier.height(72.dp))
+            Spacer(modifier = Modifier.height(96.dp))
 
             val infiniteTransition = rememberInfiniteTransition(label = "LogoScaleTransition")
             val logoScale by infiniteTransition.animateFloat(
@@ -443,7 +460,7 @@ fun LoginScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(96.dp)
+                        .size(80.dp)
                         .graphicsLayer(scaleX = logoScale, scaleY = logoScale)
                         .clip(RoundedCornerShape(26.dp))
                         .background(
@@ -532,7 +549,7 @@ fun LoginScreen(
             }
 
             // Spacing to push inputs slightly down as requested
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(48.dp))
 
             // 3. Flat Form Container
             Column(
@@ -567,7 +584,7 @@ fun LoginScreen(
                             },
                             trailingIcon = {
                                 val contact = uiState.contact.trim()
-                                val isValidEmail = android.util.Patterns.EMAIL_ADDRESS.matcher(contact).matches()
+                                val isValidEmail = android.util.Patterns.EMAIL_ADDRESS.matcher(contact).matches() && contact.substringAfterLast('.', "").length >= 2
                                 val isValidPhone = contact.length == 11 && contact.all { it.isDigit() } && contact.startsWith("01")
                                 if (isValidEmail || isValidPhone) {
                                     Icon(
@@ -608,30 +625,7 @@ fun LoginScreen(
                                 .fillMaxWidth()
                                 .height(58.dp)
                         )
-
-                        // Email suggestions
-                        val contact = uiState.contact
-                        AnimatedVisibility(visible = contact.contains("@") && !contact.substringAfter("@").contains(".")) {
-                            val domains = listOf("gmail.com", "yahoo.com", "outlook.com")
-                            val query = contact.substringAfter("@")
-                            val suggestions = domains.filter { it.startsWith(query, ignoreCase = true) }
-                            if (suggestions.isNotEmpty()) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    suggestions.forEach { domain ->
-                                        AssistChip(
-                                            onClick = {
-                                                val prefix = contact.substringBefore("@")
-                                                viewModel.onContactChanged("$prefix@$domain")
-                                            },
-                                            label = { Text("@$domain") }
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        // Email suggestions removed per user request
                     }
 
                     // OTP Fields Section (Dynamic Animation)
@@ -1000,7 +994,7 @@ fun LoginScreen(
               }
 
               // Spacer — compact gap between the form container and the social support footer
-              Spacer(modifier = Modifier.height(24.dp))
+              Spacer(modifier = Modifier.height(48.dp))
 
               // 4. Social / Support section
               Column(
@@ -1033,7 +1027,7 @@ fun LoginScreen(
 
                   Row(
                       modifier = Modifier.fillMaxWidth(),
-                      horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+                      horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                       verticalAlignment = Alignment.CenterVertically
                   ) {
                       // WhatsApp
@@ -1269,10 +1263,12 @@ fun PremiumRegisterDialog(
                     ) {
                         Text(
                             text = "নতুন অ্যাকাউন্ট",
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
-                            textAlign = TextAlign.Center
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }

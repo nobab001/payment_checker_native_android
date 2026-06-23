@@ -15,6 +15,7 @@ import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.dto.*
 import online.paychek.app.data.repository.PaymentRepository
 import online.paychek.app.services.foreground.SmsMonitorService
+import online.paychek.app.domain.usecase.sync.FlushOfflineQueueUseCase
 import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.utils.NetworkConnectivityObserver
 import kotlinx.coroutines.flow.SharingStarted
@@ -90,6 +91,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _state.update { it.copy(uiState = DashboardUiState.Loading) }
 
+            // Trigger offline queue flush silently
+            try {
+                FlushOfflineQueueUseCase(getApplication()).execute()
+            } catch (e: Exception) {
+                // Ignore sync errors here
+            }
+
             val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
             if (token.isEmpty()) {
                 _state.update {
@@ -102,6 +110,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             result.fold(
                 onSuccess = { stats ->
                     prefs.edit().putString("pcu_account_level", stats.activePlanName).apply()
+                    
+                    if (!stats.secretKey.isNullOrBlank()) {
+                        SecurePreferences.encrypt(
+                            getApplication(),
+                            online.paychek.app.services.sms.SmsReceiver.KEY_HMAC_SECRET,
+                            stats.secretKey
+                        )
+                    }
+
                     _state.update {
                         it.copy(
                             uiState     = DashboardUiState.Success(stats),

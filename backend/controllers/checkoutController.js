@@ -1,4 +1,4 @@
-const { query } = require('../db/connection');
+const prisma = require('../db/prisma');
 const axios = require('axios');
 
 /**
@@ -12,17 +12,15 @@ async function getCheckoutLayout(req, res) {
       return res.status(400).json({ error: 'Merchant API Key is required' });
     }
 
-    const layouts = await query(
-      'SELECT id, user_id, site_name, site_url, layout_config, redirect_url, callback_url FROM gateway_layouts WHERE api_key = ? AND is_active = 1 LIMIT 1',
-      [apiKey]
-    );
+    const layout = await prisma.gateway_layouts.findFirst({
+      where: { api_key: apiKey, is_active: 1 },
+      select: { id: true, user_id: true, site_name: true, site_url: true, layout_config: true, redirect_url: true, callback_url: true }
+    });
 
-    if (layouts.length === 0) {
+    if (!layout) {
       return res.status(404).json({ error: 'সক্রিয় মার্চেন্ট গেটওয়ে লেআউট পাওয়া যায়নি।' });
     }
 
-    const layout = layouts[0];
-    
     // Fallback default block structure if layout_config is empty
     let layoutConfig = layout.layout_config;
     if (!layoutConfig) {
@@ -36,30 +34,29 @@ async function getCheckoutLayout(req, res) {
     }
 
     // Retrieve active gateways linked to sms_templates and checkout_view_templates (Security Lock)
-    const activeGateways = await query(
-      `SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name,
+    const activeGatewaysRows = await prisma.$queryRaw`
+      SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name,
               cvt.single_number_instruction, cvt.multiple_number_instruction
          FROM gateway_methods gm
          JOIN sms_templates t ON gm.template_id = t.id
          JOIN checkout_view_templates cvt ON cvt.sms_template_id = t.id
-        WHERE gm.user_id = ? AND gm.is_enabled = 1 AND gm.number IS NOT NULL AND gm.number != ''
-     ORDER BY gm.priority ASC, gm.sim_slot ASC`,
-      [layout.user_id]
-    );
+        WHERE gm.user_id = ${layout.user_id} AND gm.is_enabled = 1 AND gm.number IS NOT NULL AND gm.number != ''
+     ORDER BY gm.priority ASC, gm.sim_slot ASC
+    `;
 
     // Count active numbers per provider to decide single/multiple instructions
     const providerCounts = {};
-    activeGateways.forEach(g => {
+    activeGatewaysRows.forEach(g => {
       const p = g.provider;
       providerCounts[p] = (providerCounts[p] || 0) + 1;
     });
 
     // Format active gateways with dynamic instruction texts
-    const formattedGateways = activeGateways.map(g => {
+    const formattedGateways = activeGatewaysRows.map(g => {
       const count = providerCounts[g.provider] || 1;
       const instruction = count > 1 ? g.multiple_number_instruction : g.single_number_instruction;
       return {
-        id: g.id,
+        id: Number(g.id) || g.id,
         simSlot: g.sim_slot,
         provider: g.provider,
         number: g.number,
@@ -99,31 +96,31 @@ async function verifyCheckoutPayment(req, res) {
     const cleanAmount = parseFloat(amount);
 
     // 1. Fetch merchant details
-    const layouts = await query(
-      'SELECT id, user_id, redirect_url, callback_url FROM gateway_layouts WHERE api_key = ? AND is_active = 1 LIMIT 1',
-      [apiKey]
-    );
+    const merchant = await prisma.gateway_layouts.findFirst({
+      where: { api_key: apiKey, is_active: 1 },
+      select: { id: true, user_id: true, redirect_url: true, callback_url: true }
+    });
 
-    if (layouts.length === 0) {
+    if (!merchant) {
       return res.status(404).json({ error: 'Invalid API Key or Merchant inactive' });
     }
 
-    const merchant = layouts[0];
-
     // 2. Query sms_history for this user/merchant matching trxId and amount
-    const payments = await query(
-      'SELECT id, is_used, used_by_merchant_id FROM sms_history WHERE user_id = ? AND trx_id = ? AND amount = ? LIMIT 1',
-      [merchant.user_id, cleanTrx, cleanAmount]
-    );
+    const payment = await prisma.sms_history.findFirst({
+      where: {
+        user_id: merchant.user_id,
+        trx_id: cleanTrx,
+        amount: cleanAmount
+      },
+      select: { id: true, is_used: true, used_by_merchant_id: true }
+    });
 
-    if (payments.length === 0) {
+    if (!payment) {
       return res.json({
         success: false,
         message: 'পেমেন্ট এখনও আমাদের সিস্টেমে যুক্ত হয়নি। ১-২ মিনিট অপেক্ষা করে আবার ভেরিফাই করুন।'
       });
     }
-
-    const payment = payments[0];
 
     // 3. Prevent transaction hijack/double-spend
     if (payment.is_used && payment.used_by_merchant_id !== merchant.id) {
@@ -135,10 +132,14 @@ async function verifyCheckoutPayment(req, res) {
 
     // 4. Mark transaction as used/sold out for this merchant
     if (!payment.is_used) {
-      await query(
-        'UPDATE sms_history SET is_used = 1, used_at = NOW(), used_by_merchant_id = ? WHERE id = ?',
-        [merchant.id, payment.id]
-      );
+      await prisma.sms_history.update({
+        where: { id: payment.id },
+        data: {
+          is_used: 1,
+          used_at: new Date(),
+          used_by_merchant_id: merchant.id
+        }
+      });
       console.log(`[VERIFICATION] Trx ${cleanTrx} (৳${cleanAmount}) marked SOLDOUT for merchant ID ${merchant.id}`);
       
       // OPTIONAL: Trigger background Webhook callback
@@ -187,34 +188,35 @@ async function claimCheckTransaction(req, res) {
     }
 
     // 1. Fetch merchant details
-    const layouts = await query(
-      'SELECT id, user_id, callback_url FROM gateway_layouts WHERE api_key = ? AND is_active = 1 LIMIT 1',
-      [apiKey]
-    );
+    const merchant = await prisma.gateway_layouts.findFirst({
+      where: { api_key: apiKey, is_active: 1 },
+      select: { id: true, user_id: true, callback_url: true }
+    });
 
-    if (layouts.length === 0) {
+    if (!merchant) {
       return res.status(403).json({ success: false, error: 'Invalid API Key or Merchant inactive' });
     }
 
-    const merchant = layouts[0];
     const cleanTrx = trxId.trim().toUpperCase();
 
     // 2. Query sms_history for this user/merchant matching trxId where is_used = 0 (READY)
-    let payments;
+    let payment;
+    const whereClause = {
+      user_id: merchant.user_id,
+      trx_id: cleanTrx,
+      is_used: 0
+    };
+
     if (amount !== undefined && amount !== null && amount !== '') {
-      const cleanAmount = parseFloat(amount);
-      payments = await query(
-        'SELECT id, amount, trx_id, provider_tag, sender_number, sms_timestamp FROM sms_history WHERE user_id = ? AND trx_id = ? AND amount = ? AND is_used = 0 LIMIT 1',
-        [merchant.user_id, cleanTrx, cleanAmount]
-      );
-    } else {
-      payments = await query(
-        'SELECT id, amount, trx_id, provider_tag, sender_number, sms_timestamp FROM sms_history WHERE user_id = ? AND trx_id = ? AND is_used = 0 LIMIT 1',
-        [merchant.user_id, cleanTrx]
-      );
+      whereClause.amount = parseFloat(amount);
     }
 
-    if (payments.length === 0) {
+    payment = await prisma.sms_history.findFirst({
+      where: whereClause,
+      select: { id: true, amount: true, trx_id: true, provider_tag: true, sender_number: true, sms_timestamp: true }
+    });
+
+    if (!payment) {
       return res.status(404).json({
         success: false,
         error: 'TRANSACTION_NOT_FOUND',
@@ -222,19 +224,22 @@ async function claimCheckTransaction(req, res) {
       });
     }
 
-    const payment = payments[0];
-
     // 3. Mark transaction as used/sold out for this merchant
-    await query(
-      'UPDATE sms_history SET is_used = 1, used_at = NOW(), used_by_merchant_id = ? WHERE id = ?',
-      [merchant.id, payment.id]
-    );
+    await prisma.sms_history.update({
+      where: { id: payment.id },
+      data: {
+        is_used: 1,
+        used_at: new Date(),
+        used_by_merchant_id: merchant.id
+      }
+    });
+
     console.log(`[B2B CLAIM] Trx ${payment.trx_id} (৳${payment.amount}) marked SOLDOUT for merchant ID ${merchant.id}`);
 
     // 4. Trigger Webhook callback to merchant's callback_url
     const webhookPayload = {
       trxId: payment.trx_id,
-      amount: payment.amount,
+      amount: Number(payment.amount),
       provider: payment.provider_tag,
       sender: payment.sender_number,
       smsTimestamp: payment.sms_timestamp,
@@ -259,7 +264,7 @@ async function claimCheckTransaction(req, res) {
       message: 'Transaction claimed and locked successfully.',
       data: {
         trxId: payment.trx_id,
-        amount: payment.amount,
+        amount: Number(payment.amount),
         provider: payment.provider_tag,
         sender: payment.sender_number,
         smsTimestamp: payment.sms_timestamp,

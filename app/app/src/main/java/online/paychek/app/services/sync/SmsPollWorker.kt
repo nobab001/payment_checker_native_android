@@ -170,10 +170,16 @@ class SmsPollWorker(
                     }
                 }
 
-                // ── Gateway method matching ──────────────────────────────
+                // ── 4-Step Verification Chain (Dynamic) ─────────────────────
+                // Step 1: SIM Slot — already filtered above
+                // Step 2: Sender ID — alphanumeric/phone sender match
+                // Step 3: Sender Number — separate sender_number field match
+                // Step 4: SMS Body — matching keywords from template conditions
                 val matchingMethod = cachedMethods.firstOrNull { method ->
+                    // Step 1: Method must be enabled and SIM slot must match
                     method.isEnabled == 1 &&
                     (simSlot == null || method.simSlot == simSlot) &&
+                    // Step 2: Sender ID match
                     (
                         if (method.templateId == null) {
                             cleanSender == method.provider.trim().lowercase(Locale.US)
@@ -183,6 +189,15 @@ class SmsPollWorker(
                             cleanSender.contains(targetSender)
                         }
                     ) &&
+                    // Step 3: Sender Number match (if configured)
+                    (
+                        method.senderNumber.isNullOrBlank() ||
+                        run {
+                            val targetSenderNumber = method.senderNumber.trim().lowercase(Locale.US)
+                            cleanSender.contains(targetSenderNumber)
+                        }
+                    ) &&
+                    // Step 4: SMS Body keyword conditions (any one keyword match)
                     (
                         method.matchingKeyword.isNullOrBlank() ||
                         method.matchingKeyword.split(",")
@@ -224,7 +239,7 @@ class SmsPollWorker(
                     fullSms        = candidate.body
                 )
 
-                Log.i(TAG, "[Guard-2] 3 Conditions Met. Forwarding RAW payload to queue. Provider: ${matchingMethod.provider} | SIM: $simSlot | Processing via use case")
+                Log.i(TAG, "[Guard-2] 4 Conditions Met. Forwarding RAW payload to queue. Provider: ${matchingMethod.provider} | SIM: $simSlot | Processing via use case")
 
                 // ── ProcessIncomingSmsUseCase দিয়ে pipeline এ push করা ──
                 // rawBodyHash UNIQUE index Guard-1 এর duplicate silently ignore করবে

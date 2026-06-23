@@ -118,7 +118,7 @@ fun ProfileCredentialsCard(
             // --- মোবাইল নম্বর সেকশন ---
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "লিঙ্কড মোবাইল নম্বর (${viewModel.linkedPhones.size}/৫)",
+                    text = "লিঙ্কড মোবাইল নম্বর (${viewModel.linkedPhones.size}/5)",
                     color = TextW,
                     fontWeight = FontWeight.Medium,
                     fontSize = adaptiveTextSize(12.sp, 14.sp)
@@ -172,7 +172,7 @@ fun ProfileCredentialsCard(
             // --- জিমেইল সেকশন ---
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "লিঙ্কড জিমেইল অ্যাড্রেস (${viewModel.linkedEmails.size}/৫)",
+                    text = "লিঙ্কড জিমেইল অ্যাড্রেস (${viewModel.linkedEmails.size}/5)",
                     color = TextW,
                     fontWeight = FontWeight.Medium,
                     fontSize = adaptiveTextSize(12.sp, 14.sp)

@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_987654321';
-const { query } = require('../db/connection');
+const prisma = require('../db/prisma');
 
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -29,12 +29,12 @@ async function restrictDevice(req, res, next) {
       return res.status(403).json({ error: 'Access denied: Device context missing.' });
     }
 
-    const result = await query(
-      'SELECT device_role FROM registered_devices WHERE user_id = ? AND device_id = ? LIMIT 1',
-      [userId, deviceId]
-    );
+    const device = await prisma.registered_devices.findFirst({
+      where: { user_id: userId, device_id: deviceId },
+      select: { device_role: true }
+    });
 
-    if (result.length > 0 && result[0].device_role === 'restricted') {
+    if (device && device.device_role === 'restricted') {
       return res.status(403).json({ success: false, error: 'Access denied: Restricted devices cannot modify settings.' });
     }
 
@@ -47,4 +47,3 @@ async function restrictDevice(req, res, next) {
 
 authenticateToken.restrictDevice = restrictDevice;
 module.exports = authenticateToken;
-

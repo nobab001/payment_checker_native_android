@@ -55,7 +55,11 @@ class LoginViewModel : ViewModel() {
     }
 
     fun onContactChanged(contact: String) {
-        _uiState.update { it.copy(contact = contact, errorMessage = null) }
+        var newContact = contact
+        if (contact.endsWith("@") && contact.count { it == '@' } == 1) {
+            newContact = "${contact}gmail.com"
+        }
+        _uiState.update { it.copy(contact = newContact, errorMessage = null) }
     }
 
     fun onOtpChanged(otp: String) {

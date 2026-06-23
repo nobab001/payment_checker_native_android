@@ -55,14 +55,18 @@ class PaymentRepository {
         token: String,
         page: Int    = 1,
         limit: Int   = 20,
-        provider: String = "all"
+        provider: String = "all",
+        startDate: String? = null,
+        endDate: String? = null
     ): Result<List<TransactionItem>> {
         return try {
             val response = api.getTransactionHistory(
                 token    = "Bearer $token",
                 page     = page,
                 limit    = limit,
-                provider = provider
+                provider = provider,
+                startDate = startDate,
+                endDate = endDate
             )
             if (response.isSuccessful) {
                 val body = response.body()

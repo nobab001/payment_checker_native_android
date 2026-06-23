@@ -146,6 +146,19 @@ object DeviceIdHelper {
                     }
                 }
             }
+
+            // Fallback to TelephonyManager if SubscriptionManager returned nothing
+            if (sim1Num.isNullOrBlank() && sim2Num.isNullOrBlank()) {
+                val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+                @Suppress("DEPRECATION")
+                val line1Num = try { telephonyManager.line1Number } catch (e: Exception) { null }
+                if (!line1Num.isNullOrBlank()) {
+                    val cleanNum = cleanPhoneNumber(line1Num)
+                    if (cleanNum.length == 11) {
+                        sim1Num = cleanNum
+                    }
+                }
+            }
         } catch (e: Exception) {
             // Ignore
         }

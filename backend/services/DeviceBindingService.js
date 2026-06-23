@@ -2,9 +2,9 @@
 
 /**
  * Service handling device binding validation and binding operations.
- * Utilizes the existing DB connection via `query` helper.
+ * Utilizes Prisma.
  */
-const { query } = require('../db/connection');
+const prisma = require('../db/prisma');
 
 /**
  * Validate that the given deviceId is bound to the specified userId (if provided).
@@ -18,15 +18,15 @@ async function validateDevice(deviceId, userId = null) {
   if (!deviceId) {
     return { valid: true };
   }
-  const rows = await query(
-    `SELECT user_id, trial_expires_at, is_trial_locked FROM registered_devices WHERE device_id = ? LIMIT 1`,
-    [deviceId]
-  );
-  if (!rows || rows.length === 0) {
+  const dev = await prisma.registered_devices.findFirst({
+    where: { device_id: deviceId },
+    select: { user_id: true, trial_expires_at: true, is_trial_locked: true }
+  });
+  
+  if (!dev) {
     // No binding record – treat as unbound (caller can decide to bind later)
     return { valid: true };
   }
-  const dev = rows[0];
   const expired = dev.trial_expires_at && new Date(dev.trial_expires_at) < new Date();
   if (dev.is_trial_locked || expired) {
     return { valid: false, reason: 'DEVICE_ALREADY_BOUND', userId: dev.user_id };
@@ -42,21 +42,33 @@ async function validateDevice(deviceId, userId = null) {
  * Creates a new record otherwise.
  */
 async function bindDevice(userId, deviceId, deviceName = 'My Phone') {
-  // Upsert pattern: try update first, then insert if affectedRows == 0
-  const updateResult = await query(
-    `UPDATE registered_devices SET user_id = ?, device_name = ?, status = 'active', is_trial_locked = 0 WHERE device_id = ?`,
-    [userId, deviceName, deviceId]
-  );
-  if (updateResult && updateResult.affectedRows && updateResult.affectedRows > 0) {
+  const existing = await prisma.registered_devices.findFirst({
+    where: { device_id: deviceId }
+  });
+  
+  if (existing) {
+    await prisma.registered_devices.update({
+      where: { id: existing.id },
+      data: {
+        user_id: userId,
+        device_name: deviceName,
+        status: 'active',
+        is_trial_locked: 0
+      }
+    });
     return { updated: true };
+  } else {
+    await prisma.registered_devices.create({
+      data: {
+        user_id: userId,
+        device_id: deviceId,
+        device_name: deviceName,
+        status: 'active',
+        is_parent: 0
+      }
+    });
+    return { inserted: true };
   }
-  // Insert new record
-  await query(
-    `INSERT INTO registered_devices (user_id, device_id, device_name, status, is_parent) VALUES (?, ?, ?, 'active', 0)`,
-    [userId, deviceId, deviceName]
-  );
-
-  return { inserted: true };
 }
 
 module.exports = {

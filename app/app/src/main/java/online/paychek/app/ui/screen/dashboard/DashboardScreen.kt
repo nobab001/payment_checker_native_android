@@ -142,9 +142,23 @@ fun DashboardScreen(
         calculateDaysRemaining(successStats?.expiryDate)
     }
 
+    val prefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
+
     LaunchedEffect(isPaid, daysRemaining) {
         if (isPaid && daysRemaining in 0..30 && !hasShownReminder) {
-            showExpiryReminderDialog = true
+            val lastAlertTime = prefs.getLong("last_trial_alert_time", 0)
+            val todayStart = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            
+            if (lastAlertTime < todayStart) {
+                showExpiryReminderDialog = true
+            } else {
+                hasShownReminder = true
+            }
         }
     }
 
@@ -174,10 +188,12 @@ fun DashboardScreen(
             onDismiss = {
                 showExpiryReminderDialog = false
                 hasShownReminder = true
+                prefs.edit().putLong("last_trial_alert_time", System.currentTimeMillis()).apply()
             },
             onBuyPlanClick = {
                 showExpiryReminderDialog = false
                 hasShownReminder = true
+                prefs.edit().putLong("last_trial_alert_time", System.currentTimeMillis()).apply()
                 onNavigateToSubscription()
             }
         )
@@ -1345,8 +1361,23 @@ private fun calculateDaysRemaining(expiryDateStr: String?): Long {
     return try {
         val format = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val expiryDate = format.parse(expiryDateStr) ?: return -1L
-        val today = Date()
-        val diffMs = expiryDate.time - today.time
+        
+        val todayCal = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        
+        val expiryCal = Calendar.getInstance().apply {
+            time = expiryDate
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        
+        val diffMs = expiryCal.timeInMillis - todayCal.timeInMillis
         val days = diffMs / (1000 * 60 * 60 * 24)
         if (days < 0) 0 else days
     } catch (e: Exception) {

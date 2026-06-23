@@ -1,4 +1,4 @@
-const { query } = require('../db/connection');
+const prisma = require('../db/prisma');
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_987654321';
@@ -22,8 +22,11 @@ async function verifyAdmin(req, res, next) {
     }
 
     // Double check from db
-    const users = await query('SELECT role FROM users WHERE id = ? LIMIT 1', [decoded.userId]);
-    if (users.length === 0 || users[0].role !== 'admin') {
+    const user = await prisma.users.findUnique({
+      where: { id: decoded.userId },
+      select: { role: true }
+    });
+    if (!user || user.role !== 'admin') {
       return res.status(403).json({ error: 'Access forbidden. Admin role required.' });
     }
 
@@ -38,7 +41,7 @@ async function verifyAdmin(req, res, next) {
 // 1. App Configs (global_config)
 async function getConfigs(req, res) {
   try {
-    const configs = await query('SELECT * FROM global_config');
+    const configs = await prisma.global_config.findMany();
     const configMap = {};
     configs.forEach(c => {
       configMap[c.config_key] = c.config_value;
@@ -55,10 +58,11 @@ async function updateConfig(req, res) {
     const { key, value } = req.body;
     if (!key) return res.status(400).json({ error: 'config_key is required' });
     
-    await query(
-      'INSERT INTO global_config (config_key, config_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE config_value = ?',
-      [key, String(value), String(value)]
-    );
+    await prisma.global_config.upsert({
+      where: { config_key: key },
+      update: { config_value: String(value) },
+      create: { config_key: key, config_value: String(value) }
+    });
     return res.json({ success: true, message: 'Configuration updated successfully.' });
   } catch (err) {
     console.error(err);
@@ -69,9 +73,12 @@ async function updateConfig(req, res) {
 // 2. Official SMS Templates
 async function getSmsTemplates(req, res) {
   try {
-    const templates = await query('SELECT * FROM sms_templates WHERE is_official = 1');
+    const templates = await prisma.sms_templates.findMany({
+      where: { is_official: 1 }
+    });
     const mapped = templates.map(t => ({
       ...t,
+      sender_number: t.sender_number || '',
       matching_keyword: t.matching_keyword || '',
       regex_pattern: ''
     }));
@@ -84,24 +91,27 @@ async function getSmsTemplates(req, res) {
 
 async function saveSmsTemplate(req, res) {
   try {
-    const { id, template_name, sender_id, matching_keyword, is_active } = req.body;
+    const { id, template_name, sender_id, sender_number, matching_keyword, is_active } = req.body;
     if (!template_name || !sender_id) {
       return res.status(400).json({ error: 'Missing required template fields' });
     }
 
+    const data = {
+      template_name,
+      sender_id,
+      sender_number: sender_number || null,
+      matching_keyword: matching_keyword || '',
+      is_active: is_active === undefined ? true : !!is_active,
+      is_official: 1
+    };
+
     if (id) {
-      await query(
-        `UPDATE sms_templates 
-         SET template_name = ?, sender_id = ?, matching_keyword = ?, is_active = ? 
-         WHERE id = ? AND is_official = 1`,
-        [template_name, sender_id, matching_keyword || '', is_active === undefined ? 1 : (is_active ? 1 : 0), id]
-      );
+      await prisma.sms_templates.updateMany({
+        where: { id: parseInt(id), is_official: 1 },
+        data
+      });
     } else {
-      await query(
-        `INSERT INTO sms_templates (template_name, sender_id, matching_keyword, is_official, is_active) 
-         VALUES (?, ?, ?, 1, ?)`,
-        [template_name, sender_id, matching_keyword || '', is_active === undefined ? 1 : (is_active ? 1 : 0)]
-      );
+      await prisma.sms_templates.create({ data });
     }
     return res.json({ success: true, message: 'SMS Template saved successfully.' });
   } catch (err) {
@@ -113,7 +123,9 @@ async function saveSmsTemplate(req, res) {
 async function deleteSmsTemplate(req, res) {
   try {
     const { id } = req.params;
-    await query('DELETE FROM sms_templates WHERE id = ? AND is_official = 1', [id]);
+    await prisma.sms_templates.deleteMany({
+      where: { id: parseInt(id), is_official: 1 }
+    });
     return res.json({ success: true, message: 'Official SMS Template deleted successfully.' });
   } catch (err) {
     console.error(err);
@@ -124,12 +136,20 @@ async function deleteSmsTemplate(req, res) {
 // 3. Checkout View Templates
 async function getCheckoutTemplates(req, res) {
   try {
-    const templates = await query(
-      `SELECT cvt.*, st.template_name 
-       FROM checkout_view_templates cvt
-       JOIN sms_templates st ON cvt.sms_template_id = st.id`
-    );
-    return res.json({ success: true, templates });
+    const templates = await prisma.checkout_view_templates.findMany({
+      include: {
+        sms_templates: {
+          select: { template_name: true }
+        }
+      }
+    });
+    
+    const formatted = templates.map(t => ({
+      ...t,
+      template_name: t.sms_templates?.template_name
+    }));
+
+    return res.json({ success: true, templates: formatted });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal Server Error' });
@@ -143,12 +163,15 @@ async function saveCheckoutTemplate(req, res) {
       return res.status(400).json({ error: 'Missing required instructions fields' });
     }
 
-    await query(
-      `INSERT INTO checkout_view_templates (sms_template_id, single_number_instruction, multiple_number_instruction) 
-       VALUES (?, ?, ?) 
-       ON DUPLICATE KEY UPDATE single_number_instruction = ?, multiple_number_instruction = ?`,
-      [sms_template_id, single_number_instruction, multiple_number_instruction, single_number_instruction, multiple_number_instruction]
-    );
+    await prisma.checkout_view_templates.upsert({
+      where: { sms_template_id: parseInt(sms_template_id) },
+      update: { single_number_instruction, multiple_number_instruction },
+      create: { 
+        sms_template_id: parseInt(sms_template_id), 
+        single_number_instruction, 
+        multiple_number_instruction 
+      }
+    });
     return res.json({ success: true, message: 'Checkout instructions saved successfully.' });
   } catch (err) {
     console.error(err);
@@ -159,7 +182,7 @@ async function saveCheckoutTemplate(req, res) {
 // 4. SMTP (Email Round-Robin) Accounts
 async function getEmailAccounts(req, res) {
   try {
-    const accounts = await query('SELECT * FROM email_accounts');
+    const accounts = await prisma.smtp_gateways.findMany();
     return res.json({ success: true, accounts });
   } catch (err) {
     console.error(err);
@@ -174,19 +197,23 @@ async function saveEmailAccount(req, res) {
       return res.status(400).json({ error: 'Missing required SMTP configurations' });
     }
 
+    const data = {
+      email,
+      password,
+      host,
+      port: parseInt(port),
+      secure: !!secure,
+      daily_limit: parseInt(daily_limit) || 500,
+      is_active: !!is_active
+    };
+
     if (id) {
-      await query(
-        `UPDATE email_accounts 
-         SET email = ?, password = ?, host = ?, port = ?, secure = ?, daily_limit = ?, is_active = ? 
-         WHERE id = ?`,
-        [email, password, host, port, secure ? 1 : 0, daily_limit || 500, is_active ? 1 : 0, id]
-      );
+      await prisma.smtp_gateways.update({
+        where: { id: parseInt(id) },
+        data
+      });
     } else {
-      await query(
-        `INSERT INTO email_accounts (email, password, host, port, secure, daily_limit, is_active) 
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [email, password, host, port, secure ? 1 : 0, daily_limit || 500, is_active ? 1 : 0]
-      );
+      await prisma.smtp_gateways.create({ data });
     }
     return res.json({ success: true, message: 'SMTP Profile saved successfully.' });
   } catch (err) {
@@ -198,7 +225,9 @@ async function saveEmailAccount(req, res) {
 async function deleteEmailAccount(req, res) {
   try {
     const { id } = req.params;
-    await query('DELETE FROM email_accounts WHERE id = ?', [id]);
+    await prisma.smtp_gateways.delete({
+      where: { id: parseInt(id) }
+    });
     return res.json({ success: true, message: 'SMTP Profile deleted successfully.' });
   } catch (err) {
     console.error(err);
@@ -209,7 +238,7 @@ async function deleteEmailAccount(req, res) {
 // 5. SMS Gateway Settings
 async function getSmsSettings(req, res) {
   try {
-    const settings = await query('SELECT * FROM sms_settings');
+    const settings = await prisma.sms_gateways.findMany();
     return res.json({ success: true, settings });
   } catch (err) {
     console.error(err);
@@ -224,39 +253,37 @@ async function saveSmsSettings(req, res) {
       return res.status(400).json({ error: 'gateway_url is required' });
     }
 
-    const activeFlag = is_active ? 1 : 0;
+    const activeFlag = !!is_active;
 
+    const data = {
+      gateway_url,
+      http_method: http_method || 'GET',
+      post_body_template: post_body_template || null,
+      api_key: api_key || null,
+      username: username || null,
+      sender_id: sender_id || null,
+      is_active: activeFlag,
+      provider_name: provider_name || null
+    };
+
+    let savedId;
     if (id) {
-      await query(
-        `UPDATE sms_settings 
-         SET gateway_url = ?, http_method = ?, post_body_template = ?, api_key = ?, username = ?, sender_id = ?, is_active = ?, provider_name = ? 
-         WHERE id = ?`,
-        [gateway_url, http_method || 'GET', post_body_template || null, api_key || null, username || null, sender_id || null, activeFlag, provider_name || null, id]
-      );
+      const updated = await prisma.sms_gateways.update({
+        where: { id: parseInt(id) },
+        data
+      });
+      savedId = updated.id;
     } else {
-      await query(
-        `INSERT INTO sms_settings (gateway_url, http_method, post_body_template, api_key, username, sender_id, is_active, provider_name) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [gateway_url, http_method || 'GET', post_body_template || null, api_key || null, username || null, sender_id || null, activeFlag, provider_name || null]
-      );
+      const created = await prisma.sms_gateways.create({ data });
+      savedId = created.id;
     }
 
-    // ─── ONE-ACTIVE SMS POLICY ────────────────────────────────────────────────
-    // যদি এই প্রোভাইডারটি activate করা হয়, তাহলে বাকি সমস্ত প্রোভাইডারকে
-    // স্বয়ংক্রিয়ভাবে deactivate করতে হবে।
-    if (activeFlag === 1) {
-      // সদ্য সেভ হওয়া row-এর id বের করা
-      const [savedRow] = await query(
-        'SELECT id FROM sms_settings WHERE gateway_url = ? ORDER BY id DESC LIMIT 1',
-        [gateway_url]
-      );
-      if (savedRow) {
-        await query(
-          'UPDATE sms_settings SET is_active = 0 WHERE id != ?',
-          [savedRow.id]
-        );
-        console.log(`[SMS-POLICY] One-Active enforced. Only provider id=${savedRow.id} is now active.`);
-      }
+    if (activeFlag) {
+      await prisma.sms_gateways.updateMany({
+        where: { id: { not: savedId } },
+        data: { is_active: 0 }
+      });
+      console.log(`[SMS-POLICY] One-Active enforced. Only provider id=${savedId} is now active.`);
     }
 
     return res.json({ success: true, message: 'SMS Gateway configurations saved successfully.' });
@@ -270,7 +297,9 @@ async function deleteSmsSettings(req, res) {
   try {
     const { id } = req.params;
     if (!id) return res.status(400).json({ error: 'SMS provider id is required' });
-    await query('DELETE FROM sms_settings WHERE id = ?', [id]);
+    await prisma.sms_gateways.delete({
+      where: { id: parseInt(id) }
+    });
     return res.json({ success: true, message: 'SMS Gateway provider deleted successfully.' });
   } catch (err) {
     console.error(err);
@@ -278,12 +307,14 @@ async function deleteSmsSettings(req, res) {
   }
 }
 
-// Reset daily sent_today counter for a specific email account
 async function resetEmailCounter(req, res) {
   try {
     const { id } = req.params;
     if (!id) return res.status(400).json({ error: 'Email account id is required' });
-    await query('UPDATE email_accounts SET sent_today = 0 WHERE id = ?', [id]);
+    await prisma.smtp_gateways.update({
+      where: { id: parseInt(id) },
+      data: { sent_today: 0 }
+    });
     return res.json({ success: true, message: 'Daily email counter reset to 0 successfully.' });
   } catch (err) {
     console.error(err);
@@ -291,10 +322,11 @@ async function resetEmailCounter(req, res) {
   }
 }
 
-// Reset ALL email account daily counters at once
 async function resetAllEmailCounters(req, res) {
   try {
-    await query('UPDATE email_accounts SET sent_today = 0');
+    await prisma.smtp_gateways.updateMany({
+      data: { sent_today: 0 }
+    });
     return res.json({ success: true, message: 'All daily email counters reset to 0.' });
   } catch (err) {
     console.error(err);
@@ -305,30 +337,27 @@ async function resetAllEmailCounters(req, res) {
 // 6. User and Device Listing
 async function listUsers(req, res) {
   try {
-    // 1. Fetch all users
-    const users = await query(
-      `SELECT id, name, phone, email, role, is_paid, active_plan_name, expiry_date, blocked, profile_complete, created_at FROM users`
-    );
+    const users = await prisma.users.findMany();
+    const devices = await prisma.registered_devices.findMany();
 
-    // 2. Fetch all registered devices
-    const devices = await query(
-      `SELECT id, user_id, device_id AS deviceId, device_name AS deviceName, custom_name AS customName, 
-              device_model AS deviceModel, android_version AS androidVersion, status, is_parent AS isParent, 
-              last_seen_at AS lastSeenAt, last_battery_percent AS lastBatteryPercent, 
-              trial_expires_at AS trialExpiresAt, is_trial_locked AS isTrialLocked, lock_reason AS lockReason 
-       FROM registered_devices`
-    );
-
-    // 3. Group devices by user_id
     const devicesByUserId = {};
     devices.forEach(d => {
       const userId = d.user_id;
       const deviceObj = { 
-        ...d,
-        isParent: d.isParent === 1,
-        isTrialLocked: d.isTrialLocked === 1
+        id: d.id,
+        deviceId: d.device_id,
+        deviceName: d.device_name,
+        customName: d.custom_name,
+        deviceModel: d.device_model,
+        androidVersion: d.android_version,
+        status: d.status,
+        isParent: d.is_parent,
+        lastSeenAt: d.last_seen_at,
+        lastBatteryPercent: d.last_battery_percent,
+        trialExpiresAt: d.trial_expires_at,
+        isTrialLocked: d.is_trial_locked,
+        lockReason: d.lock_reason
       };
-      delete deviceObj.user_id;
       
       if (!devicesByUserId[userId]) {
         devicesByUserId[userId] = [];
@@ -336,16 +365,13 @@ async function listUsers(req, res) {
       devicesByUserId[userId].push(deviceObj);
     });
 
-    // 4. Map devices to their respective users
-    const result = users.map(u => {
-      return {
-        ...u,
-        is_paid: !!u.is_paid,
-        blocked: !!u.blocked,
-        profile_complete: !!u.profile_complete,
-        devices: devicesByUserId[u.id] || []
-      };
-    });
+    const result = users.map(u => ({
+      ...u,
+      is_paid: !!u.is_paid,
+      blocked: !!u.blocked,
+      profile_complete: !!u.profile_complete,
+      devices: devicesByUserId[u.id] || []
+    }));
 
     return res.json({ success: true, users: result });
   } catch (err) {
@@ -360,7 +386,10 @@ async function toggleUserBlock(req, res) {
     const { blocked } = req.body;
     if (blocked === undefined) return res.status(400).json({ error: 'blocked status is required' });
 
-    await query('UPDATE users SET blocked = ? WHERE id = ?', [blocked ? 1 : 0, id]);
+    await prisma.users.update({
+      where: { id: parseInt(id) },
+      data: { blocked: !!blocked }
+    });
     return res.json({ success: true, message: `User status changed successfully.` });
   } catch (err) {
     console.error(err);
@@ -377,28 +406,15 @@ async function updateDeviceTrial(req, res) {
       return res.status(400).json({ error: 'Missing update fields' });
     }
 
-    const updates = [];
-    const params = [];
+    const data = {};
+    if (trial_expires_at !== undefined) data.trial_expires_at = trial_expires_at ? new Date(trial_expires_at) : null;
+    if (is_trial_locked !== undefined) data.is_trial_locked = !!is_trial_locked;
+    if (lock_reason !== undefined) data.lock_reason = lock_reason || null;
 
-    if (trial_expires_at !== undefined) {
-      updates.push('trial_expires_at = ?');
-      params.push(trial_expires_at ? new Date(trial_expires_at) : null);
-    }
-    if (is_trial_locked !== undefined) {
-      updates.push('is_trial_locked = ?');
-      params.push(is_trial_locked ? 1 : 0);
-    }
-    if (lock_reason !== undefined) {
-      updates.push('lock_reason = ?');
-      params.push(lock_reason || null);
-    }
-
-    params.push(id);
-
-    await query(
-      `UPDATE registered_devices SET ${updates.join(', ')} WHERE id = ?`,
-      params
-    );
+    await prisma.registered_devices.update({
+      where: { id: parseInt(id) },
+      data
+    });
 
     return res.json({ success: true, message: 'Device trial parameters updated successfully.' });
   } catch (err) {
@@ -409,10 +425,10 @@ async function updateDeviceTrial(req, res) {
 
 async function getOtpFormat(req, res) {
   try {
-    const rows = await query(
-      "SELECT setting_value FROM system_settings WHERE setting_key = 'otp_format_template' LIMIT 1"
-    );
-    const template = rows.length > 0 ? rows[0].setting_value : "আপনার প্রিয় পে-চেক অ্যাপ ভেরিফিকেশন কোড হলো: {otp}। কোডটি গোপন রাখুন।";
+    const row = await prisma.otp_sms_templates.findUnique({
+      where: { setting_key: 'otp_format_template' }
+    });
+    const template = row?.setting_value || "আপনার প্রিয় পে-চেক অ্যাপ ভেরিফিকেশন কোড হলো: {otp}। কোডটি গোপন রাখুন।";
     return res.json({ success: true, template });
   } catch (err) {
     console.error('getOtpFormat error:', err);
@@ -426,10 +442,11 @@ async function updateOtpFormat(req, res) {
     if (template === undefined || template === null) {
       return res.status(400).json({ error: 'template value is required' });
     }
-    await query(
-      "INSERT INTO system_settings (setting_key, setting_value) VALUES ('otp_format_template', ?) ON DUPLICATE KEY UPDATE setting_value = ?",
-      [template, template]
-    );
+    await prisma.otp_sms_templates.upsert({
+      where: { setting_key: 'otp_format_template' },
+      update: { setting_value: template },
+      create: { setting_key: 'otp_format_template', setting_value: template }
+    });
     return res.json({ success: true, message: 'OTP format template updated successfully.' });
   } catch (err) {
     console.error('updateOtpFormat error:', err);
@@ -437,7 +454,6 @@ async function updateOtpFormat(req, res) {
   }
 }
 
-// 7. Resource Consumption Negative-Billing functions
 const crypto = require('crypto');
 
 async function addSite(req, res) {
@@ -449,13 +465,15 @@ async function addSite(req, res) {
       return res.status(400).json({ success: false, error: 'Site name and Site URL are required' });
     }
 
-    const users = await query('SELECT is_paid, active_plan_name, expiry_date FROM users WHERE id = ? LIMIT 1', [userId]);
-    if (users.length === 0) {
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { is_paid: true, active_plan_name: true, expiry_date: true }
+    });
+    if (!user) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
-    const user = users[0];
 
-    if (user.is_paid === 0 || user.active_plan_name === 'FREE_LEVEL') {
+    if (!user.is_paid || user.active_plan_name === 'FREE_LEVEL') {
       return res.status(400).json({
         success: false,
         error: 'SUBSCRIPTION_REQUIRED',
@@ -463,15 +481,16 @@ async function addSite(req, res) {
       });
     }
 
-    // Check limits
-    const plans = await query('SELECT max_sites FROM subscription_plans WHERE plan_name = ? LIMIT 1', [user.active_plan_name]);
-    if (plans.length === 0) {
+    const plan = await prisma.subscription_plans.findUnique({
+      where: { plan_name: user.active_plan_name }
+    });
+    if (!plan) {
       return res.status(400).json({ success: false, error: 'Subscription plan not found' });
     }
-    const plan = plans[0];
 
-    const currentSitesRows = await query('SELECT COUNT(*) as cnt FROM gateway_layouts WHERE user_id = ?', [userId]);
-    const currentSites = currentSitesRows[0].cnt;
+    const currentSites = await prisma.gateway_layouts.count({
+      where: { user_id: userId }
+    });
 
     if (currentSites >= plan.max_sites) {
       return res.status(403).json({
@@ -481,17 +500,20 @@ async function addSite(req, res) {
       });
     }
 
-    // Generate keys
     const apiKey = 'pk_' + crypto.randomBytes(16).toString('hex');
     const apiSecret = 'sk_' + crypto.randomBytes(24).toString('hex');
 
-    // Insert into gateway_layouts
-    const result = await query(
-      `INSERT INTO gateway_layouts 
-        (user_id, site_name, site_url, api_key, api_secret, layout_config, is_active) 
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [userId, site_name, site_url, apiKey, apiSecret, JSON.stringify({}), 1]
-    );
+    const result = await prisma.gateway_layouts.create({
+      data: {
+        user_id: userId,
+        site_name,
+        site_url,
+        api_key: apiKey,
+        api_secret: apiSecret,
+        layout_config: JSON.stringify({}),
+        is_official: 1
+      }
+    });
 
     console.log(`[Billing] User ${userId} registered site ${site_name}. Current Level: ${user.active_plan_name}. Layout count: ${currentSites + 1}`);
 
@@ -503,13 +525,7 @@ async function addSite(req, res) {
       is_paid: !!user.is_paid,
       active_plan_name: user.active_plan_name,
       expiry_date: user.expiry_date,
-      site: {
-        id: result.insertId,
-        user_id: userId,
-        site_name,
-        site_url,
-        is_active: 1
-      }
+      site: result
     });
 
   } catch (error) {
@@ -529,32 +545,35 @@ async function manualGrace(req, res) {
       daysValue = 7;
     }
 
-    const rows = await query("SELECT expiry_date, is_paid FROM users WHERE id = ?", [id]);
-    if (rows.length === 0) {
+    const user = await prisma.users.findUnique({
+      where: { id: parseInt(id) },
+      select: { expiry_date: true, is_paid: true }
+    });
+    if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    const user = rows[0];
 
     let baseDate = new Date();
-    if (user.is_paid === 1 && user.expiry_date && new Date(user.expiry_date) > new Date()) {
+    if (user.is_paid && user.expiry_date && new Date(user.expiry_date) > new Date()) {
       baseDate = new Date(user.expiry_date);
     }
 
     baseDate.setDate(baseDate.getDate() + daysValue);
-    const year = baseDate.getFullYear();
-    const month = String(baseDate.getMonth() + 1).padStart(2, '0');
-    const day = String(baseDate.getDate()).padStart(2, '0');
-    const formattedExpiry = `${year}-${month}-${day}`;
+    const formattedExpiry = new Date(baseDate);
 
-    await query(
-      "UPDATE users SET is_paid = 1, active_plan_name = 'Basic', expiry_date = ? WHERE id = ?",
-      [formattedExpiry, id]
-    );
+    await prisma.users.update({
+      where: { id: parseInt(id) },
+      data: {
+        is_paid: 1,
+        active_plan_name: 'Basic',
+        expiry_date: formattedExpiry
+      }
+    });
 
     return res.json({
       success: true,
       message: `ব্যবহারকারীকে সফলভাবে ${daysValue} দিনের সাবস্ক্রিপশন মেয়াদ প্রদান করা হয়েছে।`,
-      is_paid: true,
+      is_paid: 1,
       active_plan_name: 'Basic',
       expiry_date: formattedExpiry
     });

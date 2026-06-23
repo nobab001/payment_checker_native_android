@@ -18,6 +18,7 @@ data class SmsTemplate(
     val userId: Int?,
     val templateName: String,       // e.g. "bKash Personal", "Nagad Agent"
     val senderId: String,           // e.g. "bKash", "01700000000"
+    val senderNumber: String?,      // e.g. "bKash", "01700000000" — for 4-step verification
     val matchingKeyword: String?,   // e.g. "You have received,Tk.,Ref:"
     val regexPattern: String?,      // regex string
     val isOfficial: Int,            // 1 = official, 0 = custom

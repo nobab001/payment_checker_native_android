@@ -1,4 +1,26 @@
-const { query } = require('../db/connection');
+const prisma = require('../db/prisma');
+async function query(sql, params = []) {
+  const isSelect = /^\s*(SELECT|SHOW|DESCRIBE)/i.test(sql);
+  if (isSelect) {
+    const results = await prisma.$queryRawUnsafe(sql, ...params);
+    return JSON.parse(JSON.stringify(results, (key, value) => {
+      if (typeof value === 'bigint') return Number(value);
+      return value;
+    }));
+  } else {
+    return await prisma.$transaction(async (tx) => {
+      const affectedRows = await tx.$executeRawUnsafe(sql, ...params);
+      let insertId = 0;
+      if (/^\s*INSERT/i.test(sql)) {
+         const idRes = await tx.$queryRawUnsafe('SELECT LAST_INSERT_ID() as insertId');
+         if (idRes && idRes.length > 0) {
+           insertId = Number(idRes[0].insertId);
+         }
+      }
+      return { affectedRows, insertId };
+    });
+  }
+}
 const DeviceBindingService = require('../services/DeviceBindingService');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -262,11 +284,9 @@ async function sendOtp(req, res) {
     }
 
     const otpCode = generateOtpCode();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiration
-
     await query(
-      'INSERT INTO otps (contact, code, expires_at) VALUES (?, ?, ?)',
-      [cleanedContact, otpCode, expiresAt]
+      'INSERT INTO otps (contact, code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))',
+      [cleanedContact, otpCode]
     );
 
     // Dispatch OTP via SMS or Email
@@ -365,11 +385,9 @@ async function registerSendOtp(req, res) {
     }
 
     const otpCode = generateOtpCode();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
-
     await query(
-      'INSERT INTO otps (contact, code, expires_at) VALUES (?, ?, ?)',
-      [cleanedContact, otpCode, expiresAt]
+      'INSERT INTO otps (contact, code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))',
+      [cleanedContact, otpCode]
     );
 
     // Dispatch OTP
@@ -452,13 +470,14 @@ async function verifyOtp(req, res) {
         user: {
           id: 0, name: 'Global Admin', phone: adminSecretUsername,
           email: 'admin@paychek.online', role: 'admin', balance: 0.00,
-          blocked: false, profileComplete: true, smsEnabled: true, gmailEnabled: true
+          blocked: 0, profileComplete: 1, smsEnabled: 1, gmailEnabled: 1
         },
         device: {
           id: 0, userId: 0, deviceId: deviceId || 'admin-device',
           deviceName: 'Admin Dashboard Console', status: 'active',
           isParent: true, isApproved: true, deviceRole: 'owner',
-          isTrialLocked: false, trialExpiresAt: null, lockReason: null
+          isTrialLocked: false, trialExpiresAt: null, lockReason: null,
+          isOwnerDevice: true, deviceSpecificPin: null
         }
       });
     }
@@ -567,7 +586,7 @@ async function verifyOtp(req, res) {
           phone:           user.phone,
           email:           user.email,
           role:            user.role,
-          profileComplete: false
+          profileComplete: 0
         }
       });
     }
@@ -623,8 +642,8 @@ async function verifyOtp(req, res) {
 
       const insertDeviceResult = await query(
         `INSERT INTO registered_devices 
-          (user_id, device_id, device_name, device_model, android_version, status, is_parent, is_approved, device_role, trial_started_at, trial_expires_at, is_trial_locked) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (user_id, device_id, device_name, device_model, android_version, status, is_parent, is_approved, device_role, trial_started_at, trial_expires_at, is_trial_locked, is_owner_device) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           user.id, deviceId,
           isParent ? 'Main Phone' : 'Co-Parent Device',
@@ -632,7 +651,8 @@ async function verifyOtp(req, res) {
           androidVersion || 'Android',
           initialStatus, isParent, isParent ? 1 : 0,
           isParent ? 'owner' : 'pending',
-          trialStartedAt, trialExpiresAt, 0
+          trialStartedAt, trialExpiresAt, 0,
+          isParent ? 1 : 0
         ]
       );
 
@@ -730,7 +750,9 @@ async function verifyOtp(req, res) {
         deviceRole: device.device_role || 'pending',
         isTrialLocked: !!device.is_trial_locked,
         trialExpiresAt: device.trial_expires_at,
-        lockReason: device.lock_reason
+        lockReason: device.lock_reason,
+        isOwnerDevice: device.is_owner_device === 1,
+        deviceSpecificPin: device.device_specific_pin
       }
     });
 
@@ -804,13 +826,18 @@ async function completeProfile(req, res) {
       }
     }
 
+    // Fetch Trial Package config
+    const trialPlanResult = await query("SELECT duration_days FROM subscription_plans WHERE plan_name = 'Trial Package' LIMIT 1");
+    const trialDuration = trialPlanResult.length > 0 ? trialPlanResult[0].duration_days : 3;
+
     // Hash the 6-digit PIN
     const hashedPin = await bcrypt.hash(pin, 10);
 
-    // Update user record
+    // Update user record and auto-activate Trial Package
     await query(
-      'UPDATE users SET name = ?, pin = ?, phone = ?, email = ?, profile_complete = 1 WHERE id = ?',
-      [name.trim(), hashedPin, finalPhone, finalEmail, userId]
+      `UPDATE users SET name = ?, pin = ?, phone = ?, email = ?, profile_complete = 1, 
+       is_paid = 1, active_plan_name = 'Trial Package', expiry_date = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE id = ?`,
+      [name.trim(), hashedPin, finalPhone, finalEmail, trialDuration, userId]
     );
 
     // Sync verified phone/email to user_credentials table so the user can log in with either
@@ -893,8 +920,8 @@ async function completeProfile(req, res) {
             `INSERT INTO registered_devices
               (user_id, device_id, device_name, device_model, android_version,
                status, is_parent, is_approved, device_role,
-               trial_started_at, trial_expires_at, is_trial_locked)
-             VALUES (?, ?, 'Main Phone', 'Unknown Model', 'Android', 'active', 1, 1, 'owner', ?, ?, 0)`,
+               trial_started_at, trial_expires_at, is_trial_locked, is_owner_device)
+             VALUES (?, ?, 'Main Phone', 'Unknown Model', 'Android', 'active', 1, 1, 'owner', ?, ?, 0, 1)`,
             [userId, deviceId, trialStartedAt, trialExpiresAt]
           );
           console.log(`[AUTH] ✅ Device bound on completeProfile (userId=${userId}, deviceId=${deviceId})`);
@@ -934,8 +961,12 @@ async function completeProfile(req, res) {
       }
     }
 
+    const finalKeyCheck = await query('SELECT secretKey, secretKeyVersion FROM users WHERE id = ? LIMIT 1', [userId]);
+
     return res.json({
       success: true,
+      secretKey: finalKeyCheck[0]?.secretKey || null,
+      secretKeyVersion: finalKeyCheck[0]?.secretKeyVersion || 1,
       user: {
         id: updatedUser.id,
         name: updatedUser.name,
@@ -1333,7 +1364,7 @@ async function sendOtpDispatch(contact, otpCode) {
   let otpTemplate = "আপনার প্রিয় পে-চেক অ্যাপ ভেরিফিকেশন কোড হলো: {otp}। কোডটি গোপন রাখুন।";
   try {
     const systemSettings = await query(
-      "SELECT setting_value FROM system_settings WHERE setting_key = 'otp_format_template' LIMIT 1"
+      "SELECT setting_value FROM otp_sms_templates WHERE setting_key = 'otp_format_template' LIMIT 1"
     );
     if (systemSettings && systemSettings.length > 0 && systemSettings[0].setting_value) {
       otpTemplate = systemSettings[0].setting_value;
@@ -1354,9 +1385,8 @@ async function sendOtpDispatch(contact, otpCode) {
     // না হলে পরবর্তী অ্যাকাউন্টে যাব। এটি সিকোয়েন্সিয়াল ফাসলাইন লজিক।
     try {
       const dbAccounts = await query(
-        `SELECT * FROM email_accounts
-          WHERE is_active = 1
-            AND COALESCE(sent_today, 0) < COALESCE(daily_limit, 500)
+        `SELECT * FROM smtp_gateways
+         WHERE is_active = 1 AND (sent_today < daily_limit OR daily_limit IS NULL)
           ORDER BY id ASC
           LIMIT 10`  // max 10 accounts to iterate over
       );
@@ -1403,7 +1433,7 @@ async function sendOtpDispatch(contact, otpCode) {
 
           // সফলভাবে পাঠানো হয়েছে — sent_today বাড়াই
           await query(
-            'UPDATE email_accounts SET sent_today = COALESCE(sent_today, 0) + 1 WHERE id = ?',
+            'UPDATE smtp_gateways SET sent_today = COALESCE(sent_today, 0) + 1 WHERE id = ?',
             [acc.id]
           );
           console.log(`[GMAIL-SEQ] Sent via ${acc.email} (now ${sentToday + 1}/${limit})`);
@@ -1486,7 +1516,7 @@ async function sendOtpDispatch(contact, otpCode) {
     let layer1Success = false;
     try {
       const settings = await query(
-        'SELECT * FROM sms_settings WHERE is_active = 1 LIMIT 1'
+        'SELECT * FROM sms_gateways WHERE is_active = 1 LIMIT 1'
       );
 
       if (settings && settings.length > 0) {
@@ -1763,7 +1793,9 @@ async function remoteUpdateDevice(req, res) {
       sim_one_active,
       sim_two_number,
       sim_two_active,
-      is_app_active
+      is_app_active,
+      is_owner,
+      device_specific_pin
     } = req.body;
 
     if (!deviceId) {
@@ -1777,7 +1809,9 @@ async function remoteUpdateDevice(req, res) {
            sim_one_active = ?, 
            sim_two_number = ?, 
            sim_two_active = ?, 
-           is_app_active = ?
+           is_app_active = ?,
+           is_owner = COALESCE(?, is_owner),
+           device_specific_pin = COALESCE(?, device_specific_pin)
        WHERE user_id = ? AND device_id = ?`,
       [
         custom_device_name || '',
@@ -1786,6 +1820,8 @@ async function remoteUpdateDevice(req, res) {
         sim_two_number || null,
         sim_two_active !== undefined ? sim_two_active : 1,
         is_app_active !== undefined ? is_app_active : 1,
+        is_owner !== undefined ? is_owner : null,
+        device_specific_pin !== undefined ? device_specific_pin : null,
         userId,
         deviceId
       ]

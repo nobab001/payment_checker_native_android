@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -129,7 +130,19 @@ fun TransactionSearchScreen(
                         val target = if (state.selectedProvider == provider) ProviderFilter.ALL else provider
                         viewModel.onProviderFilterChanged(target)
                     },
-                    modifier = Modifier.padding(bottom = 12.dp)
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+
+            // ─── ৩.৫ Date Range Filter ─────────────────────────────────────
+            item {
+                DateRangeFilterRow(
+                    startDate = state.startDate,
+                    endDate = state.endDate,
+                    onDateRangeSelected = { start, end ->
+                        viewModel.onDateRangeChanged(start, end)
+                    },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
 
@@ -769,5 +782,68 @@ private fun formatTrxTimestamp(raw: String): String {
         } ?: raw.take(16)
     } catch (_: Exception) {
         raw.take(16)
+    }
+}
+
+// =============================================================================
+// Component 9 — Date Range Filter Row
+// =============================================================================
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DateRangeFilterRow(
+    startDate: String?,
+    endDate: String?,
+    onDateRangeSelected: (String?, String?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showDatePicker by remember { mutableStateOf(false) }
+    val datePickerState = rememberDateRangePickerState()
+
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val label = if (startDate != null && endDate != null) "$startDate to $endDate" else "Filter by Date"
+        OutlinedButton(
+            onClick = { showDatePicker = true },
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMuted)
+        ) {
+            Icon(Icons.Default.DateRange, contentDescription = "Date Range", modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(text = label, fontSize = 12.sp)
+        }
+
+        if (startDate != null || endDate != null) {
+            IconButton(onClick = { onDateRangeSelected(null, null) }) {
+                Icon(Icons.Default.Close, contentDescription = "Clear Dates", tint = TextMuted)
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDatePicker = false
+                        val startMillis = datePickerState.selectedStartDateMillis
+                        val endMillis = datePickerState.selectedEndDateMillis
+                        if (startMillis != null && endMillis != null) {
+                            val startStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(startMillis))
+                            val endStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(endMillis))
+                            onDateRangeSelected(startStr, endStr)
+                        }
+                    }
+                ) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+            }
+        ) {
+            DateRangePicker(state = datePickerState, modifier = Modifier.weight(1f))
+        }
     }
 }

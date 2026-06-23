@@ -721,54 +721,7 @@ fun HomeScreen(
                 .padding(innerPadding)
         ) {
             // Top accessibility banner — replaces the old blocking AlertDialog.
-            // Shown only on the HOME tab because DeviceScreen renders its own banner.
-            // Unified Accessibility Banner
-            if (hasNotificationPermissionChecked && !isAccessibilityEnabled && selectedTab == HomeTab.HOME) {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF59E0B)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .clickable {
-                            online.paychek.app.MainActivity.isRequestingPermission = true
-                            val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                            context.startActivity(intent)
-                        }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Warning,
-                                contentDescription = "Warning",
-                                tint = Color.White,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Text(
-                                text = "স্বয়ংক্রিয় পেমেন্ট ট্র্যাকিং সচল করতে অ্যাক্সেসিবিলিটি পারমিশন অনুমোদন করুন। (যদি Restricted Settings দেখায়, তবে হোম স্ক্রিন থেকে অ্যাপ আইকনে চাপ দিয়ে ধরে App Info-তে যান এবং ডানদিকের উপরের ৩-ডট মেনু থেকে Allow Restricted Settings সচল করুন)",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                lineHeight = 18.sp
-                            )
-                        }
-                        Icon(
-                            imageVector = Icons.Default.ChevronRight,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
+
 
             // Top notification banner for owner devices with pending requests
             if (isApproved && deviceRole == "owner" && pendingDevices.isNotEmpty()) {

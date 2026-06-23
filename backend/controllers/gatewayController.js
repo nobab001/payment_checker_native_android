@@ -1,4 +1,4 @@
-const { query } = require('../db/connection');
+const prisma = require('../db/prisma');
 
 // =============================================================================
 // GET /api/gateway/methods
@@ -8,20 +8,29 @@ async function getGatewayMethods(req, res) {
   try {
     const userId = req.user.userId;
 
-    const rows = await query(
-      `SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.is_enabled, gm.priority, gm.template_id,
-              t.sender_id, t.matching_keyword, '' AS regex_pattern, COALESCE(t.is_official, 1) AS is_official,
+    const rows = await prisma.$queryRaw`
+      SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.is_enabled, gm.priority, gm.template_id,
+              t.sender_id, t.sender_number, t.matching_keyword, '' AS regex_pattern, COALESCE(t.is_official, 1) AS is_official,
               cvt.single_number_instruction, cvt.multiple_number_instruction
          FROM gateway_methods gm
     LEFT JOIN sms_templates t ON gm.template_id = t.id AND t.is_active = 1
     LEFT JOIN checkout_view_templates cvt ON cvt.sms_template_id = t.id
-        WHERE gm.user_id = ?
+        WHERE gm.user_id = ${userId}
           AND (gm.template_id IS NULL OR t.id IS NOT NULL)
-        ORDER BY gm.priority ASC, gm.sim_slot ASC`,
-      [userId]
-    );
+        ORDER BY gm.priority ASC, gm.sim_slot ASC
+    `;
 
-    return res.json({ success: true, data: rows });
+    // Convert BigInts from queryRaw to Numbers for JSON serialization if needed
+    const data = rows.map(r => {
+      const obj = {};
+      for (const key in r) {
+        if (typeof r[key] === 'bigint') obj[key] = Number(r[key]);
+        else obj[key] = r[key];
+      }
+      return obj;
+    });
+
+    return res.json({ success: true, data });
   } catch (error) {
     console.error('[GATEWAY] getGatewayMethods error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
@@ -47,10 +56,10 @@ async function updatePriority(req, res) {
     for (const item of items) {
       if (typeof item.id !== 'number' || typeof item.priority !== 'number') continue;
 
-      await query(
-        `UPDATE gateway_methods SET priority = ? WHERE id = ? AND user_id = ?`,
-        [item.priority, item.id, userId]
-      );
+      await prisma.gateway_methods.updateMany({
+        where: { id: item.id, user_id: userId },
+        data: { priority: item.priority }
+      });
     }
 
     console.log(`[GATEWAY] Priority updated for ${items.length} items | User: ${userId}`);
@@ -74,20 +83,22 @@ async function toggleMethod(req, res) {
     const methodId = parseInt(req.params.id);
     const { is_enabled } = req.body;
 
-    if (![0, 1].includes(is_enabled)) {
-      return res.status(400).json({ error: 'is_enabled অবশ্যই 0 বা 1 হতে হবে' });
+    if (![0, 1, false, true].includes(is_enabled)) {
+      return res.status(400).json({ error: 'is_enabled অবশ্যই boolean বা 0/1 হতে হবে' });
     }
 
-    const result = await query(
-      `UPDATE gateway_methods SET is_enabled = ? WHERE id = ? AND user_id = ?`,
-      [is_enabled, methodId, userId]
-    );
+    const enabledBool = !!is_enabled;
 
-    if (result.affectedRows === 0) {
+    const result = await prisma.gateway_methods.updateMany({
+      where: { id: methodId, user_id: userId },
+      data: { is_enabled: enabledBool }
+    });
+
+    if (result.count === 0) {
       return res.status(404).json({ error: 'মেথড পাওয়া যায়নি' });
     }
 
-    const status = is_enabled === 1 ? 'চালু' : 'বন্ধ';
+    const status = enabledBool ? 'চালু' : 'বন্ধ';
     console.log(`[GATEWAY] Method ${methodId} ${status} | User: ${userId}`);
     return res.json({ success: true, message: `মেথড ${status} করা হয়েছে।` });
 
@@ -113,29 +124,17 @@ async function updateMethod(req, res) {
       return res.status(400).json({ error: 'number, display_name বা template_id প্রয়োজন' });
     }
 
-    const setClauses = [];
-    const values     = [];
+    const data = {};
+    if (number !== undefined) data.number = number || null;
+    if (display_name !== undefined) data.display_name = display_name || null;
+    if (template_id !== undefined) data.template_id = template_id || null;
 
-    if (number !== undefined) {
-      setClauses.push('number = ?');
-      values.push(number || null);
-    }
-    if (display_name !== undefined) {
-      setClauses.push('display_name = ?');
-      values.push(display_name || null);
-    }
-    if (template_id !== undefined) {
-      setClauses.push('template_id = ?');
-      values.push(template_id || null);
-    }
-    values.push(methodId, userId);
+    const result = await prisma.gateway_methods.updateMany({
+      where: { id: methodId, user_id: userId },
+      data
+    });
 
-    const result = await query(
-      `UPDATE gateway_methods SET ${setClauses.join(', ')} WHERE id = ? AND user_id = ?`,
-      values
-    );
-
-    if (result.affectedRows === 0) {
+    if (result.count === 0) {
       return res.status(404).json({ error: 'মেথড পাওয়া যায়নি' });
     }
 
@@ -154,12 +153,25 @@ async function updateMethod(req, res) {
 // =============================================================================
 async function getTemplates(req, res) {
   try {
-    const rows = await query(
-      `SELECT id, template_name, sender_id, matching_keyword, '' AS regex_pattern, is_official, is_active
-         FROM sms_templates
-        WHERE is_active = 1`
-    );
-    return res.json({ success: true, templates: rows });
+    const rows = await prisma.sms_templates.findMany({
+      where: { is_active: 1 },
+      select: {
+        id: true,
+        template_name: true,
+        sender_id: true,
+        sender_number: true,
+        matching_keyword: true,
+        is_official: true,
+        is_active: true
+      }
+    });
+
+    const formatted = rows.map(r => ({
+      ...r,
+      regex_pattern: ''
+    }));
+
+    return res.json({ success: true, templates: formatted });
   } catch (error) {
     console.error('[GATEWAY] getTemplates error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
@@ -179,21 +191,27 @@ async function addGatewayMethod(req, res) {
       return res.status(400).json({ error: 'sim_slot এবং provider আবশ্যক' });
     }
 
-    // priority সেট করার জন্য সর্বোচ্চ priority বের করা
-    const maxPriorityResult = await query(
-      'SELECT COALESCE(MAX(priority), 0) AS max_p FROM gateway_methods WHERE user_id = ?',
-      [userId]
-    );
-    const nextPriority = maxPriorityResult[0].max_p + 1;
+    const maxPriorityRow = await prisma.gateway_methods.aggregate({
+      where: { user_id: userId },
+      _max: { priority: true }
+    });
+    
+    const nextPriority = (maxPriorityRow._max.priority || 0) + 1;
 
-    const result = await query(
-      `INSERT INTO gateway_methods (user_id, template_id, sim_slot, provider, number, priority, is_enabled)
-       VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      [userId, template_id || null, sim_slot, provider, number || null, nextPriority]
-    );
+    const result = await prisma.gateway_methods.create({
+      data: {
+        user_id: userId,
+        template_id: template_id || null,
+        sim_slot,
+        provider,
+        number: number || null,
+        is_enabled: 1,
+        priority: nextPriority
+      }
+    });
 
     console.log(`[GATEWAY] Gateway method added | User: ${userId} | Slot: ${sim_slot} | Provider: ${provider}`);
-    return res.json({ success: true, id: result.insertId, message: 'মেথড সফলভাবে যোগ করা হয়েছে।' });
+    return res.json({ success: true, id: result.id, message: 'মেথড সফলভাবে যোগ করা হয়েছে।' });
   } catch (error) {
     console.error('[GATEWAY] addGatewayMethod error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });

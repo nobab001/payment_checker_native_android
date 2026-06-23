@@ -145,6 +145,14 @@ class SignupViewModel : ViewModel() {
 
                 val response = apiService.completeProfile(authHeader, request)
                 if (response.isSuccessful && response.body()?.success == true) {
+                    val secretKey = response.body()?.secretKey
+                    if (!secretKey.isNullOrBlank()) {
+                        online.paychek.app.utils.SecurePreferences.encrypt(
+                            context,
+                            online.paychek.app.services.sms.SmsReceiver.KEY_HMAC_SECRET,
+                            secretKey
+                        )
+                    }
                     _uiState.update { it.copy(isLoading = false, signupSuccess = true) }
                     onSuccess()
                 } else {

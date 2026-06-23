@@ -1,0 +1,320 @@
+generator client {
+  provider = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model checkout_view_templates {
+  id                          Int           @id @default(autoincrement())
+  sms_template_id             Int           @unique(map: "uniq_sms_template")
+  single_number_instruction   String        @db.Text
+  multiple_number_instruction String        @db.Text
+  created_at                  DateTime      @default(now()) @db.Timestamp(0)
+  updated_at                  DateTime      @default(now()) @db.Timestamp(0)
+  sms_templates               sms_templates @relation(fields: [sms_template_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_checkout_view_sms_template")
+}
+
+model device_trial_logs {
+  id                   Int      @id @default(autoincrement())
+  user_id              Int?
+  android_id           String   @db.VarChar(255)
+  hardware_fingerprint String   @db.VarChar(255)
+  sim_slot_ids         String   @db.VarChar(255)
+  has_used_trial       Int       @default(1) @db.TinyInt
+  created_at           DateTime @default(now()) @db.Timestamp(0)
+
+  @@unique([android_id, hardware_fingerprint, sim_slot_ids], map: "uniq_device_binding")
+  @@index([android_id], map: "idx_android_id")
+  @@index([android_id(length: 64)], map: "idx_dtl_android")
+  @@index([hardware_fingerprint], map: "idx_fingerprint")
+  @@index([sim_slot_ids], map: "idx_sim_slots")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model gateway_layouts {
+  id            Int      @id @default(autoincrement())
+  user_id       Int
+  site_name     String   @default("") @db.VarChar(255)
+  site_url      String?  @db.VarChar(512)
+  api_key       String   @unique(map: "uniq_api_key") @default("") @db.VarChar(255)
+  api_secret    String   @default("") @db.VarChar(255)
+  layout_config String?  @db.LongText
+  redirect_url  String?  @db.VarChar(512)
+  callback_url  String?  @db.VarChar(512)
+  is_active     Int       @default(1) @db.TinyInt
+  created_at    DateTime @default(now()) @db.Timestamp(0)
+  updated_at    DateTime @default(now()) @db.Timestamp(0)
+  users         users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_gateway_user")
+
+  @@index([user_id, is_active], map: "idx_gateway_active")
+  @@index([user_id], map: "idx_gateway_user")
+}
+
+model gateway_methods {
+  id           Int      @id @default(autoincrement())
+  user_id      String   @db.VarChar(255)
+  sim_slot     Int      @default(1)
+  provider     String   @db.VarChar(50)
+  number       String   @db.VarChar(20)
+  display_name String?  @db.VarChar(100)
+  is_enabled   Int       @default(0) @db.TinyInt
+  priority     Int      @default(0)
+  template_id  Int?
+  created_at   DateTime @default(now()) @db.Timestamp(0)
+  updated_at   DateTime @default(now()) @db.Timestamp(0)
+
+  @@index([template_id], map: "idx_template")
+  @@index([user_id], map: "idx_user")
+}
+
+model global_config {
+  config_key   String   @id @db.VarChar(128)
+  config_value String   @db.Text
+  updated_at   DateTime @default(now()) @db.Timestamp(0)
+}
+
+model otp_sms_templates {
+  id            Int      @id @default(autoincrement())
+  setting_key   String   @unique(map: "uniq_setting_key") @db.VarChar(128)
+  setting_value String?  @db.Text
+  updated_at    DateTime @default(now()) @db.Timestamp(0)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model otps {
+  id         Int       @id @default(autoincrement())
+  contact    String    @db.VarChar(255)
+  code       String    @db.VarChar(10)
+  expires_at DateTime  @db.DateTime(0)
+  used_at    DateTime? @db.DateTime(0)
+  created_at DateTime  @default(now()) @db.Timestamp(0)
+
+  @@index([code, contact], map: "idx_code_contact")
+  @@index([contact], map: "idx_contact")
+  @@index([contact, code], map: "idx_contact_code")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model registered_devices {
+  id                   Int                       @id @default(autoincrement())
+  user_id              Int
+  device_id            String                    @db.VarChar(255)
+  android_id           String?                   @db.VarChar(255)
+  hardware_fingerprint String?                   @db.VarChar(512)
+  sim_slot_ids         String?                   @db.Text
+  device_name          String                    @default("My Phone") @db.VarChar(255)
+  custom_name          String?                   @db.VarChar(255)
+  device_model         String                    @default("") @db.VarChar(255)
+  android_version      String                    @default("") @db.VarChar(64)
+  status               registered_devices_status @default(pending)
+  is_parent            Int       @default(0) @db.TinyInt
+  is_approved          Int       @default(0) @db.TinyInt
+  device_role          String                    @default("pending") @db.VarChar(20)
+  sim1_number          String?                   @db.VarChar(32)
+  sim1_operator        String?                   @db.VarChar(64)
+  sim2_number          String?                   @db.VarChar(32)
+  sim2_operator        String?                   @db.VarChar(64)
+  sim_settings         String?                   @db.LongText
+  last_seen_at         DateTime?                 @db.Timestamp(0)
+  last_battery_percent Int?                      @db.UnsignedTinyInt
+  trial_started_at     DateTime?                 @db.Timestamp(0)
+  trial_expires_at     DateTime?                 @db.Timestamp(0)
+  is_trial_locked      Int       @default(0) @db.TinyInt
+  lock_reason          String?                   @db.VarChar(64)
+  created_at           DateTime                  @default(now()) @db.Timestamp(0)
+  updated_at           DateTime                  @default(now()) @db.Timestamp(0)
+  custom_device_name   String                    @default("") @db.VarChar(100)
+  sim_one_number       String?                   @db.VarChar(15)
+  sim_one_active       Int?      @default(1) @db.TinyInt
+  sim_two_number       String?                   @db.VarChar(15)
+  sim_two_active       Int?      @default(1) @db.TinyInt
+  is_app_active        Int?      @default(1) @db.TinyInt
+  is_owner_device      Int?      @default(0) @db.TinyInt
+  device_specific_pin  String?                   @db.VarChar(255)
+  users                users                     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_devices_user")
+
+  @@unique([user_id, device_id], map: "uniq_user_device")
+  @@index([device_id], map: "idx_device_id")
+  @@index([is_parent], map: "idx_is_parent")
+  @@index([status], map: "idx_status")
+  @@index([is_trial_locked, trial_expires_at], map: "idx_trial_lock")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model sms_gateways {
+  id                 Int      @id @default(autoincrement())
+  provider_name      String?  @db.VarChar(128)
+  gateway_url        String   @db.VarChar(512)
+  http_method        String   @default("GET") @db.VarChar(10)
+  post_body_template String?  @db.Text
+  api_key            String?  @db.VarChar(255)
+  username           String?  @db.VarChar(255)
+  sender_id          String?  @db.VarChar(64)
+  is_active          Int       @default(0) @db.TinyInt
+  created_at         DateTime @default(now()) @db.Timestamp(0)
+  updated_at         DateTime @default(now()) @db.Timestamp(0)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model sms_history {
+  id                  Int       @id @default(autoincrement())
+  user_id             Int
+  device_id           String    @default("") @db.VarChar(255)
+  sim_slot            Int?      @db.TinyInt
+  sim_number          String?   @db.VarChar(32)
+  provider_tag        String    @default("") @db.VarChar(128)
+  amount              Decimal   @default(0.00) @db.Decimal(12, 2)
+  trx_id              String    @unique(map: "idx_trx_id_unique") @default("") @db.VarChar(64)
+  sender_number       String?   @db.VarChar(32)
+  receiver_number     String?   @db.VarChar(32)
+  sms_timestamp       DateTime  @db.DateTime(0)
+  sms_date            DateTime? @db.Date
+  full_sms            String?   @db.Text
+  dedupe_key          String    @default("") @db.VarChar(512)
+  raw_sms_sha256      String?   @db.VarChar(64)
+  is_synced           Int       @default(0) @db.TinyInt
+  is_used             Int       @default(0) @db.TinyInt
+  used_at             DateTime? @db.Timestamp(0)
+  used_by_merchant_id Int?
+  created_at          DateTime  @default(now()) @db.Timestamp(0)
+  users               users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_sms_history_user")
+
+  @@unique([user_id, dedupe_key(length: 255)], map: "uniq_dedupe")
+  @@index([device_id, is_synced], map: "idx_device_sync")
+  @@index([user_id, provider_tag], map: "idx_provider")
+  @@index([user_id, raw_sms_sha256], map: "idx_raw_sms_hash")
+  @@index([user_id], map: "idx_user_id_sms")
+  @@index([user_id, sms_timestamp], map: "idx_user_time")
+  @@index([user_id, trx_id], map: "idx_user_trx")
+  @@index([user_id, trx_id, amount, is_used], map: "idx_verify_lookup")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model sms_parse_failures {
+  id               Int       @id @default(autoincrement())
+  user_id          Int
+  device_id        String    @default("") @db.VarChar(255)
+  raw_body         String    @db.Text
+  raw_body_hash    String    @db.VarChar(64)
+  hmac_signature   String    @db.VarChar(128)
+  parse_error      String?   @db.VarChar(512)
+  sms_timestamp_ms BigInt?
+  is_resolved      Int       @default(0) @db.TinyInt
+  resolved_at      DateTime? @db.Timestamp(0)
+  admin_note       String?   @db.Text
+  created_at       DateTime  @default(now()) @db.Timestamp(0)
+  users            users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_parse_fail_user")
+
+  @@index([raw_body_hash], map: "idx_parse_fail_hash")
+  @@index([is_resolved, created_at], map: "idx_parse_fail_unresolved")
+  @@index([user_id, created_at], map: "idx_parse_fail_user")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model sms_templates {
+  id                      Int                      @id @default(autoincrement())
+  user_id                 Int?
+  template_name           String                   @db.VarChar(128)
+  sender_id               String                   @default("") @db.VarChar(64)
+  matching_keyword        String?                  @db.VarChar(255)
+  regex_pattern           String?                  @db.Text
+  is_official             Int       @default(1) @db.TinyInt
+  is_active               Int       @default(1) @db.TinyInt
+  created_at              DateTime                 @default(now()) @db.Timestamp(0)
+  updated_at              DateTime                 @default(now()) @db.Timestamp(0)
+  sender_number           String?                  @db.VarChar(64)
+  checkout_view_templates checkout_view_templates?
+  users                   users?                   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_template_user")
+
+  @@index([template_name], map: "idx_template_name")
+  @@index([sender_id], map: "idx_template_sender")
+  @@index([user_id], map: "idx_template_user")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model smtp_gateways {
+  id            Int       @id @default(autoincrement())
+  email         String    @unique(map: "uniq_email_acc") @db.VarChar(255)
+  password      String    @db.VarChar(255)
+  host          String    @default("smtp.gmail.com") @db.VarChar(255)
+  port          Int       @default(465)
+  secure        Int       @default(1) @db.TinyInt
+  daily_limit   Int       @default(500)
+  sent_today    Int       @default(0)
+  last_reset_at DateTime? @db.Timestamp(0)
+  is_active     Int       @default(1) @db.TinyInt
+  created_at    DateTime  @default(now()) @db.Timestamp(0)
+  updated_at    DateTime  @default(now()) @db.Timestamp(0)
+}
+
+model subscription_plans {
+  id            Int      @id @default(autoincrement())
+  plan_name     String   @unique(map: "plan_name") @db.VarChar(50)
+  price         Decimal  @db.Decimal(10, 2)
+  max_sites     Int
+  max_devices   Int
+  duration_days Int?     @default(365)
+  created_at    DateTime @default(now()) @db.Timestamp(0)
+}
+
+model user_credentials {
+  id          Int                   @id @default(autoincrement())
+  user_id     Int
+  type        user_credentials_type
+  value       String                @unique(map: "uniq_cred_value") @db.VarChar(255)
+  verified_at DateTime?             @db.DateTime(0)
+  created_at  DateTime              @default(now()) @db.Timestamp(0)
+  users       users                 @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_cred_user")
+
+  @@index([user_id, type], map: "idx_cred_user_type")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model users {
+  id                 Int                  @id @default(autoincrement())
+  name               String               @default("") @db.VarChar(255)
+  avatar             String?              @db.VarChar(255)
+  phone              String?              @unique(map: "uniq_phone") @db.VarChar(20)
+  email              String?              @unique(map: "uniq_email") @db.VarChar(255)
+  pin                String               @default("") @db.VarChar(255)
+  balance            Decimal              @default(0.00) @db.Decimal(12, 2)
+  blocked            Int       @default(0) @db.TinyInt
+  role               String               @default("user") @db.VarChar(20)
+  is_paid            Int?      @default(0) @db.TinyInt
+  active_plan_name   String?              @default("FREE_LEVEL") @db.VarChar(50)
+  expiry_date        DateTime?            @db.Date
+  profile_complete   Int       @default(0) @db.TinyInt
+  sms_enabled        Int       @default(1) @db.TinyInt
+  gmail_enabled      Int       @default(0) @db.TinyInt
+  fcm_token          String?              @db.VarChar(512)
+  secretKey          String?              @db.VarChar(128)
+  secretKeyVersion   Int                  @default(1) @db.UnsignedInt
+  secretKeyCreatedAt DateTime?            @db.Timestamp(0)
+  created_at         DateTime             @default(now()) @db.Timestamp(0)
+  updated_at         DateTime             @default(now()) @db.Timestamp(0)
+  gateway_layouts    gateway_layouts[]
+  registered_devices registered_devices[]
+  sms_history        sms_history[]
+  sms_parse_failures sms_parse_failures[]
+  sms_templates      sms_templates[]
+  user_credentials   user_credentials[]
+
+  @@index([blocked], map: "idx_blocked")
+  @@index([role], map: "idx_role")
+}
+
+enum user_credentials_type {
+  phone
+  email
+}
+
+enum registered_devices_status {
+  pending
+  active
+  rejected
+}

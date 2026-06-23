@@ -1,4 +1,4 @@
-const { query } = require('../db/connection');
+const prisma = require('../db/prisma');
 
 /**
  * parseRawSms — RAW SMS body থেকে server-side এ payment data extract করে।
@@ -24,24 +24,33 @@ async function parseRawSms(rawBody, senderHint = '') {
   const cleanSender = senderHint.trim().toLowerCase();
 
   // Query active templates from database
-  const templates = await query('SELECT * FROM sms_templates WHERE is_active = 1');
+  const templates = await prisma.sms_templates.findMany({
+    where: { is_active: 1 }
+  });
 
   for (const template of templates) {
-    // keyword parsing
-    const matchKeywords = template.matching_keyword
-      ? template.matching_keyword.split(',').map(kw => kw.trim()).filter(Boolean)
-      : [];
+    let isMatch = false;
 
-    // Keyword pre-filter: any of the keywords must exist (OR logic)
-    const keywordsMatch = matchKeywords.length === 0 || matchKeywords.some(kw =>
-      cleanBody.toLowerCase().includes(kw.toLowerCase())
-    );
-    if (!keywordsMatch) continue;
-
-    // Optional sender hint filter
+    // 1. Check if Sender ID matches
     if (cleanSender && template.sender_id) {
       const senderPattern = new RegExp(template.sender_id, 'i');
-      if (!senderPattern.test(cleanSender)) continue;
+      if (senderPattern.test(cleanSender)) {
+        isMatch = true;
+      }
+    }
+
+    // 2. Check if Keywords match (Fallback if sender is weird phone number)
+    if (!isMatch && template.matching_keyword) {
+      const keywords = template.matching_keyword.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
+      const cleanBodyLower = cleanBody.toLowerCase();
+      if (keywords.length > 0 && keywords.every(k => cleanBodyLower.includes(k))) {
+        isMatch = true;
+      }
+    }
+
+    // 3. If neither sender nor keywords matched (and template has them), skip this template
+    if (!isMatch && (template.sender_id || template.matching_keyword)) {
+      continue;
     }
 
     try {

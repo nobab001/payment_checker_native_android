@@ -97,11 +97,11 @@ class SmsReceiver(
                         return@launch
                     }
 
-                    for (item in pendingItems) {
+                    val chunks = pendingItems.chunked(50)
+                    for (chunk in chunks) {
                         try {
-                            val response = RetrofitClient.paymentApiService.ingestPaymentSms(
-                                token = "Bearer $token",
-                                request = online.paychek.app.data.remote.dto.PaymentIngestRequest(
+                            val requestItems = chunk.map { item ->
+                                online.paychek.app.data.remote.dto.PaymentIngestRequest(
                                     amount         = item.amount,
                                     trxId          = item.trxId,
                                     providerTag    = item.providerTag,
@@ -114,29 +114,31 @@ class SmsReceiver(
                                     hmacSignature  = item.hmacSignature,
                                     isOfflineSync  = true
                                 )
+                            }
+                            
+                            val response = RetrofitClient.paymentApiService.ingestPaymentSmsBulk(
+                                token = "Bearer $token",
+                                request = online.paychek.app.data.remote.dto.BulkPaymentIngestRequest(requestItems)
                             )
-                            when {
-                                response.isSuccessful -> {
-                                    dao.markAsSynced(item.id)
-                                    Log.i(TAG, "[Sync] OK TrxID ${item.trxId} synced successfully")
-                                }
-                                response.code() == 422 -> {
-                                    // Server HMAC OK but parse failed — retrying will NEVER succeed.
-                                    // Remove from queue permanently.
-                                    dao.markPermanentlyFailed(item.id, nowMs)
-                                    Log.e(TAG, "[Sync] PERMANENT FAIL TrxID ${item.trxId} (422 SMS_PARSE_FAILED) — removed from queue")
-                                }
-                                else -> {
+                            
+                            if (response.isSuccessful) {
+                                chunk.forEach { dao.markAsSynced(it.id) }
+                                Log.i(TAG, "[Sync] OK Bulk synced ${chunk.size} items successfully")
+                            } else {
+                                chunk.forEach { item ->
                                     val nextRetry = calculateNextRetryMs(item.retryCount, nowMs)
                                     dao.markRetryFailed(item.id, nowMs, nextRetry)
-                                    Log.w(TAG, "[Sync] FAIL TrxID ${item.trxId}: HTTP ${response.code()} — retry #${item.retryCount + 1} scheduled at $nextRetry")
                                 }
+                                Log.w(TAG, "[Sync] FAIL Bulk HTTP ${response.code()} — starting PingEngine")
+                                online.paychek.app.services.sync.PingEngine.start(context)
                             }
                         } catch (e: Exception) {
-                            // Network-level failure — apply exponential backoff
-                            val nextRetry = calculateNextRetryMs(item.retryCount, nowMs)
-                            dao.markRetryFailed(item.id, nowMs, nextRetry)
-                            Log.e(TAG, "[Sync] EXCEPTION TrxID ${item.trxId}: ${e.message} — retry at $nextRetry")
+                            chunk.forEach { item ->
+                                val nextRetry = calculateNextRetryMs(item.retryCount, nowMs)
+                                dao.markRetryFailed(item.id, nowMs, nextRetry)
+                            }
+                            Log.e(TAG, "[Sync] EXCEPTION Bulk Sync: ${e.message} — starting PingEngine")
+                            online.paychek.app.services.sync.PingEngine.start(context)
                         }
                     }
 
@@ -198,10 +200,16 @@ class SmsReceiver(
 
                 val cleanSender = sender.trim().lowercase(Locale.US)
 
-                // Condition 2: Check SIM slot, Sender ID, and keywords matching (Dynamic)
+                // ── 4-Step Verification Chain (Dynamic) ──────────────────────
+                // Step 1: SIM Slot   — already filtered above
+                // Step 2: Sender ID  — alphanumeric/phone sender match
+                // Step 3: Sender Number — separate sender_number field match
+                // Step 4: SMS Body   — matching keywords from template conditions
                 val matchingMethod = cachedMethods.firstOrNull { method ->
+                    // Step 1: Method must be enabled and SIM slot must match
                     method.isEnabled == 1 &&
                     (simSlot == null || method.simSlot == simSlot) &&
+                    // Step 2: Sender ID match
                     (
                         if (method.templateId == null) {
                             cleanSender == method.provider.trim().lowercase(Locale.US)
@@ -210,6 +218,15 @@ class SmsReceiver(
                             cleanSender.contains(targetSender)
                         }
                     ) &&
+                    // Step 3: Sender Number match (if configured)
+                    (
+                        method.senderNumber.isNullOrBlank() ||
+                        run {
+                            val targetSenderNumber = method.senderNumber.trim().lowercase(Locale.US)
+                            cleanSender.contains(targetSenderNumber)
+                        }
+                    ) &&
+                    // Step 4: SMS Body keyword conditions (any one keyword match)
                     (
                         method.matchingKeyword.isNullOrBlank() ||
                         method.matchingKeyword.split(",").map { it.trim() }.filter { it.isNotEmpty() }.any { keyword ->
@@ -251,7 +268,7 @@ class SmsReceiver(
                     fullSms        = body
                 )
 
-                Log.i(TAG, "3 Conditions Met. Forwarding RAW SMS payload to queue. Provider: ${matchingMethod.provider}")
+                Log.i(TAG, "4 Conditions Met. Forwarding RAW SMS payload to queue. Provider: ${matchingMethod.provider}")
                 saveToOfflineQueueAndForward(context, finalPayment)
             }
 

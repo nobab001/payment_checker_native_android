@@ -21,6 +21,15 @@ interface PaymentApiService {
         @Body request: PaymentIngestRequest
     ): Response<PaymentIngestResponse>
 
+    @POST("payment-sms-ingest/bulk")
+    suspend fun ingestPaymentSmsBulk(
+        @Header("Authorization") token: String,
+        @Body request: BulkPaymentIngestRequest
+    ): Response<BulkPaymentIngestResponse>
+
+    @GET("ping")
+    suspend fun pingServer(): Response<okhttp3.ResponseBody>
+
     // ─── Transaction History ─────────────────────────────────────────────────
     /**
      * পেজিনেটেড ট্রানজেকশন লিস্ট
@@ -34,7 +43,9 @@ interface PaymentApiService {
         @Header("Authorization") token: String,
         @Query("page")     page: Int     = 1,
         @Query("limit")    limit: Int    = 20,
-        @Query("provider") provider: String = "all"
+        @Query("provider") provider: String = "all",
+        @Query("startDate") startDate: String? = null,
+        @Query("endDate") endDate: String? = null
     ): Response<TransactionListResponse>
 
     // ─── Dashboard Stats ─────────────────────────────────────────────────────

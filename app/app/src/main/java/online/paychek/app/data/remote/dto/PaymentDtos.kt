@@ -29,6 +29,17 @@ data class PaymentIngestResponse(
     val message: String?
 )
 
+data class BulkPaymentIngestRequest(
+    val items: List<PaymentIngestRequest>
+)
+
+data class BulkPaymentIngestResponse(
+    val success: Boolean,
+    val processed: Int,
+    val failed: Int,
+    val error: String? = null
+)
+
 // =============================================================================
 // TRANSACTION HISTORY DTOs
 // =============================================================================
@@ -125,6 +136,12 @@ data class DashboardStats(
 
     @SerializedName("expiry_date")
     val expiryDate: String?,
+
+    @SerializedName("secretKey")
+    val secretKey: String?,
+
+    @SerializedName("secretKeyVersion")
+    val secretKeyVersion: Int?,
 
     @SerializedName("recent_transactions")
     val recentTransactions: List<TransactionItem>  // সর্বশেষ ৫টি ট্রানজেকশন

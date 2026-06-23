@@ -1,4 +1,4 @@
-const { query } = require('../db/connection');
+const prisma = require('../db/prisma');
 
 /**
  * POST /api/v1/subscription/purchase
@@ -21,25 +21,30 @@ async function purchaseSubscription(req, res) {
     }
 
     // ১. প্ল্যান ফেচ
-    const plans = await query('SELECT * FROM subscription_plans WHERE plan_name = ? LIMIT 1', [planName]);
-    if (plans.length === 0) {
+    const plan = await prisma.subscription_plans.findFirst({
+      where: { plan_name: planName }
+    });
+    
+    if (!plan) {
       return res.status(404).json({ success: false, error: 'PLAN_NOT_FOUND', message: 'প্ল্যানটি খুঁজে পাওয়া যায়নি।' });
     }
-    const plan = plans[0];
     const durationDays = plan.duration_days || 365;
 
     // ২. ইউজারের বর্তমান সাবস্ক্রিপশন স্ট্যাটাস পড়া
-    const users = await query('SELECT is_paid, active_plan_name, expiry_date FROM users WHERE id = ? LIMIT 1', [userId]);
-    if (users.length === 0) {
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { is_paid: true, active_plan_name: true, expiry_date: true }
+    });
+    
+    if (!user) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
-    const user = users[0];
 
     // ৩. Date Stacking Logic
     let baseDate = new Date(); // ডিফল্ট: আজ থেকে হিসাব শুরু
 
     // কাস্টমার যদি অলরেডি পেইড এবং মেয়াদ বাকি থাকে → আগের expiry_date থেকে স্ট্যাক
-    if (user.is_paid === 1 && user.expiry_date) {
+    if (user.is_paid && user.expiry_date) {
       const existingExpiry = new Date(user.expiry_date);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -49,25 +54,31 @@ async function purchaseSubscription(req, res) {
     }
 
     baseDate.setDate(baseDate.getDate() + durationDays);
-    const year = baseDate.getFullYear();
-    const month = String(baseDate.getMonth() + 1).padStart(2, '0');
-    const day = String(baseDate.getDate()).padStart(2, '0');
-    const newExpiryDate = `${year}-${month}-${day}`; // YYYY-MM-DD in local time
+    const newExpiryDate = new Date(baseDate);
 
     // ৪. ডাটাবেজ আপডেট — is_paid=1, active_plan_name=purchased plan, expiry_date=stacked date
-    await query(
-      "UPDATE users SET is_paid = 1, active_plan_name = ?, expiry_date = ? WHERE id = ?",
-      [plan.plan_name, newExpiryDate, userId]
-    );
+    await prisma.users.update({
+      where: { id: userId },
+      data: {
+        is_paid: 1,
+        active_plan_name: plan.plan_name,
+        expiry_date: newExpiryDate
+      }
+    });
 
-    console.log(`[Subscription] ✅ User ${userId} purchased "${plan.plan_name}". Expiry stacked to: ${newExpiryDate} (+${durationDays} days)`);
+    const year = newExpiryDate.getFullYear();
+    const month = String(newExpiryDate.getMonth() + 1).padStart(2, '0');
+    const day = String(newExpiryDate.getDate()).padStart(2, '0');
+    const formattedExpiry = `${year}-${month}-${day}`;
+
+    console.log(`[Subscription] ✅ User ${userId} purchased "${plan.plan_name}". Expiry stacked to: ${formattedExpiry} (+${durationDays} days)`);
 
     return res.json({
       success: true,
-      message: `${plan.plan_name} প্যাকেজটি সফলভাবে সক্রিয় করা হয়েছে। মেয়াদ: ${newExpiryDate}`,
-      is_paid: true,
+      message: `${plan.plan_name} প্যাকেজটি সফলভাবে সক্রিয় করা হয়েছে। মেয়াদ: ${formattedExpiry}`,
+      is_paid: 1,
       active_plan_name: plan.plan_name,
-      expiry_date: newExpiryDate
+      expiry_date: formattedExpiry
     });
   } catch (error) {
     console.error('[Billing Controller] purchaseSubscription error:', error);
@@ -84,7 +95,10 @@ async function updateFcmToken(req, res) {
     const userId = req.user.userId;
     const { token } = req.body;
 
-    await query('UPDATE users SET fcm_token = ? WHERE id = ?', [token || null, userId]);
+    await prisma.users.update({
+      where: { id: userId },
+      data: { fcm_token: token || null }
+    });
 
     console.log(`[FCM-Token] Registered token for user ${userId}: ${token ? token.substring(0, 15) + '...' : 'CLEARED'}`);
 
@@ -104,7 +118,9 @@ async function updateFcmToken(req, res) {
  */
 async function listPlans(req, res) {
   try {
-    const plans = await query('SELECT * FROM subscription_plans ORDER BY price ASC');
+    const plans = await prisma.subscription_plans.findMany({
+      orderBy: { price: 'asc' }
+    });
     return res.json({
       success: true,
       plans
@@ -127,17 +143,29 @@ async function createPlan(req, res) {
       return res.status(400).json({ success: false, error: 'Missing required plan fields.' });
     }
 
-    const existing = await query('SELECT id FROM subscription_plans WHERE plan_name = ? LIMIT 1', [plan_name]);
-    if (existing.length > 0) {
-      await query(
-        'UPDATE subscription_plans SET price = ?, max_sites = ?, max_devices = ?, duration_days = ? WHERE plan_name = ?',
-        [price, max_sites, max_devices, duration_days || 365, plan_name]
-      );
+    const data = {
+      price,
+      max_sites,
+      max_devices,
+      duration_days: duration_days || 365
+    };
+
+    const existing = await prisma.subscription_plans.findFirst({
+      where: { plan_name }
+    });
+
+    if (existing) {
+      await prisma.subscription_plans.update({
+        where: { plan_name },
+        data
+      });
     } else {
-      await query(
-        'INSERT INTO subscription_plans (plan_name, price, max_sites, max_devices, duration_days) VALUES (?, ?, ?, ?, ?)',
-        [plan_name, price, max_sites, max_devices, duration_days || 365]
-      );
+      await prisma.subscription_plans.create({
+        data: {
+          plan_name,
+          ...data
+        }
+      });
     }
 
     return res.json({ success: true, message: 'প্ল্যান সফলভাবে তৈরি/আপডেট করা হয়েছে।' });
@@ -157,7 +185,9 @@ async function deletePlan(req, res) {
     if (!id) {
       return res.status(400).json({ success: false, error: 'Missing plan ID.' });
     }
-    await query('DELETE FROM subscription_plans WHERE id = ?', [id]);
+    await prisma.subscription_plans.delete({
+      where: { id: parseInt(id) }
+    });
     return res.json({ success: true, message: 'প্ল্যান সফলভাবে ডিলিট করা হয়েছে।' });
   } catch (error) {
     console.error('[Billing Controller] deletePlan error:', error);

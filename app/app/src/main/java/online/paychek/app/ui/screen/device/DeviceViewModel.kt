@@ -47,6 +47,7 @@ data class DeviceUiState(
     val remoteDeviceEditSim1Active: Boolean   = true,
     val remoteDeviceEditSim2Active: Boolean   = true,
     val remoteDeviceEditAppActive: Boolean    = true,
+    val remoteDeviceEditPin: String           = "",
     
     // New Role Toggle States
     val showRolePinDialog: Boolean            = false,
@@ -351,7 +352,8 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 remoteDeviceEditSim1Active = device.simOneActive == 1,
                 remoteDeviceEditSim2Number = device.simTwoNumber ?: "",
                 remoteDeviceEditSim2Active = device.simTwoActive == 1,
-                remoteDeviceEditAppActive = device.isAppActive == 1
+                remoteDeviceEditAppActive = device.isAppActive == 1,
+                remoteDeviceEditPin = device.deviceSpecificPin ?: ""
             )
         }
     }
@@ -384,6 +386,12 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(remoteDeviceEditAppActive = active) }
     }
 
+    fun onRemoteDeviceEditPinChanged(pin: String) {
+        if (pin.length <= 6 && pin.all { it.isDigit() }) {
+            _state.update { it.copy(remoteDeviceEditPin = pin) }
+        }
+    }
+
     fun saveRemoteDeviceSettings() {
         val device = _state.value.activeRemoteDevice ?: return
         val name = _state.value.remoteDeviceEditName.trim()
@@ -392,6 +400,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         val sim2Num = _state.value.remoteDeviceEditSim2Number.trim()
         val sim2Active = if (_state.value.remoteDeviceEditSim2Active) 1 else 0
         val appActive = if (_state.value.remoteDeviceEditAppActive) 1 else 0
+        val pin = _state.value.remoteDeviceEditPin.trim()
 
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true) }
@@ -404,7 +413,8 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 simOneActive = sim1Active,
                 simTwoNumber = sim2Num.ifEmpty { null },
                 simTwoActive = sim2Active,
-                isAppActive = appActive
+                isAppActive = appActive,
+                deviceSpecificPin = pin.ifEmpty { null }
             )
 
             runCatching { api.remoteUpdateDevice("Bearer $token", request) }
@@ -523,6 +533,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
     fun autoDetectSimNumbers() {
         viewModelScope.launch {
+            delay(500L) // Small delay to let OS permission state sync
             val context = getApplication<Application>().applicationContext
             val (sim1Num, sim2Num) = DeviceIdHelper.getSimNumbers(context)
             if (!sim1Num.isNullOrBlank() && _state.value.sim1Number.isBlank()) {

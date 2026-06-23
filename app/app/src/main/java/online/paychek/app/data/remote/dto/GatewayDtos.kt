@@ -29,6 +29,9 @@ data class GatewayMethod(
     @SerializedName("sender_id")
     val senderId: String?,
 
+    @SerializedName("sender_number")
+    val senderNumber: String?,
+
     @SerializedName("matching_keyword")
     val matchingKeyword: String?,
 
@@ -129,7 +132,9 @@ data class ChildDeviceDto(
     @SerializedName("sim_one_active") val simOneActive: Int,
     @SerializedName("sim_two_number") val simTwoNumber: String?,
     @SerializedName("sim_two_active") val simTwoActive: Int,
-    @SerializedName("is_app_active") val isAppActive: Int
+    @SerializedName("is_app_active") val isAppActive: Int,
+    @SerializedName("is_owner") val isOwner: Int? = null,
+    @SerializedName("device_specific_pin") val deviceSpecificPin: String? = null
 )
 
 data class ChildDeviceListResponse(
@@ -149,7 +154,9 @@ data class RemoteUpdateDeviceRequest(
     @SerializedName("sim_one_active") val simOneActive: Int,
     @SerializedName("sim_two_number") val simTwoNumber: String?,
     @SerializedName("sim_two_active") val simTwoActive: Int,
-    @SerializedName("is_app_active") val isAppActive: Int
+    @SerializedName("is_app_active") val isAppActive: Int,
+    @SerializedName("is_owner") val isOwner: Int? = null,
+    @SerializedName("device_specific_pin") val deviceSpecificPin: String? = null
 )
 
 data class ApproveDeviceRequest(

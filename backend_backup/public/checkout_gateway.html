@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paychek Checkout — পেমেন্ট গেটওয়ে</title>
+    <!-- Premium Typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Hind+Siliguri:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --royal-indigo: #1A237E;
+            --bkash-pink: #E2136E;
+            --nagad-orange: #EF4123;
+            --rocket-purple: #8C3494;
+            --upay-teal: #00B99B;
+            --glass-bg: rgba(255, 255, 255, 0.85);
+            --glass-border: rgba(255, 255, 255, 0.5);
+            --card-shadow: 0 12px 40px rgba(31, 38, 135, 0.08);
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Hind Siliguri', 'Outfit', sans-serif;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            min-height: 100vh;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .checkout-container {
+            width: 100%;
+            max-width: 500px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            box-shadow: var(--card-shadow);
+            padding: 28px;
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .gateway-header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .gateway-header h1 {
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--royal-indigo);
+            margin-bottom: 6px;
+        }
+
+        .gateway-header p {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .order-card {
+            background: rgba(26, 35, 126, 0.04);
+            border-radius: 16px;
+            padding: 16px;
+            text-align: center;
+            margin-bottom: 24px;
+            border: 1px dashed rgba(26, 35, 126, 0.12);
+        }
+
+        .order-card span {
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .order-card .amount {
+            font-size: 32px;
+            font-weight: 800;
+            color: var(--royal-indigo);
+            margin-top: 4px;
+        }
+
+        .verify-card {
+            background: white;
+            border-radius: 18px;
+            padding: 20px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.02);
+            border: 1px solid rgba(0, 0, 0, 0.03);
+            margin-bottom: 24px;
+        }
+
+        .input-group {
+            margin-bottom: 16px;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .input-group input {
+            width: 100%;
+            height: 48px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 0 16px;
+            font-size: 16px;
+            font-weight: 600;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        .input-group input:focus {
+            border-color: var(--royal-indigo);
+            box-shadow: 0 0 0 4px rgba(26, 35, 126, 0.1);
+        }
+
+        .btn-verify {
+            width: 100%;
+            height: 48px;
+            background: var(--royal-indigo);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            box-shadow: 0 4px 12px rgba(26, 35, 126, 0.15);
+        }
+
+        .btn-verify:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(26, 35, 126, 0.25);
+        }
+
+        .btn-verify:active {
+            transform: translateY(0);
+        }
+
+        .btn-verify:disabled {
+            background: #cbd5e1;
+            box-shadow: none;
+            cursor: not-allowed;
+            color: #94a3b8;
+        }
+
+        .status-box {
+            display: none;
+            padding: 14px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 14px;
+            text-align: center;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .status-box.success {
+            display: block;
+            background: #f0fdf4;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+
+        .status-box.error {
+            display: block;
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        .status-box.loading {
+            display: block;
+            background: #f8fafc;
+            color: #334155;
+            border: 1px solid #e2e8f0;
+        }
+
+        .instructions-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .instructions-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .operator-card {
+            border-radius: 16px;
+            padding: 16px;
+            background: white;
+            border: 1px solid rgba(0, 0, 0, 0.03);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.01);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            transition: all 0.3s;
+        }
+
+        .operator-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.03);
+        }
+
+        .operator-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .operator-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .operator-badge {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .operator-name {
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .operator-slot-label {
+            font-size: 11px;
+            background: #f1f5f9;
+            color: #64748b;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-weight: 600;
+        }
+
+        .operator-details {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .number-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #f8fafc;
+            padding: 8px 12px;
+            border-radius: 10px;
+            margin-top: 6px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .phone-highlight {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .btn-copy {
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            color: #475569;
+            font-size: 12px;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .btn-copy:hover {
+            background: var(--royal-indigo);
+            color: white;
+            border-color: var(--royal-indigo);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="checkout-container">
+        <!-- Header -->
+        <div class="gateway-header">
+            <h1 id="merchant-name">লোড হচ্ছে...</h1>
+            <p>নিরাপদ মার্চেন্ট পেমেন্ট গেটওয়ে</p>
+        </div>
+
+        <!-- Amount Display -->
+        <div class="order-card">
+            <span>পরিশোধযোগ্য মোট পরিমাণ</span>
+            <div class="amount">৳ <span id="payment-amount">0.00</span></div>
+        </div>
+
+        <!-- Input Verification Panel -->
+        <div class="verify-card">
+            <div class="input-group">
+                <label for="trx-input">পেমেন্ট করার পর ফিরতি এসএমএস-এর TrxID দিন</label>
+                <input type="text" id="trx-input" placeholder="যেমন: 8A47K89J2B" autocomplete="off">
+            </div>
+            
+            <button class="btn-verify" id="verify-btn" onclick="triggerVerification()">
+                পেমেন্ট যাচাই করুন
+            </button>
+
+            <!-- Loading/Success/Error Panel -->
+            <div id="status-panel" class="status-box"></div>
+        </div>
+
+        <!-- Dynamic Payment Instructions -->
+        <div class="instructions-title">নিচের বিবরণ অনুযায়ী পেমেন্ট সম্পন্ন করুন</div>
+        <div class="instructions-list" id="instructions-container">
+            <div style="text-align: center; color: var(--text-secondary); font-size: 13px; padding: 20px;">
+                পেমেন্ট গেটওয়ে সোর্সগুলো লোড হচ্ছে...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Parse URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const apiKey = urlParams.get('apiKey');
+        const amount = urlParams.get('amount') || '0.00';
+
+        document.getElementById('payment-amount').textContent = parseFloat(amount).toFixed(2);
+
+        // Fetch layouts and active gateway details
+        async function fetchLayout() {
+            if (!apiKey) {
+                showStatus('ত্রুটি: ভুল এপিআই কী (API Key)!', 'error');
+                document.getElementById('merchant-name').textContent = 'ত্রুটি';
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/checkout/${apiKey}`);
+                if (!response.ok) {
+                    throw new Error('মার্চেন্ট ডাটা লোড করতে ব্যর্থ।');
+                }
+
+                const data = await response.json();
+                
+                // Set site/merchant name
+                document.getElementById('merchant-name').textContent = data.siteName || 'পেমেন্ট গেটওয়ে';
+
+                // Render dynamic gateways
+                renderGatewayBlocks(data.activeGateways);
+
+            } catch (err) {
+                console.error(err);
+                showStatus('মার্চেন্ট গেটওয়ে লোড করতে ব্যর্থ হয়েছে।', 'error');
+                document.getElementById('instructions-container').innerHTML = 
+                    `<div style="text-align:center;color:#991b1b;font-size:13px;padding:20px;">কোনো পেমেন্ট গেটওয়ে অ্যাক্টিভ নেই অথবা সিকিউরিটি লক কার্যকর হয়েছে।</div>`;
+            }
+        }
+
+        function renderGatewayBlocks(gateways) {
+            const container = document.getElementById('instructions-container');
+            container.innerHTML = '';
+
+            if (!gateways || gateways.length === 0) {
+                container.innerHTML = `<div style="text-align:center;color:var(--text-secondary);font-size:13px;padding:20px;">কোনো পেমেন্ট মেথড সক্রিয় নেই।</div>`;
+                return;
+            }
+
+            gateways.forEach(gw => {
+                const card = document.createElement('div');
+                card.className = 'operator-card';
+
+                // Set operator color themes
+                let colorTheme = '#64748b';
+                const tag = gw.provider.toLowerCase();
+                if (tag === 'bkash') colorTheme = 'var(--bkash-pink)';
+                else if (tag === 'nagad') colorTheme = 'var(--nagad-orange)';
+                else if (tag === 'rocket') colorTheme = 'var(--rocket-purple)';
+                else if (tag === 'upay') colorTheme = 'var(--upay-teal)';
+
+                card.innerHTML = `
+                    <div class="operator-header">
+                        <div class="operator-brand">
+                            <span class="operator-badge" style="background:${colorTheme}"></span>
+                            <span class="operator-name" style="color:${colorTheme}">${gw.displayName}</span>
+                        </div>
+                        <span class="operator-slot-label">Slot ${gw.simSlot}</span>
+                    </div>
+                    <div class="operator-details">
+                        ${gw.instruction}
+                    </div>
+                    <div class="number-row">
+                        <span class="phone-highlight" id="num-${gw.id}">${gw.number}</span>
+                        <button class="btn-copy" onclick="copyToClipboard('${gw.number}', this)">নম্বর কপি করুন</button>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // Copy functionality
+        function copyToClipboard(text, buttonEl) {
+            navigator.clipboard.writeText(text).then(() => {
+                const prevText = buttonEl.textContent;
+                buttonEl.textContent = 'কপি হয়েছে! ✅';
+                buttonEl.style.background = '#22c55e';
+                buttonEl.style.color = 'white';
+                buttonEl.style.borderColor = '#22c55e';
+                setTimeout(() => {
+                    buttonEl.textContent = prevText;
+                    buttonEl.style.background = '';
+                    buttonEl.style.color = '';
+                    buttonEl.style.borderColor = '';
+                }, 1500);
+            }).catch(err => {
+                console.error('Copy failed:', err);
+            });
+        }
+
+        // Verify transaction
+        async function triggerVerification() {
+            const trxInput = document.getElementById('trx-input').value.trim();
+            const verifyBtn = document.getElementById('verify-btn');
+
+            if (!trxInput) {
+                showStatus('অনুগ্রহ করে ট্রানজেকশন আইডি (TrxID) লিখুন।', 'error');
+                return;
+            }
+
+            if (!apiKey) {
+                showStatus('মার্চেন্ট কী অনুপস্থিত!', 'error');
+                return;
+            }
+
+            verifyBtn.disabled = true;
+            showStatus('পেমেন্ট যাচাই করা হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন...', 'loading');
+
+            try {
+                const response = await fetch('/api/checkout/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        apiKey: apiKey,
+                        trxId: trxInput,
+                        amount: parseFloat(amount)
+                    })
+                });
+
+                const res = await response.json();
+                
+                if (res.success) {
+                    showStatus(res.message, 'success');
+                    if (res.redirectUrl) {
+                        setTimeout(() => {
+                            window.location.href = res.redirectUrl;
+                        }, 2500);
+                    }
+                } else {
+                    showStatus(res.message || 'ভেরিফিকেশন ব্যর্থ হয়েছে। সঠিক ট্রানজেকশন আইডি দিন।', 'error');
+                    verifyBtn.disabled = false;
+                }
+
+            } catch (err) {
+                console.error(err);
+                showStatus('সার্ভার সংযোগে ত্রুটি ঘটেছে। পুনরায় চেষ্টা করুন।', 'error');
+                verifyBtn.disabled = false;
+            }
+        }
+
+        function showStatus(text, type) {
+            const panel = document.getElementById('status-panel');
+            panel.className = `status-box ${type}`;
+            panel.textContent = text;
+        }
+
+        window.onload = fetchLayout;
+    </script>
+</body>
+</html>

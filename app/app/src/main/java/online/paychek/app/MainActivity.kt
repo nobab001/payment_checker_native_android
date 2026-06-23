@@ -114,7 +114,13 @@ class MainActivity : FragmentActivity() {
         super.onStart()
         val hasToken = SecurePreferences.decrypt(this, AppConfig.KEY_AUTH_TOKEN).isNotEmpty()
         val isProfileComplete = SecurePreferences.decrypt(this, "pcu_profile_complete") != "false"
-        if (hasToken && isProfileComplete && wasStopped && !wasRequesting) {
+        
+        val sharedPrefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+        val lastBackgroundTime = sharedPrefs.getLong("last_background_time", 0)
+        val currentTime = System.currentTimeMillis()
+        val timePassedMs = currentTime - lastBackgroundTime
+        
+        if (hasToken && isProfileComplete && wasStopped && !wasRequesting && timePassedMs > 300000) {
             isAppLocked = true
         }
         wasStopped = false
@@ -128,6 +134,8 @@ class MainActivity : FragmentActivity() {
     override fun onStop() {
         super.onStop()
         wasStopped = true
+        val sharedPrefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+        sharedPrefs.edit().putLong("last_background_time", System.currentTimeMillis()).apply()
     }
 
     override fun onDestroy() {

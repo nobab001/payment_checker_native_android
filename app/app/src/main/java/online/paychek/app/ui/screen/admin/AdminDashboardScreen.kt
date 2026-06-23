@@ -460,7 +460,7 @@ private fun GatewaysAndTemplatesTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("SMS Templates (Official)", fontWeight = FontWeight.Bold, color = AccentTitle, fontSize = 16.sp)
-                    IconButton(onClick = { onEditTemplate(SmsTemplateDto(null, "", "", "", "", 1, 1)) }) {
+                    IconButton(onClick = { onEditTemplate(SmsTemplateDto(null, "", "", "", "", "", 1, 1)) }) {
                         Icon(Icons.Default.AddCircle, "Add Template", tint = RoyalIndigo)
                     }
                 }
@@ -479,7 +479,7 @@ private fun GatewaysAndTemplatesTab(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(temp.templateName, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text("Sender: ${temp.senderId} | Active: ${if (temp.isActive == 1) "Yes" else "No"}", fontSize = 12.sp, color = TextSecondary)
+                                Text("Sender ID: ${temp.senderId} | Number: ${temp.senderNumber ?: "—"} | Active: ${if (temp.isActive == 1) "Yes" else "No"}", fontSize = 12.sp, color = TextSecondary)
                             }
                             IconButton(onClick = { temp.id?.let { onDeleteTemplate(it) } }) {
                                 Icon(Icons.Default.Delete, "Delete", tint = StatusRed)
@@ -751,6 +751,7 @@ private fun SmsTemplateEditDialog(
 ) {
     var name by remember { mutableStateOf(template.templateName) }
     var sender by remember { mutableStateOf(template.senderId) }
+    var senderNumber by remember { mutableStateOf(template.senderNumber ?: "") }
     var keywordsList by remember {
         mutableStateOf(
             template.matchingKeyword.split(",")
@@ -797,6 +798,20 @@ private fun SmsTemplateEditDialog(
                     value = sender,
                     onValueChange = { sender = it },
                     label = { Text("Sender ID") },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = CardBackground,
+                        unfocusedContainerColor = CardBackground
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = senderNumber,
+                    onValueChange = { senderNumber = it },
+                    label = { Text("Sender Number") },
+                    placeholder = { Text("e.g. bKash, NAGAD, 16216, 01XXXXXXXXX") },
+                    supportingText = { Text("এসএমএস ফিল্টারের ৩য় ধাপ — সেন্ডার নম্বর ম্যাচিং", fontSize = 11.sp) },
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = CardBackground,
@@ -908,6 +923,7 @@ private fun SmsTemplateEditDialog(
                                 template.copy(
                                     templateName = name,
                                     senderId = sender,
+                                    senderNumber = senderNumber.ifBlank { null },
                                     matchingKeyword = finalKeywords,
                                     regexPattern = "",
                                     isActive = isActive

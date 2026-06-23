@@ -46,7 +46,8 @@ data class VerifyOtpResponse(
     @SerializedName("token") val token: String = "",
     @SerializedName("user") val user: UserDto = UserDto(),
     @SerializedName("requiresSecurityPin") val requiresSecurityPin: Boolean = false,
-    @SerializedName("device") val device: DeviceDto = DeviceDto()
+    @SerializedName("device") val device: DeviceDto = DeviceDto(),
+    @SerializedName("secretKey") val secretKey: String? = null
 )
 
 data class CompleteProfileRequest(
@@ -63,7 +64,8 @@ data class CompleteProfileRequest(
 
 data class CompleteProfileResponse(
     @SerializedName("success") val success: Boolean = false,
-    @SerializedName("user") val user: UserDto = UserDto()
+    @SerializedName("user") val user: UserDto = UserDto(),
+    @SerializedName("secretKey") val secretKey: String? = null
 )
 
 data class DeviceCheckRequest(
@@ -114,7 +116,9 @@ data class DeviceDto(
     @SerializedName(value = "deviceRole", alternate = ["device_role"]) val deviceRole: String = "pending",
     @SerializedName(value = "isTrialLocked", alternate = ["is_trial_locked"]) val isTrialLocked: Boolean = false,
     @SerializedName(value = "trialExpiresAt", alternate = ["trial_expires_at"]) val trialExpiresAt: String? = null,
-    @SerializedName(value = "lockReason", alternate = ["lock_reason"]) val lockReason: String? = null
+    @SerializedName(value = "lockReason", alternate = ["lock_reason"]) val lockReason: String? = null,
+    @SerializedName(value = "isOwnerDevice", alternate = ["is_owner_device"]) val isOwnerDevice: Boolean = false,
+    @SerializedName(value = "deviceSpecificPin", alternate = ["device_specific_pin"]) val deviceSpecificPin: String? = null
 )
 
 data class VerifyPinRequest(

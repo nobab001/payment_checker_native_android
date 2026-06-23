@@ -46,16 +46,30 @@ fun SecurityGateScreen(
     val context = LocalContext.current
     val activity = remember(context) { context.findFragmentActivity() }
 
-    // Start Biometric Authentication automatically if enrolled
-    LaunchedEffect(activity) {
-        if (activity != null && isBiometricEnrolled(activity)) {
-            showBiometricPrompt(
-                activity = activity,
-                onSuccess = onUnlockSuccess,
-                onError = { err ->
-                    // Set biometric failure or canceled error message
+    val isOwnerStr = online.paychek.app.utils.SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_IS_OWNER_DEVICE)
+    val isOwnerDevice = isOwnerStr != "false"
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, activity) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                if (isOwnerDevice && activity != null && isBiometricEnrolled(activity)) {
+                    showBiometricPrompt(
+                        activity = activity,
+                        onSuccess = onUnlockSuccess,
+                        onError = { err ->
+                            // Optional: set error message
+                        }
+                    )
                 }
-            )
+            } else if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) {
+                viewModel.clearPin()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.clearPin()
         }
     }
 
@@ -74,15 +88,7 @@ fun SecurityGateScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF0F172A), // Slate 900
-                        Color(0xFF1E1B4B), // Indigo 950
-                        Color(0xFF0F172A)
-                    )
-                )
-            ),
+            .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -103,14 +109,14 @@ fun SecurityGateScreen(
                 Box(
                     modifier = Modifier
                         .size(72.dp)
-                        .background(Color(0xFF1E293B), shape = CircleShape)
-                        .border(1.5.dp, Color(0xFF38BDF8), shape = CircleShape),
+                        .background(MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape)
+                        .border(1.5.dp, MaterialTheme.colorScheme.primary, shape = CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Lock,
                         contentDescription = "Lock",
-                        tint = Color(0xFF38BDF8),
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(32.dp)
                     )
                 }
@@ -119,14 +125,14 @@ fun SecurityGateScreen(
                     text = "নিরাপত্তা লক",
                     fontSize = 26.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onBackground,
                     letterSpacing = 0.5.sp
                 )
 
                 Text(
                     text = "আপনার নিরাপত্তা পিন দিয়ে অ্যাপটি আনলক করুন",
                     fontSize = 14.sp,
-                    color = Color(0xFF94A3B8),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
                 )
             }
@@ -151,16 +157,16 @@ fun SecurityGateScreen(
                         val hasError    = uiState.errorMessage != null
 
                         val borderColor = when {
-                            hasError  -> Color(0xFFEF4444)
-                            isCursor  -> Color(0xFF38BDF8)
-                            isFilled  -> Color(0xFF38BDF8).copy(alpha = 0.5f)
-                            else      -> Color(0xFF334155)
+                            hasError  -> MaterialTheme.colorScheme.error
+                            isCursor  -> MaterialTheme.colorScheme.primary
+                            isFilled  -> MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                            else      -> MaterialTheme.colorScheme.outline
                         }
                         val bgColor = when {
-                            hasError  -> Color(0xFF1E0A0A)
-                            isCursor  -> Color(0xFF0F2233)
-                            isFilled  -> Color(0xFF1E2A3A)
-                            else      -> Color(0xFF1E293B)
+                            hasError  -> MaterialTheme.colorScheme.errorContainer
+                            isCursor  -> MaterialTheme.colorScheme.surfaceVariant
+                            isFilled  -> MaterialTheme.colorScheme.primaryContainer
+                            else      -> MaterialTheme.colorScheme.surface
                         }
 
                         val animatedBorder by animateDpAsState(
@@ -190,7 +196,7 @@ fun SecurityGateScreen(
                                     text       = cellChar!!.toString(),
                                     fontSize   = 20.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color      = if (hasError) Color(0xFFEF4444) else Color.White
+                                    color      = if (hasError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                             } else if (isCursor) {
                                 // cursor blink — ফাঁকা ঘরে underline দেখাও
@@ -198,7 +204,7 @@ fun SecurityGateScreen(
                                     modifier = Modifier
                                         .width(16.dp)
                                         .height(2.dp)
-                                        .background(Color(0xFF38BDF8))
+                                        .background(MaterialTheme.colorScheme.primary)
                                         .align(Alignment.BottomCenter)
                                 )
                             }
@@ -214,14 +220,14 @@ fun SecurityGateScreen(
                         Text(
                             text = uiState.errorMessage ?: "",
                             fontSize = 13.sp,
-                            color = Color(0xFFF87171),
+                            color = MaterialTheme.colorScheme.error,
                             textAlign = TextAlign.Center,
                             fontWeight = FontWeight.Medium
                         )
                     }
                     androidx.compose.animation.AnimatedVisibility(visible = uiState.isLoading) {
                         CircularProgressIndicator(
-                            color = Color(0xFF38BDF8),
+                            color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp),
                             strokeWidth = 2.dp
                         )
@@ -256,22 +262,22 @@ fun SecurityGateScreen(
                             ) {
                                 when (item) {
                                     "biometric" -> {
-                                        if (uiState.isFull) {
+                                        if (uiState.canVerify) {
                                             IconButton(
                                                 onClick = { viewModel.verifyPin(context, onUnlockSuccess) },
                                                 modifier = Modifier
                                                     .size(64.dp)
-                                                    .background(Color(0xFF10B981), shape = CircleShape)
-                                                    .border(1.dp, Color(0xFF059669), shape = CircleShape)
+                                                    .background(MaterialTheme.colorScheme.primary, shape = CircleShape)
+                                                    .border(1.dp, MaterialTheme.colorScheme.primaryContainer, shape = CircleShape)
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.Check,
                                                     contentDescription = "Confirm",
-                                                    tint = Color.White,
+                                                    tint = MaterialTheme.colorScheme.onPrimary,
                                                     modifier = Modifier.size(28.dp)
                                                 )
                                             }
-                                        } else if (activity != null && isBiometricEnrolled(activity)) {
+                                        } else if (isOwnerDevice && activity != null && isBiometricEnrolled(activity)) {
                                             IconButton(
                                                 onClick = {
                                                     showBiometricPrompt(
@@ -282,13 +288,13 @@ fun SecurityGateScreen(
                                                 },
                                                 modifier = Modifier
                                                     .size(64.dp)
-                                                    .background(Color(0xFF1E293B), shape = CircleShape)
-                                                    .border(1.dp, Color(0xFF334155), shape = CircleShape)
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape)
+                                                    .border(1.dp, MaterialTheme.colorScheme.outline, shape = CircleShape)
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.Fingerprint,
                                                     contentDescription = "Biometric Unlock",
-                                                    tint = Color(0xFF38BDF8),
+                                                    tint = MaterialTheme.colorScheme.primary,
                                                     modifier = Modifier.size(32.dp)
                                                 )
                                             }
@@ -299,13 +305,13 @@ fun SecurityGateScreen(
                                             onClick = { viewModel.deleteDigit() },
                                             modifier = Modifier
                                                 .size(64.dp)
-                                                .background(Color(0xFF1E293B), shape = CircleShape)
-                                                .border(1.dp, Color(0xFF334155), shape = CircleShape)
+                                                .background(MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape)
+                                                .border(1.dp, MaterialTheme.colorScheme.outline, shape = CircleShape)
                                         ) {
                                             Icon(
                                                 imageVector = Icons.AutoMirrored.Filled.Backspace,
                                                 contentDescription = "Delete Digit",
-                                                tint = Color.White,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 modifier = Modifier.size(24.dp)
                                             )
                                         }
@@ -316,8 +322,8 @@ fun SecurityGateScreen(
                                             modifier = Modifier
                                                 .size(64.dp)
                                                 .clip(CircleShape)
-                                                .background(Color(0xFF1E293B))
-                                                .border(1.dp, Color(0xFF334155), shape = CircleShape)
+                                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                .border(1.dp, MaterialTheme.colorScheme.outline, shape = CircleShape)
                                                 .clickable(
                                                     interactionSource = interactionSource,
                                                     indication = ripple(bounded = true, radius = 32.dp),
@@ -331,7 +337,7 @@ fun SecurityGateScreen(
                                                 text = item,
                                                 fontSize = 24.sp,
                                                 fontWeight = FontWeight.SemiBold,
-                                                color = Color.White
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
                                     }

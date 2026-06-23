@@ -1,4 +1,4 @@
-const { query } = require('../db/connection');
+const prisma = require('../db/prisma');
 
 /**
  * Middleware: checkBillingStatus
@@ -14,17 +14,20 @@ async function checkBillingStatus(req, res, next) {
       return next();
     }
 
-    const users = await query('SELECT is_paid, active_plan_name, role FROM users WHERE id = ? LIMIT 1', [userId]);
-    if (users.length === 0) {
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { is_paid: true, active_plan_name: true, role: true }
+    });
+
+    if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const user = users[0];
     if (user.role === 'admin') {
       return next();
     }
 
-    if (user.is_paid === 0 || user.active_plan_name === 'FREE_LEVEL') {
+    if (!user.is_paid || user.active_plan_name === 'FREE_LEVEL') {
       return res.status(402).json({
         success: false,
         error: 'ACCOUNT_SUSPENDED',

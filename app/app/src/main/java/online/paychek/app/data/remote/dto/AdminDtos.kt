@@ -21,6 +21,7 @@ data class SmsTemplateDto(
     @SerializedName("id") val id: Int?,
     @SerializedName("template_name") val templateName: String,
     @SerializedName("sender_id") val senderId: String,
+    @SerializedName("sender_number") val senderNumber: String?,
     @SerializedName("matching_keyword") val matchingKeyword: String,
     @SerializedName("regex_pattern") val regexPattern: String,
     @SerializedName("is_official") val isOfficial: Int?,

@@ -1,6 +1,6 @@
 'use strict';
 
-const { query } = require('../db/connection');
+const prisma = require('../db/prisma');
 
 // Max credentials per user per type (phones & emails separately)
 const MAX_PER_TYPE = 5;
@@ -14,15 +14,19 @@ async function listCredentials(req, res) {
     const userId = req.user.userId;
 
     // Primary phone/email from users table
-    const userRows = await query('SELECT phone, email FROM users WHERE id = ? LIMIT 1', [userId]);
-    const primaryPhone = userRows[0]?.phone || null;
-    const primaryEmail = userRows[0]?.email || null;
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { phone: true, email: true }
+    });
+    
+    const primaryPhone = user?.phone || null;
+    const primaryEmail = user?.email || null;
 
     // Additional from user_credentials table
-    const creds = await query(
-      "SELECT id, type, value, verified_at FROM user_credentials WHERE user_id = ? ORDER BY id ASC",
-      [userId]
-    );
+    const creds = await prisma.user_credentials.findMany({
+      where: { user_id: userId },
+      orderBy: { id: 'asc' }
+    });
 
     const mappedCreds = creds.map(c => ({
       id: c.id,
@@ -63,11 +67,9 @@ async function sendCredentialOtp(req, res) {
     const resolvedType = req.body.type || (isEmail ? 'email' : 'phone');
 
     // Count existing credentials of this resolvedType
-    const countRows = await query(
-      "SELECT COUNT(*) as cnt FROM user_credentials WHERE user_id = ? AND type = ?",
-      [userId, resolvedType]
-    );
-    const total = countRows[0].cnt;
+    const total = await prisma.user_credentials.count({
+      where: { user_id: userId, type: resolvedType }
+    });
 
     if (total >= MAX_PER_TYPE) {
       return res.status(400).json({
@@ -78,17 +80,17 @@ async function sendCredentialOtp(req, res) {
     }
 
     // Global uniqueness check — contact must not exist anywhere
-    const existsInUsers = await query(
-      isEmail
-        ? 'SELECT id FROM users WHERE email = ? LIMIT 1'
-        : 'SELECT id FROM users WHERE phone = ? LIMIT 1',
-      [cleanContact]
-    );
-    const existsInCreds = await query(
-      'SELECT id FROM user_credentials WHERE value = ? LIMIT 1',
-      [cleanContact]
-    );
-    if (existsInUsers.length > 0 || existsInCreds.length > 0) {
+    const existsInUsers = await prisma.users.findFirst({
+      where: isEmail ? { email: cleanContact } : { phone: cleanContact },
+      select: { id: true }
+    });
+    
+    const existsInCreds = await prisma.user_credentials.findFirst({
+      where: { value: cleanContact },
+      select: { id: true }
+    });
+
+    if (existsInUsers || existsInCreds) {
       return res.status(400).json({
         success: false,
         action: 'ALREADY_EXISTS',
@@ -99,10 +101,14 @@ async function sendCredentialOtp(req, res) {
     // Generate OTP and store
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-    await query(
-      'INSERT INTO otps (contact, code, expires_at) VALUES (?, ?, ?)',
-      [cleanContact, otpCode, expiresAt]
-    );
+    
+    await prisma.otps.create({
+      data: {
+        contact: cleanContact,
+        code: otpCode,
+        expires_at: expiresAt
+      }
+    });
 
     // Dispatch OTP (reuse existing dispatcher from authController)
     const { sendOtpDispatch } = require('./authController');
@@ -140,25 +146,68 @@ async function verifyCredential(req, res) {
     const cleanCode = code.trim();
 
     // Validate OTP
-    const otps = await query(
-      'SELECT id FROM otps WHERE contact = ? AND code = ? AND expires_at > NOW() AND used_at IS NULL LIMIT 1',
-      [cleanContact, cleanCode]
-    );
-    if (otps.length === 0) {
+    const otpRec = await prisma.otps.findFirst({
+      where: {
+        contact: cleanContact,
+        code: cleanCode,
+        expires_at: { gt: new Date() },
+        used_at: null
+      },
+      select: { id: true }
+    });
+
+    if (!otpRec) {
       return res.status(400).json({ error: 'ভুল OTP কোড অথবা মেয়াদ শেষ হয়ে গেছে।' });
     }
 
     // Mark OTP as used
-    await query('UPDATE otps SET used_at = NOW() WHERE id = ?', [otps[0].id]);
+    await prisma.otps.update({
+      where: { id: otpRec.id },
+      data: { used_at: new Date() }
+    });
 
-    // Mark credential as verified
-    const result = await query(
-      "UPDATE user_credentials SET verified_at = NOW() WHERE user_id = ? AND value = ? AND verified_at IS NULL",
-      [userId, cleanContact]
-    );
+    const type = cleanContact.includes('@') ? 'email' : 'phone';
+    
+    // Check if the user's primary email/phone is null
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { phone: true, email: true }
+    });
 
-    if (result.affectedRows === 0) {
-      return res.status(400).json({ error: 'Credential খুঁজে পাওয়া যায়নি অথবা আগে থেকেই verified।' });
+    if (user) {
+      if (type === 'email' && !user.email) {
+        await prisma.users.update({
+          where: { id: userId },
+          data: { email: cleanContact }
+        });
+      } else if (type === 'phone' && !user.phone) {
+        await prisma.users.update({
+          where: { id: userId },
+          data: { phone: cleanContact }
+        });
+      }
+    }
+
+    // Always insert/update in user_credentials table so it appears in the list
+    const exists = await prisma.user_credentials.findFirst({
+      where: { user_id: userId, value: cleanContact },
+      select: { id: true }
+    });
+
+    if (exists) {
+      await prisma.user_credentials.update({
+        where: { id: exists.id },
+        data: { verified_at: new Date() }
+      });
+    } else {
+      await prisma.user_credentials.create({
+        data: {
+          user_id: userId,
+          type,
+          value: cleanContact,
+          verified_at: new Date()
+        }
+      });
     }
 
     return res.json({ success: true, message: 'Credential সফলভাবে যাচাই ও যোগ করা হয়েছে।' });
@@ -186,12 +235,16 @@ async function removeCredential(req, res) {
       return res.status(400).json({ error: 'নিরাপত্তা PIN প্রদান করা আবশ্যক।' });
     }
 
-    const users = await query('SELECT pin, phone, email FROM users WHERE id = ? LIMIT 1', [userId]);
-    if (users.length === 0) {
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { pin: true, phone: true, email: true }
+    });
+
+    if (!user) {
       return res.status(404).json({ error: 'ইউজার খুঁজে পাওয়া যায়নি।' });
     }
 
-    const currentHash = users[0].pin;
+    const currentHash = user.pin;
     if (!currentHash) {
       return res.status(400).json({ error: 'ইউজারের কোনো PIN সেট করা নেই।' });
     }
@@ -203,18 +256,19 @@ async function removeCredential(req, res) {
     }
 
     // Check if user is attempting to delete primary phone or email
-    const targetCred = await query(
-      'SELECT type, value FROM user_credentials WHERE id = ? AND user_id = ? LIMIT 1',
-      [credId, userId]
-    );
-    if (targetCred.length === 0) {
+    const targetCred = await prisma.user_credentials.findFirst({
+      where: { id: credId, user_id: userId },
+      select: { type: true, value: true }
+    });
+
+    if (!targetCred) {
       return res.status(404).json({ error: 'Credential খুঁজে পাওয়া যায়নি।' });
     }
 
-    const primaryPhone = users[0].phone;
-    const primaryEmail = users[0].email;
-    const credType = targetCred[0].type;
-    const credValue = targetCred[0].value;
+    const primaryPhone = user.phone;
+    const primaryEmail = user.email;
+    const credType = targetCred.type;
+    const credValue = targetCred.value;
 
     const isPrimaryPhone = credType === 'phone' && primaryPhone &&
       credValue.replace(/[^0-9]/g, '').slice(-10) === primaryPhone.replace(/[^0-9]/g, '').slice(-10);
@@ -226,12 +280,11 @@ async function removeCredential(req, res) {
       return res.status(400).json({ error: 'প্রধান/মেইন ক্রেডেনশিয়াল মুছে ফেলা সম্ভব নয়।' });
     }
 
-    const result = await query(
-      'DELETE FROM user_credentials WHERE id = ? AND user_id = ?',
-      [credId, userId]
-    );
+    const result = await prisma.user_credentials.deleteMany({
+      where: { id: credId, user_id: userId }
+    });
 
-    if (result.affectedRows === 0) {
+    if (result.count === 0) {
       return res.status(404).json({ error: 'Credential খুঁজে পাওয়া যায়নি।' });
     }
 
