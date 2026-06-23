@@ -58,6 +58,7 @@ model gateway_layouts {
 model gateway_methods {
   id           Int      @id @default(autoincrement())
   user_id      String   @db.VarChar(255)
+  device_id    String   @default("") @db.VarChar(255)
   sim_slot     Int      @default(1)
   provider     String   @db.VarChar(50)
   number       String   @db.VarChar(20)
@@ -70,6 +71,7 @@ model gateway_methods {
 
   @@index([template_id], map: "idx_template")
   @@index([user_id], map: "idx_user")
+  @@index([user_id, device_id], map: "idx_user_device")
 }
 
 model global_config {

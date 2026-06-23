@@ -35,11 +35,13 @@ async function getCheckoutLayout(req, res) {
 
     // Retrieve active gateways linked to sms_templates and checkout_view_templates (Security Lock)
     const activeGatewaysRows = await prisma.$queryRaw`
-      SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name,
-              cvt.single_number_instruction, cvt.multiple_number_instruction
+      SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.device_id,
+              cvt.single_number_instruction, cvt.multiple_number_instruction,
+              rd.device_name
          FROM gateway_methods gm
          JOIN sms_templates t ON gm.template_id = t.id
          JOIN checkout_view_templates cvt ON cvt.sms_template_id = t.id
+    LEFT JOIN registered_devices rd ON gm.device_id = rd.device_id AND rd.user_id = gm.user_id
         WHERE gm.user_id = ${layout.user_id} AND gm.is_enabled = 1 AND gm.number IS NOT NULL AND gm.number != ''
      ORDER BY gm.priority ASC, gm.sim_slot ASC
     `;
@@ -60,6 +62,8 @@ async function getCheckoutLayout(req, res) {
         simSlot: g.sim_slot,
         provider: g.provider,
         number: g.number,
+        deviceId: g.device_id,
+        deviceName: g.device_name || 'Main Phone',
         displayName: g.display_name || g.provider,
         instruction: instruction
       };

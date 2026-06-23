@@ -1,6 +1,14 @@
 const prisma = require('../db/prisma');
 
-async function fetchGatewayMethodsForUser(userId) {
+async function fetchGatewayMethodsForUser(userId, deviceId) {
+  if (deviceId) {
+    try {
+      await prisma.gateway_methods.updateMany({
+        where: { user_id: String(userId), device_id: '' },
+        data: { device_id: String(deviceId) }
+      });
+    } catch(e) { console.error('Fallback update error', e); }
+  }
   const rows = await prisma.$queryRaw`
     SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.is_enabled, gm.priority, gm.template_id,
             t.sender_id, t.sender_number, t.matching_keyword, '' AS regex_pattern, COALESCE(t.is_official, 1) AS is_official,
@@ -8,7 +16,7 @@ async function fetchGatewayMethodsForUser(userId) {
        FROM gateway_methods gm
   LEFT JOIN sms_templates t ON gm.template_id = t.id AND t.is_active = 1
   LEFT JOIN checkout_view_templates cvt ON cvt.sms_template_id = t.id
-      WHERE gm.user_id = ${userId}
+      WHERE gm.user_id = ${userId} AND gm.device_id = ${deviceId}
         AND (gm.template_id IS NULL OR t.id IS NOT NULL)
       ORDER BY gm.priority ASC, gm.sim_slot ASC
   `;
@@ -31,7 +39,8 @@ async function getGatewayMethods(req, res) {
   try {
     const userId = req.user.userId;
 
-    const data = await fetchGatewayMethodsForUser(userId);
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+    const data = await fetchGatewayMethodsForUser(userId, deviceId);
 
     return res.json({ success: true, data });
   } catch (error) {
@@ -49,6 +58,7 @@ async function getGatewayMethods(req, res) {
 async function updatePriority(req, res) {
   try {
     const userId = req.user.userId;
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
     const { items } = req.body;
 
     if (!Array.isArray(items) || items.length === 0) {
@@ -60,12 +70,13 @@ async function updatePriority(req, res) {
       if (typeof item.id !== 'number' || typeof item.priority !== 'number') continue;
 
       await prisma.gateway_methods.updateMany({
-        where: { id: item.id, user_id: String(userId) },
+        where: { id: item.id, user_id: String(userId), device_id: String(deviceId) },
         data: { priority: item.priority }
       });
     }
 
-    const data = await fetchGatewayMethodsForUser(userId);
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+    const data = await fetchGatewayMethodsForUser(userId, deviceId);
     console.log(`[GATEWAY] Priority updated for ${items.length} items | User: ${userId}`);
     
     const io = req.app.get('io');
@@ -93,6 +104,7 @@ async function updatePriority(req, res) {
 async function toggleMethod(req, res) {
   try {
     const userId   = req.user.userId;
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
     const methodId = parseInt(req.params.id);
     const { is_enabled } = req.body;
 
@@ -103,7 +115,7 @@ async function toggleMethod(req, res) {
     const enabledBool = !!is_enabled;
 
     const result = await prisma.gateway_methods.updateMany({
-      where: { id: methodId, user_id: String(userId) },
+      where: { id: methodId, user_id: String(userId), device_id: String(deviceId) },
       data: { is_enabled: enabledBool ? 1 : 0 }
     });
 
@@ -111,7 +123,8 @@ async function toggleMethod(req, res) {
       return res.status(404).json({ error: 'মেথড পাওয়া যায়নি' });
     }
 
-    const data = await fetchGatewayMethodsForUser(userId);
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+    const data = await fetchGatewayMethodsForUser(userId, deviceId);
     const status = enabledBool ? 'চালু' : 'বন্ধ';
     console.log(`[GATEWAY] Method ${methodId} ${status} | User: ${userId}`);
 
@@ -138,6 +151,7 @@ async function toggleMethod(req, res) {
 async function updateMethod(req, res) {
   try {
     const userId   = req.user.userId;
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
     const methodId = parseInt(req.params.id);
     const { number, display_name, template_id } = req.body;
 
@@ -151,7 +165,7 @@ async function updateMethod(req, res) {
     if (template_id !== undefined) data.template_id = template_id || null;
 
     const result = await prisma.gateway_methods.updateMany({
-      where: { id: methodId, user_id: String(userId) },
+      where: { id: methodId, user_id: String(userId), device_id: String(deviceId) },
       data
     });
 
@@ -159,7 +173,8 @@ async function updateMethod(req, res) {
       return res.status(404).json({ error: 'মেথড পাওয়া যায়নি' });
     }
 
-    const updatedData = await fetchGatewayMethodsForUser(userId);
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+    const updatedData = await fetchGatewayMethodsForUser(userId, deviceId);
     console.log(`[GATEWAY] Method ${methodId} updated | User: ${userId}`);
 
     const io = req.app.get('io');
@@ -214,6 +229,7 @@ async function getTemplates(req, res) {
 async function addGatewayMethod(req, res) {
   try {
     const userId = req.user.userId;
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
     const { sim_slot, provider, template_id, number } = req.body;
 
     if (!sim_slot || !provider) {
@@ -221,7 +237,7 @@ async function addGatewayMethod(req, res) {
     }
 
     const maxPriorityRow = await prisma.gateway_methods.aggregate({
-      where: { user_id: String(userId) },
+      where: { user_id: String(userId), device_id: String(deviceId) },
       _max: { priority: true }
     });
     
@@ -230,6 +246,7 @@ async function addGatewayMethod(req, res) {
     const result = await prisma.gateway_methods.create({
       data: {
         user_id: String(userId),
+        device_id: String(deviceId),
         template_id: template_id || null,
         sim_slot,
         provider,
@@ -239,7 +256,8 @@ async function addGatewayMethod(req, res) {
       }
     });
 
-    const data = await fetchGatewayMethodsForUser(userId);
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+    const data = await fetchGatewayMethodsForUser(userId, deviceId);
     console.log(`[GATEWAY] Gateway method added | User: ${userId} | Slot: ${sim_slot} | Provider: ${provider}`);
 
     const io = req.app.get('io');

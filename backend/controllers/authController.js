@@ -856,8 +856,8 @@ async function completeProfile(req, res) {
 
     // Auto-insert default gateway methods dynamically from official templates
     const existingMethods = await query(
-      'SELECT id FROM gateway_methods WHERE user_id = ? LIMIT 1',
-      [userId]
+      'SELECT id FROM gateway_methods WHERE user_id = ? AND device_id = ? LIMIT 1',
+      [userId, deviceId]
     );
 
     if (existingMethods.length === 0) {
@@ -877,13 +877,13 @@ async function completeProfile(req, res) {
           let simSlot = 1;
           if (tmpl.template_name.toLowerCase().includes('agent')) simSlot = 2;
 
-          valuePlaceholders.push('(?, ?, ?, ?, ?)');
-          insertParams.push(userId, tmpl.id, simSlot, provider, priority++);
+          valuePlaceholders.push('(?, ?, ?, ?, ?, ?)');
+          insertParams.push(userId, deviceId, tmpl.id, simSlot, provider, priority++);
         }
 
         if (valuePlaceholders.length > 0) {
           await query(
-            `INSERT INTO gateway_methods (user_id, template_id, sim_slot, provider, priority) VALUES ${valuePlaceholders.join(', ')}`,
+            `INSERT INTO gateway_methods (user_id, device_id, template_id, sim_slot, provider, priority) VALUES ${valuePlaceholders.join(', ')}`,
             insertParams
           );
         }
