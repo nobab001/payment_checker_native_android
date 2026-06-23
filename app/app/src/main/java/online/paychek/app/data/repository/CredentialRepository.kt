@@ -50,7 +50,7 @@ class CredentialRepository(private val context: Context) {
     private fun parseError(response: Response<*>): String {
         return try {
             val errBody = response.errorBody()?.string() ?: ""
-            val map = com.google.gson.Gson().fromJson(errBody, Map::class.java)
+            val map = online.paychek.app.utils.GsonUtils.gson.fromJson(errBody, Map::class.java)
             (map["message"] ?: map["error"])?.toString() ?: "সার্ভার এরর ${response.code()}"
         } catch (e: Exception) {
             "সার্ভার এরর ${response.code()}"

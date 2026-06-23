@@ -93,7 +93,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         val cachedList = if (cachedJson.isNotEmpty() && cachedJson != "[]") {
             try {
                 val type = object : com.google.gson.reflect.TypeToken<List<GatewayMethod>>() {}.type
-                com.google.gson.Gson().fromJson<List<GatewayMethod>>(cachedJson, type)
+                online.paychek.app.utils.GsonUtils.gson.fromJson<List<GatewayMethod>>(cachedJson, type)
             } catch (e: Exception) {
                 emptyList()
             }
@@ -128,7 +128,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun saveMethodsToCache(methods: List<GatewayMethod>) {
         try {
-            val json = com.google.gson.Gson().toJson(methods)
+            val json = online.paychek.app.utils.GsonUtils.gson.toJson(methods)
             online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(getApplication(), json)
         } catch (e: Exception) {
             e.printStackTrace()

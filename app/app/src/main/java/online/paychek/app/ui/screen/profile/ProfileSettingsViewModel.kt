@@ -439,7 +439,7 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
     // ─────────────────────────────────────────────────────────────
     private fun parseErrorMessage(body: String, fallback: String): String {
         return try {
-            val map = com.google.gson.Gson().fromJson(body, Map::class.java)
+            val map = online.paychek.app.utils.GsonUtils.gson.fromJson(body, Map::class.java)
             (map["message"] ?: map["error"])?.toString() ?: fallback
         } catch (e: Exception) { fallback }
     }

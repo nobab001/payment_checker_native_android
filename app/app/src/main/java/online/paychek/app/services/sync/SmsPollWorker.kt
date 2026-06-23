@@ -113,7 +113,7 @@ class SmsPollWorker(
         val methodsJson = PrefsHelper.getGatewayMethodsCache(context)
         val methodsType = object : TypeToken<List<GatewayMethod>>() {}.type
         val cachedMethods: List<GatewayMethod> = try {
-            Gson().fromJson(methodsJson, methodsType) ?: emptyList()
+            online.paychek.app.utils.GsonUtils.gson.fromJson(methodsJson, methodsType) ?: emptyList()
         } catch (e: Exception) {
             Log.w(TAG, "[Guard-2] Gateway methods cache read ব্যর্থ: ${e.message}")
             emptyList()

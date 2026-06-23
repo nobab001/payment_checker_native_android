@@ -204,7 +204,7 @@ class SecurityGateViewModel : ViewModel() {
                 } else {
                     val errorBody = response.errorBody()?.string()
                     val rawMsg = try {
-                        val gson = com.google.gson.Gson()
+                        val gson = online.paychek.app.utils.GsonUtils.gson
                         val map  = gson.fromJson(errorBody, Map::class.java)
                         map["message"] as? String ?: map["error"] as? String ?: "পিনটি সঠিক নয়।"
                     } catch (e: Exception) {

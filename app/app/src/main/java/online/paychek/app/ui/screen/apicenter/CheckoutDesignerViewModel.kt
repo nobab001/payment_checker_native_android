@@ -35,7 +35,7 @@ class CheckoutDesignerViewModel(application: Application) : AndroidViewModel(app
         val json = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(getApplication())
         val type = object : com.google.gson.reflect.TypeToken<List<GatewayMethod>>() {}.type
         val methods: List<GatewayMethod> = try {
-            com.google.gson.Gson().fromJson(json, type)
+            online.paychek.app.utils.GsonUtils.gson.fromJson(json, type)
         } catch (e: Exception) {
             emptyList()
         }

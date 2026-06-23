@@ -270,7 +270,7 @@ class LoginViewModel : ViewModel() {
             }
 
             val rawErrorMsg = try {
-                val gson = com.google.gson.Gson()
+                val gson = online.paychek.app.utils.GsonUtils.gson
                 val map = gson.fromJson(errorBody, Map::class.java)
                 map["message"] as? String ?: map["error"] as? String ?: response.body()?.message ?: "ওটিপি পাঠাতে ব্যর্থ হয়েছে।"
             } catch (e: Exception) {
@@ -415,7 +415,7 @@ class LoginViewModel : ViewModel() {
                         }
                     } else {
                         val rawMsg = try {
-                            val gson = com.google.gson.Gson()
+                            val gson = online.paychek.app.utils.GsonUtils.gson
                             val map = gson.fromJson(errorBody, Map::class.java)
                             map["message"] as? String ?: map["error"] as? String ?: "ওটিপি কোডটি সঠিক নয়। অনুগ্রহ করে আবার চেক করুন।"
                         } catch (e: Exception) {
@@ -460,7 +460,7 @@ class LoginViewModel : ViewModel() {
     private fun parseBoundCredentials(errorBody: String?): Pair<List<String>, List<String>> {
         if (errorBody.isNullOrBlank()) return Pair(emptyList(), emptyList())
         return try {
-            val gson = com.google.gson.Gson()
+            val gson = online.paychek.app.utils.GsonUtils.gson
             val map = gson.fromJson(errorBody, Map::class.java) as? Map<String, Any>
             val phones = (map?.get("boundPhones") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
             val emails = (map?.get("boundEmails") as? List<*>)?.filterIsInstance<String>() ?: emptyList()

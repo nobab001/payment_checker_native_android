@@ -188,7 +188,7 @@ class SmsReceiver(
                 val methodsJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(context)
                 val methodsType = object : com.google.gson.reflect.TypeToken<List<GatewayMethod>>() {}.type
                 val cachedMethods: List<GatewayMethod> = try {
-                    com.google.gson.Gson().fromJson(methodsJson, methodsType)
+                    online.paychek.app.utils.GsonUtils.gson.fromJson(methodsJson, methodsType)
                 } catch (e: Exception) {
                     emptyList()
                 }

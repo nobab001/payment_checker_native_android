@@ -519,7 +519,7 @@ fun DashboardScreen(
                         val methodsJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(context)
                         val methodsType = object : com.google.gson.reflect.TypeToken<List<online.paychek.app.data.remote.dto.GatewayMethod>>() {}.type
                         val cachedMethods: List<online.paychek.app.data.remote.dto.GatewayMethod> = try {
-                            com.google.gson.Gson().fromJson(methodsJson, methodsType) ?: emptyList()
+                            online.paychek.app.utils.GsonUtils.gson.fromJson(methodsJson, methodsType) ?: emptyList()
                         } catch (e: Exception) {
                             emptyList()
                         }

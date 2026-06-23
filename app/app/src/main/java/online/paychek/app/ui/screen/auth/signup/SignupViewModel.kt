@@ -160,7 +160,7 @@ class SignupViewModel : ViewModel() {
                     val errorMsg = try {
                         val rawBody = response.errorBody()?.string()
                         if (!rawBody.isNullOrBlank()) {
-                            val gson = com.google.gson.Gson()
+                            val gson = online.paychek.app.utils.GsonUtils.gson
                             @Suppress("UNCHECKED_CAST")
                             val map = gson.fromJson(rawBody, Map::class.java) as? Map<String, Any>
                             map?.get("message") as? String
