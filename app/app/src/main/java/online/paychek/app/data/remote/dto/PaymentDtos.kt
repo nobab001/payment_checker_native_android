@@ -74,7 +74,10 @@ data class TransactionItem(
     val createdAt: String?,
 
     @SerializedName("full_sms")
-    val fullSms: String?
+    val fullSms: String?,
+
+    @SerializedName("device_name")
+    val deviceName: String?
 )
 
 /**

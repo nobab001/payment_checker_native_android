@@ -40,7 +40,19 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
   }
 
   const rawBodyHash = sha256(rawBody.trim());
-  const parsed = await parseRawSms(rawBody, senderNumber || '');
+  
+  let parsed = {
+    success: true,
+    provider: job.data.providerTag,
+    amount: parseFloat(job.data.amount),
+    trxId: job.data.trxId,
+    senderNumber: senderNumber || ''
+  };
+
+  // If client didn't provide parsed data, fallback to server-side regex parse
+  if (!parsed.provider || isNaN(parsed.amount) || !parsed.trxId) {
+    parsed = await parseRawSms(rawBody, senderNumber || '');
+  }
 
   if (!parsed.success) {
     try {

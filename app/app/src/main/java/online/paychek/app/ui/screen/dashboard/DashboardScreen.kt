@@ -36,6 +36,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -515,12 +516,35 @@ fun DashboardScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val providerFilters = listOf(
-                            "bkash" to ("বিকাশ" to Color(0xFF10B981)), // Green dot
-                            "nagad" to ("নগদ" to Color(0xFFF97316)),  // Orange dot
-                            "rocket" to ("রকেট" to Color(0xFF8B5CF6)), // Purple/blue dot
-                            "upay" to ("উপায়" to Color(0xFFEAB308))    // Yellow dot
-                        )
+                        val methodsJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(context)
+                        val methodsType = object : com.google.gson.reflect.TypeToken<List<online.paychek.app.data.remote.dto.GatewayMethod>>() {}.type
+                        val cachedMethods: List<online.paychek.app.data.remote.dto.GatewayMethod> = try {
+                            com.google.gson.Gson().fromJson(methodsJson, methodsType) ?: emptyList()
+                        } catch (e: Exception) {
+                            emptyList()
+                        }
+                        
+                        val providerFilters = cachedMethods.filter { it.isEnabled == 1 }
+                            .distinctBy { it.provider.lowercase(Locale.US) }
+                            .map { method ->
+                                val providerName = method.provider
+                                val tag = providerName.lowercase(Locale.US)
+                                val label = when (tag) {
+                                    "bkash" -> "বিকাশ"
+                                    "nagad" -> "নগদ"
+                                    "rocket" -> "রকেট"
+                                    "upay" -> "উপায়"
+                                    else -> providerName
+                                }
+                                val color = when (tag) {
+                                    "bkash" -> Color(0xFF10B981)
+                                    "nagad" -> Color(0xFFF97316)
+                                    "rocket" -> Color(0xFF8B5CF6)
+                                    "upay" -> Color(0xFFEAB308)
+                                    else -> AccentCyan
+                                }
+                                tag to (label to color)
+                            }
                         providerFilters.forEach { (tag, info) ->
                             val (label, dotColor) = info
                             val isSelected = selectedProvider == tag
@@ -1092,14 +1116,17 @@ private fun TransactionRow(
     modifier: Modifier = Modifier,
     onSoldOutClick: (() -> Unit)? = null
 ) {
-    val providerColor = when (item.providerTag.lowercase()) {
+    var expanded by remember { mutableStateOf(false) }
+    val rotationState by animateFloatAsState(targetValue = if (expanded) 180f else 0f)
+
+    val providerColor = when (item.providerTag.lowercase(Locale.US)) {
         "bkash"  -> BkashPink
         "nagad"  -> NagadOrange
         "rocket" -> RocketPurple
         "upay"   -> UpayTeal
         else     -> AccentCyan
     }
-    val providerEmoji = when (item.providerTag.lowercase()) {
+    val providerEmoji = when (item.providerTag.lowercase(Locale.US)) {
         "bkash"  -> "🟢"
         "nagad"  -> "🟠"
         "rocket" -> "🔵"
@@ -1112,12 +1139,13 @@ private fun TransactionRow(
         colors   = CardDefaults.cardColors(containerColor = DashCard),
         shape    = RoundedCornerShape(12.dp),
         border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth().clickable { expanded = !expanded }
     ) {
-        Row(
-            modifier             = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier             = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment    = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -1162,6 +1190,15 @@ private fun TransactionRow(
                     color    = TextMuted.copy(alpha = 0.7f),
                     fontSize = 10.sp
                 )
+                if (item.deviceName != null) {
+                    Text(
+                        text     = "Device: ${item.deviceName}",
+                        color    = TextMuted.copy(alpha = 0.5f),
+                        fontSize = 9.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
             // Amount + Status
@@ -1210,6 +1247,52 @@ private fun TransactionRow(
                             )
                         }
                     }
+                }
+            }
+
+            }
+
+            // Expand Arrow Header
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(end = 8.dp, bottom = 4.dp),
+                contentAlignment = Alignment.BottomEnd
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ExpandMore,
+                    contentDescription = "Expand",
+                    tint = TextMuted.copy(alpha = 0.5f),
+                    modifier = Modifier
+                        .size(20.dp)
+                        .rotate(rotationState)
+                )
+            }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = expanded,
+                enter = androidx.compose.animation.expandVertically(animationSpec = tween(300)) + fadeIn(tween(300)),
+                exit = androidx.compose.animation.shrinkVertically(animationSpec = tween(300)) + fadeOut(tween(300))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(DashCardAlt)
+                        .padding(14.dp)
+                ) {
+                    Text(
+                        text = "Raw SMS",
+                        color = TextWhite,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = item.fullSms ?: "No SMS text available",
+                        color = TextMuted,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp
+                    )
                 }
             }
         }
@@ -1337,8 +1420,12 @@ private fun formatTimestamp(raw: String): String {
     return try {
         // ISO 8601 format handle
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
+        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
         val date = sdf.parse(raw) ?: Date()
-        SimpleDateFormat("dd MMM, hh:mm a", Locale.forLanguageTag("bn-BD")).format(date)
+        
+        val outSdf = SimpleDateFormat("dd MMM, hh:mm a", Locale.forLanguageTag("bn-BD"))
+        outSdf.timeZone = java.util.TimeZone.getDefault()
+        outSdf.format(date)
     } catch (e: Exception) {
         raw.take(16)
     }

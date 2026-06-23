@@ -23,7 +23,10 @@ async function paymentSmsIngest(req, res) {
       senderNumber: req.body.senderNumber,
       smsTimestamp: req.body.smsTimestamp,
       simSlot: req.body.simSlot,
-      simNumber: req.body.simNumber
+      simNumber: req.body.simNumber,
+      providerTag: req.body.providerTag,
+      amount: req.body.amount,
+      trxId: req.body.trxId
     };
 
     if (!payload.rawBody || !payload.hmacSignature || !payload.smsTimestamp) {
@@ -67,7 +70,10 @@ async function paymentSmsIngestBulk(req, res) {
         senderNumber: item.senderNumber,
         smsTimestamp: item.smsTimestamp,
         simSlot: item.simSlot,
-        simNumber: item.simNumber
+        simNumber: item.simNumber,
+        providerTag: item.providerTag,
+        amount: item.amount,
+        trxId: item.trxId
       }
     }));
 
@@ -132,10 +138,20 @@ async function getSmsHistory(req, res) {
       take: limit
     });
 
+    const userDevices = await prisma.registered_devices.findMany({
+      where: { user_id: userId },
+      select: { device_id: true, device_model: true, custom_device_name: true }
+    });
+    const deviceMap = {};
+    userDevices.forEach(d => {
+      deviceMap[d.device_id] = d.custom_device_name || d.device_model || 'Unknown Device';
+    });
+
     const mappedRows = rows.map(row => ({
       ...row,
       status: row.is_used ? 'SOLD_OUT' : 'READY',
-      amount: Number(row.amount)
+      amount: Number(row.amount),
+      device_name: deviceMap[row.device_id] || 'Unknown Device'
     }));
 
     console.log(`[HISTORY] User ${userId} | Page ${page} | Provider: ${provider} | Found: ${rows.length}`);
@@ -210,10 +226,20 @@ async function getDashboardStats(req, res) {
       take: 20
     });
 
+    const userDevices = await prisma.registered_devices.findMany({
+      where: { user_id: userId },
+      select: { device_id: true, device_model: true, custom_device_name: true }
+    });
+    const deviceMap = {};
+    userDevices.forEach(d => {
+      deviceMap[d.device_id] = d.custom_device_name || d.device_model || 'Unknown Device';
+    });
+
     const mappedRecentRows = recentRows.map(row => ({
       ...row,
       status: row.is_used ? 'SOLD_OUT' : 'READY',
-      amount: Number(row.amount)
+      amount: Number(row.amount),
+      device_name: deviceMap[row.device_id] || 'Unknown Device'
     }));
 
     console.log(`[STATS] Dashboard loaded for user: ${userId} | Today: ${todayDate} | Paid: ${isPaid} | Plan: ${activePlanName}`);
