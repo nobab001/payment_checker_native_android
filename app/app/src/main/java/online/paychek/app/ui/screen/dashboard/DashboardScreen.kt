@@ -202,15 +202,59 @@ fun DashboardScreen(
     }
 
     if (showDateRangePicker) {
-        CustomDateRangePickerDialog(
-            onDismiss = { showDateRangePicker = false },
-            onConfirm = { startMillis, endMillis ->
-                customStartDate = startMillis
-                customEndDate = endMillis
-                selectedDate = "custom"
-                showDateRangePicker = false
-            }
-        )
+        val datePickerState = rememberDateRangePickerState()
+        DatePickerDialog(
+            onDismissRequest = { showDateRangePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDateRangePicker = false
+                        val startMillis = datePickerState.selectedStartDateMillis
+                        val endMillis = datePickerState.selectedEndDateMillis
+                        if (startMillis != null && endMillis != null) {
+                            customStartDate = startMillis
+                            customEndDate = endMillis
+                            selectedDate = "custom"
+                        }
+                    }
+                ) { Text("OK", color = AccentCyan, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDateRangePicker = false }) { Text("Cancel", color = TextMuted) }
+            },
+            colors = DatePickerDefaults.colors(containerColor = DashCard),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            DateRangePicker(
+                state = datePickerState,
+                modifier = Modifier.weight(1f),
+                colors = DatePickerDefaults.colors(
+                    containerColor = DashCard,
+                    titleContentColor = TextWhite,
+                    headlineContentColor = TextWhite,
+                    weekdayContentColor = TextMuted,
+                    subheadContentColor = TextWhite,
+                    navigationContentColor = TextWhite,
+                    yearContentColor = TextWhite,
+                    disabledYearContentColor = TextMuted,
+                    currentYearContentColor = AccentCyan,
+                    selectedYearContentColor = Color.White,
+                    disabledSelectedYearContentColor = Color.White.copy(alpha = 0.5f),
+                    selectedYearContainerColor = AccentCyan,
+                    disabledSelectedYearContainerColor = AccentCyan.copy(alpha = 0.5f),
+                    dayContentColor = TextWhite,
+                    disabledDayContentColor = TextMuted,
+                    selectedDayContentColor = Color.White,
+                    disabledSelectedDayContentColor = Color.White.copy(alpha = 0.5f),
+                    selectedDayContainerColor = AccentCyan,
+                    disabledSelectedDayContainerColor = AccentCyan.copy(alpha = 0.5f),
+                    todayContentColor = AccentCyan,
+                    todayDateBorderColor = AccentCyan,
+                    dayInSelectionRangeContentColor = TextWhite,
+                    dayInSelectionRangeContainerColor = AccentCyan.copy(alpha = 0.2f)
+                )
+            )
+        }
     }
 
     Column(
@@ -364,8 +408,6 @@ fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    var showFilterMenu by remember { mutableStateOf(false) }
-
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
@@ -384,18 +426,28 @@ fun DashboardScreen(
                                 modifier = Modifier.size(20.dp)
                             )
                         },
-                        trailingIcon = if (searchQuery.isNotEmpty()) {
-                            {
-                                IconButton(onClick = { searchQuery = "" }) {
+                        trailingIcon = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { searchQuery = "" }) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Clear Search",
+                                            tint = TextMuted,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                IconButton(onClick = { showDateRangePicker = true }) {
                                     Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Clear Search",
-                                        tint = TextMuted,
-                                        modifier = Modifier.size(18.dp)
+                                        imageVector = Icons.Default.DateRange,
+                                        contentDescription = "Date Filter",
+                                        tint = if (selectedDate == "custom") AccentCyan else TextMuted,
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                             }
-                        } else null,
+                        },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
@@ -409,103 +461,10 @@ fun DashboardScreen(
                             unfocusedContainerColor = DashCard
                         ),
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxWidth()
                     )
-
-                    Box {
-                        IconButton(
-                            onClick = { showFilterMenu = !showFilterMenu },
-                            colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = DashCard,
-                                contentColor = AccentCyan
-                            ),
-                            modifier = Modifier
-                                .size(52.dp)
-                                .border(
-                                    width = 1.dp,
-                                    color = TextMuted.copy(alpha = 0.3f),
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                                .clip(RoundedCornerShape(12.dp))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Tune,
-                                contentDescription = "Filter"
-                            )
-                        }
-
-                        DropdownMenu(
-                            expanded = showFilterMenu,
-                            onDismissRequest = { showFilterMenu = false },
-                            modifier = Modifier.background(DashCard)
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("কাস্টম তারিখ বাছাই করুন 📅", color = TextWhite) },
-                                onClick = {
-                                    showFilterMenu = false
-                                    showDateRangePicker = true
-                                }
-                            )
-                            HorizontalDivider(color = ToggleOff.copy(alpha = 0.3f))
-                            DropdownMenuItem(
-                                text = { Text("আজকের", color = if (selectedDate == "today") AccentCyan else TextWhite) },
-                                onClick = {
-                                    selectedDate = "today"
-                                    customStartDate = null
-                                    customEndDate = null
-                                    showFilterMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("গত ২ দিন", color = if (selectedDate == "last_2_days") AccentCyan else TextWhite) },
-                                onClick = {
-                                    selectedDate = "last_2_days"
-                                    customStartDate = null
-                                    customEndDate = null
-                                    showFilterMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("গত ৭ দিন", color = if (selectedDate == "last_7_days") AccentCyan else TextWhite) },
-                                onClick = {
-                                    selectedDate = "last_7_days"
-                                    customStartDate = null
-                                    customEndDate = null
-                                    showFilterMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("গত ১৫ দিন", color = if (selectedDate == "last_15_days") AccentCyan else TextWhite) },
-                                onClick = {
-                                    selectedDate = "last_15_days"
-                                    customStartDate = null
-                                    customEndDate = null
-                                    showFilterMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("গত ২১ দিন", color = if (selectedDate == "last_21_days") AccentCyan else TextWhite) },
-                                onClick = {
-                                    selectedDate = "last_21_days"
-                                    customStartDate = null
-                                    customEndDate = null
-                                    showFilterMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("গত ৩০ দিন", color = if (selectedDate == "last_30_days") AccentCyan else TextWhite) },
-                                onClick = {
-                                    selectedDate = "last_30_days"
-                                    customStartDate = null
-                                    customEndDate = null
-                                    showFilterMenu = false
-                                }
-                            )
-                        }
-                    }
                 }
             }
-
             // ৪. Provider chips (বিকাশ, নগদ, রকেট, উপায়)
             // - search এ কিছু type করলে chips HIDE হবে
             if (searchQuery.isEmpty()) {
@@ -1130,138 +1089,140 @@ private fun TransactionRow(
     }
     val isSoldOut = item.isUsed == 1
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val simNumber = remember(item.simSlot) {
+        val methodsJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(context)
+        val methodsType = object : com.google.gson.reflect.TypeToken<List<online.paychek.app.data.remote.dto.GatewayMethod>>() {}.type
+        val cachedMethods: List<online.paychek.app.data.remote.dto.GatewayMethod> = try {
+            online.paychek.app.utils.GsonUtils.gson.fromJson(methodsJson, methodsType) ?: emptyList()
+        } catch (e: Exception) { emptyList() }
+        cachedMethods.find { it.simSlot == item.simSlot && !it.number.isNullOrEmpty() }?.number
+    }
+
+    val deviceName = item.deviceName?.takeIf { 
+        it.isNotBlank() && it.lowercase(Locale.US) != "unknown" && it.lowercase(Locale.US) != "unknown device" 
+    } ?: android.os.Build.MODEL
+
     Card(
         colors   = CardDefaults.cardColors(containerColor = DashCard),
         shape    = RoundedCornerShape(12.dp),
         border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
         modifier = modifier.fillMaxWidth().clickable { expanded = !expanded }
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier             = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment    = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Provider Color Indicator
-            Box(
-                modifier = Modifier
-                    .width(4.dp)
-                    .height(44.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(providerColor)
-            )
-
-            // Provider + Amount
-            Column(modifier = Modifier.weight(1f)) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier             = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment    = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(
-                        text     = "$providerEmoji ${item.providerTag}",
-                        color    = providerColor,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (item.simSlot != null) {
-                        Text(
-                            text     = "SIM ${item.simSlot}",
-                            color    = TextMuted,
-                            fontSize = 10.sp
-                        )
-                    }
-                }
-                Text(
-                    text     = "TrxID: ${item.trxId}",
-                    color    = TextMuted,
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text     = formatTimestamp(item.smsTimestamp),
-                    color    = TextMuted.copy(alpha = 0.7f),
-                    fontSize = 10.sp
-                )
-                if (item.deviceName != null) {
-                    Text(
-                        text     = "Device: ${item.deviceName}",
-                        color    = TextMuted.copy(alpha = 0.5f),
-                        fontSize = 9.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            // Amount + Status
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text       = "৳ ${DecimalFormat("#,##0.00").format(item.amount)}",
-                    color      = TextWhite,
-                    fontSize   = 15.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
+                    // Provider Color Indicator
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(
-                                if (isSoldOut) StatusRed.copy(alpha = 0.15f)
-                                else AccentGreen.copy(alpha = 0.15f)
-                            )
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                    ) {
+                            .width(4.dp)
+                            .height(64.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(providerColor)
+                    )
+
+                    // Details
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text     = if (isSoldOut) "SOLDOUT" else "READY",
-                            color    = if (isSoldOut) StatusRed else AccentGreen,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.ExtraBold
+                            text     = "$providerEmoji ${item.providerTag}",
+                            color    = providerColor,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
                         )
-                    }
-                    if (!isSoldOut && onSoldOutClick != null) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(StatusRed.copy(alpha = 0.15f))
-                                .border(1.dp, StatusRed.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
-                                .clickable { onSoldOutClick() }
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                        ) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text     = "TrxID: ${item.trxId}",
+                            color    = TextMuted,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text     = formatTimestamp(item.smsTimestamp),
+                            color    = TextMuted.copy(alpha = 0.7f),
+                            fontSize = 10.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text     = "Device: $deviceName",
+                            color    = TextMuted.copy(alpha = 0.6f),
+                            fontSize = 9.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (item.simSlot != null) {
                             Text(
-                                text     = "Sold Out",
-                                color    = StatusRed,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
+                                text     = "SIM ${item.simSlot}",
+                                color    = TextMuted.copy(alpha = 0.6f),
+                                fontSize = 9.sp
                             )
+                            if (simNumber != null) {
+                                Text(
+                                    text     = simNumber,
+                                    color    = TextMuted.copy(alpha = 0.6f),
+                                    fontSize = 9.sp
+                                )
+                            }
+                        }
+                    }
+
+                    // Amount + Status
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text       = "৳ ${DecimalFormat("#,##0.00").format(item.amount)}",
+                            color      = TextWhite,
+                            fontSize   = 17.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            if (isSoldOut) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .background(StatusRed.copy(alpha = 0.12f))
+                                        .border(0.5.dp, StatusRed.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text       = "SOLDOUT",
+                                        color      = StatusRed,
+                                        fontSize   = 8.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .background(AccentGreen.copy(alpha = 0.12f))
+                                        .border(0.5.dp, AccentGreen.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text       = "✅ READY",
+                                        color      = AccentGreen,
+                                        fontSize   = 8.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
                     }
                 }
-            }
-
-            }
-
-            // Expand Arrow Header
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(end = 8.dp, bottom = 4.dp),
-                contentAlignment = Alignment.BottomEnd
-            ) {
-                Icon(
-                    imageVector = Icons.Default.ExpandMore,
-                    contentDescription = "Expand",
-                    tint = TextMuted.copy(alpha = 0.5f),
-                    modifier = Modifier
-                        .size(20.dp)
-                        .rotate(rotationState)
-                )
+                
+                
+                // Expanded Area (this empty comment just replacing broken leftovers)
             }
 
             androidx.compose.animation.AnimatedVisibility(
@@ -1285,14 +1246,53 @@ private fun TransactionRow(
                     Text(
                         text = item.fullSms ?: "No SMS text available",
                         color = TextMuted,
-                        fontSize = 11.sp,
-                        lineHeight = 16.sp
+                        fontSize = 11.sp
                     )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Timestamp Details",
+                        color = TextWhite,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "SMS: ${item.smsTimestamp}",
+                        color = TextMuted,
+                        fontSize = 11.sp
+                    )
+                    if (item.senderNumber != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Sender",
+                            color = TextWhite,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = item.senderNumber,
+                            color = TextMuted,
+                            fontSize = 11.sp
+                        )
+                    }
                 }
             }
+            // The absolute positioned expand arrow
+            Icon(
+                imageVector = Icons.Default.ExpandMore,
+                contentDescription = "Expand",
+                tint = TextMuted.copy(alpha = 0.5f),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 10.dp, end = 10.dp)
+                    .size(24.dp)
+                    .rotate(rotationState)
+            )
         }
     }
 }
+
 
 // =============================================================================
 // Component 6 — Loading Placeholder (Skeleton-style)
@@ -1687,315 +1687,6 @@ private fun utcMidnightToLocalMidnight(utcMs: Long): Long {
     }.timeInMillis
 }
 
-@Composable
-private fun CustomDateRangePickerDialog(
-    onDismiss: () -> Unit,
-    onConfirm: (Long?, Long?) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val calendarToday = Calendar.getInstance()
-    var startDate by remember { mutableStateOf<Long?>(null) }
-    var endDate by remember { mutableStateOf<Long?>(null) }
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = 6)
 
-    fun handleDateClick(timeMs: Long) {
-        if (startDate == null) {
-            startDate = timeMs
-        } else if (endDate == null) {
-            if (timeMs >= startDate!!) {
-                endDate = timeMs
-            } else {
-                startDate = timeMs
-            }
-        } else {
-            startDate = timeMs
-            endDate = null
-        }
-    }
-
-    val monthsList = remember {
-        val list = mutableListOf<Pair<Int, Int>>()
-        val cal = Calendar.getInstance()
-        cal.add(Calendar.MONTH, -6)
-        for (i in 0..12) {
-            list.add(Pair(cal.get(Calendar.MONTH), cal.get(Calendar.YEAR)))
-            cal.add(Calendar.MONTH, 1)
-        }
-        list
-    }
-
-    val monthNames = listOf(
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December"
-    )
-
-    val startFormatted = startDate?.let {
-        SimpleDateFormat("dd MMMM, yyyy", Locale.forLanguageTag("bn-BD")).format(Date(it))
-    } ?: "শুরুর তারিখ"
-
-    val endFormatted = endDate?.let {
-        SimpleDateFormat("dd MMMM, yyyy", Locale.forLanguageTag("bn-BD")).format(Date(it))
-    } ?: "শেষের তারিখ"
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth(0.95f)
-                .wrapContentHeight(),
-            shape = RoundedCornerShape(16.dp),
-            color = Color.White
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 20.dp)
-            ) {
-                // ২. Header (dialog এর উপরে)
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 12.dp)
-                ) {
-                    Text(
-                        text = startFormatted,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF0F172A),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "থেকে",
-                        fontSize = 12.sp,
-                        color = Color.Gray
-                    )
-                    Text(
-                        text = endFormatted,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF0F172A),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                HorizontalDivider(
-                    color = Color.LightGray.copy(alpha = 0.5f),
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-
-                val screenWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp
-                val cellHeight = (screenWidthDp * 0.95f - 32.dp) / 7
-                val calendarHeight = cellHeight * 4.5f + 48.dp
-
-                // Vertical scrollable months list
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(calendarHeight),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(monthsList) { monthYearPair ->
-                        val (month, year) = monthYearPair
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            // Month Title
-                            Text(
-                                text = "${monthNames[month]} $year",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF0F172A),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 2.dp, bottom = 1.dp),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                            )
-
-                            Spacer(modifier = Modifier.height(4.dp))
-
-                            // Weekdays Row inside each month
-                            val weekdays = listOf("S", "M", "T", "W", "T", "F", "S")
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 1.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                weekdays.forEach { day ->
-                                    Box(
-                                        modifier = Modifier.weight(1f),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = day,
-                                            fontSize = 11.sp,
-                                            color = Color.Gray
-                                        )
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(2.dp))
-
-                            val calendar = Calendar.getInstance().apply {
-                                set(Calendar.YEAR, year)
-                                set(Calendar.MONTH, month)
-                                set(Calendar.DAY_OF_MONTH, 1)
-                                set(Calendar.HOUR_OF_DAY, 0)
-                                set(Calendar.MINUTE, 0)
-                                set(Calendar.SECOND, 0)
-                                set(Calendar.MILLISECOND, 0)
-                            }
-
-                            val firstDayOfWeek = calendar.get(Calendar.DAY_OF_WEEK)
-                            val daysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
-                            val prefixEmptyCells = firstDayOfWeek - 1
-                            val totalCells = prefixEmptyCells + daysInMonth
-                            val rowCount = (totalCells + 6) / 7
-
-                            Column(
-                                verticalArrangement = Arrangement.spacedBy(0.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                for (row in 0 until rowCount) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        for (col in 0 until 7) {
-                                            val cellIndex = row * 7 + col
-                                            if (cellIndex < prefixEmptyCells || cellIndex >= totalCells) {
-                                                Box(modifier = Modifier.weight(1f).height(34.dp))
-                                            } else {
-                                                val dayOfMonth = cellIndex - prefixEmptyCells + 1
-                                                val dayCalendar = Calendar.getInstance().apply {
-                                                    set(Calendar.YEAR, year)
-                                                    set(Calendar.MONTH, month)
-                                                    set(Calendar.DAY_OF_MONTH, dayOfMonth)
-                                                    set(Calendar.HOUR_OF_DAY, 0)
-                                                    set(Calendar.MINUTE, 0)
-                                                    set(Calendar.SECOND, 0)
-                                                    set(Calendar.MILLISECOND, 0)
-                                                }
-                                                val dayMs = dayCalendar.timeInMillis
-
-                                                val isToday = dayCalendar.get(Calendar.YEAR) == calendarToday.get(Calendar.YEAR) &&
-                                                              dayCalendar.get(Calendar.MONTH) == calendarToday.get(Calendar.MONTH) &&
-                                                              dayCalendar.get(Calendar.DAY_OF_MONTH) == calendarToday.get(Calendar.DAY_OF_MONTH)
-
-                                                val isSelectedStart = startDate != null && dayMs == startDate
-                                                val isSelectedEnd = endDate != null && dayMs == endDate
-                                                val isWithinRange = startDate != null && endDate != null && dayMs > startDate!! && dayMs < endDate!!
-
-                                                Box(
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .height(34.dp)
-                                                        .clickable { handleDateClick(dayMs) },
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    if (isWithinRange) {
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .fillMaxWidth()
-                                                                .height(28.dp)
-                                                                .background(Color(0xFFE0F7FA))
-                                                        )
-                                                    } else if (isSelectedStart && endDate != null) {
-                                                        Row(modifier = Modifier.fillMaxSize()) {
-                                                            Spacer(modifier = Modifier.weight(1f))
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .weight(1f)
-                                                                    .height(28.dp)
-                                                                    .background(Color(0xFFE0F7FA))
-                                                            )
-                                                        }
-                                                    } else if (isSelectedEnd && startDate != null) {
-                                                        Row(modifier = Modifier.fillMaxSize()) {
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .weight(1f)
-                                                                    .height(28.dp)
-                                                                    .background(Color(0xFFE0F7FA))
-                                                            )
-                                                            Spacer(modifier = Modifier.weight(1f))
-                                                        }
-                                                    }
-
-                                                    if (isSelectedStart || isSelectedEnd) {
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .size(36.dp)
-                                                                .background(Color(0xFF22D3EE), CircleShape)
-                                                        )
-                                                    }
-
-                                                    Text(
-                                                        text = dayOfMonth.toString(),
-                                                        fontSize = 12.sp,
-                                                        fontWeight = if (isSelectedStart || isSelectedEnd) FontWeight.Bold else FontWeight.Normal,
-                                                        color = when {
-                                                            isSelectedStart || isSelectedEnd -> Color(0xFF0F172A)
-                                                            isToday -> Color(0xFF22D3EE)
-                                                            else -> Color(0xFF0F172A)
-                                                        }
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ৫. Button row
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 20.dp, bottom = 4.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.4f)),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Gray),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        Text(
-                            text = "বাতিল",
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    }
-
-                    Button(
-                        onClick = { onConfirm(startDate, endDate) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22D3EE)),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
-                    ) {
-                        Text(
-                            text = "নিশ্চিত করুন",
-                            color = Color(0xFF0F172A),
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
 
 

@@ -38,6 +38,9 @@ data class GatewayMethod(
     @SerializedName("regex_pattern")
     val regexPattern: String?,
 
+    @SerializedName("custom_patterns")
+    val customPatterns: List<String>?,
+
     @SerializedName("is_official")
     val isOfficial: Int?,
 

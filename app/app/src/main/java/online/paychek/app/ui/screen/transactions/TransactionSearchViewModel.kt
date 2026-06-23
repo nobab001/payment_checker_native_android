@@ -16,13 +16,8 @@ import online.paychek.app.utils.NetworkConnectivityObserver
 // =============================================================================
 // Provider Filter Options
 // =============================================================================
-enum class ProviderFilter(val label: String, val apiValue: String, val emoji: String) {
-    ALL   ("সব",    "all",    "📋"),
-    BKASH ("bKash", "bKash",  "🟢"),
-    NAGAD ("Nagad", "Nagad",  "🟠"),
-    ROCKET("Rocket","Rocket", "🔵"),
-    UPAY  ("Upay",  "Upay",   "🟡")
-}
+// Provider Filter Options are now dynamic strings.
+// "all" is used as the default value to show all transactions.
 
 // =============================================================================
 // UI State
@@ -30,7 +25,7 @@ enum class ProviderFilter(val label: String, val apiValue: String, val emoji: St
 data class TransactionSearchState(
     val rawList:     List<TransactionItem> = emptyList(),
     val displayList: List<TransactionItem> = emptyList(),
-    val selectedProvider: ProviderFilter = ProviderFilter.ALL,
+    val selectedProvider: String = "all",
     val searchQuery:      String         = "",
     val currentPage:        Int     = 1,
     val hasMore:            Boolean = true,
@@ -89,7 +84,7 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
         _searchQuery.value = query
     }
 
-    fun onProviderFilterChanged(filter: ProviderFilter) {
+    fun onProviderFilterChanged(filter: String) {
         if (_state.value.selectedProvider == filter) return
 
         _state.update {
@@ -161,7 +156,7 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                 return@launch
             }
 
-            val provider = _state.value.selectedProvider.apiValue
+            val provider = _state.value.selectedProvider
             val result   = repository.fetchTransactionHistory(
                 token    = token,
                 page     = page,

@@ -22,4 +22,7 @@ router.patch('/gateway/methods/:id/toggle',  auth, auth.restrictDevice, billing,
 // PATCH /api/gateway/methods/:id        → নম্বর ও নাম আপডেট
 router.patch('/gateway/methods/:id',         auth, auth.restrictDevice, billing, gw.updateMethod);
 
+// POST /api/gateway/methods/:id/custom-templates → নতুন কাস্টম এসএমএস টেমপ্লেট
+router.post('/gateway/methods/:id/custom-templates', auth, auth.restrictDevice, billing, gw.addCustomTemplate);
+
 module.exports = router;

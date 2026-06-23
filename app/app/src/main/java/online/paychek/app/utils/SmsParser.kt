@@ -18,55 +18,13 @@ object SmsParser {
         val fullSms: String? = null
     )
 
-    // Regex Patterns
-    private val bkashPattern = Pattern.compile(
-        "(?:You have received Tk|Cash In Tk)\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})",
-        Pattern.CASE_INSENSITIVE or Pattern.DOTALL
-    )
-
-    private val nagadPattern = Pattern.compile(
-        "received cash in Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})",
-        Pattern.CASE_INSENSITIVE or Pattern.DOTALL
-    )
-
-    private val rocketPattern = Pattern.compile(
-        "received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID:\\s*([A-Z0-9]{6,})",
-        Pattern.CASE_INSENSITIVE or Pattern.DOTALL
-    )
-
-    private val upayPattern = Pattern.compile(
-        "received Tk\\s*([\\d,]+(?:\\.\\d+)?)\\s*from\\s*([\\d*Xx]+).*?TrxID\\s*([A-Z0-9]{6,})",
-        Pattern.CASE_INSENSITIVE or Pattern.DOTALL
-    )
+    // All hardcoded regex patterns removed for Dynamic SMS Template Builder
 
     /**
-     * Parses an incoming SMS message.
-     * Returns a ParsedPayment if it is a match for bKash, Nagad, Rocket, or Upay, otherwise null.
+     * Legacy parseSms logic disabled. Now parsing depends exclusively on Dynamic SMS Templates.
      */
     fun parseSms(sender: String, body: String, timestamp: Long): ParsedPayment? {
-        val cleanSender = sender.trim().lowercase(Locale.US)
-        
-        return when {
-            cleanSender.contains("bkash") -> {
-                matchPattern(body, bkashPattern, "bKash", timestamp)
-            }
-            cleanSender.contains("nagad") -> {
-                matchPattern(body, nagadPattern, "Nagad", timestamp)
-            }
-            cleanSender.contains("rocket") || cleanSender == "16216" -> {
-                matchPattern(body, rocketPattern, "Rocket", timestamp)
-            }
-            cleanSender.contains("upay") -> {
-                matchPattern(body, upayPattern, "Upay", timestamp)
-            }
-            else -> {
-                // Fallback catch-all check: attempt matching each template regardless of sender name
-                matchPattern(body, bkashPattern, "bKash", timestamp)
-                    ?: matchPattern(body, nagadPattern, "Nagad", timestamp)
-                    ?: matchPattern(body, rocketPattern, "Rocket", timestamp)
-                    ?: matchPattern(body, upayPattern, "Upay", timestamp)
-            }
-        }
+        return null
     }
 
     fun parseWithDynamicRegex(
@@ -84,27 +42,19 @@ object SmsParser {
             val pattern = Pattern.compile(regexPattern, Pattern.CASE_INSENSITIVE or Pattern.DOTALL)
             val matcher = pattern.matcher(body)
             if (matcher.find()) {
-                val groupCount = matcher.groupCount()
-                val amountStr = matcher.group(1)?.replace(",", "") ?: "0.0"
-                val amount = amountStr.toDoubleOrNull() ?: 0.0
+                val amountStr = try { matcher.group("amount") } catch (e: Exception) { null }
+                val parsedAmount = amountStr?.replace(",", "")?.toDoubleOrNull() ?: 0.0
 
-                val trxId: String
-                val parsedSender: String
-
-                if (groupCount >= 3) {
-                    parsedSender = matcher.group(2) ?: senderNumber
-                    trxId = matcher.group(3) ?: ""
-                } else {
-                    trxId = if (groupCount >= 2) matcher.group(2) ?: "" else ""
-                    parsedSender = senderNumber
-                }
+                val trxId = try { matcher.group("trxid") } catch (e: Exception) { "" } ?: ""
+                
+                val parsedSender = try { matcher.group("sender") } catch (e: Exception) { null } ?: senderNumber
 
                 if (trxId.isNotEmpty()) {
                     ParsedPayment(
-                        amount = amount,
+                        amount = parsedAmount,
                         trxId = trxId.uppercase(Locale.US),
                         providerTag = providerTag,
-                        senderNumber = senderNumber,
+                        senderNumber = parsedSender,
                         rawBody = body,
                         smsTimestamp = timestamp,
                         simSlot = simSlot,
@@ -117,31 +67,5 @@ object SmsParser {
         } catch (e: Exception) {
             null
         }
-    }
-
-    private fun matchPattern(body: String, pattern: Pattern, providerTag: String, timestamp: Long): ParsedPayment? {
-        val matcher = pattern.matcher(body)
-        if (matcher.find()) {
-            return try {
-                val amountStr = matcher.group(1)?.replace(",", "") ?: "0.0"
-                val amount = amountStr.toDoubleOrNull() ?: 0.0
-                val senderNumber = matcher.group(2) ?: "Unknown"
-                val trxId = matcher.group(3) ?: ""
-                
-                if (trxId.isNotEmpty() && amount > 0) {
-                    ParsedPayment(
-                        amount = amount,
-                        trxId = trxId.uppercase(Locale.US),
-                        providerTag = providerTag,
-                        senderNumber = senderNumber,
-                        rawBody = body,
-                        smsTimestamp = timestamp
-                    )
-                } else null
-            } catch (e: Exception) {
-                null
-            }
-        }
-        return null
     }
 }

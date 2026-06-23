@@ -44,6 +44,18 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+import online.paychek.app.data.local.prefs.PrefsHelper
+import online.paychek.app.utils.GsonUtils
+import online.paychek.app.data.remote.dto.GatewayMethod
+import com.google.gson.reflect.TypeToken
+
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.draw.rotate
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 
 // =============================================================================
@@ -90,7 +102,7 @@ fun TransactionSearchScreen(
         if (!isNetworkAvailable) {
             ConnectivityBanner()
         }
-
+        
         PullToRefreshBox(
             isRefreshing = false,
             onRefresh    = { viewModel.onRefresh() },
@@ -126,8 +138,7 @@ fun TransactionSearchScreen(
                 M3FilterChipsRow(
                     selected = state.selectedProvider,
                     onSelect = { provider ->
-                        // If same provider is clicked again, reset filter to ALL (deselected state)
-                        val target = if (state.selectedProvider == provider) ProviderFilter.ALL else provider
+                        val target = if (state.selectedProvider == provider) "all" else provider
                         viewModel.onProviderFilterChanged(target)
                     },
                     modifier = Modifier.padding(bottom = 8.dp)
@@ -145,7 +156,6 @@ fun TransactionSearchScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
-
             // ─── ৪. Summary Row ────────────────────────────────────────────
             if (!state.isInitialLoading && state.errorMessage == null) {
                 item {
@@ -181,7 +191,7 @@ fun TransactionSearchScreen(
                 state.errorMessage == null &&
                 state.displayList.isEmpty()
             ) {
-                item { EmptyStateCard(hasFilter = state.selectedProvider != ProviderFilter.ALL) }
+                item { EmptyStateCard(hasFilter = state.selectedProvider != "all") }
             }
 
             // ─── ৮. Transaction List ───────────────────────────────────────
@@ -348,30 +358,38 @@ private fun SearchBox(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun M3FilterChipsRow(
-    selected: ProviderFilter,
-    onSelect: (ProviderFilter) -> Unit,
+    selected: String,
+    onSelect: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val filters = listOf(
-        ProviderFilter.BKASH to "বিকাশ",
-        ProviderFilter.NAGAD to "নগদ",
-        ProviderFilter.ROCKET to "রকেট",
-        ProviderFilter.UPAY to "উপায়"
-    )
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val cachedMethodsJson = PrefsHelper.getGatewayMethodsCache(context)
+    val methodsType = object : TypeToken<List<GatewayMethod>>() {}.type
+    val cachedMethods: List<GatewayMethod> = try {
+        GsonUtils.gson.fromJson(cachedMethodsJson, methodsType) ?: emptyList()
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    val dynamicFilters = mutableListOf("all" to "সব")
+    val uniqueProviders = cachedMethods.map { it.provider }.distinct()
+    uniqueProviders.forEach { tag ->
+        dynamicFilters.add(tag to tag)
+    }
 
     LazyRow(
         modifier            = modifier,
         contentPadding      = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(filters) { (filter, label) ->
+        items(dynamicFilters) { (filter, label) ->
             val isSelected = selected == filter
             FilterChip(
                 selected = isSelected,
                 onClick = { onSelect(filter) },
                 label = {
                     Text(
-                        text = "$label ${filter.emoji}",
+                        text = label,
                         fontSize = adaptiveTextSize(11.sp, 13.sp),
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                     )
@@ -430,156 +448,240 @@ private fun TransactionCard(
     modifier: Modifier = Modifier,
     onSoldOutClick: (() -> Unit)? = null
 ) {
-    val isSoldOut = item.isUsed == 1
+    var expanded by remember { mutableStateOf(false) }
+    val rotationState by animateFloatAsState(targetValue = if (expanded) 180f else 0f)
 
-    val providerColor = when (item.providerTag.lowercase()) {
+    val providerColor = when (item.providerTag.lowercase(java.util.Locale.US)) {
         "bkash"  -> BkashPink
         "nagad"  -> NagadOrange
         "rocket" -> RocketPurple
         "upay"   -> UpayTeal
         else     -> AccentCyan
     }
-    val providerEmoji = when (item.providerTag.lowercase()) {
+    val providerEmoji = when (item.providerTag.lowercase(java.util.Locale.US)) {
         "bkash"  -> "🟢"
         "nagad"  -> "🟠"
         "rocket" -> "🔵"
         "upay"   -> "🟡"
         else     -> "⚪"
     }
+    val isSoldOut = item.isUsed == 1
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val simNumber = remember(item.simSlot) {
+        val methodsJson = PrefsHelper.getGatewayMethodsCache(context)
+        val methodsType = object : TypeToken<List<GatewayMethod>>() {}.type
+        val cachedMethods: List<GatewayMethod> = try {
+            GsonUtils.gson.fromJson(methodsJson, methodsType) ?: emptyList()
+        } catch (e: Exception) { emptyList() }
+        cachedMethods.find { it.simSlot == item.simSlot && !it.number.isNullOrEmpty() }?.number
+    }
+
+    val deviceName = item.deviceName?.takeIf { 
+        it.isNotBlank() && it.lowercase(java.util.Locale.US) != "unknown" && it.lowercase(java.util.Locale.US) != "unknown device" 
+    } ?: android.os.Build.MODEL
 
     Card(
         colors   = CardDefaults.cardColors(containerColor = HistCard),
         shape    = RoundedCornerShape(12.dp),
         border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth().clickable { expanded = !expanded }
     ) {
-        Row(
-            modifier             = Modifier.fillMaxWidth().padding(0.dp),
-            verticalAlignment    = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(4.dp)
-                    .height(84.dp)
-                    .background(
-                        if (isSoldOut) providerColor.copy(alpha = 0.3f)
-                        else providerColor
-                    )
-            )
-
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
-                    modifier             = Modifier.fillMaxWidth(),
+                    modifier             = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment    = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Row(
-                        verticalAlignment  = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
+                    // Provider Color Indicator
+                    Box(
+                        modifier = Modifier
+                            .width(4.dp)
+                            .height(64.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(providerColor)
+                    )
+
+                    // Details
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text       = "$providerEmoji ${item.providerTag}",
-                            color      = if (isSoldOut) providerColor.copy(alpha = 0.55f) else providerColor,
-                            fontSize   = 14.sp,
+                            text     = "$providerEmoji ${item.providerTag}",
+                            color    = providerColor,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text     = "TrxID: ${item.trxId}",
+                            color    = TextMuted,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text     = formatTrxTimestamp(item.smsTimestamp),
+                            color    = TextMuted.copy(alpha = 0.7f),
+                            fontSize = 10.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text     = "Device: $deviceName",
+                            color    = TextMuted.copy(alpha = 0.6f),
+                            fontSize = 9.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                         if (item.simSlot != null) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(TextMuted.copy(alpha = 0.12f))
-                                    .padding(horizontal = 5.dp, vertical = 1.dp)
-                            ) {
-                                  Text(
-                                      text     = "SIM ${item.simSlot}",
-                                      color    = TextMuted,
-                                      fontSize = 10.sp
-                                  )
-                            }
-                        }
-                    }
-                    Text(
-                        text       = "৳ ${DecimalFormat("#,##0.00").format(item.amount)}",
-                        color      = if (isSoldOut) TextMuted else TextWhite,
-                        fontSize   = 16.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                }
-
-                Row(
-                    modifier             = Modifier.fillMaxWidth(),
-                    verticalAlignment    = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text     = "TrxID: ${item.trxId}",
-                        color    = TextMuted,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        StatusBadge(isSoldOut = isSoldOut)
-                        if (!isSoldOut && onSoldOutClick != null) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .background(AccentRed.copy(alpha = 0.12f))
-                                    .border(0.5.dp, AccentRed.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
-                                    .clickable { onSoldOutClick() }
-                                    .padding(horizontal = 8.dp, vertical = 3.dp)
-                            ) {
+                            Text(
+                                text     = "SIM ${item.simSlot}",
+                                color    = TextMuted.copy(alpha = 0.6f),
+                                fontSize = 9.sp
+                            )
+                            if (simNumber != null) {
                                 Text(
-                                    text       = "Sold Out",
-                                    color      = AccentRed,
-                                    fontSize   = 9.sp,
-                                    fontWeight = FontWeight.Bold
+                                    text     = simNumber,
+                                    color    = TextMuted.copy(alpha = 0.6f),
+                                    fontSize = 9.sp
                                 )
                             }
                         }
                     }
-                }
 
-                Row(
-                    modifier             = Modifier.fillMaxWidth(),
-                    verticalAlignment    = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    item.senderNumber?.let {
+                    // Amount + Status
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text       = "৳ ${java.text.DecimalFormat("#,##0.00").format(item.amount)}",
+                            color      = TextWhite,
+                            fontSize   = 17.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Icon(
-                                imageVector     = Icons.Default.PhoneAndroid,
-                                contentDescription = "From",
-                                tint            = TextMuted.copy(alpha = 0.6f),
-                                modifier        = Modifier.size(11.dp)
-                            )
+                            if (isSoldOut) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .background(AccentRed.copy(alpha = 0.12f))
+                                        .border(0.5.dp, AccentRed.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text       = "SOLDOUT",
+                                        color      = AccentRed,
+                                        fontSize   = 8.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .background(AccentGreen.copy(alpha = 0.12f))
+                                        .border(0.5.dp, AccentGreen.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text       = "✅ READY",
+                                        color      = AccentGreen,
+                                        fontSize   = 8.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                if (onSoldOutClick != null) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(20.dp))
+                                            .background(AccentRed.copy(alpha = 0.12f))
+                                            .border(0.5.dp, AccentRed.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+                                            .clickable { onSoldOutClick() }
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text       = "Sold Out",
+                                            color      = AccentRed,
+                                            fontSize   = 8.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                AnimatedVisibility(
+                    visible = expanded,
+                    enter = expandVertically(animationSpec = androidx.compose.animation.core.tween(300)) + fadeIn(androidx.compose.animation.core.tween(300)),
+                    exit = shrinkVertically(animationSpec = androidx.compose.animation.core.tween(300)) + fadeOut(androidx.compose.animation.core.tween(300))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(HistBg)
+                            .padding(14.dp)
+                    ) {
+                        Text(
+                            text = "Raw SMS",
+                            color = TextWhite,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = item.fullSms ?: "No SMS text available",
+                            color = TextMuted,
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Timestamp Details",
+                            color = TextWhite,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "SMS: ${item.smsTimestamp}",
+                            color = TextMuted,
+                            fontSize = 11.sp
+                        )
+                        if (item.senderNumber != null) {
+                            Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text     = it,
-                                color    = TextMuted.copy(alpha = 0.7f),
-                                fontSize = 10.sp
+                                text = "Sender",
+                                color = TextWhite,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = item.senderNumber,
+                                color = TextMuted,
+                                fontSize = 11.sp
                             )
                         }
                     }
-                    Text(
-                        text     = formatTrxTimestamp(item.smsTimestamp),
-                        color    = TextMuted.copy(alpha = 0.6f),
-                        fontSize = 10.sp
-                    )
                 }
             }
+
+            // The absolute positioned expand arrow
+            Icon(
+                imageVector = Icons.Default.ExpandMore,
+                contentDescription = "Expand",
+                tint = TextMuted.copy(alpha = 0.5f),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 10.dp, end = 10.dp)
+                    .size(24.dp)
+                    .rotate(rotationState)
+            )
         }
     }
 }

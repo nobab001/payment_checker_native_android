@@ -241,22 +241,32 @@ class SmsReceiver(
                     continue
                 }
 
-                // Forward RAW body payload directly with parsed amount and trxId
-                val finalPayment = SmsParser.parseWithDynamicRegex(
-                    body = body,
-                    regexPattern = matchingMethod.regexPattern,
-                    providerTag = matchingMethod.provider,
-                    senderNumber = sender,
-                    timestamp = timestamp,
-                    simSlot = simSlot,
-                    simNumber = simNumber ?: matchingMethod.number,
-                    isCustomSender = matchingMethod.templateId == null
-                ) ?: SmsParser.parseSms(sender, body, timestamp)?.copy(
-                    simSlot = simSlot,
-                    simNumber = simNumber ?: matchingMethod.number,
-                    isCustomSender = matchingMethod.templateId == null,
-                    providerTag = matchingMethod.provider
-                ) ?: SmsParser.ParsedPayment(
+                var parsedPayment: online.paychek.app.utils.SmsParser.ParsedPayment? = null
+                
+                val patternsToTry = mutableListOf<String>()
+                matchingMethod.customPatterns?.let { patternsToTry.addAll(it) }
+                if (!matchingMethod.regexPattern.isNullOrBlank()) {
+                    patternsToTry.add(matchingMethod.regexPattern)
+                }
+
+                for (pattern in patternsToTry) {
+                    val p = online.paychek.app.utils.SmsParser.parseWithDynamicRegex(
+                        body = body,
+                        regexPattern = pattern,
+                        providerTag = matchingMethod.provider,
+                        senderNumber = sender,
+                        timestamp = timestamp,
+                        simSlot = simSlot,
+                        simNumber = simNumber ?: matchingMethod.number,
+                        isCustomSender = matchingMethod.templateId == null
+                    )
+                    if (p != null) {
+                        parsedPayment = p
+                        break
+                    }
+                }
+
+                val finalPayment = parsedPayment ?: online.paychek.app.utils.SmsParser.ParsedPayment(
                     amount         = 0.0,
                     trxId          = "",
                     providerTag    = matchingMethod.provider,

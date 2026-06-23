@@ -56,18 +56,19 @@ model gateway_layouts {
 }
 
 model gateway_methods {
-  id           Int      @id @default(autoincrement())
-  user_id      String   @db.VarChar(255)
-  device_id    String   @default("") @db.VarChar(255)
-  sim_slot     Int      @default(1)
-  provider     String   @db.VarChar(50)
-  number       String   @db.VarChar(20)
-  display_name String?  @db.VarChar(100)
-  is_enabled   Int       @default(0) @db.TinyInt
-  priority     Int      @default(0)
-  template_id  Int?
-  created_at   DateTime @default(now()) @db.Timestamp(0)
-  updated_at   DateTime @default(now()) @db.Timestamp(0)
+  id              Int      @id @default(autoincrement())
+  user_id         String   @db.VarChar(255)
+  device_id       String   @default("") @db.VarChar(255)
+  sim_slot        Int      @default(1)
+  provider        String   @db.VarChar(50)
+  number          String   @db.VarChar(20)
+  display_name    String?  @db.VarChar(100)
+  is_enabled      Int      @default(0) @db.TinyInt
+  priority        Int      @default(0)
+  template_id     Int?
+  custom_patterns String?  @db.Text
+  created_at      DateTime @default(now()) @db.Timestamp(0)
+  updated_at      DateTime @default(now()) @db.Timestamp(0)
 
   @@index([template_id], map: "idx_template")
   @@index([user_id], map: "idx_user")

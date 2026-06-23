@@ -10,7 +10,7 @@ async function fetchGatewayMethodsForUser(userId, deviceId) {
     } catch(e) { console.error('Fallback update error', e); }
   }
   const rows = await prisma.$queryRaw`
-    SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.is_enabled, gm.priority, gm.template_id,
+    SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.is_enabled, gm.priority, gm.template_id, gm.custom_patterns,
             t.sender_id, t.sender_number, t.matching_keyword, '' AS regex_pattern, COALESCE(t.is_official, 1) AS is_official,
             cvt.single_number_instruction, cvt.multiple_number_instruction
        FROM gateway_methods gm
@@ -26,6 +26,13 @@ async function fetchGatewayMethodsForUser(userId, deviceId) {
     for (const key in r) {
       if (typeof r[key] === 'bigint') obj[key] = Number(r[key]);
       else obj[key] = r[key];
+    }
+    // Parse JSON array from DB text
+    if (obj.custom_patterns) {
+      try { obj.custom_patterns = JSON.parse(obj.custom_patterns); }
+      catch(e) { obj.custom_patterns = []; }
+    } else {
+      obj.custom_patterns = [];
     }
     return obj;
   });
@@ -269,4 +276,82 @@ async function addGatewayMethod(req, res) {
   }
 }
 
-module.exports = { getGatewayMethods, updatePriority, toggleMethod, updateMethod, getTemplates, addGatewayMethod };
+// =============================================================================
+// POST /api/gateway/methods/:id/custom-templates
+// অ্যাডমিন প্যানেল থেকে কাস্টম এসএমএস বডি রিসিভ করে ডায়নামিক রেজেক্স বানানো
+//
+// Body: { full_sms: "..." }
+// =============================================================================
+function generateCustomRegex(smsText) {
+    // 1. Escape regex special characters
+    let pattern = smsText.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+
+    // 2. Replace Amount (looking for Tk, Tk., BDT, Amount, Received Tk etc. followed by digits)
+    pattern = pattern.replace(/(?:Tk\s*|Tk\.\\s*|BDT\s*|Amount\s*|Received\s*)([\d,\.]+)/i, function(match, p1) {
+        return match.replace(p1, '(?<amount>[\\\\d,\\\\.]+)');
+    });
+
+    // 3. Replace Sender / Phone number (11 digits or 880...)
+    pattern = pattern.replace(/(?:from\s*|by\s*|Sender\s*|number\s*)(01[3-9]\d{8}|\d{11})/i, function(match, p1) {
+        return match.replace(p1, '(?<sender>[\\\\d*xX]+)');
+    });
+
+    // 4. Replace TrxID (Alphanumeric 6-15 chars)
+    pattern = pattern.replace(/(?:TrxID\s*[:\-]?\s*|TxnId\s*[:\-]?\s*|Txn\s*[:\-]?\s*|ID\s*[:\-]?\s*)([A-Za-z0-9]{6,15})/i, function(match, p1) {
+        return match.replace(p1, '(?<trxid>[A-Za-z0-9]+)');
+    });
+
+    return `.*${pattern}.*`;
+}
+
+async function addCustomTemplate(req, res) {
+  try {
+    const userId = req.user.userId;
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+    const methodId = parseInt(req.params.id);
+    const { full_sms } = req.body;
+
+    if (!full_sms) {
+      return res.status(400).json({ error: 'full_sms আবশ্যক' });
+    }
+
+    const method = await prisma.gateway_methods.findFirst({
+      where: { id: methodId, user_id: String(userId), device_id: String(deviceId) }
+    });
+
+    if (!method) {
+      return res.status(404).json({ error: 'মেথড পাওয়া যায়নি' });
+    }
+
+    const newPattern = generateCustomRegex(full_sms);
+    let patterns = [];
+    if (method.custom_patterns) {
+      try { patterns = JSON.parse(method.custom_patterns); } catch (e) {}
+    }
+
+    // Limit to max 5 templates
+    if (patterns.length >= 5) {
+      return res.status(400).json({ error: 'সর্বোচ্চ ৫টি কাস্টম টেমপ্লেট যোগ করা যাবে' });
+    }
+
+    patterns.push(newPattern);
+
+    await prisma.$executeRaw`UPDATE gateway_methods SET custom_patterns = ${JSON.stringify(patterns)} WHERE id = ${methodId}`;
+
+    const data = await fetchGatewayMethodsForUser(userId, deviceId);
+    console.log(`[GATEWAY] Custom template added to method ${methodId} | User: ${userId}`);
+
+    const io = req.app.get('io');
+    const targetDeviceId = req.body.deviceId || req.user.deviceId;
+    if (io && targetDeviceId) {
+        io.to(`${userId}:${targetDeviceId}`).emit("sync_gateway_methods", data);
+    }
+
+    return res.json({ success: true, message: 'কাস্টম টেমপ্লেট যোগ করা হয়েছে।', data });
+  } catch (error) {
+    console.error('[GATEWAY] addCustomTemplate error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+module.exports = { getGatewayMethods, updatePriority, toggleMethod, updateMethod, getTemplates, addGatewayMethod, addCustomTemplate };
