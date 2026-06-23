@@ -13,7 +13,7 @@ const apiRateLimiter = rateLimit({
   max: 60, // Limit each user to 60 requests per window
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false, default: true, ip: false },
+  validate: { xForwardedForHeader: false, default: true, ip: false, keyGeneratorIpFallback: false },
   keyGenerator: (req) => {
     return req.user?.userId || req.ip;
   },
