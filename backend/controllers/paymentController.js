@@ -8,144 +8,35 @@ const {
     assertRawBodyIntegrity,
 } = require('../utils/smsSecuritySpec');
 
-// =============================================================================
-// Helper — SHA-256(rawBody, 'utf8') -> lowercase hex
-// Canonical spec: smsSecuritySpec.js Section 3
-// =============================================================================
-
-function sha256(data) {
-  return crypto.createHash('sha256').update(data, 'utf8').digest('hex');
-}
+const { smsQueue } = require('../services/smsQueue');
 
 // =============================================================================
 // POST /api/payment-sms-ingest
-// Android থেকে RAW SMS + HMAC Signature গ্রহণ করে, cryptographically যাচাই
-// করে, server-side parse করে, ডাটাবেজে সংরক্ষণ করে।
 // =============================================================================
 async function paymentSmsIngest(req, res) {
   try {
-    const userId   = req.user.userId;
-    const deviceId = req.user.deviceId || 'unknown_device';
+    const payload = {
+      userId: req.user.userId,
+      deviceId: req.user.deviceId || 'unknown_device',
+      rawBody: req.body.rawBody,
+      hmacSignature: req.body.hmacSignature,
+      senderNumber: req.body.senderNumber,
+      smsTimestamp: req.body.smsTimestamp,
+      simSlot: req.body.simSlot,
+      simNumber: req.body.simNumber
+    };
 
-    const { rawBody, hmacSignature, senderNumber, smsTimestamp, simSlot, simNumber } = req.body;
-
-    // STEP 1: Input Validation
-    if (!rawBody || typeof rawBody !== 'string' || rawBody.trim().length === 0) {
-      return res.status(400).json({ error: 'rawBody অনুপস্থিত বা খালি' });
-    }
-    if (!hmacSignature || typeof hmacSignature !== 'string') {
-      return res.status(400).json({ error: 'hmacSignature অনুপস্থিত' });
-    }
-    if (!smsTimestamp) {
-      return res.status(400).json({ error: 'smsTimestamp অনুপস্থিত' });
+    if (!payload.rawBody || !payload.hmacSignature || !payload.smsTimestamp) {
+      return res.status(400).json({ error: 'Missing basic validation fields' });
     }
 
-    // STEP 2: User-এর secretKey ডাটাবেজ থেকে লোড করো
-    const user = await prisma.users.findUnique({
-      where: { id: userId },
-      select: { secretKey: true }
+    await smsQueue.add('processSms', payload);
+
+    return res.status(202).json({
+      success: true,
+      status: 'Accepted',
+      message: 'SMS queued for processing'
     });
-    const secretKey = user?.secretKey;
-
-    if (!secretKey) {
-      console.warn(`[INGEST] ⛔ No secretKey — userId: ${userId}. Device re-bind required.`);
-      return res.status(403).json({
-        error: 'HMAC_KEY_NOT_FOUND',
-        message: 'আপনার ডিভাইসের HMAC Key পাওয়া যায়নি। অনুগ্রহ করে আবার লগইন করুন।'
-      });
-    }
-
-    // STEP 3: HMAC Verification
-    const hmacResult = verifyHmac(rawBody, hmacSignature, secretKey);
-
-    if (!hmacResult.valid) {
-      console.warn(`[INGEST] ⛔ HMAC INVALID — userId: ${userId} | deviceId: ${deviceId} | error: ${hmacResult.error}`);
-      return res.status(403).json({
-        error: 'HMAC_INVALID',
-        message: 'অনুরোধটি cryptographically যাচাই করা যায়নি। সম্ভাব্য কারণ: SMS body পরিবর্তিত হয়েছে।'
-      });
-    }
-
-    // STEP 4: rawBodyHash
-    const rawBodyHash = sha256(rawBody.trim());
-
-    // STEP 5: Server-side SMS Parsing
-    console.log(`[INGEST DEBUG] Raw Body: ${rawBody} | Sender Number: ${senderNumber}`);
-    const parsed = await parseRawSms(rawBody, senderNumber || '');
-
-    if (!parsed.success) {
-      console.warn(`[INGEST] ⚠️ PARSE_FAILED (HMAC OK) — userId: ${userId} | body[:80]: ${rawBody.substring(0, 80)}`);
-
-      try {
-        await prisma.sms_parse_failures.create({
-          data: {
-            user_id: userId,
-            device_id: deviceId,
-            raw_body: rawBody,
-            raw_body_hash: rawBodyHash,
-            hmac_signature: hmacSignature,
-            parse_error: parsed.error || 'No matching template',
-            sms_timestamp_ms: Number(smsTimestamp)
-          }
-        });
-      } catch (auditErr) {
-        console.error('[INGEST] Audit insert failed (non-critical):', auditErr.message);
-      }
-
-      return res.status(422).json({
-        error: 'SMS_PARSE_FAILED',
-        message: 'SMS format চেনা যায়নি। এই বার্তাটি audit log এ সংরক্ষিত হয়েছে।',
-        hint: 'Admin-কে এই SMS format সম্পর্কে জানান — নতুন template যোগ করা হবে।'
-      });
-    }
-
-    // STEP 6: Timestamp ও Deduplication Key তৈরি
-    const dateObj            = new Date(Number(smsTimestamp));
-    const formattedDate      = dateObj.toISOString().slice(0, 10);
-    const dedupeKey = `${smsTimestamp}|${parsed.senderNumber || ''}|${rawBodyHash}`;
-
-    // STEP 7: DUPLICATE SAFETY — INSERT
-    try {
-      await prisma.sms_history.create({
-        data: {
-          user_id: userId,
-          device_id: deviceId,
-          sim_slot: simSlot ? parseInt(simSlot, 10) : null,
-          sim_number: simNumber ? String(simNumber) : null,
-          provider_tag: parsed.provider,
-          amount: parsed.amount,
-          trx_id: parsed.trxId || '',
-          sender_number: parsed.senderNumber || null,
-          receiver_number: null,
-          sms_timestamp: dateObj,
-          sms_date: new Date(formattedDate),
-          full_sms: rawBody,
-          dedupe_key: dedupeKey,
-          raw_sms_sha256: rawBodyHash,
-          is_synced: 1,
-          is_used: 0
-        }
-      });
-      
-      console.log(`[INGEST] ✅ Saved — Provider: ${parsed.provider} | ৳${parsed.amount} | TrxID: ${parsed.trxId} | SIM: ${simSlot} | User: ${userId}`);
-      return res.json({
-        success: true,
-        isDuplicate: false,
-        message: 'ট্রানজেকশন সফলভাবে সংরক্ষিত হয়েছে।'
-      });
-
-    } catch (dbErr) {
-      // Prisma P2002 is Unique Constraint Violation (equivalent to INSERT IGNORE triggering)
-      if (dbErr.code === 'P2002') {
-        console.log(`[INGEST] Duplicate blocked — hash: ${rawBodyHash.substring(0, 16)}… | User: ${userId}`);
-        return res.json({
-          success: true,
-          isDuplicate: true,
-          message: 'ডুপ্লিকেট ট্রানজেকশন — পূর্বের স্ট্যাটাস অপরিবর্তিত রাখা হয়েছে।'
-        });
-      }
-      throw dbErr; // Rethrow if it's not a duplicate error
-    }
 
   } catch (error) {
     console.error('[INGEST] Error:', error);
@@ -166,74 +57,32 @@ async function paymentSmsIngestBulk(req, res) {
       return res.status(400).json({ error: 'items array is required' });
     }
 
-    const user = await prisma.users.findUnique({
-      where: { id: userId },
-      select: { secretKey: true }
+    const jobs = items.map(item => ({
+      name: 'processSms',
+      data: {
+        userId,
+        deviceId,
+        rawBody: item.rawBody,
+        hmacSignature: item.hmacSignature,
+        senderNumber: item.senderNumber,
+        smsTimestamp: item.smsTimestamp,
+        simSlot: item.simSlot,
+        simNumber: item.simNumber
+      }
+    }));
+
+    if (jobs.length > 0) {
+      await smsQueue.addBulk(jobs);
+    }
+
+    return res.status(202).json({
+      success: true,
+      processed: jobs.length,
+      failed: 0,
+      status: 'Accepted',
+      message: 'Bulk SMS queued for processing'
     });
-    const secretKey = user?.secretKey;
 
-    if (!secretKey) {
-      return res.status(403).json({ error: 'HMAC_KEY_NOT_FOUND' });
-    }
-
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const item of items) {
-      const { rawBody, hmacSignature, senderNumber, smsTimestamp, simSlot, simNumber } = item;
-      
-      if (!rawBody || !hmacSignature || !smsTimestamp) {
-        failCount++;
-        continue;
-      }
-
-      const hmacResult = verifyHmac(rawBody, hmacSignature, secretKey);
-      if (!hmacResult.valid) {
-        failCount++;
-        continue;
-      }
-
-      const rawBodyHash = sha256(rawBody.trim());
-      const parsed = await parseRawSms(rawBody, senderNumber || '');
-
-      if (!parsed.success) {
-        try {
-          await prisma.sms_parse_failures.create({
-            data: {
-              user_id: userId, device_id: deviceId, raw_body: rawBody, raw_body_hash: rawBodyHash,
-              hmac_signature: hmacSignature, parse_error: parsed.error || 'No match', sms_timestamp_ms: Number(smsTimestamp)
-            }
-          });
-        } catch (e) {}
-        failCount++;
-        continue;
-      }
-
-      const dateObj = new Date(Number(smsTimestamp));
-      const formattedDate = dateObj.toISOString().slice(0, 10);
-      const dedupeKey = `${smsTimestamp}|${parsed.senderNumber || ''}|${rawBodyHash}`;
-
-      try {
-        await prisma.sms_history.create({
-          data: {
-            user_id: userId, device_id: deviceId, sim_slot: simSlot ? parseInt(simSlot, 10) : null,
-            sim_number: simNumber ? String(simNumber) : null, provider_tag: parsed.provider,
-            amount: parsed.amount, trx_id: parsed.trxId || '', sender_number: parsed.senderNumber || null,
-            sms_timestamp: dateObj, sms_date: new Date(formattedDate), full_sms: rawBody,
-            dedupe_key: dedupeKey, raw_sms_sha256: rawBodyHash, is_synced: 1, is_used: 0
-          }
-        });
-        successCount++;
-      } catch (dbErr) {
-        if (dbErr.code === 'P2002') {
-          successCount++; // Count duplicates as success for the queue clearer
-        } else {
-          failCount++;
-        }
-      }
-    }
-
-    return res.json({ success: true, processed: successCount, failed: failCount });
   } catch (error) {
     console.error('[INGEST BULK] Error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });

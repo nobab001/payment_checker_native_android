@@ -83,6 +83,9 @@ cron.schedule('0 0 * * *', async () => {
 // Mount Calendar-Based Subscription Expiry Guard & FCM Reminder Scheduler
 require('./cron/billingScheduler');
 
+// Mount BullMQ Background Worker for SMS Processing
+require('./workers/smsWorker');
+
 // Start listening for connections
 app.listen(PORT, async () => {
   console.log(`=============================================`);
