@@ -101,7 +101,7 @@ async function saveSmsTemplate(req, res) {
       sender_id,
       sender_number: sender_number || null,
       matching_keyword: matching_keyword || '',
-      is_active: is_active === undefined ? true : !!is_active,
+      is_active: is_active === undefined ? 1 : (is_active ? 1 : 0),
       is_official: 1
     };
 
@@ -202,9 +202,9 @@ async function saveEmailAccount(req, res) {
       password,
       host,
       port: parseInt(port),
-      secure: !!secure,
+      secure: secure ? 1 : 0,
       daily_limit: parseInt(daily_limit) || 500,
-      is_active: !!is_active
+      is_active: is_active ? 1 : 0
     };
 
     if (id) {
@@ -253,7 +253,7 @@ async function saveSmsSettings(req, res) {
       return res.status(400).json({ error: 'gateway_url is required' });
     }
 
-    const activeFlag = !!is_active;
+    const activeFlag = is_active ? 1 : 0;
 
     const data = {
       gateway_url,
@@ -388,7 +388,7 @@ async function toggleUserBlock(req, res) {
 
     await prisma.users.update({
       where: { id: parseInt(id) },
-      data: { blocked: !!blocked }
+      data: { blocked: blocked ? 1 : 0 }
     });
     return res.json({ success: true, message: `User status changed successfully.` });
   } catch (err) {
@@ -408,7 +408,7 @@ async function updateDeviceTrial(req, res) {
 
     const data = {};
     if (trial_expires_at !== undefined) data.trial_expires_at = trial_expires_at ? new Date(trial_expires_at) : null;
-    if (is_trial_locked !== undefined) data.is_trial_locked = !!is_trial_locked;
+    if (is_trial_locked !== undefined) data.is_trial_locked = is_trial_locked ? 1 : 0;
     if (lock_reason !== undefined) data.lock_reason = lock_reason || null;
 
     await prisma.registered_devices.update({
