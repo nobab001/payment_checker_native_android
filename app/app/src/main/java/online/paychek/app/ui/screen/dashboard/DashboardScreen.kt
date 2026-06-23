@@ -527,10 +527,10 @@ fun DashboardScreen(
                         }
                         
                         val providerFilters = cachedMethods.filter { it.isEnabled == 1 }
-                            .distinctBy { it.provider.lowercase(Locale.US) }
+                            .distinctBy { it.provider.split(" ")[0].lowercase(Locale.US) }
                             .map { method ->
                                 val providerName = method.provider
-                                val tag = providerName.lowercase(Locale.US)
+                                val tag = providerName.split(" ")[0].lowercase(Locale.US)
                                 val label = method.displayName?.takeIf { it.isNotBlank() } ?: providerName
                                 val color = when (tag) {
                                     "bkash" -> Color(0xFF10B981)

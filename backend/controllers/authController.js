@@ -854,41 +854,7 @@ async function completeProfile(req, res) {
       );
     }
 
-    // Auto-insert default gateway methods dynamically from official templates
-    const existingMethods = await query(
-      'SELECT id FROM gateway_methods WHERE user_id = ? AND device_id = ? LIMIT 1',
-      [userId, deviceId]
-    );
-
-    if (existingMethods.length === 0) {
-      const officialTemplates = await query(
-        'SELECT id, template_name FROM sms_templates WHERE is_official = 1'
-      );
-      if (officialTemplates.length > 0) {
-        const insertParams = [];
-        const valuePlaceholders = [];
-        let priority = 1;
-        for (const tmpl of officialTemplates) {
-          let provider = 'bKash';
-          if (tmpl.template_name.toLowerCase().includes('nagad')) provider = 'Nagad';
-          else if (tmpl.template_name.toLowerCase().includes('rocket')) provider = 'Rocket';
-          else if (tmpl.template_name.toLowerCase().includes('upay')) provider = 'Upay';
-
-          let simSlot = 1;
-          if (tmpl.template_name.toLowerCase().includes('agent')) simSlot = 2;
-
-          valuePlaceholders.push('(?, ?, ?, ?, ?, ?)');
-          insertParams.push(userId, deviceId, tmpl.id, simSlot, provider, priority++);
-        }
-
-        if (valuePlaceholders.length > 0) {
-          await query(
-            `INSERT INTO gateway_methods (user_id, device_id, template_id, sim_slot, provider, priority) VALUES ${valuePlaceholders.join(', ')}`,
-            insertParams
-          );
-        }
-      }
-    }
+    // Removed: Auto-insert default gateway methods dynamically from official templates
 
     // Fetch updated user details
     const updatedUsers = await query('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
