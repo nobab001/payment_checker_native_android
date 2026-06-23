@@ -93,6 +93,7 @@ fun LoginScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var isButtonClickable by remember { mutableStateOf(true) }
+    var lastClickTime by remember { mutableStateOf(0L) }
 
     // Observe OTP verification and trigger navigation
     val focusRequester = remember { FocusRequester() }
@@ -958,7 +959,9 @@ fun LoginScreen(
                       } else {
                           Button(
                               onClick = {
-                                  if (isButtonClickable) {
+                                  val currentTime = System.currentTimeMillis()
+                                  if (isButtonClickable && currentTime - lastClickTime >= 5000L) {
+                                      lastClickTime = currentTime
                                       isButtonClickable = false
                                       coroutineScope.launch {
                                           kotlinx.coroutines.delay(5000L)

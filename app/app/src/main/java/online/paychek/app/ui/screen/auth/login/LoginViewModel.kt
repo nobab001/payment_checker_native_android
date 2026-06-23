@@ -74,6 +74,7 @@ class LoginViewModel : ViewModel() {
     }
 
     fun checkContactAndRequestOtp(context: Context) {
+        if (_uiState.value.isLoading) return
         val contact = _uiState.value.contact.trim()
         if (contact.isEmpty()) {
             _uiState.update { it.copy(errorMessage = "মোবাইল নম্বর অথবা ইমেইল লিখুন") }
@@ -350,6 +351,7 @@ class LoginViewModel : ViewModel() {
     }
 
     fun verifyOtp(context: Context, duration: Long? = null, onOtpVerified: (VerifyOtpResponse) -> Unit) {
+        if (_uiState.value.isLoading) return
         val contact = _uiState.value.contact.trim()
         val code = _uiState.value.otpCode.trim()
 
