@@ -228,23 +228,20 @@ fun HomeScreen(
         }
     }
 
-    // 10-second polling for pending approvals when owner
+    // Fetch pending approvals on load or refresh (no 10-second polling)
     var pendingDevices by remember { mutableStateOf<List<online.paychek.app.data.remote.dto.ChildDeviceDto>>(emptyList()) }
     LaunchedEffect(isApproved, deviceRole) {
         if (isApproved && deviceRole == "owner") {
-            while (true) {
-                try {
-                    val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
-                    if (token.isNotEmpty()) {
-                        val response = online.paychek.app.data.remote.api.RetrofitClient.gatewayApiService.getPendingApprovals("Bearer $token")
-                        if (response.isSuccessful && response.body() != null) {
-                            pendingDevices = response.body()!!.data.filter { it.isApproved == 0 }
-                        }
+            try {
+                val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
+                if (token.isNotEmpty()) {
+                    val response = online.paychek.app.data.remote.api.RetrofitClient.gatewayApiService.getPendingApprovals("Bearer $token")
+                    if (response.isSuccessful && response.body() != null) {
+                        pendingDevices = response.body()!!.data.filter { it.isApproved == 0 }
                     }
-                } catch (e: Exception) {
-                    // Ignore background error
                 }
-                kotlinx.coroutines.delay(10000L)
+            } catch (e: Exception) {
+                // Ignore error
             }
         } else {
             pendingDevices = emptyList()

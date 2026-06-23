@@ -15,13 +15,7 @@ const apiRateLimiter = rateLimit({
   legacyHeaders: false,
   validate: { xForwardedForHeader: false, default: true, ip: false },
   keyGenerator: (req) => {
-    // This route is protected by auth middleware, so userId is always present.
-    // We strictly track by user ID.
-    if (req.user && req.user.userId) {
-      return `rate-limit:user:${req.user.userId}`;
-    }
-    // Fallback for edge cases (avoids req.ip literal which triggers ERL startup crash)
-    return `rate-limit:fallback:${req.connection?.remoteAddress || 'unknown'}`;
+    return req.user?.userId || req.ip;
   },
   handler: (req, res) => {
     res.status(429).json({
