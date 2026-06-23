@@ -91,6 +91,8 @@ fun LoginScreen(
     val uiState by viewModel.uiState.collectAsState()
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var isButtonClickable by remember { mutableStateOf(true) }
 
     // Observe OTP verification and trigger navigation
     val focusRequester = remember { FocusRequester() }
@@ -956,23 +958,30 @@ fun LoginScreen(
                       } else {
                           Button(
                               onClick = {
-                                  focusManager.clearFocus()
-                                  if (!uiState.isOtpSent && !isBypass) {
-                                      viewModel.checkContactAndRequestOtp(context)
-                                  } else {
-                                      val duration = if (isBypass && adminBypassOpenedAt != null) {
-                                          (System.currentTimeMillis() - adminBypassOpenedAt!!) / 1000
-                                      } else {
-                                          null
+                                  if (isButtonClickable) {
+                                      isButtonClickable = false
+                                      coroutineScope.launch {
+                                          kotlinx.coroutines.delay(5000L)
+                                          isButtonClickable = true
                                       }
-                                      viewModel.verifyOtp(context, duration) { res ->
-                                          verificationResult = res
+                                      focusManager.clearFocus()
+                                      if (!uiState.isOtpSent && !isBypass) {
+                                          viewModel.checkContactAndRequestOtp(context)
+                                      } else {
+                                          val duration = if (isBypass && adminBypassOpenedAt != null) {
+                                              (System.currentTimeMillis() - adminBypassOpenedAt!!) / 1000
+                                          } else {
+                                              null
+                                          }
+                                          viewModel.verifyOtp(context, duration) { res ->
+                                              verificationResult = res
+                                          }
                                       }
                                   }
                               },
                               colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                               shape = RoundedCornerShape(16.dp),
-                              enabled = !uiState.isTrialBlocked,
+                              enabled = !uiState.isTrialBlocked && isButtonClickable,
                               modifier = Modifier
                                   .fillMaxWidth()
                                   .height(52.dp)
