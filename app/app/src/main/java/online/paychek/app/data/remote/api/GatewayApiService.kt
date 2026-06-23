@@ -33,7 +33,7 @@ interface GatewayApiService {
     suspend fun updatePriority(
         @Header("Authorization") token: String,
         @Body request: UpdatePriorityRequest
-    ): Response<BasicResponse>
+    ): Response<GatewayListResponse>
 
     // ── একটি Method চালু/বন্ধ করা ────────────────────────────────────────────
     @PATCH("gateway/methods/{id}/toggle")
@@ -41,7 +41,7 @@ interface GatewayApiService {
         @Header("Authorization") token: String,
         @Path("id") id: Int,
         @Body request: ToggleRequest
-    ): Response<BasicResponse>
+    ): Response<GatewayListResponse>
 
     // ── Method-এর নম্বর / নাম আপডেট করা ─────────────────────────────────────
     @PATCH("gateway/methods/{id}")
@@ -49,7 +49,7 @@ interface GatewayApiService {
         @Header("Authorization") token: String,
         @Path("id") id: Int,
         @Body request: UpdateMethodRequest
-    ): Response<BasicResponse>
+    ): Response<GatewayListResponse>
 
     // ── Parent-Child Control Hub APIs ────────────────────────────────────────
     @GET("v1/devices")

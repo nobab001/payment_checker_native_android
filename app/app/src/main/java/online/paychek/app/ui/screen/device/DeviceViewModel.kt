@@ -192,6 +192,12 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         runCatching {
             api.updatePriority("Bearer $token", UpdatePriorityRequest(items))
         }.onSuccess { res ->
+            if (res.isSuccessful && res.body()?.success == true) {
+                res.body()?.data?.let { newData ->
+                    saveMethodsToCache(newData)
+                    _state.update { it.copy(methods = newData) }
+                }
+            }
             _state.update {
                 it.copy(
                     isSaving       = false,
@@ -223,7 +229,13 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
             val token = getToken() ?: return@launch
             runCatching {
                 api.toggleMethod("Bearer $token", method.id, ToggleRequest(newEnabled))
-            }.onSuccess {
+            }.onSuccess { res ->
+                if (res.isSuccessful && res.body()?.success == true) {
+                    res.body()?.data?.let { newData ->
+                        saveMethodsToCache(newData)
+                        _state.update { it.copy(methods = newData) }
+                    }
+                }
                 validateAndSyncSimToggles()
             }.onFailure {
                 _state.update { current ->
@@ -292,20 +304,31 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 )
             }.onSuccess { res ->
-                if (res.isSuccessful) {
-                    _state.update { current ->
-                        val updated = current.methods.map {
-                            if (it.id == method.id)
-                                it.copy(number = number.ifEmpty { null },
-                                        displayName = displayName.ifEmpty { null })
-                            else it
+                if (res.isSuccessful && res.body()?.success == true) {
+                    res.body()?.data?.let { newData ->
+                        saveMethodsToCache(newData)
+                        _state.update { current ->
+                            current.copy(
+                                methods = newData,
+                                editingMethod = null,
+                                successMessage = "আপডেট সফল হয়েছে ✓"
+                            )
                         }
-                        saveMethodsToCache(updated)
-                        current.copy(
-                            methods = updated,
-                            editingMethod = null,
-                            successMessage = "আপডেট সফল হয়েছে ✓"
-                        )
+                    } ?: run {
+                        _state.update { current ->
+                            val updated = current.methods.map {
+                                if (it.id == method.id)
+                                    it.copy(number = number.ifEmpty { null },
+                                            displayName = displayName.ifEmpty { null })
+                                else it
+                            }
+                            saveMethodsToCache(updated)
+                            current.copy(
+                                methods = updated,
+                                editingMethod = null,
+                                successMessage = "আপডেট সফল হয়েছে ✓"
+                            )
+                        }
                     }
                     viewModelScope.launch {
                         delay(2000)
@@ -582,13 +605,18 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                     UpdateMethodRequest(number = number, displayName = method.displayName)
                 )
             }.onSuccess { res ->
-                if (res.isSuccessful) {
-                    _state.update { current ->
-                        val updated = current.methods.map {
-                            if (it.id == method.id) it.copy(number = number) else it
+                if (res.isSuccessful && res.body()?.success == true) {
+                    res.body()?.data?.let { newData ->
+                        saveMethodsToCache(newData)
+                        _state.update { it.copy(methods = newData) }
+                    } ?: run {
+                        _state.update { current ->
+                            val updated = current.methods.map {
+                                if (it.id == method.id) it.copy(number = number) else it
+                            }
+                            saveMethodsToCache(updated)
+                            current.copy(methods = updated)
                         }
-                        saveMethodsToCache(updated)
-                        current.copy(methods = updated)
                     }
                 }
             }
@@ -666,6 +694,10 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                     .onSuccess { res ->
                         _state.update { it.copy(isSaving = false) }
                         if (res.isSuccessful && res.body()?.success == true) {
+                            res.body()?.data?.let { newData ->
+                                saveMethodsToCache(newData)
+                                _state.update { it.copy(methods = newData) }
+                            }
                             loadGatewayMethods()
                         } else {
                             setError("মেথড যোগ করতে ব্যর্থ হয়েছে (${res.code()})")

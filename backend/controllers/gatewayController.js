@@ -1,5 +1,28 @@
 const prisma = require('../db/prisma');
 
+async function fetchGatewayMethodsForUser(userId) {
+  const rows = await prisma.$queryRaw`
+    SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.is_enabled, gm.priority, gm.template_id,
+            t.sender_id, t.sender_number, t.matching_keyword, '' AS regex_pattern, COALESCE(t.is_official, 1) AS is_official,
+            cvt.single_number_instruction, cvt.multiple_number_instruction
+       FROM gateway_methods gm
+  LEFT JOIN sms_templates t ON gm.template_id = t.id AND t.is_active = 1
+  LEFT JOIN checkout_view_templates cvt ON cvt.sms_template_id = t.id
+      WHERE gm.user_id = ${userId}
+        AND (gm.template_id IS NULL OR t.id IS NOT NULL)
+      ORDER BY gm.priority ASC, gm.sim_slot ASC
+  `;
+
+  return rows.map(r => {
+    const obj = {};
+    for (const key in r) {
+      if (typeof r[key] === 'bigint') obj[key] = Number(r[key]);
+      else obj[key] = r[key];
+    }
+    return obj;
+  });
+}
+
 // =============================================================================
 // GET /api/gateway/methods
 // ব্যবহারকারীর সব গেটওয়ে মেথড লোড করে (priority অনুযায়ী সাজানো)
@@ -8,27 +31,7 @@ async function getGatewayMethods(req, res) {
   try {
     const userId = req.user.userId;
 
-    const rows = await prisma.$queryRaw`
-      SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.is_enabled, gm.priority, gm.template_id,
-              t.sender_id, t.sender_number, t.matching_keyword, '' AS regex_pattern, COALESCE(t.is_official, 1) AS is_official,
-              cvt.single_number_instruction, cvt.multiple_number_instruction
-         FROM gateway_methods gm
-    LEFT JOIN sms_templates t ON gm.template_id = t.id AND t.is_active = 1
-    LEFT JOIN checkout_view_templates cvt ON cvt.sms_template_id = t.id
-        WHERE gm.user_id = ${userId}
-          AND (gm.template_id IS NULL OR t.id IS NOT NULL)
-        ORDER BY gm.priority ASC, gm.sim_slot ASC
-    `;
-
-    // Convert BigInts from queryRaw to Numbers for JSON serialization if needed
-    const data = rows.map(r => {
-      const obj = {};
-      for (const key in r) {
-        if (typeof r[key] === 'bigint') obj[key] = Number(r[key]);
-        else obj[key] = r[key];
-      }
-      return obj;
-    });
+    const data = await fetchGatewayMethodsForUser(userId);
 
     return res.json({ success: true, data });
   } catch (error) {
@@ -62,8 +65,9 @@ async function updatePriority(req, res) {
       });
     }
 
+    const data = await fetchGatewayMethodsForUser(userId);
     console.log(`[GATEWAY] Priority updated for ${items.length} items | User: ${userId}`);
-    return res.json({ success: true, message: 'Priority ক্রম সফলভাবে আপডেট হয়েছে।' });
+    return res.json({ success: true, message: 'Priority ক্রম সফলভাবে আপডেট হয়েছে।', data });
 
   } catch (error) {
     console.error('[GATEWAY] updatePriority error:', error);
@@ -98,9 +102,10 @@ async function toggleMethod(req, res) {
       return res.status(404).json({ error: 'মেথড পাওয়া যায়নি' });
     }
 
+    const data = await fetchGatewayMethodsForUser(userId);
     const status = enabledBool ? 'চালু' : 'বন্ধ';
     console.log(`[GATEWAY] Method ${methodId} ${status} | User: ${userId}`);
-    return res.json({ success: true, message: `মেথড ${status} করা হয়েছে।` });
+    return res.json({ success: true, message: `মেথড ${status} করা হয়েছে।`, data });
 
   } catch (error) {
     console.error('[GATEWAY] toggleMethod error:', error);
@@ -138,8 +143,9 @@ async function updateMethod(req, res) {
       return res.status(404).json({ error: 'মেথড পাওয়া যায়নি' });
     }
 
+    const updatedData = await fetchGatewayMethodsForUser(userId);
     console.log(`[GATEWAY] Method ${methodId} updated | User: ${userId}`);
-    return res.json({ success: true, message: 'মেথড আপডেট হয়েছে।' });
+    return res.json({ success: true, message: 'মেথড আপডেট হয়েছে।', data: updatedData });
 
   } catch (error) {
     console.error('[GATEWAY] updateMethod error:', error);
@@ -210,8 +216,9 @@ async function addGatewayMethod(req, res) {
       }
     });
 
+    const data = await fetchGatewayMethodsForUser(userId);
     console.log(`[GATEWAY] Gateway method added | User: ${userId} | Slot: ${sim_slot} | Provider: ${provider}`);
-    return res.json({ success: true, id: result.id, message: 'মেথড সফলভাবে যোগ করা হয়েছে।' });
+    return res.json({ success: true, id: result.id, message: 'মেথড সফলভাবে যোগ করা হয়েছে।', data });
   } catch (error) {
     console.error('[GATEWAY] addGatewayMethod error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });

@@ -183,15 +183,16 @@ class SmsReceiver(
                 }
             }
 
-            val methodsJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(context)
-            val methodsType = object : com.google.gson.reflect.TypeToken<List<GatewayMethod>>() {}.type
-            val cachedMethods: List<GatewayMethod> = try {
-                com.google.gson.Gson().fromJson(methodsJson, methodsType)
-            } catch (e: Exception) {
-                emptyList()
-            }
-
             for (msg in messages) {
+                // Read live cache for each message dynamically
+                val methodsJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(context)
+                val methodsType = object : com.google.gson.reflect.TypeToken<List<GatewayMethod>>() {}.type
+                val cachedMethods: List<GatewayMethod> = try {
+                    com.google.gson.Gson().fromJson(methodsJson, methodsType)
+                } catch (e: Exception) {
+                    emptyList()
+                }
+
                 val sender    = msg.originatingAddress ?: continue
                 val body      = msg.messageBody       ?: continue
                 val timestamp = msg.timestampMillis

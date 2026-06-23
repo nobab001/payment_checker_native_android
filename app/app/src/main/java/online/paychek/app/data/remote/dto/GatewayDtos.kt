@@ -53,6 +53,7 @@ data class GatewayMethod(
 // =============================================================================
 data class GatewayListResponse(
     val success: Boolean,
+    val message: String? = null,
     val data: List<GatewayMethod>
 )
 
@@ -115,7 +116,8 @@ data class AddGatewayMethodRequest(
 data class AddGatewayMethodResponse(
     @SerializedName("success") val success: Boolean,
     @SerializedName("id") val id: Int?,
-    @SerializedName("message") val message: String?
+    @SerializedName("message") val message: String?,
+    @SerializedName("data") val data: List<GatewayMethod>? = null
 )
 
 // =============================================================================
