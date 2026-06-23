@@ -266,21 +266,13 @@ class SmsReceiver(
                     }
                 }
 
-                val finalPayment = parsedPayment ?: online.paychek.app.utils.SmsParser.ParsedPayment(
-                    amount         = 0.0,
-                    trxId          = "",
-                    providerTag    = matchingMethod.provider,
-                    senderNumber   = sender,
-                    rawBody        = body,
-                    smsTimestamp   = timestamp,
-                    simSlot        = simSlot,
-                    simNumber      = simNumber ?: matchingMethod.number,
-                    isCustomSender = matchingMethod.templateId == null,
-                    fullSms        = body
-                )
+                if (parsedPayment == null) {
+                    Log.d(TAG, "Payment SMS ignored: Regex patterns did not match the full body structure.")
+                    continue
+                }
 
                 Log.i(TAG, "4 Conditions Met. Forwarding RAW SMS payload to queue. Provider: ${matchingMethod.provider}")
-                saveToOfflineQueueAndForward(context, finalPayment)
+                saveToOfflineQueueAndForward(context, parsedPayment)
             }
 
         } catch (e: SecurityException) {

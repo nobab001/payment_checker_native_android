@@ -1,6 +1,7 @@
 'use strict';
 
 const prisma = require('../db/prisma');
+const { encryptOtp, decryptOtp } = require('../utils/otpCrypto');
 
 // Max credentials per user per type (phones & emails separately)
 const MAX_PER_TYPE = 5;
@@ -105,7 +106,7 @@ async function sendCredentialOtp(req, res) {
     await prisma.otps.create({
       data: {
         contact: cleanContact,
-        code: otpCode,
+        code: encryptOtp(otpCode),
         expires_at: expiresAt
       }
     });
@@ -146,23 +147,23 @@ async function verifyCredential(req, res) {
     const cleanCode = code.trim();
 
     // Validate OTP
-    const otpRec = await prisma.otps.findFirst({
+    const activeOtps = await prisma.otps.findMany({
       where: {
         contact: cleanContact,
-        code: cleanCode,
         expires_at: { gt: new Date() },
         used_at: null
       },
-      select: { id: true }
+      orderBy: { id: 'desc' }
     });
+    const matchedOtp = activeOtps.find(otp => decryptOtp(otp.code) === cleanCode);
 
-    if (!otpRec) {
+    if (!matchedOtp) {
       return res.status(400).json({ error: 'ভুল OTP কোড অথবা মেয়াদ শেষ হয়ে গেছে।' });
     }
 
     // Mark OTP as used
     await prisma.otps.update({
-      where: { id: otpRec.id },
+      where: { id: matchedOtp.id },
       data: { used_at: new Date() }
     });
 

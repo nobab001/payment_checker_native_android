@@ -510,8 +510,7 @@ async function addSite(req, res) {
         site_url,
         api_key: apiKey,
         api_secret: apiSecret,
-        layout_config: JSON.stringify({}),
-        is_official: 1
+        layout_config: JSON.stringify({})
       }
     });
 

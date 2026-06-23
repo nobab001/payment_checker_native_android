@@ -39,9 +39,10 @@ object SmsParser {
     ): ParsedPayment? {
         if (regexPattern.isNullOrBlank()) return null
         return try {
+            val trimmedBody = body.trim()
             val pattern = Pattern.compile(regexPattern, Pattern.CASE_INSENSITIVE or Pattern.DOTALL)
-            val matcher = pattern.matcher(body)
-            if (matcher.find()) {
+            val matcher = pattern.matcher(trimmedBody)
+            if (matcher.matches()) {
                 val amountStr = try { matcher.group("amount") } catch (e: Exception) { null }
                 val parsedAmount = amountStr?.replace(",", "")?.toDoubleOrNull() ?: 0.0
 

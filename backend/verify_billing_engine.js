@@ -3,6 +3,7 @@
 const { query } = require('./db/connection.js');
 const http = require('http');
 const jwt = require('jsonwebtoken');
+const { encryptOtp, decryptOtp } = require('./utils/otpCrypto');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_987654321';
 
@@ -121,7 +122,7 @@ async function runTests() {
     console.error('❌ FAILED: Could not retrieve OTP code from DB.');
     process.exit(1);
   }
-  const code = otpRows[0].code;
+  const code = decryptOtp(otpRows[0].code);
 
   const verifyOtpRes = await postJson('/api/verify-otp', {
     contact: testPhone,
@@ -137,6 +138,15 @@ async function runTests() {
   const testUserId = verifyOtpRes.body.user.id;
   const userToken = verifyOtpRes.body.token;
 
+  // Complete profile manually so that device registration and child limits are active
+  await query('UPDATE users SET profile_complete = 1 WHERE id = ?', [testUserId]);
+  await query(
+    `INSERT INTO registered_devices 
+      (user_id, device_id, device_name, device_model, android_version, status, is_parent, is_approved, device_role, trial_started_at, trial_expires_at, is_trial_locked, is_owner_device) 
+     VALUES (?, ?, 'Main Phone', 'Test Device 1', '13', 'active', 1, 1, 'owner', NOW(), DATE_ADD(NOW(), INTERVAL 7 DAY), 0, 1)`,
+    [testUserId, 'device_test_9991']
+  );
+
   // Retrieve user from db
   const [userRow] = await query('SELECT is_paid, active_plan_name, expiry_date FROM users WHERE id = ?', [testUserId]);
   console.log(`Initial User Status: is_paid=${userRow.is_paid}, active_plan_name=${userRow.active_plan_name}, expiry_date=${userRow.expiry_date}`);
@@ -149,10 +159,9 @@ async function runTests() {
   // 3. Child Device Block for Free Level
   console.log('\n--- 3. Testing Child Device Block for Free Level ---');
   const childOtpCode = '999999';
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
   await query(
-    'INSERT INTO otps (contact, code, expires_at) VALUES (?, ?, ?)',
-    [testPhone, childOtpCode, expiresAt]
+    'INSERT INTO otps (contact, code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))',
+    [testPhone, encryptOtp(childOtpCode)]
   );
 
   const childVerifyOtpRes = await postJson('/api/verify-otp', {
@@ -228,10 +237,9 @@ async function runTests() {
   
   // Insert a new OTP for the second verification attempt
   const childOtpCode2 = '888888';
-  const expiresAt2 = new Date(Date.now() + 5 * 60 * 1000);
   await query(
-    'INSERT INTO otps (contact, code, expires_at) VALUES (?, ?, ?)',
-    [testPhone, childOtpCode2, expiresAt2]
+    'INSERT INTO otps (contact, code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))',
+    [testPhone, encryptOtp(childOtpCode2)]
   );
 
   // Add child device
@@ -258,7 +266,7 @@ async function runTests() {
   }, userToken);
   console.log(`Site status (Expected 200): ${siteResPaid.status}`);
   if (siteResPaid.status !== 200) {
-    console.error('❌ FAILED: Site registration failed under paid plan.');
+    console.error('❌ FAILED: Site registration failed under paid plan. Error:', siteResPaid.body);
     process.exit(1);
   }
   console.log('✅ SUCCESS: Child device and Site added successfully under subscription.');

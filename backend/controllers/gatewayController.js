@@ -284,25 +284,26 @@ async function addGatewayMethod(req, res) {
 // Body: { full_sms: "..." }
 // =============================================================================
 function generateCustomRegex(smsText) {
-    // 1. Escape regex special characters
-    let pattern = smsText.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-
-    // 2. Replace Amount (looking for Tk, Tk., BDT, Amount, Received Tk etc. followed by digits)
-    pattern = pattern.replace(/(?:Tk\s*|Tk\.\\s*|BDT\s*|Amount\s*|Received\s*)([\d,\.]+)/i, function(match, p1) {
-        return match.replace(p1, '(?<amount>[\\\\d,\\\\.]+)');
-    });
-
-    // 3. Replace Sender / Phone number (11 digits or 880...)
-    pattern = pattern.replace(/(?:from\s*|by\s*|Sender\s*|number\s*)(01[3-9]\d{8}|\d{11})/i, function(match, p1) {
-        return match.replace(p1, '(?<sender>[\\\\d*xX]+)');
-    });
-
-    // 4. Replace TrxID (Alphanumeric 6-15 chars)
-    pattern = pattern.replace(/(?:TrxID\s*[:\-]?\s*|TxnId\s*[:\-]?\s*|Txn\s*[:\-]?\s*|ID\s*[:\-]?\s*)([A-Za-z0-9]{6,15})/i, function(match, p1) {
-        return match.replace(p1, '(?<trxid>[A-Za-z0-9]+)');
-    });
-
-    return `.*${pattern}.*`;
+    if (!smsText) return '';
+    
+    // Split the text by matching {xxx} tags
+    const tokens = smsText.split(/(\{[a-zA-Z0-9_]+\})/g);
+    
+    const result = tokens.map(token => {
+        if (token.startsWith('{') && token.endsWith('}')) {
+            const tag = token.slice(1, -1).toLowerCase();
+            if (tag === 'amount') return '(?<amount>[\\d,\\.]+)';
+            if (tag === 'sender') return '(?<sender>[\\d*xX]+)';
+            if (tag === 'trxid') return '(?<trxid>[A-Za-z0-9]+)';
+            if (tag === 'random') return '(.*)';
+            return '(.*?)'; // Fallback for custom tags like {fee}, {balance}
+        } else {
+            // Escape special regex characters in plain text
+            return token.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        }
+    }).join('');
+    
+    return `^${result}$`;
 }
 
 async function addCustomTemplate(req, res) {
@@ -324,7 +325,7 @@ async function addCustomTemplate(req, res) {
       return res.status(404).json({ error: 'মেথড পাওয়া যায়নি' });
     }
 
-    const newPattern = generateCustomRegex(full_sms);
+    const newPattern = generateCustomRegex(full_sms.trim());
     let patterns = [];
     if (method.custom_patterns) {
       try { patterns = JSON.parse(method.custom_patterns); } catch (e) {}

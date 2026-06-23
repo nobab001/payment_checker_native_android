@@ -27,6 +27,7 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const axios = require('axios');
 const crypto = require('crypto');
+const { encryptOtp, decryptOtp } = require('../utils/otpCrypto');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_987654321';
 const TRIAL_DEFAULT_DAYS = parseInt(process.env.TRIAL_DEFAULT_DAYS || '7', 10);
@@ -286,7 +287,7 @@ async function sendOtp(req, res) {
     const otpCode = generateOtpCode();
     await query(
       'INSERT INTO otps (contact, code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))',
-      [cleanedContact, otpCode]
+      [cleanedContact, encryptOtp(otpCode)]
     );
 
     // Dispatch OTP via SMS or Email
@@ -387,7 +388,7 @@ async function registerSendOtp(req, res) {
     const otpCode = generateOtpCode();
     await query(
       'INSERT INTO otps (contact, code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))',
-      [cleanedContact, otpCode]
+      [cleanedContact, encryptOtp(otpCode)]
     );
 
     // Dispatch OTP
@@ -525,14 +526,15 @@ async function verifyOtp(req, res) {
     }
 
     const cleanedCode = code.trim();
-    const otps = await query(
-      'SELECT * FROM otps WHERE contact = ? AND code = ? AND expires_at > NOW() AND used_at IS NULL ORDER BY id DESC LIMIT 1',
-      [cleanedContact, cleanedCode]
+    const activeOtps = await query(
+      'SELECT * FROM otps WHERE contact = ? AND expires_at > NOW() AND used_at IS NULL ORDER BY id DESC',
+      [cleanedContact]
     );
-    if (otps.length === 0) {
+    const matchedOtp = activeOtps.find(otp => decryptOtp(otp.code) === cleanedCode);
+    if (!matchedOtp) {
       return res.status(400).json({ error: 'ভুল ওটিপি কোড অথবা ওটিপির মেয়াদ শেষ হয়ে গেছে।' });
     }
-    await query('UPDATE otps SET used_at = NOW() WHERE id = ?', [otps[0].id]);
+    await query('UPDATE otps SET used_at = NOW() WHERE id = ?', [matchedOtp.id]);
 
     // Check if user exists, if not, create new pending user (profile_complete=0)
     let user = await findUserByContact(cleanedContact);
