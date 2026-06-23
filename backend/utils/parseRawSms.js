@@ -43,7 +43,7 @@ async function parseRawSms(rawBody, senderHint = '') {
     if (!isMatch && template.matching_keyword) {
       const keywords = template.matching_keyword.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
       const cleanBodyLower = cleanBody.toLowerCase();
-      if (keywords.length > 0 && keywords.every(k => cleanBodyLower.includes(k))) {
+      if (keywords.length > 0 && keywords.some(k => cleanBodyLower.includes(k))) {
         isMatch = true;
       }
     }

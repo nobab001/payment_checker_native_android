@@ -11,7 +11,7 @@ async function fetchGatewayMethodsForUser(userId, deviceId) {
   }
   const rows = await prisma.$queryRaw`
     SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.is_enabled, gm.priority, gm.template_id, gm.custom_patterns,
-            t.sender_id, t.sender_number, t.matching_keyword, '' AS regex_pattern, COALESCE(t.is_official, 1) AS is_official,
+            t.sender_id, t.sender_number, t.matching_keyword, t.regex_pattern AS regex_pattern, COALESCE(t.is_official, 1) AS is_official,
             cvt.single_number_instruction, cvt.multiple_number_instruction
        FROM gateway_methods gm
   LEFT JOIN sms_templates t ON gm.template_id = t.id AND t.is_active = 1
@@ -209,6 +209,7 @@ async function getTemplates(req, res) {
         sender_id: true,
         sender_number: true,
         matching_keyword: true,
+        regex_pattern: true,
         is_official: true,
         is_active: true
       }
@@ -216,7 +217,7 @@ async function getTemplates(req, res) {
 
     const formatted = rows.map(r => ({
       ...r,
-      regex_pattern: ''
+      regex_pattern: r.regex_pattern || ''
     }));
 
     return res.json({ success: true, templates: formatted });

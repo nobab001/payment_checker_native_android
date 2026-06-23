@@ -1,67 +1,13 @@
-const prisma = require('./db/prisma');
-
-async function parseRawSms(rawBody, senderHint = '') {
-  console.log('1. Starting with rawBody:', rawBody, 'senderHint:', senderHint);
-  const cleanBody   = rawBody.trim();
-  const cleanSender = senderHint.trim().toLowerCase();
-  
-  const templates = await prisma.sms_templates.findMany({
-    where: { is_active: 1 }
-  });
-  console.log('2. Templates length:', templates.length);
-
-  for (const template of templates) {
-    console.log('3. Checking template:', template.template_name, 'sender_id:', template.sender_id);
-    if (cleanSender && template.sender_id) {
-      const senderPattern = new RegExp(template.sender_id, 'i');
-      if (!senderPattern.test(cleanSender)) {
-        console.log(' -> Sender failed match:', cleanSender, 'vs', template.sender_id);
-        continue;
-      }
-    }
-    
-    console.log('4. Testing regex');
-    const regex = /Tk\s*([\d,]+(?:\.\d+)?)\s*from\s*([\d*Xx]+).*?TrxID:?\s*([A-Z0-9]{6,})/is;
-    const match = regex.exec(cleanBody);
-    if (!match) {
-      console.log(' -> Regex failed');
-      continue;
-    }
-
-    const amountRaw    = match[1]?.replace(/,/g, '') ?? '0';
-    const senderNumber = match[2] ?? 'Unknown';
-    const trxId        = match[3]?.toUpperCase() ?? '';
-
-    const amount = parseFloat(amountRaw);
-    console.log('5. Match extracted:', { amountRaw, senderNumber, trxId, amount });
-
-    if (!trxId || isNaN(amount)) {
-      console.log(' -> trxId or amount invalid');
-      continue;
-    }
-
-    const nameParts = template.template_name ? template.template_name.split(' ') : [];
-    const provider = nameParts[0] || 'Unknown';
-    const type = nameParts[1] || '';
-
-    return {
-      success:      true,
-      provider:     provider,
-      type:         type,
-      amount:       amount,
-      trxId:        trxId,
-      senderNumber: senderNumber
-    };
-  }
-
-  return {
-    success: false,
-    error:   'No matching SMS template found for provided rawBody'
-  };
-}
+const { parseRawSms } = require('./utils/parseRawSms');
 
 async function run() {
-  const body1 = 'You have received Tk 660.00 from 01704468538. Fee Tk 0.00. Balance Tk 7,998.35. TrxID DFM8L8AJDW at 22/06/2026 21:55';
-  console.log('RESULT 1:', await parseRawSms(body1, 'bKash'));
+  const body1 = 'You have received Tk 10.00 from 01648074862. Fee Tk 0.00. Balance Tk 3,750.84. TrxID DFN3MI1YZX at 23/06/2026 22:36';
+  const body2 = 'Cash In Tk 1,000.00 from 01821592626 successful. Fee Tk 0.00. Balance Tk 11,306.35. TrxID DFN8MGGJY6 at 23/06/2026 22:03. Download App: https://bKa.sh/8app';
+
+  console.log('--- TESTING SMS 1 (Received) ---');
+  console.log(await parseRawSms(body1, 'bKash'));
+
+  console.log('\n--- TESTING SMS 2 (Cash In) ---');
+  console.log(await parseRawSms(body2, 'bKash'));
 }
 run();

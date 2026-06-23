@@ -150,37 +150,37 @@ server.listen(PORT, async () => {
     }
     console.log('[DB] Seeded default subscription plans.');
 
-    // Seed default SMS templates (1 to 8) if missing
+    // Delete default SMS templates IDs 2 to 8 if they exist to keep only bKash Personal
+    await prisma.checkout_view_templates.deleteMany({
+      where: { sms_template_id: { in: [2, 3, 4, 5, 6, 7, 8] } }
+    });
+    await prisma.sms_templates.deleteMany({
+      where: { id: { in: [2, 3, 4, 5, 6, 7, 8] } }
+    });
+
+    // Seed default SMS templates (only bKash Personal) if missing
     const defaultSmsTemplates = [
-      { id: 1, name: 'bKash Personal', sender: 'bKash', kw: 'You have received,Tk.,Ref:' },
-      { id: 2, name: 'Nagad Personal', sender: 'NAGAD', kw: 'received cash in Tk,TrxID:' },
-      { id: 3, name: 'Rocket Personal', sender: '16216', kw: 'received Tk,TrxID:' },
-      { id: 4, name: 'Upay Personal', sender: 'upay', kw: 'received Tk,TrxID' },
-      { id: 5, name: 'bKash Agent', sender: 'bKash', kw: 'Cash In,Tk.,Ref:' },
-      { id: 6, name: 'Nagad Agent', sender: 'NAGAD', kw: 'Cash in received,Tk.,TrxID:' },
-      { id: 7, name: 'Rocket Agent', sender: '16216', kw: 'Cash In received,Tk.,TrxID:' },
-      { id: 8, name: 'Upay Agent', sender: 'upay', kw: 'Cash In received,Tk.,TrxID' }
+      { 
+        id: 1, 
+        name: 'bKash Personal', 
+        sender: 'bKash', 
+        kw: 'You have received,Cash In',
+        regex: 'Tk\\s*(?<amount>[\\d,]+(?:\\.\\d+)?)\\s*from\\s*(?<sender>\\d+).*?TrxID\\s*(?<trxid>[A-Z0-9]+)'
+      }
     ];
 
     for (const t of defaultSmsTemplates) {
       await prisma.sms_templates.upsert({
         where: { id: t.id },
-        update: { template_name: t.name, sender_id: t.sender, matching_keyword: t.kw },
-        create: { id: t.id, template_name: t.name, sender_id: t.sender, matching_keyword: t.kw, is_official: 1, is_active: 1 }
+        update: { template_name: t.name, sender_id: t.sender, matching_keyword: t.kw, regex_pattern: t.regex },
+        create: { id: t.id, template_name: t.name, sender_id: t.sender, matching_keyword: t.kw, regex_pattern: t.regex, is_official: 1, is_active: 1 }
       });
     }
     console.log('[DB] Seeding official SMS templates complete.');
 
     // Seed default checkout view templates
     const defaultCheckoutViews = [
-      { id: 1, single: 'নিচের বিকাশ পার্সোনাল নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় বিকাশ নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' },
-      { id: 2, single: 'নিচের নগদ নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় নগদ নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' },
-      { id: 3, single: 'নিচের রকেট নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় রকেট নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' },
-      { id: 4, single: 'নিচের উপায় নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় উপায় নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' },
-      { id: 5, single: 'নিচের বিকাশ এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় বিকাশ এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' },
-      { id: 6, single: 'নিচের নগদ এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় নগদ এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' },
-      { id: 7, single: 'নিচের রকেট এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় রকেট এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' },
-      { id: 8, single: 'নিচের উপায় এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় উপায় এজেন্ট নম্বরে Cash In করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' }
+      { id: 1, single: 'নিচের বিকাশ পার্সোনাল নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি নিচে দিয়ে সাবমিট করুন।', multi: 'নিচের যেকোনো একটি সক্রিয় বিকাশ নম্বরে Send Money করুন এবং ট্রানজেকশন আইডি সাবমিট করুন।' }
     ];
 
     for (const cv of defaultCheckoutViews) {
