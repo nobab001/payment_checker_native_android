@@ -2,6 +2,8 @@
 process.env.TZ = 'Asia/Dhaka';
 
 const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
 const cors = require('cors');
 const cron = require('node-cron');
 const prisma = require('./db/prisma');
@@ -17,6 +19,33 @@ const pinRoutes         = require('./routes/pinRoutes');
 const billingRoutes     = require('./routes/billingRoutes');
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: '*' }
+});
+
+// Setup Socket.IO Multi-Device Isolation
+io.on('connection', (socket) => {
+  const userId = socket.handshake.query.userId;
+  const deviceId = socket.handshake.query.deviceId;
+  
+  if (userId && deviceId) {
+    const roomName = `${userId}:${deviceId}`;
+    socket.join(roomName);
+    console.log(`[Socket.IO] Device connected and locked to room: ${roomName}`);
+    
+    socket.on('disconnect', () => {
+      console.log(`[Socket.IO] Device disconnected from room: ${roomName}`);
+    });
+  } else {
+    console.log(`[Socket.IO] Anonymous connection dropped (missing userId or deviceId)`);
+    socket.disconnect();
+  }
+});
+
+// Make io accessible globally via app
+app.set('io', io);
+
 const PORT = process.env.PORT || 3000;
 
 // Enable CORS for frontend API requests
@@ -87,7 +116,7 @@ require('./cron/billingScheduler');
 require('./workers/smsWorker');
 
 // Start listening for connections
-app.listen(PORT, async () => {
+server.listen(PORT, async () => {
   console.log(`=============================================`);
   console.log(` Payment Checker API Server running on port ${PORT}`);
   console.log(` Database Target: ${process.env.DB_HOST}:${process.env.DB_PORT || 3306}`);

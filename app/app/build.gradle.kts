@@ -113,6 +113,9 @@ dependencies {
   // Security-Crypto (EncryptedSharedPreferences for secretKey storage)
   implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
+  // Socket.IO for Push-Driven Cache Sync
+  implementation("io.socket:socket.io-client:2.1.0")
+
   // Root Detection — Layer 1: RootBeer (lightweight, no Google Play Services dependency)
   // Architecture: RootBeer first → Play Integrity API (optional layer 2, future)
   // RootBeer detects: su binary, Magisk, dangerous props, test-keys, etc.

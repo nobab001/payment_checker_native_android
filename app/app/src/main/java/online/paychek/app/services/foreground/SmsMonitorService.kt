@@ -24,6 +24,8 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import io.socket.client.IO
+import io.socket.client.Socket
 
 /**
  * SmsMonitorService — প্রোডাকশন-রেডি Foreground Service
@@ -43,6 +45,7 @@ class SmsMonitorService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var wakeLock: PowerManager.WakeLock? = null
     private var smsReceiver: SmsReceiver? = null
+    private var socket: Socket? = null
 
     // সর্বশেষ সফল পেমেন্টের সময় (notification-এ দেখানোর জন্য)
     private var lastPaymentTime: String = "এখনো কোনো পেমেন্ট আসেনি"
@@ -97,14 +100,8 @@ class SmsMonitorService : Service() {
         // SMS BroadcastReceiver রেজিস্টার করা
         registerSmsReceiver()
 
-        // ── গেটওয়ে মেথড কনফিগ ও ডিভাইস অ্যাক্টিভেশন সিঙ্ক করা ─────────────────────────────
-        serviceScope.launch {
-            while (isActive) {
-                syncDeviceConfig()
-                syncGatewayMethods()
-                delay(30_000L) // every 30 seconds
-            }
-        }
+        // ── Push-Driven Cache Sync ─────────────────────────────
+        startSocketConnection()
 
         return START_STICKY // সিস্টেম kill করলে নিজে পুনরায় চালু হবে
     }
@@ -146,56 +143,59 @@ class SmsMonitorService : Service() {
         smsReceiver = null
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // গেটওয়ে মেথড কনফিগ সিঙ্ক করা ও ক্যাশ আপডেট
-    // ─────────────────────────────────────────────────────────────────────────
-    private suspend fun syncGatewayMethods() {
+    private fun getUserIdFromToken(token: String): String? {
         try {
-            val sharedPrefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
-            val token = SecurePreferences.decrypt(this, AppConfig.KEY_AUTH_TOKEN)
-            if (token.isEmpty()) return
-
-            val response = RetrofitClient.gatewayApiService.getGatewayMethods("Bearer $token")
-            if (response.isSuccessful && response.body() != null) {
-                val methods = response.body()!!.data
-                val json = com.google.gson.Gson().toJson(methods)
-                online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(this, json)
-                Log.i(TAG, "✅ গেটওয়ে মেথড কনফিগ সফলভাবে সিঙ্ক করা হয়েছে (মোট: ${methods.size})")
+            val parts = token.split(".")
+            if (parts.size == 3) {
+                val payload = String(android.util.Base64.decode(parts[1], android.util.Base64.URL_SAFE))
+                val json = JSONObject(payload)
+                return json.optString("userId")
             }
         } catch (e: Exception) {
-            Log.w(TAG, "গেটওয়ে মেথড সিঙ্ক করতে ব্যর্থ: ${e.message}")
+            Log.e(TAG, "Failed to parse JWT: ${e.message}")
         }
+        return null
     }
 
-    private suspend fun syncDeviceConfig() {
+    private fun startSocketConnection() {
         try {
-            val sharedPrefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
             val token = SecurePreferences.decrypt(this, AppConfig.KEY_AUTH_TOKEN)
             if (token.isEmpty()) return
-
-            val response = RetrofitClient.gatewayApiService.getMyDeviceConfig("Bearer $token")
-            if (response.isSuccessful && response.body() != null && response.body()!!.success) {
-                val devConfig = response.body()!!.data
-                val sim1Active = devConfig.simOneActive == 1
-                val sim2Active = devConfig.simTwoActive == 1
-                val isAppActive = devConfig.isAppActive == 1
-
-                sharedPrefs.edit().apply {
-                    putBoolean(AppConfig.KEY_SIM1_ENABLED, sim1Active)
-                    putBoolean(AppConfig.KEY_SIM2_ENABLED, sim2Active)
-                    putBoolean("pcu_is_app_active", isAppActive)
-                    putBoolean("pcu_is_parent", devConfig.isParent == 1)
-                    putString("pcu_custom_device_name", devConfig.customDeviceName)
-                    apply()
-                }
-
-                SecurePreferences.encrypt(this@SmsMonitorService, "pcu_is_approved", if (devConfig.isApproved == 1) "true" else "false")
-                SecurePreferences.encrypt(this@SmsMonitorService, "pcu_device_role", devConfig.deviceRole)
-
-                Log.i(TAG, "✅ Device configuration synced. SIM1: $sim1Active, SIM2: $sim2Active, AppActive: $isAppActive")
+            
+            val userId = getUserIdFromToken(token) ?: return
+            val deviceId = online.paychek.app.utils.DeviceIdHelper.getHashedAndroidId(this)
+            
+            val options = IO.Options.builder()
+                .setQuery("userId=$userId&deviceId=$deviceId")
+                .build()
+                
+            socket = IO.socket(AppConfig.SOCKET_URL, options)
+            
+            socket?.on(Socket.EVENT_CONNECT) {
+                Log.i(TAG, "Socket.IO Connected to Room: $userId:$deviceId")
             }
+            
+            socket?.on("sync_gateway_methods") { args ->
+                if (args.isNotEmpty()) {
+                    try {
+                        val dataArray = args[0]
+                        val jsonStr = dataArray.toString()
+                        online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(this@SmsMonitorService, jsonStr)
+                        Log.i(TAG, "✅ Push-Driven Cache Sync: Gateway methods updated via Socket.IO")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error parsing socket push data: ${e.message}")
+                    }
+                }
+            }
+            
+            socket?.on("sync_device_config") { args ->
+                // Future expansion: we can receive device config updates here as well
+                Log.i(TAG, "✅ Push-Driven Cache Sync: Device Config push received")
+            }
+            
+            socket?.connect()
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to sync device configuration: ${e.message}")
+            Log.w(TAG, "Socket connection failed: ${e.message}")
         }
     }
 
@@ -281,6 +281,8 @@ class SmsMonitorService : Service() {
         Log.i(TAG, "Foreground service onDestroy")
         releaseWakeLock()
         unregisterSmsReceiver()
+        socket?.disconnect()
+        socket?.off()
         serviceScope.cancel()
     }
 }

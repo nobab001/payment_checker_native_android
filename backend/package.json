@@ -20,7 +20,8 @@
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.10",
-    "rate-limit-redis": "^5.0.0"
+    "rate-limit-redis": "^5.0.0",
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.0",

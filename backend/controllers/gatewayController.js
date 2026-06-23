@@ -67,6 +67,15 @@ async function updatePriority(req, res) {
 
     const data = await fetchGatewayMethodsForUser(userId);
     console.log(`[GATEWAY] Priority updated for ${items.length} items | User: ${userId}`);
+    
+    const io = req.app.get('io');
+    const targetDeviceId = req.body.deviceId || req.user.deviceId;
+    if (io && targetDeviceId) {
+        io.to(`${userId}:${targetDeviceId}`).emit("sync_gateway_methods", data);
+    } else if (io) {
+        io.emit("sync_gateway_methods", data);
+    }
+
     return res.json({ success: true, message: 'Priority ক্রম সফলভাবে আপডেট হয়েছে।', data });
 
   } catch (error) {
@@ -105,6 +114,13 @@ async function toggleMethod(req, res) {
     const data = await fetchGatewayMethodsForUser(userId);
     const status = enabledBool ? 'চালু' : 'বন্ধ';
     console.log(`[GATEWAY] Method ${methodId} ${status} | User: ${userId}`);
+
+    const io = req.app.get('io');
+    const targetDeviceId = req.body.deviceId || req.user.deviceId;
+    if (io && targetDeviceId) {
+        io.to(`${userId}:${targetDeviceId}`).emit("sync_gateway_methods", data);
+    }
+
     return res.json({ success: true, message: `মেথড ${status} করা হয়েছে।`, data });
 
   } catch (error) {
@@ -145,6 +161,13 @@ async function updateMethod(req, res) {
 
     const updatedData = await fetchGatewayMethodsForUser(userId);
     console.log(`[GATEWAY] Method ${methodId} updated | User: ${userId}`);
+
+    const io = req.app.get('io');
+    const targetDeviceId = req.body.deviceId || req.user.deviceId;
+    if (io && targetDeviceId) {
+        io.to(`${userId}:${targetDeviceId}`).emit("sync_gateway_methods", updatedData);
+    }
+
     return res.json({ success: true, message: 'মেথড আপডেট হয়েছে।', data: updatedData });
 
   } catch (error) {
@@ -218,6 +241,13 @@ async function addGatewayMethod(req, res) {
 
     const data = await fetchGatewayMethodsForUser(userId);
     console.log(`[GATEWAY] Gateway method added | User: ${userId} | Slot: ${sim_slot} | Provider: ${provider}`);
+
+    const io = req.app.get('io');
+    const targetDeviceId = req.body.deviceId || req.user.deviceId;
+    if (io && targetDeviceId) {
+        io.to(`${userId}:${targetDeviceId}`).emit("sync_gateway_methods", data);
+    }
+
     return res.json({ success: true, id: result.id, message: 'মেথড সফলভাবে যোগ করা হয়েছে।', data });
   } catch (error) {
     console.error('[GATEWAY] addGatewayMethod error:', error);
