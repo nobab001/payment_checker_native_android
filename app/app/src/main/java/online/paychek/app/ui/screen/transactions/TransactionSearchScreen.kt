@@ -83,6 +83,9 @@ fun TransactionSearchScreen(
     val listState    = rememberLazyListState()
     val focusManager = LocalFocusManager.current
 
+    var showDatePicker by remember { mutableStateOf(false) }
+    val datePickerState = rememberDateRangePickerState()
+
     val shouldLoadMore = remember {
         derivedStateOf {
             val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -129,6 +132,9 @@ fun TransactionSearchScreen(
                     onQueryChange = { viewModel.onSearchQueryChanged(it) },
                     onClear       = { viewModel.onSearchQueryChanged("") },
                     onDone        = { focusManager.clearFocus() },
+                    isDateActive  = state.startDate != null || state.endDate != null,
+                    onDateClick   = { showDatePicker = true },
+                    onClearDate   = { viewModel.onDateRangeChanged(null, null) },
                     modifier      = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             }
@@ -145,17 +151,6 @@ fun TransactionSearchScreen(
                 )
             }
 
-            // ─── ৩.৫ Date Range Filter ─────────────────────────────────────
-            item {
-                DateRangeFilterRow(
-                    startDate = state.startDate,
-                    endDate = state.endDate,
-                    onDateRangeSelected = { start, end ->
-                        viewModel.onDateRangeChanged(start, end)
-                    },
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                )
-            }
             // ─── ৪. Summary Row ────────────────────────────────────────────
             if (!state.isInitialLoading && state.errorMessage == null) {
                 item {
@@ -243,6 +238,31 @@ fun TransactionSearchScreen(
             }
         }
     }
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDatePicker = false
+                        val startMillis = datePickerState.selectedStartDateMillis
+                        val endMillis = datePickerState.selectedEndDateMillis
+                        if (startMillis != null && endMillis != null) {
+                            val startStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(startMillis))
+                            val endStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(endMillis))
+                            viewModel.onDateRangeChanged(startStr, endStr)
+                        }
+                    }
+                ) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+            }
+        ) {
+            DateRangePicker(state = datePickerState, modifier = Modifier.weight(1f))
+        }
+    }
 }
 }
 
@@ -302,6 +322,9 @@ private fun SearchBox(
     onQueryChange: (String) -> Unit,
     onClear: () -> Unit,
     onDone: () -> Unit,
+    isDateActive: Boolean,
+    onDateClick: () -> Unit,
+    onClearDate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     OutlinedTextField(
@@ -322,18 +345,42 @@ private fun SearchBox(
                 modifier        = Modifier.size(20.dp)
             )
         },
-        trailingIcon = if (query.isNotEmpty()) {
-            {
-                IconButton(onClick = onClear) {
+        trailingIcon = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(end = 8.dp)
+            ) {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = onClear) {
+                        Icon(
+                            imageVector     = Icons.Default.Close,
+                            contentDescription = "Clear Search",
+                            tint            = TextMuted,
+                            modifier        = Modifier.size(18.dp)
+                        )
+                    }
+                }
+                if (isDateActive) {
+                    IconButton(onClick = onClearDate) {
+                        Icon(
+                            imageVector     = Icons.Default.Close,
+                            contentDescription = "Clear Date Range",
+                            tint            = AccentRed,
+                            modifier        = Modifier.size(18.dp)
+                        )
+                    }
+                }
+                IconButton(onClick = onDateClick) {
                     Icon(
-                        imageVector     = Icons.Default.Close,
-                        contentDescription = "Clear Search",
-                        tint            = TextMuted,
-                        modifier        = Modifier.size(18.dp)
+                        imageVector     = Icons.Default.DateRange,
+                        contentDescription = "Filter by Date",
+                        tint            = if (isDateActive) AccentCyan else TextMuted,
+                        modifier        = Modifier.size(20.dp)
                     )
                 }
             }
-        } else null,
+        },
         singleLine    = true,
         textStyle = androidx.compose.ui.text.TextStyle(fontSize = adaptiveTextSize(11.sp, 13.sp)),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -372,9 +419,12 @@ private fun M3FilterChipsRow(
     }
 
     val dynamicFilters = mutableListOf("all" to "সব")
-    val uniqueProviders = cachedMethods.map { it.provider }.distinct()
-    uniqueProviders.forEach { tag ->
-        dynamicFilters.add(tag to tag)
+    val activeMethods = cachedMethods.filter { it.isEnabled == 1 }.distinctBy { it.provider }
+    activeMethods.forEach { method ->
+        val provider = method.provider
+        if (provider.isNotEmpty()) {
+            dynamicFilters.add(provider to provider)
+        }
     }
 
     LazyRow(
@@ -477,9 +527,22 @@ private fun TransactionCard(
         cachedMethods.find { it.simSlot == item.simSlot && !it.number.isNullOrEmpty() }?.number
     }
 
-    val deviceName = item.deviceName?.takeIf { 
-        it.isNotBlank() && it.lowercase(java.util.Locale.US) != "unknown" && it.lowercase(java.util.Locale.US) != "unknown device" 
-    } ?: android.os.Build.MODEL
+    val deviceName = remember(item.deviceName) {
+        val raw = item.deviceName ?: ""
+        if (raw.isBlank() || raw.lowercase(java.util.Locale.US).contains("unknown")) {
+            val manufacturer = android.os.Build.MANUFACTURER.replaceFirstChar { 
+                if (it.isLowerCase()) it.titlecase(java.util.Locale.US) else it.toString() 
+            }
+            val model = android.os.Build.MODEL
+            if (model.lowercase(java.util.Locale.US).startsWith(manufacturer.lowercase(java.util.Locale.US))) {
+                model
+            } else {
+                "$manufacturer $model"
+            }
+        } else {
+            raw
+        }
+    }
 
     Card(
         colors   = CardDefaults.cardColors(containerColor = HistCard),
@@ -540,12 +603,25 @@ private fun TransactionCard(
 
                     // Amount + Status
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text       = "৳ ${java.text.DecimalFormat("#,##0.00").format(item.amount)}",
-                            color      = TextWhite,
-                            fontSize   = 17.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text       = "৳ ${java.text.DecimalFormat("#,##0.00").format(item.amount)}",
+                                color      = TextWhite,
+                                fontSize   = 17.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ExpandMore,
+                                contentDescription = "Expand",
+                                tint = TextMuted.copy(alpha = 0.5f),
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .rotate(rotationState)
+                            )
+                        }
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -641,18 +717,6 @@ private fun TransactionCard(
                     }
                 }
             }
-
-            // The absolute positioned expand arrow
-            Icon(
-                imageVector = Icons.Default.ExpandMore,
-                contentDescription = "Expand",
-                tint = TextMuted.copy(alpha = 0.5f),
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 10.dp, end = 10.dp)
-                    .size(24.dp)
-                    .rotate(rotationState)
-            )
         }
     }
 }
@@ -661,7 +725,7 @@ private fun TransactionCard(
 private fun StatusBadge(isSoldOut: Boolean) {
     val bgColor   = if (isSoldOut) AccentRed.copy(alpha = 0.12f) else AccentGreen.copy(alpha = 0.12f)
     val textColor = if (isSoldOut) AccentRed else AccentGreen
-    val label     = if (isSoldOut) "🔴 SOLDOUT" else "✅ READY"
+    val label     = if (isSoldOut) "🔴 SOLDOUT" else "✅ Available"
 
     Box(
         modifier = Modifier
@@ -861,62 +925,4 @@ private fun formatTrxTimestamp(raw: String): String {
 // =============================================================================
 // Component 9 — Date Range Filter Row
 // =============================================================================
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DateRangeFilterRow(
-    startDate: String?,
-    endDate: String?,
-    onDateRangeSelected: (String?, String?) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var showDatePicker by remember { mutableStateOf(false) }
-    val datePickerState = rememberDateRangePickerState()
 
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        val label = if (startDate != null && endDate != null) "$startDate to $endDate" else "Filter by Date"
-        OutlinedButton(
-            onClick = { showDatePicker = true },
-            shape = RoundedCornerShape(8.dp),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMuted)
-        ) {
-            Icon(Icons.Default.DateRange, contentDescription = "Date Range", modifier = Modifier.size(16.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(text = label, fontSize = 12.sp)
-        }
-
-        if (startDate != null || endDate != null) {
-            IconButton(onClick = { onDateRangeSelected(null, null) }) {
-                Icon(Icons.Default.Close, contentDescription = "Clear Dates", tint = TextMuted)
-            }
-        }
-    }
-
-    if (showDatePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDatePicker = false
-                        val startMillis = datePickerState.selectedStartDateMillis
-                        val endMillis = datePickerState.selectedEndDateMillis
-                        if (startMillis != null && endMillis != null) {
-                            val startStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(startMillis))
-                            val endStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(endMillis))
-                            onDateRangeSelected(startStr, endStr)
-                        }
-                    }
-                ) { Text("OK") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
-            }
-        ) {
-            DateRangePicker(state = datePickerState, modifier = Modifier.weight(1f))
-        }
-    }
-}
