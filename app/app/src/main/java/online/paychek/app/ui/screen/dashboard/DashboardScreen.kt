@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
@@ -512,6 +513,7 @@ fun DashboardScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
                             .padding(horizontal = 16.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -529,13 +531,7 @@ fun DashboardScreen(
                             .map { method ->
                                 val providerName = method.provider
                                 val tag = providerName.lowercase(Locale.US)
-                                val label = when (tag) {
-                                    "bkash" -> "বিকাশ"
-                                    "nagad" -> "নগদ"
-                                    "rocket" -> "রকেট"
-                                    "upay" -> "উপায়"
-                                    else -> providerName
-                                }
+                                val label = method.displayName?.takeIf { it.isNotBlank() } ?: providerName
                                 val color = when (tag) {
                                     "bkash" -> Color(0xFF10B981)
                                     "nagad" -> Color(0xFFF97316)
@@ -571,7 +567,6 @@ fun DashboardScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    // Colored dot
                                     Box(
                                         modifier = Modifier
                                             .size(8.dp)

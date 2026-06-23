@@ -13,6 +13,7 @@ const apiRateLimiter = rateLimit({
   max: 60, // Limit each user to 60 requests per window
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true, ip: false },
   keyGenerator: (req) => {
     // This route is protected by auth middleware, so userId is always present.
     // We strictly track by user ID.

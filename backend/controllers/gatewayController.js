@@ -75,7 +75,6 @@ async function updatePriority(req, res) {
       });
     }
 
-    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
     console.log(`[GATEWAY] Priority updated for ${items.length} items | User: ${userId}`);
     
@@ -123,7 +122,6 @@ async function toggleMethod(req, res) {
       return res.status(404).json({ error: 'মেথড পাওয়া যায়নি' });
     }
 
-    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
     const status = enabledBool ? 'চালু' : 'বন্ধ';
     console.log(`[GATEWAY] Method ${methodId} ${status} | User: ${userId}`);
@@ -173,7 +171,6 @@ async function updateMethod(req, res) {
       return res.status(404).json({ error: 'মেথড পাওয়া যায়নি' });
     }
 
-    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
     const updatedData = await fetchGatewayMethodsForUser(userId, deviceId);
     console.log(`[GATEWAY] Method ${methodId} updated | User: ${userId}`);
 
@@ -256,7 +253,6 @@ async function addGatewayMethod(req, res) {
       }
     });
 
-    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
     console.log(`[GATEWAY] Gateway method added | User: ${userId} | Slot: ${sim_slot} | Provider: ${provider}`);
 
