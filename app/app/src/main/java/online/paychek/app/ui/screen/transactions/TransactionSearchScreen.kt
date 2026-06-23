@@ -528,27 +528,14 @@ private fun TransactionCard(
                             fontSize = 10.sp
                         )
                         Spacer(modifier = Modifier.height(4.dp))
+                        val simInfo = if (item.simSlot != null) " • SIM ${item.simSlot}${if (simNumber != null) " - $simNumber" else ""}" else ""
                         Text(
-                            text     = "Device: $deviceName",
+                            text     = "Device: $deviceName$simInfo",
                             color    = TextMuted.copy(alpha = 0.6f),
                             fontSize = 9.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        if (item.simSlot != null) {
-                            Text(
-                                text     = "SIM ${item.simSlot}",
-                                color    = TextMuted.copy(alpha = 0.6f),
-                                fontSize = 9.sp
-                            )
-                            if (simNumber != null) {
-                                Text(
-                                    text     = simNumber,
-                                    color    = TextMuted.copy(alpha = 0.6f),
-                                    fontSize = 9.sp
-                                )
-                            }
-                        }
                     }
 
                     // Amount + Status
@@ -585,31 +572,15 @@ private fun TransactionCard(
                                         .clip(RoundedCornerShape(20.dp))
                                         .background(AccentGreen.copy(alpha = 0.12f))
                                         .border(0.5.dp, AccentGreen.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+                                        .clickable { onSoldOutClick?.invoke() }
                                         .padding(horizontal = 6.dp, vertical = 2.dp)
                                 ) {
                                     Text(
-                                        text       = "✅ READY",
+                                        text       = "Available",
                                         color      = AccentGreen,
                                         fontSize   = 8.sp,
                                         fontWeight = FontWeight.Bold
                                     )
-                                }
-                                if (onSoldOutClick != null) {
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(20.dp))
-                                            .background(AccentRed.copy(alpha = 0.12f))
-                                            .border(0.5.dp, AccentRed.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
-                                            .clickable { onSoldOutClick() }
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                    ) {
-                                        Text(
-                                            text       = "Sold Out",
-                                            color      = AccentRed,
-                                            fontSize   = 8.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
                                 }
                             }
                         }
