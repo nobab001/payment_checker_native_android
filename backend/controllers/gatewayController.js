@@ -60,7 +60,7 @@ async function updatePriority(req, res) {
       if (typeof item.id !== 'number' || typeof item.priority !== 'number') continue;
 
       await prisma.gateway_methods.updateMany({
-        where: { id: item.id, user_id: userId },
+        where: { id: item.id, user_id: String(userId) },
         data: { priority: item.priority }
       });
     }
@@ -103,8 +103,8 @@ async function toggleMethod(req, res) {
     const enabledBool = !!is_enabled;
 
     const result = await prisma.gateway_methods.updateMany({
-      where: { id: methodId, user_id: userId },
-      data: { is_enabled: enabledBool }
+      where: { id: methodId, user_id: String(userId) },
+      data: { is_enabled: enabledBool ? 1 : 0 }
     });
 
     if (result.count === 0) {
@@ -151,7 +151,7 @@ async function updateMethod(req, res) {
     if (template_id !== undefined) data.template_id = template_id || null;
 
     const result = await prisma.gateway_methods.updateMany({
-      where: { id: methodId, user_id: userId },
+      where: { id: methodId, user_id: String(userId) },
       data
     });
 
@@ -221,7 +221,7 @@ async function addGatewayMethod(req, res) {
     }
 
     const maxPriorityRow = await prisma.gateway_methods.aggregate({
-      where: { user_id: userId },
+      where: { user_id: String(userId) },
       _max: { priority: true }
     });
     
@@ -229,7 +229,7 @@ async function addGatewayMethod(req, res) {
 
     const result = await prisma.gateway_methods.create({
       data: {
-        user_id: userId,
+        user_id: String(userId),
         template_id: template_id || null,
         sim_slot,
         provider,
