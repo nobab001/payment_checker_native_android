@@ -150,22 +150,25 @@ server.listen(PORT, async () => {
     }
     console.log('[DB] Seeded default subscription plans.');
 
-    // Delete default SMS templates IDs 2 to 8 if they exist to keep only bKash Personal
+    // Delete legacy default SMS templates IDs 1 to 10 before seeding new ones
     await prisma.checkout_view_templates.deleteMany({
-      where: { sms_template_id: { in: [2, 3, 4, 5, 6, 7, 8] } }
+      where: { sms_template_id: { in: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] } }
     });
     await prisma.sms_templates.deleteMany({
-      where: { id: { in: [2, 3, 4, 5, 6, 7, 8] } }
+      where: { id: { in: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] } }
     });
 
-    // Seed default SMS templates (only bKash Personal) if missing
+    // We will compile the bracket formats for the DB
+    const { generateCustomRegex } = require('./controllers/adminController');
+
+    // Seed default SMS templates for bKash Personal (Receive Money and Cash In combined)
     const defaultSmsTemplates = [
       { 
         id: 1, 
         name: 'bKash Personal', 
         sender: 'bKash', 
-        kw: 'You have received,Cash In',
-        regex: 'Tk\\s*(?<amount>[\\d,]+(?:\\.\\d+)?)\\s*from\\s*(?<sender>\\d+).*?TrxID\\s*(?<trxid>[A-Z0-9]+)'
+        kw: '',
+        regex: generateCustomRegex('You have received Tk {amount} from {sender}. Fee Tk 0.00. Balance Tk {random}. TrxID {trxid} at {random}|||Cash In Tk {amount} from {sender} successful. Fee Tk 0.00. Balance Tk {random}. TrxID {trxid} at {random}. Download App: https://bKa.sh/8app')
       }
     ];
 
@@ -197,3 +200,5 @@ server.listen(PORT, async () => {
     console.error('[DB] Failed to initialize database setup:', dbErr);
   }
 });
+
+

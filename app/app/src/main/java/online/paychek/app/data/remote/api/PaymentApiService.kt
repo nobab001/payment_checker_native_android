@@ -55,7 +55,8 @@ interface PaymentApiService {
      */
     @GET("dashboard/stats")
     suspend fun getDashboardStats(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
+        @Header("X-Gateway-Last-Sync") lastSync: Long?
     ): Response<DashboardStatsResponse>
 
     @POST("sms-history/{id}/soldout")
@@ -81,4 +82,16 @@ interface PaymentApiService {
         @Header("Authorization") token: String,
         @Body request: PurchaseSubscriptionRequest
     ): Response<PurchaseSubscriptionResponse>
+
+    @POST("v1/subscription/purchase-addon")
+    suspend fun purchaseSubscriptionAddon(
+        @Header("Authorization") token: String
+    ): Response<PurchaseAddonResponse>
+
+    @GET("custom-archives")
+    suspend fun getCustomArchives(
+        @Header("Authorization") token: String,
+        @Query("page") page: Int = 1,
+        @Query("limit") limit: Int = 20
+    ): Response<CustomArchiveListResponse>
 }

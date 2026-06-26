@@ -1,5 +1,7 @@
 package online.paychek.app.ui.screen.device
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
@@ -100,6 +102,8 @@ fun DeviceScreen(
         lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
             if (state == androidx.lifecycle.Lifecycle.State.RESUMED) {
                 isAccessibilityEnabled = online.paychek.app.utils.AccessibilityHelper.isAccessibilityServiceEnabled(context)
+                viewModel.loadGatewayMethods()
+                viewModel.loadTemplates()
             }
         }
     }
@@ -108,6 +112,11 @@ fun DeviceScreen(
     val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsStateWithLifecycle()
     val haptic      = LocalHapticFeedback.current
     val sheetState  = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    var showAddSenderDialog by remember { mutableStateOf(false) }
+    var activeSimSlotForCustomSender by remember { mutableStateOf(1) }
+    var customSenderInput by remember { mutableStateOf("") }
+    var methodToDelete by remember { mutableStateOf<GatewayMethod?>(null) }
 
     val prefs = remember(context) {
         context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
@@ -334,7 +343,15 @@ fun DeviceScreen(
                             templates = state.templates,
                             methods = state.methods,
                             onToggleTemplate = { viewModel.toggleTemplate(1, it) },
-                            isRestricted = isRestricted
+                            isRestricted = isRestricted,
+                            onAddCustomSenderClick = { slot ->
+                                activeSimSlotForCustomSender = slot
+                                showAddSenderDialog = true
+                            },
+                            onDeleteCustomSenderClick = { method ->
+                                methodToDelete = method
+                            },
+                            onToggleMethod = { viewModel.toggleMethod(it) }
                         )
                     }
 
@@ -349,7 +366,15 @@ fun DeviceScreen(
                             templates = state.templates,
                             methods = state.methods,
                             onToggleTemplate = { viewModel.toggleTemplate(2, it) },
-                            isRestricted = isRestricted
+                            isRestricted = isRestricted,
+                            onAddCustomSenderClick = { slot ->
+                                activeSimSlotForCustomSender = slot
+                                showAddSenderDialog = true
+                            },
+                            onDeleteCustomSenderClick = { method ->
+                                methodToDelete = method
+                            },
+                            onToggleMethod = { viewModel.toggleMethod(it) }
                         )
                     }
                 }
@@ -767,6 +792,262 @@ fun DeviceScreen(
                             ) {
                                 Text("নিশ্চিত করুন", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold)
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Add Custom Sender Dialog
+        if (showAddSenderDialog) {
+            Dialog(
+                onDismissRequest = {
+                    showAddSenderDialog = false
+                    customSenderInput = ""
+                },
+                properties = DialogProperties(usePlatformDefaultWidth = true)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = GwCard,
+                    border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
+                    tonalElevation = 8.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .wrapContentHeight()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(AccentCyan.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Add",
+                                tint = AccentCyan,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                        Text(
+                            text = "কাস্টম সেন্ডার আইডি যোগ করুন",
+                            fontWeight = FontWeight.Bold,
+                            color = TextWhite,
+                            fontSize = 18.sp
+                        )
+                        Text(
+                            text = "SIM $activeSimSlotForCustomSender এর জন্য একটি কাস্টম সেন্ডার নাম (যেমন: GP, BL) লিখুন।",
+                            color = TextMuted,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 18.sp
+                        )
+
+                        OutlinedTextField(
+                            value = customSenderInput,
+                            onValueChange = { customSenderInput = it },
+                            label = { Text("সেন্ডার আইডি (যেমন: GP-ALERT)", color = TextMuted) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = AccentCyan,
+                                unfocusedBorderColor = ToggleOff,
+                                focusedTextColor = TextWhite,
+                                unfocusedTextColor = TextWhite
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    showAddSenderDialog = false
+                                    customSenderInput = ""
+                                },
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMuted),
+                                contentPadding = PaddingValues(vertical = 12.dp, horizontal = 8.dp)
+                            ) {
+                                Text("বাতিল")
+                            }
+                            Button(
+                                onClick = {
+                                    if (customSenderInput.trim().isNotEmpty()) {
+                                        viewModel.addCustomSender(activeSimSlotForCustomSender, customSenderInput.trim())
+                                        showAddSenderDialog = false
+                                        customSenderInput = ""
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(vertical = 12.dp, horizontal = 8.dp)
+                            ) {
+                                Text("যুক্ত করুন", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Delete Custom Sender Confirmation Dialog
+        if (methodToDelete != null) {
+            val method = methodToDelete!!
+            Dialog(
+                onDismissRequest = { methodToDelete = null },
+                properties = DialogProperties(usePlatformDefaultWidth = true)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = GwCard,
+                    border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
+                    tonalElevation = 8.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .wrapContentHeight()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xFFEF4444).copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = Color(0xFFEF4444),
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                        Text(
+                            text = "সেন্ডার আইডি মুছে ফেলুন",
+                            fontWeight = FontWeight.Bold,
+                            color = TextWhite,
+                            fontSize = 18.sp
+                        )
+                        val cleanName = method.senderId ?: method.provider.removePrefix("Custom-")
+                        Text(
+                            text = "আপনি কি নিশ্চিতভাবে '$cleanName' কাস্টম সেন্ডার আইডিটি ডিলিট করতে চান?",
+                            color = TextMuted,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 18.sp
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { methodToDelete = null },
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMuted),
+                                contentPadding = PaddingValues(vertical = 12.dp, horizontal = 8.dp)
+                            ) {
+                                Text("বাতিল")
+                            }
+                            Button(
+                                onClick = {
+                                    viewModel.deleteCustomSender(method.id)
+                                    methodToDelete = null
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(vertical = 12.dp, horizontal = 8.dp)
+                            ) {
+                                Text("মুছে ফেলুন", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Premium Upgrade Gated Feature Dialog (403 Handled)
+        if (state.showPremiumUpgradeDialog) {
+            Dialog(
+                onDismissRequest = { viewModel.setShowPremiumUpgradeDialog(false) },
+                properties = DialogProperties(usePlatformDefaultWidth = true)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = GwCard,
+                    border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
+                    tonalElevation = 8.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .wrapContentHeight()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xFFF59E0B).copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Alert",
+                                tint = Color(0xFFF59E0B),
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                        Text(
+                            text = "প্রিমিয়াম ফিচার লকড",
+                            fontWeight = FontWeight.Bold,
+                            color = TextWhite,
+                            fontSize = 18.sp
+                        )
+                        Text(
+                            text = "কাস্টম সেন্ডার আইডি ব্যবহার করতে হলে আপনার প্যাকেজ আপগ্রেড করুন অথবা অ্যাড-অন ক্রয় করুন।",
+                            color = TextMuted,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 18.sp
+                        )
+
+                        Button(
+                            onClick = {
+                                viewModel.setShowPremiumUpgradeDialog(false)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(vertical = 12.dp)
+                        ) {
+                            Text("ঠিক আছে", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -1316,6 +1597,9 @@ private fun SimCard(
     methods: List<GatewayMethod>,
     onToggleTemplate: (SmsTemplateDto) -> Unit,
     isRestricted: Boolean,
+    onAddCustomSenderClick: (Int) -> Unit,
+    onDeleteCustomSenderClick: (GatewayMethod) -> Unit,
+    onToggleMethod: (GatewayMethod) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val hasActiveMethod = methods.any { it.simSlot == simSlot && it.isEnabled == 1 }
@@ -1442,8 +1726,8 @@ private fun SimCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Render all templates dynamically from the database live list
-                templates.forEach { template ->
+                // Render all templates dynamically from the database live list (only official templates here)
+                templates.filter { it.isOfficial == 1 }.forEach { template ->
                     val method = methods.find { it.simSlot == simSlot && it.templateId == template.id }
                     val isSelected = method != null && method.isEnabled == 1
                     
@@ -1458,17 +1742,68 @@ private fun SimCard(
                         }
                     )
                 }
+
+                // Render custom user chips
+                methods.filter { it.simSlot == simSlot && it.isOfficial == 0 }.forEach { method ->
+                    val isSelected = method.isEnabled == 1
+                    val displayName = method.senderId ?: method.provider.removePrefix("Custom-")
+
+                    TemplateChip(
+                        name = displayName,
+                        dotColor = Color(0xFF94A3B8),
+                        isSelected = isSelected,
+                        onClick = {
+                            if (!isRestricted) {
+                                onToggleMethod(method)
+                            }
+                        },
+                        onLongClick = {
+                            if (!isRestricted) {
+                                onDeleteCustomSenderClick(method)
+                            }
+                        }
+                    )
+                }
+
+                // Render Add Custom Sender Plus Chip
+                if (!isRestricted) {
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.Transparent)
+                            .border(BorderStroke(1.dp, AccentCyan.copy(alpha = 0.5f)), RoundedCornerShape(16.dp))
+                            .clickable { onAddCustomSenderClick(simSlot) }
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "কাস্টম সেন্ডার যোগ করুন",
+                            tint = AccentCyan,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = "যোগ করুন",
+                            color = AccentCyan,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TemplateChip(
     name: String,
     dotColor: Color,
     isSelected: Boolean,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val borderStroke = if (isSelected) {
@@ -1494,7 +1829,10 @@ private fun TemplateChip(
             .clip(RoundedCornerShape(16.dp))
             .background(bg)
             .border(borderStroke, RoundedCornerShape(16.dp))
-            .clickable { onClick() }
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)

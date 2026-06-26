@@ -95,4 +95,16 @@ interface GatewayApiService {
         @Header("Authorization") token: String,
         @Body request: ToggleRemoteRoleRequest
     ): Response<BasicResponse>
+
+    @POST("gateway/custom-sender")
+    suspend fun addCustomSender(
+        @Header("Authorization") token: String,
+        @Body request: AddCustomSenderRequest
+    ): Response<GatewayListResponse>
+
+    @DELETE("gateway/methods/{id}")
+    suspend fun deleteGatewayMethod(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int
+    ): Response<GatewayListResponse>
 }

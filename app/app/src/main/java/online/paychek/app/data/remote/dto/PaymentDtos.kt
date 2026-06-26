@@ -18,6 +18,7 @@ data class PaymentIngestRequest(
     val simNumber: String?,     // SIM ফোন নম্বর
     @SerializedName("is_custom_sender") val isCustomSender: Boolean = false,
     @SerializedName("full_sms") val fullSms: String? = null,
+    @SerializedName("is_parseable") val isParseable: Int = 1,
     // v2.0.0 — HMAC security fields (nullable for backward compat)
     @SerializedName("hmacSignature") val hmacSignature: String? = null,
     @SerializedName("isOfflineSync") val isOfflineSync: Boolean = false
@@ -140,6 +141,15 @@ data class DashboardStats(
     @SerializedName("expiry_date")
     val expiryDate: String?,
 
+    @SerializedName("global_templates")
+    val globalTemplates: List<SmsTemplateDto>? = emptyList(),
+
+    @SerializedName("gateway_methods")
+    val gatewayMethods: List<GatewayMethod>? = null,
+
+    @SerializedName("gateway_methods_last_sync")
+    val gatewayMethodsLastSync: Long? = 0L,
+
     @SerializedName("secretKey")
     val secretKey: String?,
 
@@ -171,4 +181,24 @@ data class PurchaseSubscriptionResponse(
     @SerializedName("is_paid") val isPaid: Boolean,
     @SerializedName("active_plan_name") val activePlanName: String?,
     @SerializedName("expiry_date") val expiryDate: String?
+)
+
+data class CustomArchiveItem(
+    val id: Int,
+    @SerializedName("device_id") val deviceId: String,
+    @SerializedName("device_name") val deviceName: String?,
+    @SerializedName("provider_tag") val providerTag: String,
+    @SerializedName("full_sms") val fullSms: String,
+    @SerializedName("created_at") val createdAt: String
+)
+
+data class CustomArchiveListResponse(
+    val success: Boolean,
+    val data: List<CustomArchiveItem>
+)
+
+data class PurchaseAddonResponse(
+    val success: Boolean,
+    val message: String?,
+    @SerializedName("has_custom_sender_addon") val hasCustomSenderAddon: Int
 )

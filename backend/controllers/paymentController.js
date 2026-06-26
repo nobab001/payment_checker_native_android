@@ -7,6 +7,7 @@ const {
     HTTP_DUPLICATE,
     assertRawBodyIntegrity,
 } = require('../utils/smsSecuritySpec');
+const { fetchGatewayMethodsForUser } = require('./gatewayController');
 
 const { smsQueue } = require('../services/smsQueue');
 
@@ -26,7 +27,8 @@ async function paymentSmsIngest(req, res) {
       simNumber: req.body.simNumber,
       providerTag: req.body.providerTag,
       amount: req.body.amount,
-      trxId: req.body.trxId
+      trxId: req.body.trxId,
+      isParseable: req.body.is_parseable !== undefined ? parseInt(req.body.is_parseable, 10) : (req.body.isParseable !== undefined ? parseInt(req.body.isParseable, 10) : 1)
     };
 
     if (!payload.rawBody || !payload.hmacSignature || !payload.smsTimestamp) {
@@ -73,7 +75,8 @@ async function paymentSmsIngestBulk(req, res) {
         simNumber: item.simNumber,
         providerTag: item.providerTag,
         amount: item.amount,
-        trxId: item.trxId
+        trxId: item.trxId,
+        isParseable: item.is_parseable !== undefined ? parseInt(item.is_parseable, 10) : (item.isParseable !== undefined ? parseInt(item.isParseable, 10) : 1)
       }
     }));
 
@@ -244,6 +247,35 @@ async function getDashboardStats(req, res) {
 
     console.log(`[STATS] Dashboard loaded for user: ${userId} | Today: ${todayDate} | Paid: ${isPaid} | Plan: ${activePlanName}`);
 
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+    const lastSync = req.headers['x-gateway-last-sync'] ? parseInt(req.headers['x-gateway-last-sync']) : 0;
+
+    // Fetch latest gateway method update time for user/device
+    const lastMethod = await prisma.gateway_methods.findFirst({
+      where: { user_id: String(userId), device_id: String(deviceId) },
+      orderBy: { updated_at: 'desc' },
+      select: { updated_at: true }
+    });
+    const lastMethodTime = lastMethod ? new Date(lastMethod.updated_at).getTime() : 0;
+
+    // Fetch latest template update time from global config
+    const globalConfig = await prisma.global_config.findUnique({
+      where: { config_key: 'templates_last_updated' }
+    });
+    const lastTemplateTime = globalConfig ? parseInt(globalConfig.config_value) : 0;
+
+    const latestServerUpdateTime = Math.max(lastMethodTime, lastTemplateTime);
+
+    let gatewayMethods = null;
+    if (lastSync < latestServerUpdateTime || lastSync === 0) {
+      gatewayMethods = await fetchGatewayMethodsForUser(userId, deviceId);
+      console.log(`[STATS] Client cache outdated (${lastSync} < ${latestServerUpdateTime}). Syncing ${gatewayMethods.length} methods.`);
+    }
+
+    const globalTemplates = await prisma.sms_templates.findMany({
+      where: { is_active: 1 }
+    });
+
     return res.json({
       success: true,
       data: {
@@ -259,7 +291,10 @@ async function getDashboardStats(req, res) {
         expiry_date:         expiryDate,
         secretKey:           userRow ? userRow.secretKey : null,
         secretKeyVersion:    userRow ? userRow.secretKeyVersion : 1,
-        recent_transactions: mappedRecentRows
+        recent_transactions: mappedRecentRows,
+        global_templates:    globalTemplates,
+        gateway_methods:     gatewayMethods,
+        gateway_methods_last_sync: latestServerUpdateTime
       }
     });
 
@@ -297,6 +332,45 @@ async function markTransactionSoldOut(req, res) {
   }
 }
 
+async function getCustomArchives(req, res) {
+  try {
+    const userId = req.user.userId;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(50, parseInt(req.query.limit, 10) || 20);
+    const offset = (page - 1) * limit;
+
+    const rows = await prisma.custom_sms_archives.findMany({
+      where: { user_id: userId },
+      orderBy: { created_at: 'desc' },
+      skip: offset,
+      take: limit
+    });
+
+    const userDevices = await prisma.registered_devices.findMany({
+      where: { user_id: userId },
+      select: { device_id: true, device_model: true, custom_device_name: true }
+    });
+    const deviceMap = {};
+    userDevices.forEach(d => {
+      deviceMap[d.device_id] = d.custom_device_name || d.device_model || 'Unknown Device';
+    });
+
+    const mappedRows = rows.map(r => ({
+      id: r.id,
+      device_id: r.device_id,
+      device_name: deviceMap[r.device_id] || 'Unknown Device',
+      provider_tag: r.provider_tag,
+      full_sms: r.full_sms,
+      created_at: r.created_at
+    }));
+
+    return res.json({ success: true, data: mappedRows });
+  } catch (error) {
+    console.error('[ARCHIVE] getCustomArchives error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
 // =============================================================================
 // Exports
 // =============================================================================
@@ -305,5 +379,6 @@ module.exports = {
   paymentSmsIngestBulk,
   getSmsHistory,
   getDashboardStats,
-  markTransactionSoldOut
+  markTransactionSoldOut,
+  getCustomArchives
 };

@@ -226,8 +226,9 @@ model sms_templates {
   sender_id               String                   @default("") @db.VarChar(64)
   matching_keyword        String?                  @db.VarChar(255)
   regex_pattern           String?                  @db.Text
-  is_official             Int       @default(1) @db.TinyInt
-  is_active               Int       @default(1) @db.TinyInt
+  is_official             Int                      @default(1) @db.TinyInt
+  is_active               Int                      @default(1) @db.TinyInt
+  is_parseable            Int                      @default(1) @db.TinyInt
   created_at              DateTime                 @default(now()) @db.Timestamp(0)
   updated_at              DateTime                 @default(now()) @db.Timestamp(0)
   sender_number           String?                  @db.VarChar(64)
@@ -256,13 +257,14 @@ model smtp_gateways {
 }
 
 model subscription_plans {
-  id            Int      @id @default(autoincrement())
-  plan_name     String   @unique(map: "plan_name") @db.VarChar(50)
-  price         Decimal  @db.Decimal(10, 2)
-  max_sites     Int
-  max_devices   Int
-  duration_days Int?     @default(365)
-  created_at    DateTime @default(now()) @db.Timestamp(0)
+  id                       Int      @id @default(autoincrement())
+  plan_name                String   @unique(map: "plan_name") @db.VarChar(50)
+  price                    Decimal  @db.Decimal(10, 2)
+  max_sites                Int
+  max_devices              Int
+  is_custom_sender_allowed Int      @default(0) @db.TinyInt
+  duration_days            Int?     @default(365)
+  created_at               DateTime @default(now()) @db.Timestamp(0)
 }
 
 model user_credentials {
@@ -292,9 +294,10 @@ model users {
   active_plan_name   String?              @default("FREE_LEVEL") @db.VarChar(50)
   expiry_date        DateTime?            @db.Date
   profile_complete   Int       @default(0) @db.TinyInt
-  sms_enabled        Int       @default(1) @db.TinyInt
-  gmail_enabled      Int       @default(0) @db.TinyInt
-  fcm_token          String?              @db.VarChar(512)
+  sms_enabled             Int                  @default(1) @db.TinyInt
+  gmail_enabled           Int                  @default(0) @db.TinyInt
+  has_custom_sender_addon Int                  @default(0) @db.TinyInt
+  fcm_token               String?              @db.VarChar(512)
   secretKey          String?              @db.VarChar(128)
   secretKeyVersion   Int                  @default(1) @db.UnsignedInt
   secretKeyCreatedAt DateTime?            @db.Timestamp(0)
@@ -320,4 +323,16 @@ enum registered_devices_status {
   pending
   active
   rejected
+}
+
+model custom_sms_archives {
+  id           Int      @id @default(autoincrement())
+  user_id      Int
+  device_id    String   @db.VarChar(255)
+  provider_tag String   @db.VarChar(128)
+  full_sms     String   @db.Text
+  created_at   DateTime @default(now()) @db.Timestamp(0)
+
+  @@index([user_id])
+  @@index([user_id, created_at])
 }

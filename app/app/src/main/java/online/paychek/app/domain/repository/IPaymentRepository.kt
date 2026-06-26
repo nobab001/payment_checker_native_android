@@ -23,8 +23,9 @@ interface IPaymentRepository {
     /**
      * Fetches dashboard statistics summary.
      * @param token  JWT auth token (without "Bearer " prefix)
+     * @param lastSync last sync timestamp
      */
-    suspend fun fetchDashboardStats(token: String): Result<DashboardStats>
+    suspend fun fetchDashboardStats(token: String, lastSync: Long): Result<DashboardStats>
 
     /**
      * Fetches paginated transaction history.

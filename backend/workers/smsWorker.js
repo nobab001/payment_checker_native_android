@@ -39,20 +39,29 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
     throw new Error('HMAC_INVALID');
   }
 
+  const isParseable = job.data.isParseable !== undefined ? parseInt(job.data.isParseable, 10) : 1;
+  if (isParseable === 0) {
+    try {
+      await prisma.custom_sms_archives.create({
+        data: {
+          user_id: userId,
+          device_id: deviceId || 'unknown_device',
+          provider_tag: job.data.providerTag || 'Custom',
+          full_sms: rawBody
+        }
+      });
+      console.log(`[WORKER] Custom archive SMS saved in 1ms for user ${userId}`);
+      return { success: true, isArchive: true };
+    } catch (archiveErr) {
+      console.error('[WORKER] Custom SMS archive write error:', archiveErr);
+      throw archiveErr;
+    }
+  }
+
   const rawBodyHash = sha256(rawBody.trim());
   
-  let parsed = {
-    success: true,
-    provider: job.data.providerTag,
-    amount: parseFloat(job.data.amount),
-    trxId: job.data.trxId,
-    senderNumber: senderNumber || ''
-  };
-
-  // If client didn't provide parsed data, fallback to server-side regex parse
-  if (!parsed.provider || isNaN(parsed.amount) || !parsed.trxId) {
-    parsed = await parseRawSms(rawBody, senderNumber || '');
-  }
+  // Always parse on server side — app only sends rawBody
+  const parsed = await parseRawSms(rawBody, senderNumber || '', job.data.providerTag || '');
 
   if (!parsed.success) {
     try {
@@ -73,6 +82,8 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
 
   const dateObj = new Date(Number(smsTimestamp));
   const formattedDate = dateObj.toISOString().slice(0, 10);
+  // If trxId is empty (e.g. all {random} template), use rawBodyHash as unique trx_id
+  const finalTrxId = parsed.trxId || `RAW_${rawBodyHash.substring(0, 20)}`;
   const dedupeKey = `${smsTimestamp}|${parsed.senderNumber || ''}|${rawBodyHash}`;
 
   try {
@@ -84,7 +95,7 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
         sim_number: simNumber ? String(simNumber) : null,
         provider_tag: parsed.provider,
         amount: parsed.amount,
-        trx_id: parsed.trxId || '',
+        trx_id: finalTrxId,
         sender_number: parsed.senderNumber || null,
         receiver_number: null,
         sms_timestamp: dateObj,

@@ -1,6 +1,14 @@
 @echo off
 title Paychek Services Starter
 echo ===================================================
+echo   Killing existing Node, Ngrok, and Redis services...
+echo ===================================================
+
+taskkill /F /IM node.exe >nul 2>&1
+taskkill /F /IM ngrok.exe >nul 2>&1
+taskkill /F /IM redis-server.exe >nul 2>&1
+
+echo ===================================================
 echo   Starting Redis, Backend Server, and Ngrok...
 echo ===================================================
 

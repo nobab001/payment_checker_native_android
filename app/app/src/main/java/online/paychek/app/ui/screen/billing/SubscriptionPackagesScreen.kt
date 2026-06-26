@@ -1,5 +1,6 @@
 package online.paychek.app.ui.screen.billing
 
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -7,6 +8,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBackIosNew
@@ -52,6 +55,7 @@ fun SubscriptionPackagesScreen(
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var plans by remember { mutableStateOf<List<SubscriptionPlanDto>>(emptyList()) }
+    var selectedTab by remember { mutableStateOf(0) }
 
     LaunchedEffect(Unit) {
         val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
@@ -102,71 +106,204 @@ fun SubscriptionPackagesScreen(
             )
         }
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(PackBg),
-            contentAlignment = Alignment.Center
+                .background(PackBg)
         ) {
-            when {
-                isLoading -> {
-                    CircularProgressIndicator(color = Color(0xFF22D3EE))
-                }
-                errorMessage != null -> {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.padding(24.dp)
-                    ) {
-                        Text(
-                            text = errorMessage ?: "ত্রুটি দেখা দিয়েছে",
-                            color = MaterialTheme.colorScheme.error,
-                            fontSize = 14.sp,
-                            textAlign = TextAlign.Center
-                        )
-                        Button(
-                            onClick = {
-                                isLoading = true
-                                errorMessage = null
-                                coroutineScope.launch {
-                                    val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
-                                    repository.getPlans(token).fold(
-                                        onSuccess = { list ->
-                                            plans = list
-                                            isLoading = false
-                                        },
-                                        onFailure = { err ->
-                                            errorMessage = err.message
-                                            isLoading = false
+            TabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = PackBg,
+                contentColor = Color(0xFF22D3EE),
+                indicator = { tabPositions ->
+                    TabRowDefaults.SecondaryIndicator(
+                        modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                        color = Color(0xFF22D3EE)
+                    )
+                },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = { Text("মূল প্যাকেজসমূহ", fontWeight = FontWeight.Bold, fontSize = 14.sp) }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = { Text("অ্যাড-অন ফিচার", fontWeight = FontWeight.Bold, fontSize = 14.sp) }
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                if (selectedTab == 0) {
+                    when {
+                        isLoading -> {
+                            CircularProgressIndicator(color = Color(0xFF22D3EE))
+                        }
+                        errorMessage != null -> {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.padding(24.dp)
+                            ) {
+                                Text(
+                                    text = errorMessage ?: "ত্রুটি দেখা দিয়েছে",
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontSize = 14.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                                Button(
+                                    onClick = {
+                                        isLoading = true
+                                        errorMessage = null
+                                        coroutineScope.launch {
+                                            val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
+                                            repository.getPlans(token).fold(
+                                                onSuccess = { list ->
+                                                    plans = list
+                                                    isLoading = false
+                                                },
+                                                onFailure = { err ->
+                                                    errorMessage = err.message
+                                                    isLoading = false
+                                                }
+                                            )
                                         }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo)
+                                ) {
+                                    Text("পুনরায় চেষ্টা করুন")
+                                }
+                            }
+                        }
+                        plans.isEmpty() -> {
+                            Text(
+                                text = "কোনো প্যাকেজ পাওয়া যায়নি।",
+                                color = TextM,
+                                fontSize = 14.sp
+                            )
+                        }
+                        else -> {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                items(plans, key = { it.planName }) { plan ->
+                                    PackageCard(
+                                        plan = plan,
+                                        onBuyNowClick = onNavigateToPaymentMock
                                     )
                                 }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo)
-                        ) {
-                            Text("পুনরায় চেষ্টা করুন")
+                            }
                         }
                     }
-                }
-                plans.isEmpty() -> {
-                    Text(
-                        text = "কোনো প্যাকেজ পাওয়া যায়নি।",
-                        color = TextM,
-                        fontSize = 14.sp
-                    )
-                }
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
+                } else {
+                    // Render Custom Sender Add-on Card
+                    var isAddonPurchasing by remember { mutableStateOf(false) }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        items(plans, key = { it.planName }) { plan ->
-                            PackageCard(
-                                plan = plan,
-                                onBuyNowClick = onNavigateToPaymentMock
-                            )
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = PackCard),
+                            shape = RoundedCornerShape(24.dp),
+                            border = BorderStroke(2.dp, Color(0xFF22D3EE)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(20.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(
+                                            text = "কাস্টম সেন্ডার আইডি অ্যাড-অন",
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 18.sp,
+                                            color = TextW
+                                        )
+                                        Text(
+                                            text = "Custom Sender ID Integration",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF10B981),
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                    
+                                    Text(
+                                        text = "৳২৫০",
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 24.sp,
+                                        color = Color(0xFF22D3EE)
+                                    )
+                                }
+                                
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    PlanLimitItem(label = "আনলিমিটেড নিজস্ব কাস্টম সেন্ডার আইডি সেট করুন")
+                                    PlanLimitItem(label = "নন-পার্সেবল বার্তার জন্য সার্ভার সাইড জিরো ওভারহেড স্টোরেজ")
+                                    PlanLimitItem(label = "কাস্টম আর্কাইভ ট্যাবে সর্বশেষ ২৫০০টি ডেটা রেকর্ডস")
+                                    PlanLimitItem(label = "২৪/৭ রিয়েল-টাইম অটোমেটেড এসএমএস ট্র্যাকিং")
+                                }
+                                
+                                Button(
+                                    onClick = {
+                                        isAddonPurchasing = true
+                                        coroutineScope.launch {
+                                            val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
+                                            repository.purchaseSubscriptionAddon(token).fold(
+                                                onSuccess = { res ->
+                                                    isAddonPurchasing = false
+                                                    android.widget.Toast.makeText(context, "অ্যাড-অন সফলভাবে সক্রিয় হয়েছে! ✓", android.widget.Toast.LENGTH_LONG).show()
+                                                },
+                                                onFailure = { err ->
+                                                    isAddonPurchasing = false
+                                                    android.widget.Toast.makeText(context, err.message ?: "ক্রয় ব্যর্থ হয়েছে।", android.widget.Toast.LENGTH_LONG).show()
+                                                }
+                                            )
+                                        }
+                                    },
+                                    enabled = !isAddonPurchasing,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22D3EE)),
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                ) {
+                                    if (isAddonPurchasing) {
+                                        CircularProgressIndicator(
+                                            color = Color.Black,
+                                            modifier = Modifier.size(20.dp),
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "এখনই কিনুন (Buy Now)",
+                                            color = Color.Black,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

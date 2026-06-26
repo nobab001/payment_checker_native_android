@@ -100,17 +100,28 @@ class SmsReceiver(
                     val chunks = pendingItems.chunked(50)
                     for (chunk in chunks) {
                         try {
+                            val methodsJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(context)
+                            val methodsType = object : com.google.gson.reflect.TypeToken<List<online.paychek.app.data.remote.dto.GatewayMethod>>() {}.type
+                            val cachedMethods: List<online.paychek.app.data.remote.dto.GatewayMethod> = try {
+                                online.paychek.app.utils.GsonUtils.gson.fromJson(methodsJson, methodsType)
+                            } catch (e: Exception) {
+                                emptyList()
+                            }
+
                             val requestItems = chunk.map { item ->
+                                val matchedMethod = cachedMethods.find { it.provider == item.providerTag }
+                                val isParseableVal = matchedMethod?.isParseable ?: 1
                                 online.paychek.app.data.remote.dto.PaymentIngestRequest(
-                                    amount         = item.amount,
-                                    trxId          = item.trxId,
-                                    providerTag    = item.providerTag,
+                                    amount         = 0.0, // Server will parse from rawBody
+                                    trxId          = "",
+                                    providerTag    = item.providerTag, // Keep this so backend knows which template to use
                                     senderNumber   = item.senderNumber ?: "",
                                     receiverNumber = null,
                                     smsTimestamp   = item.smsTimestamp,
                                     rawBody        = item.rawBody,
                                     simSlot        = item.simSlot,
                                     simNumber      = item.simNumber,
+                                    isParseable    = isParseableVal,
                                     hmacSignature  = item.hmacSignature,
                                     isOfflineSync  = true
                                 )
@@ -241,35 +252,52 @@ class SmsReceiver(
                     continue
                 }
 
-                var parsedPayment: online.paychek.app.utils.SmsParser.ParsedPayment? = null
-                
+                // ── Body Pattern Match Verification ───────────────────────────
+                // App only VERIFIES that the SMS body matches one of the template
+                // patterns. It does NOT extract amount/trxId/sender from body.
+                // Server will do its own parsing via parseRawSms().
                 val patternsToTry = mutableListOf<String>()
                 matchingMethod.customPatterns?.let { patternsToTry.addAll(it) }
                 if (!matchingMethod.regexPattern.isNullOrBlank()) {
                     patternsToTry.add(matchingMethod.regexPattern)
                 }
 
+                var bodyMatched = false
                 for (pattern in patternsToTry) {
-                    val p = online.paychek.app.utils.SmsParser.parseWithDynamicRegex(
-                        body = body,
-                        regexPattern = pattern,
-                        providerTag = matchingMethod.provider,
-                        senderNumber = sender,
-                        timestamp = timestamp,
-                        simSlot = simSlot,
-                        simNumber = simNumber ?: matchingMethod.number,
-                        isCustomSender = matchingMethod.templateId == null
-                    )
-                    if (p != null) {
-                        parsedPayment = p
-                        break
-                    }
+                    if (pattern.isBlank()) continue
+                    try {
+                        val subPatterns = pattern.split("|||")
+                        for (sub in subPatterns) {
+                            if (sub.isBlank()) continue
+                            val compiled = java.util.regex.Pattern.compile(sub, java.util.regex.Pattern.CASE_INSENSITIVE or java.util.regex.Pattern.DOTALL)
+                            if (compiled.matcher(body.trim()).matches()) {
+                                bodyMatched = true
+                                break
+                            }
+                        }
+                    } catch (_: Exception) { }
+                    if (bodyMatched) break
                 }
 
-                if (parsedPayment == null) {
+                if (!bodyMatched) {
                     Log.d(TAG, "Payment SMS ignored: Regex patterns did not match the full body structure.")
                     continue
                 }
+
+                // Build minimal payload — server will parse amount/trxId from rawBody
+                val parsedPayment = online.paychek.app.utils.SmsParser.ParsedPayment(
+                    amount       = 0.0,      // Server parses
+                    trxId        = "",        // Server parses
+                    providerTag  = matchingMethod.provider,
+                    senderNumber = sender,
+                    rawBody      = body,
+                    smsTimestamp  = timestamp,
+                    simSlot      = simSlot,
+                    simNumber    = simNumber ?: matchingMethod.number,
+                    isCustomSender = matchingMethod.templateId == null,
+                    fullSms      = body,
+                    isParseable  = matchingMethod.isParseable ?: 1
+                )
 
                 Log.i(TAG, "4 Conditions Met. Forwarding RAW SMS payload to queue. Provider: ${matchingMethod.provider}")
                 saveToOfflineQueueAndForward(context, parsedPayment)

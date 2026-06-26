@@ -75,6 +75,47 @@ cron.schedule('0 10 * * *', async () => {
   }
 });
 
-console.log('[Cron] ✅ Subscription Expiry Guard (12:01 AM) & FCM Reminder (10:00 AM) scheduled.');
+// =============================================================================
+// Cron 3: Archive Retention Policy — প্রতিদিন রাত ২:০০ টায় রান হবে
+// প্রতিটি ইউজারের শুধুমাত্র লেটেস্ট ২০০০টি কাস্টম আর্কাইভ রাখবে, পেছনেরগুলো ডিলিট করবে।
+// =============================================================================
+cron.schedule('0 2 * * *', async () => {
+  console.log('[Archive Retention] Running daily cleanup at 2:00 AM...');
+  try {
+    const userGroups = await prisma.custom_sms_archives.groupBy({
+      by: ['user_id']
+    });
+
+    let totalDeleted = 0;
+    for (const group of userGroups) {
+      const userId = group.user_id;
+      // Get the 2000th record ID for this user (descending order)
+      const cutoff = await prisma.custom_sms_archives.findMany({
+        where: { user_id: userId },
+        orderBy: { id: 'desc' },
+        skip: 2000,
+        take: 1,
+        select: { id: true }
+      });
+
+      if (cutoff.length > 0) {
+        const thresholdId = cutoff[0].id;
+        // Delete all records older than or equal to the 2000th record ID
+        const deleteResult = await prisma.custom_sms_archives.deleteMany({
+          where: {
+            user_id: userId,
+            id: { lte: thresholdId }
+          }
+        });
+        totalDeleted += deleteResult.count || 0;
+      }
+    }
+    console.log(`[Archive Retention] ✅ Cleaned up old archives. Deleted ${totalDeleted} rows.`);
+  } catch (err) {
+    console.error('[Archive Retention] ❌ Cleanup job error:', err);
+  }
+});
+
+console.log('[Cron] ✅ Subscription Expiry Guard (12:01 AM), FCM Reminder (10:00 AM) & Archive Retention (2:00 AM) scheduled.');
 
 module.exports = {};

@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS `gateway_methods` (
   PRIMARY KEY (`id`),
   KEY `idx_user_sim`      (`user_id`, `sim_slot`),
   KEY `idx_user_priority` (`user_id`, `priority`),
-  CONSTRAINT `fk_gateway_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_gateway_methods_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_gateway_template` FOREIGN KEY (`template_id`) REFERENCES `sms_templates` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

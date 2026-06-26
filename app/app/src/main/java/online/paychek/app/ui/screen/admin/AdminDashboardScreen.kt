@@ -38,6 +38,7 @@ private val CardBackground: Color @Composable get() = MaterialTheme.colorScheme.
 private val TextPrimary: Color @Composable get() = MaterialTheme.colorScheme.onBackground
 private val TextSecondary: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 private val AccentTitle: Color @Composable get() = MaterialTheme.colorScheme.primary
+private val AccentCyan = Color(0xFF22D3EE)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -752,14 +753,14 @@ private fun SmsTemplateEditDialog(
     var name by remember { mutableStateOf(template.templateName) }
     var sender by remember { mutableStateOf(template.senderId) }
     var senderNumber by remember { mutableStateOf(template.senderNumber ?: "") }
-    var keywordsList by remember {
+    var regexList by remember {
         mutableStateOf(
-            template.matchingKeyword.split(",")
+            template.regexPattern.split("|||")
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
         )
     }
-    var newKeyword by remember { mutableStateOf("") }
+    var newRegex by remember { mutableStateOf("") }
     var isActive by remember { mutableIntStateOf(template.isActive) }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -821,7 +822,7 @@ private fun SmsTemplateEditDialog(
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("Conditions", fontWeight = FontWeight.Bold, color = AccentTitle, fontSize = 14.sp)
+                Text("SMS Body Formats", fontWeight = FontWeight.Bold, color = AccentTitle, fontSize = 14.sp)
                 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -829,23 +830,23 @@ private fun SmsTemplateEditDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedTextField(
-                        value = newKeyword,
-                        onValueChange = { newKeyword = it },
-                        placeholder = { Text("নতুন কন্ডিশন লিখুন") },
-                        label = { Text("Add Condition") },
+                        value = newRegex,
+                        onValueChange = { newRegex = it },
+                        placeholder = { Text("e.g. You have received Tk {amount} from {sender}...") },
+                        label = { Text("Add SMS Format (Brackets)") },
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = CardBackground,
                             unfocusedContainerColor = CardBackground
                         ),
                         modifier = Modifier.weight(1f),
-                        singleLine = true
+                        minLines = 3
                     )
                     IconButton(
                         onClick = {
-                            if (newKeyword.trim().isNotEmpty()) {
-                                keywordsList = keywordsList + newKeyword.trim()
-                                newKeyword = ""
+                            if (newRegex.trim().isNotEmpty()) {
+                                regexList = regexList + newRegex.trim()
+                                newRegex = ""
                             }
                         },
                         modifier = Modifier
@@ -854,20 +855,22 @@ private fun SmsTemplateEditDialog(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
-                            contentDescription = "Add Condition",
+                            contentDescription = "Add Format",
                             tint = Color.White
                         )
                     }
                 }
+                
+                Text("ভেরিয়েবলসমূহ: {amount}, {sender}, {trxid}, {random}", fontSize = 11.sp, color = TextSecondary)
 
-                if (keywordsList.isNotEmpty()) {
+                if (regexList.isNotEmpty()) {
                     Column(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 4.dp)
                     ) {
-                        keywordsList.forEachIndexed { index, keyword ->
+                        regexList.forEachIndexed { index, format ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -878,23 +881,40 @@ private fun SmsTemplateEditDialog(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = keyword,
+                                    text = format,
                                     fontSize = 13.sp,
                                     color = TextPrimary,
-                                    fontWeight = FontWeight.Medium
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.weight(1f)
                                 )
-                                IconButton(
-                                    onClick = {
-                                        keywordsList = keywordsList.filterIndexed { idx, _ -> idx != index }
-                                    },
-                                    modifier = Modifier.size(24.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "Remove",
-                                        tint = StatusRed,
-                                        modifier = Modifier.size(18.dp)
-                                    )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    IconButton(
+                                        onClick = {
+                                            newRegex = format
+                                            regexList = regexList.filterIndexed { idx, _ -> idx != index }
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "Edit",
+                                            tint = AccentCyan,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            regexList = regexList.filterIndexed { idx, _ -> idx != index }
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Remove",
+                                            tint = StatusRed,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -918,14 +938,14 @@ private fun SmsTemplateEditDialog(
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
-                            val finalKeywords = keywordsList.joinToString(",")
+                            val finalRegexPattern = regexList.joinToString("|||")
                             onSave(
                                 template.copy(
                                     templateName = name,
                                     senderId = sender,
                                     senderNumber = senderNumber.ifBlank { null },
-                                    matchingKeyword = finalKeywords,
-                                    regexPattern = "",
+                                    matchingKeyword = "", // default empty since UI is removed
+                                    regexPattern = finalRegexPattern,
                                     isActive = isActive
                                 )
                             )

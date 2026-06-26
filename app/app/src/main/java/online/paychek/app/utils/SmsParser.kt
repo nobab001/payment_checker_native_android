@@ -15,7 +15,8 @@ object SmsParser {
         val simSlot: Int? = null,      // 1 বা 2 — কোন SIM স্লট থেকে এলো
         val simNumber: String? = null, // ওই SIM-এর ফোন নম্বর (যদি পাওয়া যায়)
         val isCustomSender: Boolean = false,
-        val fullSms: String? = null
+        val fullSms: String? = null,
+        val isParseable: Int = 1
     )
 
     // All hardcoded regex patterns removed for Dynamic SMS Template Builder
@@ -40,31 +41,36 @@ object SmsParser {
         if (regexPattern.isNullOrBlank()) return null
         return try {
             val trimmedBody = body.trim()
-            val pattern = Pattern.compile(regexPattern, Pattern.CASE_INSENSITIVE or Pattern.DOTALL)
-            val matcher = pattern.matcher(trimmedBody)
-            if (matcher.matches()) {
-                val amountStr = try { matcher.group("amount") } catch (e: Exception) { null }
-                val parsedAmount = amountStr?.replace(",", "")?.toDoubleOrNull() ?: 0.0
+            val patterns = regexPattern.split("|||")
+            for (patternStr in patterns) {
+                if (patternStr.isBlank()) continue
+                val pattern = Pattern.compile(patternStr, Pattern.CASE_INSENSITIVE or Pattern.DOTALL)
+                val matcher = pattern.matcher(trimmedBody)
+                if (matcher.matches()) {
+                    val amountStr = try { matcher.group("amount") } catch (e: Exception) { null }
+                    val parsedAmount = amountStr?.replace(",", "")?.toDoubleOrNull() ?: 0.0
 
-                val trxId = try { matcher.group("trxid") } catch (e: Exception) { "" } ?: ""
-                
-                val parsedSender = try { matcher.group("sender") } catch (e: Exception) { null } ?: senderNumber
+                    val trxId = try { matcher.group("trxid") } catch (e: Exception) { "" } ?: ""
+                    
+                    val parsedSender = try { matcher.group("sender") } catch (e: Exception) { null } ?: senderNumber
 
-                if (trxId.isNotEmpty()) {
-                    ParsedPayment(
-                        amount = parsedAmount,
-                        trxId = trxId.uppercase(Locale.US),
-                        providerTag = providerTag,
-                        senderNumber = parsedSender,
-                        rawBody = body,
-                        smsTimestamp = timestamp,
-                        simSlot = simSlot,
-                        simNumber = simNumber,
-                        isCustomSender = isCustomSender,
-                        fullSms = body
-                    )
-                } else null
-            } else null
+                    if (trxId.isNotEmpty()) {
+                        return ParsedPayment(
+                            amount = parsedAmount,
+                            trxId = trxId.uppercase(Locale.US),
+                            providerTag = providerTag,
+                            senderNumber = parsedSender,
+                            rawBody = body,
+                            smsTimestamp = timestamp,
+                            simSlot = simSlot,
+                            simNumber = simNumber,
+                            isCustomSender = isCustomSender,
+                            fullSms = body
+                        )
+                    }
+                }
+            }
+            null
         } catch (e: Exception) {
             null
         }

@@ -14,5 +14,6 @@ router.post('/payment-sms-ingest/bulk', authenticateToken, checkBillingStatus, a
 router.get('/sms-history', authenticateToken, checkBillingStatus, paymentController.getSmsHistory);
 router.get('/dashboard/stats', authenticateToken, checkBillingStatus, paymentController.getDashboardStats);
 router.post('/sms-history/:id/soldout', authenticateToken, checkBillingStatus, paymentController.markTransactionSoldOut);
+router.get('/custom-archives', authenticateToken, checkBillingStatus, paymentController.getCustomArchives);
 
 module.exports = router;

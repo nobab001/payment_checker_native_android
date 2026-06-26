@@ -44,7 +44,13 @@ data class DashboardScreenState(
     val userName: String               = "",      // Header-এ দেখানোর জন্য
     val plans: List<SubscriptionPlanDto> = emptyList(),
     val showPurchaseDialog: Boolean    = false,
-    val purchaseLoading: Boolean       = false
+    val purchaseLoading: Boolean       = false,
+    val globalTemplates: List<SmsTemplateDto> = emptyList(),
+    // Custom Sender ID Archive additions
+    val selectedTab: Int               = 0, // 0 = Payment Records, 1 = Custom Archive
+    val customArchives: List<CustomArchiveItem> = emptyList(),
+    val isCustomArchivesLoading: Boolean = false,
+    val customArchivesError: String?   = null
 )
 
 // =============================================================================
@@ -71,13 +77,23 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // ViewModel তৈরি হওয়ার সাথে সাথে SharedPrefs থেকে স্টেট পড়া
         val isActive = prefs.getBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, false)
         val userName = prefs.getString("pcu_user_name", "ব্যবহারকারী") ?: "ব্যবহারকারী"
-        _state.update { it.copy(isServiceActive = isActive, userName = userName) }
+        val defaultTab = prefs.getInt("pcu_default_dashboard_tab", 0)
+        _state.update { 
+            it.copy(
+                isServiceActive = isActive, 
+                userName = userName,
+                selectedTab = defaultTab
+            ) 
+        }
 
         viewModelScope.launch {
             isNetworkAvailable.collect { available ->
                 if (available) {
                     loadDashboardStats()
                     loadPlans()
+                    if (defaultTab == 1) {
+                        loadCustomArchives()
+                    }
                 }
             }
         }
@@ -106,7 +122,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 return@launch
             }
 
-            val result = repository.fetchDashboardStats(token)
+            val lastSync = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsLastSync(getApplication())
+            val result = repository.fetchDashboardStats(token, lastSync)
             result.fold(
                 onSuccess = { stats ->
                     prefs.edit().putString("pcu_account_level", stats.activePlanName).apply()
@@ -119,10 +136,24 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         )
                     }
 
+                    // Sync gateway methods cache if provided by server
+                    if (stats.gatewayMethods != null) {
+                        try {
+                            val jsonStr = online.paychek.app.utils.GsonUtils.gson.toJson(stats.gatewayMethods)
+                            online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(getApplication(), jsonStr)
+                            val serverSyncTime = stats.gatewayMethodsLastSync ?: 0L
+                            online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsLastSync(getApplication(), serverSyncTime)
+                            android.util.Log.i("DashboardViewModel", "✅ Dashboard Sync: Updated gateway methods cache (size=${stats.gatewayMethods.size}) from stats. LastSync=$serverSyncTime")
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+
                     _state.update {
                         it.copy(
-                            uiState     = DashboardUiState.Success(stats),
-                            isRefreshing = false
+                            uiState         = DashboardUiState.Success(stats),
+                            isRefreshing    = false,
+                            globalTemplates = stats.globalTemplates ?: emptyList()
                         )
                     }
                 },
@@ -141,7 +172,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     // Pull-to-refresh সাপোর্ট
     fun onRefresh() {
         _state.update { it.copy(isRefreshing = true) }
-        loadDashboardStats()
+        if (_state.value.selectedTab == 1) {
+            viewModelScope.launch {
+                loadCustomArchives()
+                _state.update { it.copy(isRefreshing = false) }
+            }
+        } else {
+            loadDashboardStats()
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -242,6 +280,37 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             repository.markTransactionSoldOut(token, transactionId).onSuccess {
                 loadDashboardStats()
             }
+        }
+    }
+
+    fun setSelectedTab(tabIndex: Int) {
+        _state.update { it.copy(selectedTab = tabIndex) }
+        if (tabIndex == 1) {
+            loadCustomArchives()
+        }
+    }
+
+    fun saveDefaultTabPreference(tabIndex: Int) {
+        prefs.edit().putInt("pcu_default_dashboard_tab", tabIndex).apply()
+    }
+
+    fun loadCustomArchives() {
+        viewModelScope.launch {
+            _state.update { it.copy(isCustomArchivesLoading = true, customArchivesError = null) }
+            val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
+            if (token.isEmpty()) {
+                _state.update { it.copy(isCustomArchivesLoading = false, customArchivesError = "লগইন সেশন পাওয়া যায়নি।") }
+                return@launch
+            }
+            val result = repository.fetchCustomArchives(token, 1, 20)
+            result.fold(
+                onSuccess = { archives ->
+                    _state.update { it.copy(customArchives = archives, isCustomArchivesLoading = false) }
+                },
+                onFailure = { error ->
+                    _state.update { it.copy(customArchivesError = error.message ?: "আর্কাইভ লোড ব্যর্থ হয়েছে", isCustomArchivesLoading = false) }
+                }
+            )
         }
     }
 }

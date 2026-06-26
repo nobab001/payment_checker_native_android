@@ -192,6 +192,30 @@ class SmsMonitorService : Service() {
                 // Future expansion: we can receive device config updates here as well
                 Log.i(TAG, "✅ Push-Driven Cache Sync: Device Config push received")
             }
+
+            socket?.on("force_template_sync") {
+                Log.i(TAG, "✅ Push-Driven Cache Sync: Global template updated. Scheduling random delayed fetch to prevent server overload...")
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        // Jitter: Random delay between 1 and 30 seconds to spread server load (Thundering Herd prevention)
+                        val randomDelayMs = (1000..30000).random().toLong()
+                        delay(randomDelayMs)
+
+                        val token = SecurePreferences.decrypt(this@SmsMonitorService, AppConfig.KEY_AUTH_TOKEN)
+                        if (token.isNotEmpty()) {
+                            val res = RetrofitClient.gatewayApiService.getGatewayMethods("Bearer $token")
+                            if (res.isSuccessful) {
+                                val methods = res.body()?.data ?: emptyList()
+                                val jsonStr = online.paychek.app.utils.GsonUtils.gson.toJson(methods)
+                                online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(this@SmsMonitorService, jsonStr)
+                                Log.i(TAG, "✅ Background Sync Complete: Gateway methods cache updated globally after ${randomDelayMs/1000}s.")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Background Sync Failed: ${e.message}")
+                    }
+                }
+            }
             
             socket?.connect()
         } catch (e: Exception) {

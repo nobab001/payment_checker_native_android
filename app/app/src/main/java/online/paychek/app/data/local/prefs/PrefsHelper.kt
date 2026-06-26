@@ -67,6 +67,14 @@ object PrefsHelper {
         online.paychek.app.utils.SecurePreferences.encrypt(context, AppConfig.KEY_GATEWAY_METHODS_CACHE, json)
     }
 
+    fun getGatewayMethodsLastSync(context: Context): Long {
+        return prefs(context).getLong("gateway_methods_last_sync_v2", 0L)
+    }
+
+    fun setGatewayMethodsLastSync(context: Context, timestamp: Long) {
+        prefs(context).edit().putLong("gateway_methods_last_sync_v2", timestamp).apply()
+    }
+
     // -------------------------------------------------------------------------
     // Session PIN flag
     // -------------------------------------------------------------------------

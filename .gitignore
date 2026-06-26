@@ -18,3 +18,17 @@ backend/.env
 # OS files
 Thumbs.db
 .DS_Store
+
+# Chat autosave files
+autosave_chat.js
+active_chat_history.md
+active_chat_history.md.bak
+chat_histories/
+
+# Temp DB and Binaries
+Redis_new/
+Redis_new.zip
+temp_mysql_data/
+dump.rdb
+*.class
+

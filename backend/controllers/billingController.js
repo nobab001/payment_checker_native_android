@@ -195,10 +195,35 @@ async function deletePlan(req, res) {
   }
 }
 
+async function purchaseCustomSenderAddon(req, res) {
+  try {
+    const userId = req.user.userId;
+
+    await prisma.users.update({
+      where: { id: userId },
+      data: {
+        has_custom_sender_addon: 1
+      }
+    });
+
+    console.log(`[Subscription] ✅ User ${userId} subscribed to Custom Sender Add-on.`);
+
+    return res.json({
+      success: true,
+      message: 'কাস্টম সেন্ডার অ্যাড-অন সফলভাবে সক্রিয় করা হয়েছে।',
+      has_custom_sender_addon: 1
+    });
+  } catch (error) {
+    console.error('[Billing Controller] purchaseCustomSenderAddon error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   updateFcmToken,
   purchaseSubscription,
   listPlans,
   createPlan,
-  deletePlan
+  deletePlan,
+  purchaseCustomSenderAddon
 };

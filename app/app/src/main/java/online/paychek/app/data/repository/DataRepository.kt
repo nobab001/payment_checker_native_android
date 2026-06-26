@@ -21,9 +21,9 @@ class PaymentRepository {
      * Dashboard-এর statistics API থেকে লোড করে।
      * @return Result.success(DashboardStats) বা Result.failure(Exception)
      */
-    suspend fun fetchDashboardStats(token: String): Result<DashboardStats> {
+    suspend fun fetchDashboardStats(token: String, lastSync: Long): Result<DashboardStats> {
         return try {
-            val response = api.getDashboardStats("Bearer $token")
+            val response = api.getDashboardStats("Bearer $token", lastSync)
             if (response.isSuccessful) {
                 val body = response.body()
                 if (body?.success == true && body.data != null) {
@@ -147,6 +147,42 @@ class PaymentRepository {
                     Result.success(Unit)
                 } else {
                     Result.failure(Exception(body?.message ?: "স্ট্যাটাস পরিবর্তন ব্যর্থ হয়েছে"))
+                }
+            } else {
+                Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
+        }
+    }
+
+    suspend fun fetchCustomArchives(token: String, page: Int = 1, limit: Int = 20): Result<List<CustomArchiveItem>> {
+        return try {
+            val response = api.getCustomArchives("Bearer $token", page, limit)
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body?.success == true) {
+                    Result.success(body.data)
+                } else {
+                    Result.failure(Exception("কাস্টম আর্কাইভ লোড ব্যর্থ"))
+                }
+            } else {
+                Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
+        }
+    }
+
+    suspend fun purchaseSubscriptionAddon(token: String): Result<PurchaseAddonResponse> {
+        return try {
+            val response = api.purchaseSubscriptionAddon("Bearer $token")
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body?.success == true) {
+                    Result.success(body!!)
+                } else {
+                    Result.failure(Exception(body?.message ?: "অ্যাড-অন ক্রয় ব্যর্থ হয়েছে"))
                 }
             } else {
                 Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))

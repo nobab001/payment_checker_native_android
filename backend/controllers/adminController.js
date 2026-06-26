@@ -70,6 +70,48 @@ async function updateConfig(req, res) {
   }
 }
 
+function generateCustomRegex(smsText) {
+  if (!smsText) return '';
+  const patterns = smsText.split('|||');
+  const compiledPatterns = patterns.map(patternText => {
+      const tokens = patternText.split(/(\{[a-zA-Z0-9_]+\})/g);
+      const result = tokens.map(token => {
+          if (token.startsWith('{') && token.endsWith('}')) {
+              const tag = token.slice(1, -1);
+              if (tag === 'amount') return '(?<amount>[\\d,\\.]+)';
+              if (tag === 'sender') return '(?<sender>[\\d*xX]+)';
+              if (tag === 'trxid') return '(?<trxid>[A-Za-z0-9]+)';
+              if (tag === 'random') return '(.*)';
+              return '(.*?)';
+          } else {
+              return token.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+          }
+      }).join('');
+      return `^${result}$`;
+  });
+  return compiledPatterns.join('|||');
+}
+
+function regexToBrackets(regexPattern) {
+  if (!regexPattern) return '';
+  const patterns = regexPattern.split('|||');
+  const bracketPatterns = patterns.map(pattern => {
+      let s = pattern;
+      if (s.startsWith('^')) s = s.slice(1);
+      if (s.endsWith('$')) s = s.slice(0, -1);
+
+      s = s.split('(?<amount>[\\d,\\.]+)').join('{amount}');
+      s = s.split('(?<sender>[\\d*xX]+)').join('{sender}');
+      s = s.split('(?<trxid>[A-Za-z0-9]+)').join('{trxid}');
+      s = s.split('(.*?)').join('{random}');
+      s = s.split('(.*)').join('{random}');
+
+      s = s.replace(/\\([-\/\\^$*+?.()|[\]{}])/g, '$1');
+      return s;
+  });
+  return bracketPatterns.join('|||');
+}
+
 // 2. Official SMS Templates
 async function getSmsTemplates(req, res) {
   try {
@@ -80,7 +122,7 @@ async function getSmsTemplates(req, res) {
       ...t,
       sender_number: t.sender_number || '',
       matching_keyword: t.matching_keyword || '',
-      regex_pattern: t.regex_pattern || ''
+      regex_pattern: regexToBrackets(t.regex_pattern)
     }));
     return res.json({ success: true, templates: mapped });
   } catch (err) {
@@ -91,7 +133,7 @@ async function getSmsTemplates(req, res) {
 
 async function saveSmsTemplate(req, res) {
   try {
-    const { id, template_name, sender_id, sender_number, matching_keyword, is_active } = req.body;
+    const { id, template_name, sender_id, sender_number, matching_keyword, regex_pattern, is_active } = req.body;
     if (!template_name || !sender_id) {
       return res.status(400).json({ error: 'Missing required template fields' });
     }
@@ -101,8 +143,10 @@ async function saveSmsTemplate(req, res) {
       sender_id,
       sender_number: sender_number || null,
       matching_keyword: matching_keyword || '',
+      regex_pattern: generateCustomRegex(regex_pattern ? regex_pattern.trim() : ''),
       is_active: is_active === undefined ? 1 : (is_active ? 1 : 0),
-      is_official: 1
+      is_official: 1,
+      updated_at: new Date()
     };
 
     if (id) {
@@ -113,6 +157,20 @@ async function saveSmsTemplate(req, res) {
     } else {
       await prisma.sms_templates.create({ data });
     }
+
+    // 🔥 Update global config templates_last_updated
+    await prisma.global_config.upsert({
+      where: { config_key: 'templates_last_updated' },
+      update: { config_value: String(Date.now()), updated_at: new Date() },
+      create: { config_key: 'templates_last_updated', config_value: String(Date.now()), updated_at: new Date() }
+    });
+
+    // 🔥 Trigger background update for all connected apps
+    const io = req.app.get('io');
+    if (io) {
+      io.emit("force_template_sync", { timestamp: Date.now() });
+    }
+
     return res.json({ success: true, message: 'SMS Template saved successfully.' });
   } catch (err) {
     console.error(err);
@@ -126,6 +184,20 @@ async function deleteSmsTemplate(req, res) {
     await prisma.sms_templates.deleteMany({
       where: { id: parseInt(id), is_official: 1 }
     });
+
+    // 🔥 Update global config templates_last_updated
+    await prisma.global_config.upsert({
+      where: { config_key: 'templates_last_updated' },
+      update: { config_value: String(Date.now()), updated_at: new Date() },
+      create: { config_key: 'templates_last_updated', config_value: String(Date.now()), updated_at: new Date() }
+    });
+
+    // 🔥 Trigger background update for all connected apps
+    const io = req.app.get('io');
+    if (io) {
+      io.emit("force_template_sync", { timestamp: Date.now() });
+    }
+
     return res.json({ success: true, message: 'Official SMS Template deleted successfully.' });
   } catch (err) {
     console.error(err);
@@ -605,5 +677,6 @@ module.exports = {
   getOtpFormat,
   updateOtpFormat,
   addSite,
-  manualGrace
+  manualGrace,
+  generateCustomRegex
 };

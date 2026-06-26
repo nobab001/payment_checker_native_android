@@ -1,5 +1,7 @@
 package online.paychek.app.ui.screen.dashboard
 
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.material.icons.filled.ContentCopy
 import android.content.Intent
 import android.net.Uri
 import android.Manifest
@@ -44,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -399,223 +402,327 @@ fun DashboardScreen(
                 )
             }
 
-            // ৩. Search box (filter button সহ)
+            // Dual-Tab Toggle Row
             item {
-                Row(
+                TabRow(
+                    selectedTabIndex = screenState.selectedTab,
+                    containerColor = DashBg,
+                    contentColor = AccentCyan,
+                    indicator = { tabPositions ->
+                        TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[screenState.selectedTab]),
+                            color = AccentCyan
+                        )
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        placeholder = {
+                    Tab(
+                        selected = screenState.selectedTab == 0,
+                        onClick = {
+                            viewModel.setSelectedTab(0)
+                            viewModel.saveDefaultTabPreference(0)
+                        },
+                        text = {
                             Text(
-                                text = "ট্রানজেকশন খুঁজুন...",
-                                color = TextMuted,
-                                fontSize = 13.sp
+                                text = "পেমেন্ট রেকর্ডস",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
                             )
+                        }
+                    )
+                    Tab(
+                        selected = screenState.selectedTab == 1,
+                        onClick = {
+                            viewModel.setSelectedTab(1)
+                            viewModel.saveDefaultTabPreference(1)
                         },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = "Search",
-                                tint = AccentCyan,
-                                modifier = Modifier.size(20.dp)
+                        text = {
+                            Text(
+                                text = "কাস্টম আর্কাইভ",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
                             )
-                        },
-                        trailingIcon = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (searchQuery.isNotEmpty()) {
-                                    IconButton(onClick = { searchQuery = "" }) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "Clear Search",
-                                            tint = TextMuted,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                }
-                                IconButton(onClick = { showDateRangePicker = true }) {
-                                    Icon(
-                                        imageVector = Icons.Default.DateRange,
-                                        contentDescription = "Date Filter",
-                                        tint = if (selectedDate == "custom") AccentCyan else TextMuted,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                        },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AccentCyan,
-                            unfocusedBorderColor = TextMuted.copy(alpha = 0.3f),
-                            focusedTextColor = TextWhite,
-                            unfocusedTextColor = TextWhite,
-                            cursorColor = AccentCyan,
-                            focusedContainerColor = DashCard,
-                            unfocusedContainerColor = DashCard
-                        ),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        }
                     )
                 }
             }
-            // ৪. Provider chips (বিকাশ, নগদ, রকেট, উপায়)
-            // - search এ কিছু type করলে chips HIDE হবে
-            if (searchQuery.isEmpty()) {
+
+            if (screenState.selectedTab == 0) {
+                // ৩. Search box (filter button সহ)
                 item {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
                             .padding(horizontal = 16.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        val methodsJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(context)
-                        val methodsType = object : com.google.gson.reflect.TypeToken<List<online.paychek.app.data.remote.dto.GatewayMethod>>() {}.type
-                        val cachedMethods: List<online.paychek.app.data.remote.dto.GatewayMethod> = try {
-                            online.paychek.app.utils.GsonUtils.gson.fromJson(methodsJson, methodsType) ?: emptyList()
-                        } catch (e: Exception) {
-                            emptyList()
-                        }
-                        
-                        val providerFilters = cachedMethods.filter { it.isEnabled == 1 }
-                            .distinctBy { it.provider.split(" ")[0].lowercase(Locale.US) }
-                            .map { method ->
-                                val providerName = method.provider
-                                val tag = providerName.split(" ")[0].lowercase(Locale.US)
-                                val label = method.displayName?.takeIf { it.isNotBlank() } ?: providerName
-                                val color = when (tag) {
-                                    "bkash" -> Color(0xFF10B981)
-                                    "nagad" -> Color(0xFFF97316)
-                                    "rocket" -> Color(0xFF8B5CF6)
-                                    "upay" -> Color(0xFFEAB308)
-                                    else -> AccentCyan
-                                }
-                                tag to (label to color)
-                            }
-                        providerFilters.forEach { (tag, info) ->
-                            val (label, dotColor) = info
-                            val isSelected = selectedProvider == tag
-                            val chipBgColor = if (isSelected) AccentCyan.copy(alpha = 0.18f) else DashCard
-                            val chipBorderColor = if (isSelected) AccentCyan else TextMuted.copy(alpha = 0.25f)
-                            val chipTextColor = if (isSelected) AccentCyan else TextMuted
-
-                            Box(
-                                modifier = Modifier
-                                    .border(
-                                        width = 1.dp,
-                                        color = chipBorderColor,
-                                        shape = RoundedCornerShape(20.dp)
-                                    )
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .background(chipBgColor)
-                                    .clickable {
-                                        selectedProvider = if (isSelected) null else tag
-                                    }
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(8.dp)
-                                            .clip(CircleShape)
-                                            .background(dotColor)
-                                    )
-                                    Text(
-                                        text = label,
-                                        color = chipTextColor,
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ৫. Stats cards (আজকের পেমেন্ট, সর্বমোট, মোট ট্রানজেকশন, অ্যাক্টিভ ডিভাইস)
-            // - search এ কিছু type করলে stats cards HIDE হবে
-            if (searchQuery.isEmpty()) {
-                item {
-                    val isOffline = !isNetworkAvailable
-                    if (isOffline) {
-                        StatsGrid(stats = null, isOffline = true)
-                    } else {
-                        AnimatedContent(
-                            targetState = screenState.uiState,
-                            transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) },
-                            modifier = Modifier.padding(bottom = 4.dp),
-                            label = "DashboardUiState"
-                        ) { uiState ->
-                            when (uiState) {
-                                is DashboardUiState.Loading -> StatsLoadingPlaceholder()
-                                is DashboardUiState.Error   -> ErrorCard(
-                                    message  = uiState.message,
-                                    onRetry  = { viewModel.loadDashboardStats() }
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = {
+                                Text(
+                                    text = "ট্রানজেকশন খুঁজুন...",
+                                    color = TextMuted,
+                                    fontSize = 13.sp
                                 )
-                                is DashboardUiState.Success -> StatsGrid(stats = uiState.stats, isOffline = false)
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "Search",
+                                    tint = AccentCyan,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            trailingIcon = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (searchQuery.isNotEmpty()) {
+                                        IconButton(onClick = { searchQuery = "" }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Clear Search",
+                                                tint = TextMuted,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    IconButton(onClick = { showDateRangePicker = true }) {
+                                        Icon(
+                                            imageVector = Icons.Default.DateRange,
+                                            contentDescription = "Date Filter",
+                                            tint = if (selectedDate == "custom") AccentCyan else TextMuted,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = AccentCyan,
+                                unfocusedBorderColor = TextMuted.copy(alpha = 0.3f),
+                                focusedTextColor = TextWhite,
+                                unfocusedTextColor = TextWhite,
+                                cursorColor = AccentCyan,
+                                focusedContainerColor = DashCard,
+                                unfocusedContainerColor = DashCard
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+
+                // ৪. Provider chips (বিকাশ, নগদ, রকেট, উপায়)
+                // - search এ কিছু type করলে chips HIDE হবে
+                if (searchQuery.isEmpty()) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val providerFilters = screenState.globalTemplates
+                                .distinctBy { it.templateName.split(" ")[0].lowercase(Locale.US) }
+                                .map { template ->
+                                    val providerName = template.templateName
+                                    val tag = providerName.split(" ")[0].lowercase(Locale.US)
+                                    val label = providerName
+                                    val color = when (tag) {
+                                        "bkash" -> Color(0xFF10B981)
+                                        "nagad" -> Color(0xFFF97316)
+                                        "rocket" -> Color(0xFF8B5CF6)
+                                        "upay" -> Color(0xFFEAB308)
+                                        else -> AccentCyan
+                                    }
+                                    tag to (label to color)
+                                }
+                            providerFilters.forEach { (tag, info) ->
+                                val (label, dotColor) = info
+                                val isSelected = selectedProvider == tag
+                                val chipBgColor = if (isSelected) AccentCyan.copy(alpha = 0.18f) else DashCard
+                                val chipBorderColor = if (isSelected) AccentCyan else TextMuted.copy(alpha = 0.25f)
+                                val chipTextColor = if (isSelected) AccentCyan else TextMuted
+
+                                Box(
+                                    modifier = Modifier
+                                        .border(
+                                            width = 1.dp,
+                                            color = chipBorderColor,
+                                            shape = RoundedCornerShape(20.dp)
+                                        )
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .background(chipBgColor)
+                                        .clickable {
+                                            selectedProvider = if (isSelected) null else tag
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(dotColor)
+                                        )
+                                        Text(
+                                            text = label,
+                                            color = chipTextColor,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                }
                             }
+                        }
+                    }
+                }
+
+                // ৫. Stats cards (আজকের পেমেন্ট, সর্বমোট, মোট ট্রানজেকশন, অ্যাক্টিভ ডিভাইস)
+                // - search এ কিছু type করলে stats cards HIDE হবে
+                if (searchQuery.isEmpty()) {
+                    item {
+                        val isOffline = !isNetworkAvailable
+                        if (isOffline) {
+                            StatsGrid(stats = null, isOffline = true)
+                        } else {
+                            AnimatedContent(
+                                targetState = screenState.uiState,
+                                transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) },
+                                modifier = Modifier.padding(bottom = 4.dp),
+                                label = "DashboardUiState"
+                            ) { uiState ->
+                                when (uiState) {
+                                    is DashboardUiState.Loading -> StatsLoadingPlaceholder()
+                                    is DashboardUiState.Error   -> ErrorCard(
+                                        message  = uiState.message,
+                                        onRetry  = { viewModel.loadDashboardStats() }
+                                    )
+                                    is DashboardUiState.Success -> StatsGrid(stats = uiState.stats, isOffline = false)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ৬. আজকের ট্রানজেকশন list
+                // - "সব দেখুন" বাটন সহ
+                val recentList = (screenState.uiState as? DashboardUiState.Success)
+                    ?.stats?.recentTransactions ?: emptyList()
+
+                val filteredList = recentList.filter { trx ->
+                    val matchesQuery = searchQuery.isEmpty() ||
+                        trx.trxId.contains(searchQuery, ignoreCase = true) ||
+                        (trx.senderNumber != null && trx.senderNumber.contains(searchQuery, ignoreCase = true)) ||
+                        trx.amount.toString().contains(searchQuery)
+
+                    val matchesProvider = selectedProvider == null ||
+                        trx.providerTag.equals(selectedProvider, ignoreCase = true)
+
+                    val matchesDate = isDateMatching(trx.smsTimestamp, selectedDate, customStartDate, customEndDate)
+
+                    matchesQuery && matchesProvider && matchesDate
+                }
+
+                if (filteredList.isNotEmpty()) {
+                    item {
+                        RecentTransactionsHeader(onSeeAll = onNavigateToHistory)
+                    }
+                    items(filteredList, key = { it.id }) { trx ->
+                        TransactionRow(
+                            item     = trx,
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            onSoldOutClick = {
+                                viewModel.markTransactionSoldOut(trx.id)
+                            }
+                        )
+                    }
+                } else if (searchQuery.isNotEmpty() || selectedProvider != null || selectedDate != null) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "কোনো ট্রানজেকশন পাওয়া যায়নি",
+                                color = TextMuted,
+                                fontSize = 14.sp
+                            )
                         }
                     }
                 }
             }
 
-            // ৬. আজকের ট্রানজেকশন list
-            // - "সব দেখুন" বাটন সহ
-            val recentList = (screenState.uiState as? DashboardUiState.Success)
-                ?.stats?.recentTransactions ?: emptyList()
-
-            val filteredList = recentList.filter { trx ->
-                val matchesQuery = searchQuery.isEmpty() ||
-                    trx.trxId.contains(searchQuery, ignoreCase = true) ||
-                    (trx.senderNumber != null && trx.senderNumber.contains(searchQuery, ignoreCase = true)) ||
-                    trx.amount.toString().contains(searchQuery)
-
-                val matchesProvider = selectedProvider == null ||
-                    trx.providerTag.equals(selectedProvider, ignoreCase = true)
-
-                val matchesDate = isDateMatching(trx.smsTimestamp, selectedDate, customStartDate, customEndDate)
-
-                matchesQuery && matchesProvider && matchesDate
-            }
-
-            if (filteredList.isNotEmpty()) {
-                item {
-                    RecentTransactionsHeader(onSeeAll = onNavigateToHistory)
-                }
-                items(filteredList, key = { it.id }) { trx ->
-                    TransactionRow(
-                        item     = trx,
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        onSoldOutClick = {
-                            viewModel.markTransactionSoldOut(trx.id)
+            if (screenState.selectedTab == 1) {
+                if (screenState.isCustomArchivesLoading) {
+                    items(5) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                                .height(120.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(DashCard),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                color = AccentCyan,
+                                modifier = Modifier.size(28.dp),
+                                strokeWidth = 2.dp
+                            )
                         }
-                    )
-                }
-            } else if (searchQuery.isNotEmpty() || selectedProvider != null || selectedDate != null) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 32.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "কোনো ট্রানজেকশন পাওয়া যায়নি",
-                            color = TextMuted,
-                            fontSize = 14.sp
+                    }
+                } else if (screenState.customArchivesError != null) {
+                    item {
+                        ErrorCard(
+                            message = screenState.customArchivesError!!,
+                            onRetry = { viewModel.loadCustomArchives() }
+                        )
+                    }
+                } else if (screenState.customArchives.isEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(48.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Inbox,
+                                contentDescription = null,
+                                tint = TextMuted.copy(alpha = 0.4f),
+                                modifier = Modifier.size(56.dp)
+                            )
+                            Text(
+                                text = "কাস্টম আর্কাইভে কোনো বার্তা নেই",
+                                color = TextMuted,
+                                fontSize = 14.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    items(
+                        items = screenState.customArchives,
+                        key = { it.id }
+                    ) { archive ->
+                        CustomArchiveRow(
+                            item = archive,
+                            modifier = Modifier.padding(horizontal = 16.dp)
                         )
                     }
                 }
@@ -1673,6 +1780,127 @@ private fun utcMidnightToLocalMidnight(utcMs: Long): Long {
         )
         set(java.util.Calendar.MILLISECOND, 0)
     }.timeInMillis
+}
+
+@Composable
+private fun CustomArchiveRow(
+    item: online.paychek.app.data.remote.dto.CustomArchiveItem,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    Card(
+        colors = CardDefaults.cardColors(containerColor = DashCard),
+        shape = RoundedCornerShape(16.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Header Row: Sender / Device & Time
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(AccentCyan.copy(alpha = 0.1f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Inbox,
+                            contentDescription = null,
+                            tint = AccentCyan,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = item.providerTag, // Sender ID e.g. GP, BL, bKash
+                            fontWeight = FontWeight.Bold,
+                            color = AccentCyan,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            text = item.deviceName ?: "মূল ডিভাইস",
+                            color = TextMuted,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+                
+                Text(
+                    text = formatCustomArchiveTime(item.createdAt),
+                    color = TextMuted,
+                    fontSize = 11.sp
+                )
+            }
+
+            // Raw SMS Text Box
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(DashCardAlt)
+                    .padding(12.dp)
+            ) {
+                Text(
+                    text = item.fullSms,
+                    color = TextWhite,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+            }
+
+            // Copy Action Button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(
+                    onClick = {
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("SMS Content", item.fullSms)
+                        clipboard.setPrimaryClip(clip)
+                        android.widget.Toast.makeText(context, "টেক্সট কপি করা হয়েছে ✓", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = AccentCyan),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = "Copy",
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("কপি করুন", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+private fun formatCustomArchiveTime(isoString: String): String {
+    return try {
+        // e.g. "2026-06-25T10:05:59.000Z"
+        val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
+        val date = inputFormat.parse(isoString) ?: Date()
+        val outputFormat = SimpleDateFormat("hh:mm a, dd MMM yyyy", Locale.US)
+        outputFormat.format(date)
+    } catch (e: Exception) {
+        isoString
+    }
 }
 
 

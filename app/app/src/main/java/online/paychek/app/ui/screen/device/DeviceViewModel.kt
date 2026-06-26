@@ -60,7 +60,8 @@ data class DeviceUiState(
     val templates: List<SmsTemplateDto>       = emptyList(),
     val sim1Number: String                    = "",
     val sim2Number: String                    = "",
-    val isTemplatesLoading: Boolean           = false
+    val isTemplatesLoading: Boolean           = false,
+    val showPremiumUpgradeDialog: Boolean     = false
 )
 
 // =============================================================================
@@ -751,6 +752,72 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
             }
+        }
+    }
+
+    fun setShowPremiumUpgradeDialog(show: Boolean) {
+        _state.update { it.copy(showPremiumUpgradeDialog = show) }
+    }
+
+    fun addCustomSender(simSlot: Int, senderId: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, errorMessage = null) }
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+            val request = AddCustomSenderRequest(simSlot = simSlot, senderId = senderId.trim())
+
+            runCatching { api.addCustomSender("Bearer $token", request) }
+                .onSuccess { res ->
+                    _state.update { it.copy(isSaving = false) }
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        res.body()?.data?.let { newData ->
+                            saveMethodsToCache(newData)
+                            _state.update { it.copy(methods = newData) }
+                        }
+                        loadGatewayMethods()
+                    } else if (res.code() == 403) {
+                        // Upgrade required
+                        _state.update { it.copy(showPremiumUpgradeDialog = true) }
+                    } else {
+                        val errObj = res.errorBody()?.string()
+                        val msg = if (errObj?.contains("message") == true) {
+                            try {
+                                com.google.gson.JsonParser.parseString(errObj).asJsonObject.get("message").asString
+                            } catch(e: Exception) { "মেথড যোগ করতে ব্যর্থ হয়েছে।" }
+                        } else {
+                            "মেথড যোগ করতে ব্যর্থ হয়েছে (${res.code()})"
+                        }
+                        setError(msg)
+                    }
+                }
+                .onFailure {
+                    _state.update { it.copy(isSaving = false) }
+                    setError("নেটওয়ার্ক সমস্যা: ${it.message}")
+                }
+        }
+    }
+
+    fun deleteCustomSender(methodId: Int) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, errorMessage = null) }
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+
+            runCatching { api.deleteGatewayMethod("Bearer $token", methodId) }
+                .onSuccess { res ->
+                    _state.update { it.copy(isSaving = false) }
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        res.body()?.data?.let { newData ->
+                            saveMethodsToCache(newData)
+                            _state.update { it.copy(methods = newData) }
+                        }
+                        loadGatewayMethods()
+                    } else {
+                        setError("মেথড ডিলিট করতে ব্যর্থ হয়েছে (${res.code()})")
+                    }
+                }
+                .onFailure {
+                    _state.update { it.copy(isSaving = false) }
+                    setError("নেটওয়ার্ক সমস্যা: ${it.message}")
+                }
         }
     }
 }

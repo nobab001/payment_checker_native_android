@@ -25,4 +25,10 @@ router.patch('/gateway/methods/:id',         auth, auth.restrictDevice, billing,
 // POST /api/gateway/methods/:id/custom-templates → নতুন কাস্টম এসএমএস টেমপ্লেট
 router.post('/gateway/methods/:id/custom-templates', auth, auth.restrictDevice, billing, gw.addCustomTemplate);
 
+// POST /api/gateway/custom-sender → নতুন কাস্টম প্লাস-আইকন সেন্ডার আইডি তৈরি
+router.post('/gateway/custom-sender', auth, auth.restrictDevice, billing, gw.addCustomSender);
+
+// DELETE /api/gateway/methods/:id → কাস্টম সেন্ডার আইডি ডিলিট করা
+router.delete('/gateway/methods/:id', auth, auth.restrictDevice, billing, gw.deleteGatewayMethod);
+
 module.exports = router;

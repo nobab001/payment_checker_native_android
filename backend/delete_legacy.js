@@ -1,5 +1,5 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+
+const prisma = require('./db/prisma');
 
 async function run() {
   const result = await prisma.$executeRawUnsafe(`DELETE FROM gateway_methods WHERE provider IN ('bKash', 'Nagad', 'Rocket', 'Upay') AND (number = '' OR number IS NULL)`);
@@ -7,3 +7,4 @@ async function run() {
 }
 
 run().catch(console.error).finally(() => prisma.$disconnect());
+

@@ -11,7 +11,8 @@ async function fetchGatewayMethodsForUser(userId, deviceId) {
   }
   const rows = await prisma.$queryRaw`
     SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.is_enabled, gm.priority, gm.template_id, gm.custom_patterns,
-            t.sender_id, t.sender_number, t.matching_keyword, t.regex_pattern AS regex_pattern, COALESCE(t.is_official, 1) AS is_official,
+            t.sender_id, t.sender_number, t.matching_keyword, t.regex_pattern AS regex_pattern, 
+            COALESCE(t.is_official, 1) AS is_official, COALESCE(t.is_parseable, 1) AS is_parseable,
             cvt.single_number_instruction, cvt.multiple_number_instruction
        FROM gateway_methods gm
   LEFT JOIN sms_templates t ON gm.template_id = t.id AND t.is_active = 1
@@ -356,4 +357,183 @@ async function addCustomTemplate(req, res) {
   }
 }
 
-module.exports = { getGatewayMethods, updatePriority, toggleMethod, updateMethod, getTemplates, addGatewayMethod, addCustomTemplate };
+async function addCustomSender(req, res) {
+  try {
+    const userId = req.user.userId;
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+    const { sim_slot, sender_id } = req.body;
+
+    if (!sim_slot || !sender_id) {
+      return res.status(400).json({ error: 'sim_slot এবং sender_id আবশ্যক' });
+    }
+
+    const cleanSenderId = sender_id.trim();
+
+    // Verify user authorization for custom sender feature:
+    // User must either have has_custom_sender_addon === 1 OR their active subscription plan must allow custom sender.
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { is_paid: true, active_plan_name: true, role: true, has_custom_sender_addon: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    let isAllowed = false;
+    if (user.role === 'admin' || user.has_custom_sender_addon === 1) {
+      isAllowed = true;
+    } else if (user.is_paid && user.active_plan_name) {
+      const plan = await prisma.subscription_plans.findFirst({
+        where: { plan_name: user.active_plan_name }
+      });
+      if (plan && plan.is_custom_sender_allowed === 1) {
+        isAllowed = true;
+      }
+    }
+
+    if (!isAllowed) {
+      return res.status(403).json({
+        success: false,
+        error: 'FEATURE_GATED',
+        message: 'কাস্টম সেন্ডার আইডি ব্যবহার করতে হলে আপনার প্যাকেজ আপগ্রেড করুন অথবা অ্যাড-অন কিনুন।'
+      });
+    }
+
+    // Find or create user custom template
+    let template = await prisma.sms_templates.findFirst({
+      where: {
+        user_id: userId,
+        sender_id: cleanSenderId
+      }
+    });
+
+    if (!template) {
+      template = await prisma.sms_templates.create({
+        data: {
+          user_id: userId,
+          template_name: `Custom-${cleanSenderId}`,
+          sender_id: cleanSenderId,
+          sender_number: cleanSenderId,
+          regex_pattern: '^(.*)$',
+          matching_keyword: '',
+          is_official: 0,
+          is_active: 1,
+          is_parseable: 0
+        }
+      });
+    }
+
+    // Check if gateway method already exists for this slot
+    const existingMethod = await prisma.gateway_methods.findFirst({
+      where: {
+        user_id: String(userId),
+        device_id: String(deviceId),
+        template_id: template.id,
+        sim_slot: parseInt(sim_slot, 10)
+      }
+    });
+
+    if (existingMethod) {
+      return res.status(400).json({ error: 'এই সেন্ডার আইডিটি ইতিমধ্যেই এই স্লটে যুক্ত করা আছে।' });
+    }
+
+    // Get max priority to append
+    const maxPriorityRow = await prisma.gateway_methods.aggregate({
+      where: { user_id: String(userId), device_id: String(deviceId) },
+      _max: { priority: true }
+    });
+    const nextPriority = (maxPriorityRow._max.priority || 0) + 1;
+
+    // Create gateway method
+    await prisma.gateway_methods.create({
+      data: {
+        user_id: String(userId),
+        device_id: String(deviceId),
+        template_id: template.id,
+        sim_slot: parseInt(sim_slot, 10),
+        provider: `Custom-${cleanSenderId}`,
+        number: '',
+        is_enabled: 1,
+        priority: nextPriority
+      }
+    });
+
+    const data = await fetchGatewayMethodsForUser(userId, deviceId);
+    console.log(`[GATEWAY] Custom sender ${cleanSenderId} added for user ${userId} on slot ${sim_slot}`);
+
+    const io = req.app.get('io');
+    if (io && deviceId) {
+      io.to(`${userId}:${deviceId}`).emit("sync_gateway_methods", data);
+    }
+
+    return res.json({ success: true, message: 'কাস্টম সেন্ডার সফলভাবে যুক্ত করা হয়েছে।', data });
+  } catch (error) {
+    console.error('[GATEWAY] addCustomSender error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+async function deleteGatewayMethod(req, res) {
+  try {
+    const userId = req.user.userId;
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+    const methodId = parseInt(req.params.id);
+
+    const method = await prisma.gateway_methods.findFirst({
+      where: { id: methodId, user_id: String(userId), device_id: String(deviceId) }
+    });
+
+    if (!method) {
+      return res.status(404).json({ error: 'মেথড পাওয়া যায়নি' });
+    }
+
+    // Delete the gateway method
+    await prisma.gateway_methods.delete({
+      where: { id: methodId }
+    });
+
+    // Clean up custom template if not used anywhere else
+    if (method.template_id) {
+      const template = await prisma.sms_templates.findUnique({
+        where: { id: method.template_id }
+      });
+      if (template && template.is_official === 0) {
+        const otherUses = await prisma.gateway_methods.count({
+          where: { template_id: method.template_id }
+        });
+        if (otherUses === 0) {
+          await prisma.sms_templates.delete({
+            where: { id: method.template_id }
+          });
+        }
+      }
+    }
+
+    const data = await fetchGatewayMethodsForUser(userId, deviceId);
+    console.log(`[GATEWAY] Gateway method ${methodId} deleted | User: ${userId}`);
+
+    const io = req.app.get('io');
+    if (io && deviceId) {
+      io.to(`${userId}:${deviceId}`).emit("sync_gateway_methods", data);
+    }
+
+    return res.json({ success: true, message: 'মেথড সফলভাবে ডিলিট করা হয়েছে।', data });
+  } catch (error) {
+    console.error('[GATEWAY] deleteGatewayMethod error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+module.exports = {
+  fetchGatewayMethodsForUser,
+  getGatewayMethods,
+  updatePriority,
+  toggleMethod,
+  updateMethod,
+  getTemplates,
+  addGatewayMethod,
+  addCustomTemplate,
+  addCustomSender,
+  deleteGatewayMethod
+};

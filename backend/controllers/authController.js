@@ -1396,7 +1396,8 @@ async function sendOtpDispatch(contact, otpCode) {
             from:    `"Paychek" <${acc.email}>`,
             to:      contact,
             subject: 'Paychek Verification Code',
-            text:    customMessage
+            text:    customMessage,
+            html:    `<html><head><meta charset="utf-8"></head><body><p>${customMessage}</p></body></html>`
           });
 
           // সফলভাবে পাঠানো হয়েছে — sent_today বাড়াই
@@ -1458,7 +1459,8 @@ async function sendOtpDispatch(contact, otpCode) {
           from:    `"Paychek" <${envUser}>`,
           to:      contact,
           subject: 'Paychek Verification Code',
-          text:    customMessage
+          text:    customMessage,
+          html:    `<html><head><meta charset="utf-8"></head><body><p>${customMessage}</p></body></html>`
         });
 
         console.log(`[BACKUP-EMAIL] OTP sent successfully via .env backup account.`);

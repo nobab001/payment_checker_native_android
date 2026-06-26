@@ -44,6 +44,9 @@ data class GatewayMethod(
     @SerializedName("is_official")
     val isOfficial: Int?,
 
+    @SerializedName("is_parseable")
+    val isParseable: Int?,
+
     @SerializedName("single_number_instruction")
     val singleNumberInstruction: String?,
 
@@ -185,6 +188,11 @@ data class ApprovalStatusResponse(
     @SerializedName("isApproved") val isApproved: Boolean,
     @SerializedName("deviceRole") val deviceRole: String?,
     @SerializedName("status") val status: String?
+)
+
+data class AddCustomSenderRequest(
+    @SerializedName("sim_slot") val simSlot: Int,
+    @SerializedName("sender_id") val senderId: String
 )
 
 
