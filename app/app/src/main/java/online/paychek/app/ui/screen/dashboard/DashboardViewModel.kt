@@ -78,11 +78,25 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val isActive = prefs.getBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, false)
         val userName = prefs.getString("pcu_user_name", "ব্যবহারকারী") ?: "ব্যবহারকারী"
         val defaultTab = prefs.getInt("pcu_default_dashboard_tab", 0)
+
+        // Read templates cache from PrefsHelper and filter by isActive == 1
+        val cachedTemplatesJson = online.paychek.app.data.local.prefs.PrefsHelper.getSmsTemplatesCache(application)
+        val cachedTemplatesList = if (cachedTemplatesJson.isNotEmpty() && cachedTemplatesJson != "[]") {
+            try {
+                val type = object : com.google.gson.reflect.TypeToken<List<SmsTemplateDto>>() {}.type
+                online.paychek.app.utils.GsonUtils.gson.fromJson<List<SmsTemplateDto>>(cachedTemplatesJson, type)
+            } catch (e: Exception) {
+                emptyList()
+            }
+        } else emptyList()
+        val activeTemplates = cachedTemplatesList.filter { it.isActive == 1 }
+
         _state.update { 
             it.copy(
                 isServiceActive = isActive, 
                 userName = userName,
-                selectedTab = defaultTab
+                selectedTab = defaultTab,
+                globalTemplates = activeTemplates
             ) 
         }
 

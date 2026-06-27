@@ -31,6 +31,7 @@ object AppConfig {
     const val KEY_OFFLINE_INGEST_QUEUE= "pcu_payment_ingest_pending_v1"
     const val KEY_PIN_VERIFIED        = "pcu_pin_verified_session"
     const val KEY_GATEWAY_METHODS_CACHE = "pcu_gateway_methods_cache"
+    const val KEY_SMS_TEMPLATES_CACHE   = "pcu_sms_templates_cache"
     const val KEY_SIM1_ENABLED        = "pcu_sim1_enabled_cache"
     const val KEY_SIM2_ENABLED        = "pcu_sim2_enabled_cache"
     const val KEY_IS_OWNER_DEVICE     = "pcu_is_owner_device"

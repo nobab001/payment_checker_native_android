@@ -101,6 +101,16 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
             }
         } else emptyList()
 
+        val cachedTemplatesJson = online.paychek.app.data.local.prefs.PrefsHelper.getSmsTemplatesCache(application)
+        val cachedTemplatesList = if (cachedTemplatesJson.isNotEmpty() && cachedTemplatesJson != "[]") {
+            try {
+                val type = object : com.google.gson.reflect.TypeToken<List<SmsTemplateDto>>() {}.type
+                online.paychek.app.utils.GsonUtils.gson.fromJson<List<SmsTemplateDto>>(cachedTemplatesJson, type)
+            } catch (e: Exception) {
+                emptyList()
+            }
+        } else emptyList()
+
         val cachedSim1Num = cachedList.find { it.simSlot == 1 && !it.number.isNullOrEmpty() }?.number ?: ""
         val cachedSim2Num = cachedList.find { it.simSlot == 2 && !it.number.isNullOrEmpty() }?.number ?: ""
 
@@ -109,6 +119,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 sim1Enabled = sim1, 
                 sim2Enabled = sim2, 
                 methods = cachedList,
+                templates = cachedTemplatesList,
                 sim1Number = cachedSim1Num,
                 sim2Number = cachedSim2Num,
                 isLoading = cachedList.isEmpty()
@@ -656,7 +667,10 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun loadTemplates() {
+    fun loadTemplates(force: Boolean = false) {
+        if (!force && _state.value.templates.isNotEmpty()) {
+            return
+        }
         viewModelScope.launch {
             _state.update { it.copy(isTemplatesLoading = true) }
             val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
@@ -665,6 +679,12 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                     if (res.isSuccessful && res.body()?.success == true) {
                         val list = res.body()!!.templates
                         _state.update { it.copy(templates = list, isTemplatesLoading = false) }
+                        try {
+                            val json = online.paychek.app.utils.GsonUtils.gson.toJson(list)
+                            online.paychek.app.data.local.prefs.PrefsHelper.setSmsTemplatesCache(getApplication(), json)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
                         performDropSync()
                     } else {
                         _state.update { it.copy(isTemplatesLoading = false) }

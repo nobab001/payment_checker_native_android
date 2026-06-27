@@ -208,8 +208,16 @@ class SmsMonitorService : Service() {
                                 val methods = res.body()?.data ?: emptyList()
                                 val jsonStr = online.paychek.app.utils.GsonUtils.gson.toJson(methods)
                                 online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(this@SmsMonitorService, jsonStr)
-                                Log.i(TAG, "✅ Background Sync Complete: Gateway methods cache updated globally after ${randomDelayMs/1000}s.")
                             }
+
+                            val resTemplates = RetrofitClient.gatewayApiService.getTemplates("Bearer $token")
+                            if (resTemplates.isSuccessful) {
+                                val templates = resTemplates.body()?.templates ?: emptyList()
+                                val jsonTemplates = online.paychek.app.utils.GsonUtils.gson.toJson(templates)
+                                online.paychek.app.data.local.prefs.PrefsHelper.setSmsTemplatesCache(this@SmsMonitorService, jsonTemplates)
+                            }
+
+                            Log.i(TAG, "✅ Background Sync Complete: Gateway methods and templates cache updated globally after ${randomDelayMs/1000}s.")
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Background Sync Failed: ${e.message}")

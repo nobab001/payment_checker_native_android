@@ -15,7 +15,7 @@ async function fetchGatewayMethodsForUser(userId, deviceId) {
             COALESCE(t.is_official, 1) AS is_official, COALESCE(t.is_parseable, 1) AS is_parseable,
             cvt.single_number_instruction, cvt.multiple_number_instruction
        FROM gateway_methods gm
-  LEFT JOIN sms_templates t ON gm.template_id = t.id AND t.is_active = 1
+  LEFT JOIN sms_templates t ON gm.template_id = t.id
   LEFT JOIN checkout_view_templates cvt ON cvt.sms_template_id = t.id
       WHERE gm.user_id = ${userId} AND gm.device_id = ${deviceId}
         AND (gm.template_id IS NULL OR t.id IS NOT NULL)
@@ -202,8 +202,16 @@ async function updateMethod(req, res) {
 // =============================================================================
 async function getTemplates(req, res) {
   try {
+    const userId = req.user.userId;
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+
     const rows = await prisma.sms_templates.findMany({
-      where: { is_active: 1 },
+      where: {
+        OR: [
+          { is_official: 1, is_active: { in: [0, 1] } },
+          { is_official: 0, user_id: userId, device_id: deviceId }
+        ]
+      },
       select: {
         id: true,
         template_name: true,
@@ -404,7 +412,8 @@ async function addCustomSender(req, res) {
     let template = await prisma.sms_templates.findFirst({
       where: {
         user_id: userId,
-        sender_id: cleanSenderId
+        sender_id: cleanSenderId,
+        device_id: deviceId
       }
     });
 
@@ -412,13 +421,14 @@ async function addCustomSender(req, res) {
       template = await prisma.sms_templates.create({
         data: {
           user_id: userId,
+          device_id: deviceId, // Bound strictly to this device
           template_name: `Custom-${cleanSenderId}`,
           sender_id: cleanSenderId,
           sender_number: cleanSenderId,
           regex_pattern: '^(.*)$',
           matching_keyword: '',
           is_official: 0,
-          is_active: 1,
+          is_active: 0, // Set to 0 (Value 0 - Hidden from Homepage suggestions)
           is_parseable: 0
         }
       });

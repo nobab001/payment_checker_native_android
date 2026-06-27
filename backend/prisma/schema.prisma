@@ -222,6 +222,7 @@ model sms_parse_failures {
 model sms_templates {
   id                      Int                      @id @default(autoincrement())
   user_id                 Int?
+  device_id               String?                  @db.VarChar(255)
   template_name           String                   @db.VarChar(128)
   sender_id               String                   @default("") @db.VarChar(64)
   matching_keyword        String?                  @db.VarChar(255)

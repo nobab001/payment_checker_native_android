@@ -67,6 +67,15 @@ object PrefsHelper {
         online.paychek.app.utils.SecurePreferences.encrypt(context, AppConfig.KEY_GATEWAY_METHODS_CACHE, json)
     }
 
+    fun getSmsTemplatesCache(context: Context): String {
+        val decrypted = online.paychek.app.utils.SecurePreferences.decrypt(context, AppConfig.KEY_SMS_TEMPLATES_CACHE)
+        return decrypted.ifEmpty { "[]" }
+    }
+
+    fun setSmsTemplatesCache(context: Context, json: String) {
+        online.paychek.app.utils.SecurePreferences.encrypt(context, AppConfig.KEY_SMS_TEMPLATES_CACHE, json)
+    }
+
     fun getGatewayMethodsLastSync(context: Context): Long {
         return prefs(context).getLong("gateway_methods_last_sync_v2", 0L)
     }
@@ -120,6 +129,7 @@ object PrefsHelper {
         prefs(context).edit()
             .remove(AppConfig.KEY_PIN_VERIFIED)
             .remove(AppConfig.KEY_GATEWAY_METHODS_CACHE)
+            .remove(AppConfig.KEY_SMS_TEMPLATES_CACHE)
             .remove(KEY_LAST_WORKER_SYNC_MS)
             .apply()
     }

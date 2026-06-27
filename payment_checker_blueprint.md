@@ -703,13 +703,21 @@ CREATE TABLE devices (
 -- 6. Dynamic SMS parsing Templates
 CREATE TABLE sms_templates (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  customer_preview VARCHAR(128) NOT NULL,
+  user_id INT DEFAULT NULL,
+  device_id VARCHAR(255) DEFAULT NULL,
+  template_name VARCHAR(128) NOT NULL,
   sender_id VARCHAR(64) NOT NULL DEFAULT '',
-  formats JSON NOT NULL,
+  sender_number VARCHAR(64) DEFAULT NULL,
+  matching_keyword VARCHAR(255) DEFAULT '',
+  regex_pattern TEXT DEFAULT NULL,
+  is_official TINYINT(1) NOT NULL DEFAULT 1,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
+  is_parseable TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  INDEX idx_sms_templates_preview (customer_preview, is_active)
+  INDEX idx_template_name (template_name),
+  INDEX idx_template_sender (sender_id),
+  INDEX idx_template_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 7. Parsed payments transactions
