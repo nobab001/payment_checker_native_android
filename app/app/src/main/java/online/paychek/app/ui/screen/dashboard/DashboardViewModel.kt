@@ -163,6 +163,17 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         }
                     }
 
+                    // Sync global templates cache if provided by server
+                    if (stats.globalTemplates != null) {
+                        try {
+                            val jsonTemplates = online.paychek.app.utils.GsonUtils.gson.toJson(stats.globalTemplates)
+                            online.paychek.app.data.local.prefs.PrefsHelper.setSmsTemplatesCache(getApplication(), jsonTemplates)
+                            android.util.Log.i("DashboardViewModel", "✅ Dashboard Sync: Updated SMS templates cache (size=${stats.globalTemplates.size}) from stats.")
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+
                     _state.update {
                         it.copy(
                             uiState         = DashboardUiState.Success(stats),

@@ -622,11 +622,17 @@ async function verifyOtp(req, res) {
           });
         }
         
-        const plans = await query(
-          "SELECT max_devices FROM subscription_plans WHERE plan_name = ? LIMIT 1",
-          [user.active_plan_name]
-        );
-        const maxDevices = plans.length > 0 ? plans[0].max_devices : 1;
+        let maxDevices = 1;
+        if (user.active_plan_name === 'Trial Package') {
+          const configVal = await query("SELECT config_value FROM global_config WHERE config_key = 'trial_max_devices' LIMIT 1");
+          maxDevices = configVal.length > 0 ? parseInt(configVal[0].config_value, 10) : 1;
+        } else {
+          const plans = await query(
+            "SELECT max_devices FROM subscription_plans WHERE plan_name = ? LIMIT 1",
+            [user.active_plan_name]
+          );
+          maxDevices = plans.length > 0 ? plans[0].max_devices : 1;
+        }
         
         if (userDevicesCount[0].count >= maxDevices) {
           return res.status(403).json({

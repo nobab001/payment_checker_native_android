@@ -18,6 +18,12 @@ interface AdminApiService {
         @Body request: UpdateConfigRequest
     ): Response<AdminGenericResponse>
 
+    @POST("admin/config")
+    suspend fun updateConfigs(
+        @Header("Authorization") token: String,
+        @Body request: Map<String, @JvmSuppressWildcards Map<String, String>>
+    ): Response<AdminGenericResponse>
+
     // 2. Official SMS Templates
     @GET("admin/sms-templates")
     suspend fun getSmsTemplates(

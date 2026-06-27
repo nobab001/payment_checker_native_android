@@ -60,11 +60,17 @@ fun BillingConfigScreen(
     var pinErrorText by remember { mutableStateOf<String?>(null) }
     var pinVerificationLoading by remember { mutableStateOf(false) }
 
-    // Global trial days state
+    // Global welcome trial package states
     var trialDays by remember { mutableStateOf("7") }
+    var trialMaxDevices by remember { mutableStateOf("1") }
+    var trialMaxSites by remember { mutableStateOf("1") }
+    var trialAllowCustomSender by remember { mutableStateOf("0") }
 
     LaunchedEffect(uiState.configs) {
         trialDays = uiState.configs["trial_days"] ?: "7"
+        trialMaxDevices = uiState.configs["trial_max_devices"] ?: "1"
+        trialMaxSites = uiState.configs["trial_max_sites"] ?: "1"
+        trialAllowCustomSender = uiState.configs["trial_allow_custom_sender"] ?: "0"
     }
 
     // Edit/Create Plan Dialog
@@ -324,7 +330,7 @@ fun BillingConfigScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = "⚙️ গ্লোবাল ফ্রি ট্রায়াল সেটিংস",
+            text = "🎁 ওয়েলকাম ট্রায়াল প্যাকেজ সেটিংস",
             color = TextPrimary,
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold
@@ -338,32 +344,96 @@ fun BillingConfigScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(text = "গ্লোবাল ফ্রি ট্রায়াল দিন (trial_days)", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text(text = "নতুন নিবন্ধিত ডিভাইসের জন্য ডিফল্ট ফ্রি ট্রায়াল দিনসংখ্যা।", color = TextSecondary, fontSize = 11.sp)
-                OutlinedTextField(
-                    value = trialDays,
-                    onValueChange = { trialDays = it },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // 1. Trial Days
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(text = "মেয়াদ দিনসংখ্যা (trial_days)", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(text = "নতুন নিবন্ধিত ডিভাইসের জন্য ফ্রি ট্রায়াল দিনসংখ্যা (যেমন: 7, 3, 0)।", color = TextSecondary, fontSize = 11.sp)
+                    OutlinedTextField(
+                        value = trialDays,
+                        onValueChange = { trialDays = it },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // 2. Max Devices
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(text = "সর্বোচ্চ ডিভাইস (trial_max_devices)", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(text = "ট্রায়াল প্যাকেজে সর্বোচ্চ কয়টি ডিভাইস যুক্ত করা যাবে।", color = TextSecondary, fontSize = 11.sp)
+                    OutlinedTextField(
+                        value = trialMaxDevices,
+                        onValueChange = { trialMaxDevices = it },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // 3. Max Sites
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(text = "সর্বোচ্চ সাইট (trial_max_sites)", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(text = "ট্রায়াল প্যাকেজে সর্বোচ্চ কয়টি গেটওয়ে সাইট বা ল্যান্ডিং পেইজ যুক্ত করা যাবে।", color = TextSecondary, fontSize = 11.sp)
+                    OutlinedTextField(
+                        value = trialMaxSites,
+                        onValueChange = { trialMaxSites = it },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // 4. Allow Custom Sender
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "কাস্টম সেন্ডার আইডি সাপোর্ট (Custom Sender ID)", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(text = "ট্রায়াল প্যাকেজে ইউজারদের কাস্টম সেন্ডার আইডি তৈরি করতে দেওয়া হবে কিনা।", color = TextSecondary, fontSize = 11.sp)
+                    }
+                    Switch(
+                        checked = trialAllowCustomSender == "1",
+                        onCheckedChange = { trialAllowCustomSender = if (it) "1" else "0" }
+                    )
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         Button(
             onClick = {
-                viewModel.updateConfig("trial_days", trialDays)
+                viewModel.updateConfigs(
+                    mapOf(
+                        "trial_days" to trialDays,
+                        "trial_max_devices" to trialMaxDevices,
+                        "trial_max_sites" to trialMaxSites,
+                        "trial_allow_custom_sender" to trialAllowCustomSender
+                    )
+                )
             },
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
             shape = RoundedCornerShape(8.dp),
@@ -375,7 +445,7 @@ fun BillingConfigScreen(
             } else {
                 Icon(imageVector = Icons.Default.Save, contentDescription = "Save", tint = MaterialTheme.colorScheme.onPrimary)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("ট্রায়াল সেটিংস সংরক্ষণ করুন", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                Text("ওয়েলকাম ট্রায়াল সেটিংস সংরক্ষণ করুন", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
             }
         }
 

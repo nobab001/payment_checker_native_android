@@ -175,6 +175,29 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
+    fun updateConfigs(configs: Map<String, String>) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val response = api.updateConfigs(token, mapOf("configs" to configs))
+                if (response.isSuccessful && response.body()?.success == true) {
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            configs = it.configs.toMutableMap().apply { putAll(configs) },
+                            successMessage = "কনফিগারেশন আপডেট সফল হয়েছে।"
+                        )
+                    }
+                } else {
+                    _state.update { it.copy(isSaving = false, errorMessage = "আপডেট ব্যর্থ হয়েছে।") }
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isSaving = false, errorMessage = "নেটওয়ার্ক এরর: ${e.localizedMessage}") }
+            }
+        }
+    }
+
     fun updateOtpFormat(template: String) {
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true) }

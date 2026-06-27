@@ -55,7 +55,20 @@ async function getConfigs(req, res) {
 
 async function updateConfig(req, res) {
   try {
-    const { key, value } = req.body;
+    const { key, value, configs } = req.body;
+
+    if (configs && typeof configs === 'object') {
+      const updates = Object.entries(configs).map(([k, v]) => {
+        return prisma.global_config.upsert({
+          where: { config_key: k },
+          update: { config_value: String(v) },
+          create: { config_key: k, config_value: String(v) }
+        });
+      });
+      await Promise.all(updates);
+      return res.json({ success: true, message: 'Configurations updated successfully.' });
+    }
+
     if (!key) return res.status(400).json({ error: 'config_key is required' });
     
     await prisma.global_config.upsert({
@@ -554,18 +567,27 @@ async function addSite(req, res) {
       });
     }
 
-    const plan = await prisma.subscription_plans.findUnique({
-      where: { plan_name: user.active_plan_name }
-    });
-    if (!plan) {
-      return res.status(400).json({ success: false, error: 'Subscription plan not found' });
+    let maxSites = 1;
+    if (user.active_plan_name === 'Trial Package') {
+      const configVal = await prisma.global_config.findUnique({
+        where: { config_key: 'trial_max_sites' }
+      });
+      maxSites = configVal ? parseInt(configVal.config_value, 10) : 1;
+    } else {
+      const plan = await prisma.subscription_plans.findUnique({
+        where: { plan_name: user.active_plan_name }
+      });
+      if (!plan) {
+        return res.status(400).json({ success: false, error: 'Subscription plan not found' });
+      }
+      maxSites = plan.max_sites;
     }
 
     const currentSites = await prisma.gateway_layouts.count({
       where: { user_id: userId }
     });
 
-    if (currentSites >= plan.max_sites) {
+    if (currentSites >= maxSites) {
       return res.status(403).json({
         success: false,
         error: 'LIMIT_EXCEEDED',

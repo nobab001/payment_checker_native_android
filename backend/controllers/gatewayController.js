@@ -392,11 +392,20 @@ async function addCustomSender(req, res) {
     if (user.role === 'admin' || user.has_custom_sender_addon === 1) {
       isAllowed = true;
     } else if (user.is_paid && user.active_plan_name) {
-      const plan = await prisma.subscription_plans.findFirst({
-        where: { plan_name: user.active_plan_name }
-      });
-      if (plan && plan.is_custom_sender_allowed === 1) {
-        isAllowed = true;
+      if (user.active_plan_name === 'Trial Package') {
+        const configVal = await prisma.global_config.findUnique({
+          where: { config_key: 'trial_allow_custom_sender' }
+        });
+        if (configVal && parseInt(configVal.config_value, 10) === 1) {
+          isAllowed = true;
+        }
+      } else {
+        const plan = await prisma.subscription_plans.findFirst({
+          where: { plan_name: user.active_plan_name }
+        });
+        if (plan && plan.is_custom_sender_allowed === 1) {
+          isAllowed = true;
+        }
       }
     }
 
