@@ -1118,9 +1118,10 @@ Clients connect and pass a JWT token and hardware device ID during the connectio
 
 ---
 
-### ✅ Session: 2026-06-27 (Part 11) — Admin Custom Welcome Package, Premium Lock Overlay & SIM Swap/Roaming
+### ✅ Session: 2026-06-27 (Part 11) — Admin Custom Welcome Package, Premium Lock Overlay, SIM Swap/Roaming & Onboarding Customization
 **কী করা হয়েছে:**
-- **Welcome Package Onboarding**: ইউজার রেজিস্ট্রেশন/প্রোফাইল কমপ্লিশন এপিআই আপডেট করা হয়েছে যাতে এটি `subscription_plans` এর পরিবর্তে `global_config` এর `trial_days` কী-টি পড়ে। যদি এর মান `0` হয় তবে ইউজারের অ্যাকাউন্ট ইনস্ট্যান্টলি `EXPIRED` (`is_paid = 0`) হিসেবে সেট হবে।
+- **Welcome Package Onboarding & Customization**: ইউজার রেজিস্ট্রেশন/প্রোফাইল কমপ্লিশন এপিআই আপডেট করা হয়েছে যাতে এটি `subscription_plans` এর পরিবর্তে `global_config` এর `trial_days` কী-টি পড়ে। ট্রায়াল প্যাকেজের সকল লিমিট (`trial_max_devices`, `trial_max_sites`, `trial_allow_custom_sender`) গ্লোবাল কনফিগারেশন কী হিসেবে ডি-কাপল করা হয়েছে এবং এডমিন প্যানেলের "বিলিং সেটিংস" ট্যাবে একটি চমৎকার "🎁 ওয়েলকাম ট্রায়াল প্যাকেজ সেটিংস" কার্ডের মাধ্যমে সরাসরি কাস্টমাইজ করার সুবিধা প্রদান করা হয়েছে।
+- **SMS Templates Caching Sync Fix**: অ্যান্ড্রয়েড ক্লায়েন্টের `DashboardViewModel.kt`-এ ড্যাশবোর্ড পরিসংখ্যান লোড করার সময় প্রাপ্ত নতুন এসএমএস টেমপ্লেট ডাটা সরাসরি লোকাল ক্যাশে (`PrefsHelper.setSmsTemplatesCache()`) আপডেট করা হয়েছে। এর ফলে এডমিন এডিট করার পর অ্যাপ পুনরায় চালু করলেও টেমপ্লেট ফরমেট পূর্বের অবস্থায় ফিরে যাওয়ার (Reversion Bug) সমস্যাটি দূর হয়েছে।
 - **Premium Lock Overlay & Auto Stop**: অ্যান্ড্রয়েড ক্লায়েন্টের ড্যাশবোর্ড স্ক্রিনে `isPaid` এর ভ্যালু `false` হলে `SmsMonitorService` ইনস্ট্যান্টলি বন্ধ হয়ে যাবে এবং সম্পূর্ণ স্ক্রিনে একটি দৃষ্টিনন্দন প্রিমিয়াম লক ওভারলে দেখাবে। তবে ওভারলে থাকা অবস্থাতেও ইউজার পুল-টু-রিফ্রেশ করে সার্ভার থেকে সাবস্ক্রিপশন স্ট্যাটাস আপডেট করতে পারবেন।
 - **SIM Mismatch & Roaming**: `DeviceScreen.kt` এর সিম মিসম্যাচ ডায়ালগ রিফ্যাক্টর করে শুধুমাত্র একটি "ওকে" (OK) বাটন রাখা হয়েছে। বাটনটি ট্যাপ করলে স্লট ইনপুট টগল অফ হবে, নতুন নম্বর ফেচ হবে এবং ব্যাকএন্ডে সিঙ্ক রিকোয়েস্ট পাঠানো হবে। সার্ভার রোমিং এপিআই (`/api/gateway/sim-swap`) কল করার পর নম্বরটি অন্য ডিভাইস থেকে এই ডিভাইসের বর্তমান স্লটে স্থানান্তরিত (Roaming) হবে এবং পূর্বে সেভ করা টেমপ্লেট চেকবক্সগুলো রিয়েল-টাইমে ক্লায়েন্টে অটো-ফিল হবে।
 - **SMS Monitor Switch Permission Bypass**: হোমস্ক্রিনের SMS পেমেন্ট মনিটর সুইচ অন করার সময় রিজিড ফিজিক্যাল সিম কার্ড স্ট্যাটাস বা ওএস লেভেল পারমিশন এরর বাইপাস করা হয়েছে, যা সিম-রেস্ট্রিক্টেড ডিভাইসেও মনিটর রান করার সুবিধা দেয়।
