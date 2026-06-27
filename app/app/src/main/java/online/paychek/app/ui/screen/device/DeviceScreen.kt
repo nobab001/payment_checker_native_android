@@ -804,6 +804,7 @@ fun DeviceScreen(
                 onDismissRequest = {
                     showAddSenderDialog = false
                     customSenderInput = ""
+                    viewModel.clearDialogErrorMessage()
                 },
                 properties = DialogProperties(usePlatformDefaultWidth = true)
             ) {
@@ -857,6 +858,7 @@ fun DeviceScreen(
                             onValueChange = { customSenderInput = it },
                             label = { Text("সেন্ডার আইডি (যেমন: GP-ALERT)", color = TextMuted) },
                             singleLine = true,
+                            enabled = !state.isSaving,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = AccentCyan,
                                 unfocusedBorderColor = ToggleOff,
@@ -866,6 +868,17 @@ fun DeviceScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
 
+                        state.dialogErrorMessage?.let { errMsg ->
+                            Text(
+                                text = errMsg,
+                                color = Color(0xFFEF4444),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                textAlign = TextAlign.Start,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                            )
+                        }
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -874,7 +887,9 @@ fun DeviceScreen(
                                 onClick = {
                                     showAddSenderDialog = false
                                     customSenderInput = ""
+                                    viewModel.clearDialogErrorMessage()
                                 },
+                                enabled = !state.isSaving,
                                 modifier = Modifier.weight(1f).fillMaxWidth(),
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMuted),
@@ -885,17 +900,27 @@ fun DeviceScreen(
                             Button(
                                 onClick = {
                                     if (customSenderInput.trim().isNotEmpty()) {
-                                        viewModel.addCustomSender(activeSimSlotForCustomSender, customSenderInput.trim())
-                                        showAddSenderDialog = false
-                                        customSenderInput = ""
+                                        viewModel.addCustomSender(activeSimSlotForCustomSender, customSenderInput.trim()) {
+                                            showAddSenderDialog = false
+                                            customSenderInput = ""
+                                        }
                                     }
                                 },
+                                enabled = !state.isSaving && customSenderInput.trim().isNotEmpty(),
                                 colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
                                 modifier = Modifier.weight(1f).fillMaxWidth(),
                                 shape = RoundedCornerShape(10.dp),
                                 contentPadding = PaddingValues(vertical = 12.dp, horizontal = 8.dp)
                             ) {
-                                Text("যুক্ত করুন", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold)
+                                if (state.isSaving) {
+                                    CircularProgressIndicator(
+                                        color = Color(0xFF0F172A),
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Text("যুক্ত করুন", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }

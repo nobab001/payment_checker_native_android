@@ -312,14 +312,14 @@ server/
       - "Make Parent" (Prompts confirmation to transfer parent authority).
       - "Log out device" (Removes child from account).
 
-#### 6. Device Settings Page (`device_settings_page.dart`)
+#### 6. Device Settings Page (`device_settings_page.dart` / `DeviceScreen.kt`)
 - **Visual Design**: Toggle switches and form elements grouped inside distinct cards.
 - **Layout Structure**:
   - SIM 1 Settings Card:
     - Row: card icon, "SIM 1" title, master Switch (ON/OFF).
     - "SIM mobile number" input box (11 digits).
     - "Admin templates" FilterChips: List of template tags configured on the backend (e.g. bKash Personal, Rocket Agent). Selected items will match incoming SMS against this slot.
-    - "Custom sender" InputChips: Add/Remove custom addresses (e.g. `MYBANK`, `017xxxxxxxx`) for catch-all mode.
+    - "Custom sender" InputChips / Add Dialog: Add/Remove custom addresses (e.g. `MYBANK`, `017xxxxxxxx`) for catch-all mode. The add flow validates duplicate entries and handles errors locally within the dialog component, preventing global screen crashes.
   - SIM 2 Settings Card:
     - Replicates SIM 1 setup with distinct controllers.
   - Bank Accounts Card:

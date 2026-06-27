@@ -61,7 +61,8 @@ data class DeviceUiState(
     val sim1Number: String                    = "",
     val sim2Number: String                    = "",
     val isTemplatesLoading: Boolean           = false,
-    val showPremiumUpgradeDialog: Boolean     = false
+    val showPremiumUpgradeDialog: Boolean     = false,
+    val dialogErrorMessage: String?           = null
 )
 
 // =============================================================================
@@ -720,6 +721,10 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(isLoading = false, isSaving = false, errorMessage = msg) }
     }
 
+    fun clearDialogErrorMessage() {
+        _state.update { it.copy(dialogErrorMessage = null) }
+    }
+
     private fun performDropSync() {
         val currentTemplates = _state.value.templates
         val currentMethods = _state.value.methods
@@ -759,9 +764,9 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(showPremiumUpgradeDialog = show) }
     }
 
-    fun addCustomSender(simSlot: Int, senderId: String) {
+    fun addCustomSender(simSlot: Int, senderId: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
-            _state.update { it.copy(isSaving = true, errorMessage = null) }
+            _state.update { it.copy(isSaving = true, errorMessage = null, dialogErrorMessage = null) }
             val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
             val request = AddCustomSenderRequest(simSlot = simSlot, senderId = senderId.trim())
 
@@ -774,9 +779,11 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                             _state.update { it.copy(methods = newData) }
                         }
                         loadGatewayMethods()
+                        onSuccess()
                     } else if (res.code() == 403) {
                         // Upgrade required
                         _state.update { it.copy(showPremiumUpgradeDialog = true) }
+                        onSuccess()
                     } else {
                         val errObj = res.errorBody()?.string()
                         val msg = if (errObj?.contains("message") == true) {
@@ -786,12 +793,11 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                         } else {
                             "মেথড যোগ করতে ব্যর্থ হয়েছে (${res.code()})"
                         }
-                        setError(msg)
+                        _state.update { it.copy(dialogErrorMessage = msg) }
                     }
                 }
-                .onFailure {
-                    _state.update { it.copy(isSaving = false) }
-                    setError("নেটওয়ার্ক সমস্যা: ${it.message}")
+                .onFailure { exception ->
+                    _state.update { it.copy(isSaving = false, dialogErrorMessage = "নেটওয়ার্ক সমস্যা: ${exception.message}") }
                 }
         }
     }
