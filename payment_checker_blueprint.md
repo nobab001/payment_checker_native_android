@@ -892,6 +892,7 @@ Clients connect and pass a JWT token and hardware device ID during the connectio
 | **POST** | `/api/devices/reassign-parent` | Reassign parent role using recovery details | Yes |
 | **POST** | `/api/sms-ingest` | Legacy SMS ingest pipeline | Yes |
 | **POST** | `/api/payment-sms-ingest` | Primary structured transaction ingest | Yes |
+| **POST** | `/api/gateway/sim-swap` | SIM card swap sync with roaming | Yes |
 | **POST** | `/api/local-sms-ingest` | Direct raw SMS forwarding ingest | No |
 | **GET** | `/api/sms-templates` | Fetch active regex template rules | Yes |
 | **GET** | `/api/admin/sms-templates` | (Admin) List SMS template rules | Yes |
@@ -1114,6 +1115,15 @@ Clients connect and pass a JWT token and hardware device ID during the connectio
 **কী করা হয়েছে:**
 - **Add is_parseable to Admin**: `adminController.js` এবং অ্যান্ড্রয়েড ক্লায়েন্টের `AdminDashboardScreen.kt`, `AdminDtos.kt`-এ `is_parseable` কনফিগার করার সুবিধা যুক্ত করা হয়েছে। এর মাধ্যমে এডমিনরা টেমপ্লেট তৈরির সময় এটি পার্স করা যাবে কি না তা নির্ধারণ করতে পারবেন।
 - **bKash Personal sender_number Fix**: ডাটাবেজ প্যাচ স্ক্রিপ্টের মাধ্যমে bKash Personal টেমপ্লেটের (ID 1) `sender_number` ভ্যালু `NULL` থেকে আপডেট করে `'bKash'` করা হয়েছে এবং গ্লোবাল সিঙ্ক টাইমস্ট্যাম্প আপডেট করা হয়েছে।
+
+---
+
+### ✅ Session: 2026-06-27 (Part 11) — Admin Custom Welcome Package, Premium Lock Overlay & SIM Swap/Roaming
+**কী করা হয়েছে:**
+- **Welcome Package Onboarding**: ইউজার রেজিস্ট্রেশন/প্রোফাইল কমপ্লিশন এপিআই আপডেট করা হয়েছে যাতে এটি `subscription_plans` এর পরিবর্তে `global_config` এর `trial_days` কী-টি পড়ে। যদি এর মান `0` হয় তবে ইউজারের অ্যাকাউন্ট ইনস্ট্যান্টলি `EXPIRED` (`is_paid = 0`) হিসেবে সেট হবে।
+- **Premium Lock Overlay & Auto Stop**: অ্যান্ড্রয়েড ক্লায়েন্টের ড্যাশবোর্ড স্ক্রিনে `isPaid` এর ভ্যালু `false` হলে `SmsMonitorService` ইনস্ট্যান্টলি বন্ধ হয়ে যাবে এবং সম্পূর্ণ স্ক্রিনে একটি দৃষ্টিনন্দন প্রিমিয়াম লক ওভারলে দেখাবে। তবে ওভারলে থাকা অবস্থাতেও ইউজার পুল-টু-রিফ্রেশ করে সার্ভার থেকে সাবস্ক্রিপশন স্ট্যাটাস আপডেট করতে পারবেন।
+- **SIM Mismatch & Roaming**: `DeviceScreen.kt` এর সিম মিসম্যাচ ডায়ালগ রিফ্যাক্টর করে শুধুমাত্র একটি "ওকে" (OK) বাটন রাখা হয়েছে। বাটনটি ট্যাপ করলে স্লট ইনপুট টগল অফ হবে, নতুন নম্বর ফেচ হবে এবং ব্যাকএন্ডে সিঙ্ক রিকোয়েস্ট পাঠানো হবে। সার্ভার রোমিং এপিআই (`/api/gateway/sim-swap`) কল করার পর নম্বরটি অন্য ডিভাইস থেকে এই ডিভাইসের বর্তমান স্লটে স্থানান্তরিত (Roaming) হবে এবং পূর্বে সেভ করা টেমপ্লেট চেকবক্সগুলো রিয়েল-টাইমে ক্লায়েন্টে অটো-ফিল হবে।
+- **SMS Monitor Switch Permission Bypass**: হোমস্ক্রিনের SMS পেমেন্ট মনিটর সুইচ অন করার সময় রিজিড ফিজিক্যাল সিম কার্ড স্ট্যাটাস বা ওএস লেভেল পারমিশন এরর বাইপাস করা হয়েছে, যা সিম-রেস্ট্রিক্টেড ডিভাইসেও মনিটর রান করার সুবিধা দেয়।
 
 ---
 

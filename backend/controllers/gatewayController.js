@@ -535,6 +535,117 @@ async function deleteGatewayMethod(req, res) {
   }
 }
 
+// =============================================================================
+// POST /api/gateway/sim-swap
+// সিম সোয়াপ / সিম ট্র্যাকিং সিঙ্ক ও রোমিং হ্যান্ডলার
+// =============================================================================
+async function syncAndValidateSimSwap(req, res) {
+  try {
+    const userId = req.user.userId;
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+    const { phoneNumber, slotIndex } = req.body;
+
+    if (!phoneNumber || slotIndex === undefined) {
+      return res.status(400).json({ error: 'phoneNumber and slotIndex are required' });
+    }
+
+    const cleanNum = phoneNumber.trim();
+    const slot = parseInt(slotIndex, 10);
+
+    // 1. Find if this number exists in gateway_methods for this user
+    const existingMethods = await prisma.gateway_methods.findMany({
+      where: {
+        user_id: String(userId),
+        number: cleanNum
+      }
+    });
+
+    if (existingMethods.length === 0) {
+      // Case 1: Brand new SIM. Clear existing templates for this slot on this device
+      await prisma.gateway_methods.deleteMany({
+        where: {
+          user_id: String(userId),
+          device_id: String(deviceId),
+          sim_slot: slot
+        }
+      });
+      return res.json({
+        success: true,
+        is_known_sim: false,
+        message: 'Brand new SIM card detected.'
+      });
+    }
+
+    // Check if the number is already bound to this device/slot
+    const currentDeviceMatch = existingMethods.filter(m => m.device_id === String(deviceId));
+
+    if (currentDeviceMatch.length > 0) {
+      // Case 2: SIM Memory Hit under same device. Retain/update to the current slot index
+      // Overwrite the slot index if it was different
+      await prisma.gateway_methods.updateMany({
+        where: {
+          user_id: String(userId),
+          number: cleanNum
+        },
+        data: {
+          sim_slot: slot,
+          is_enabled: 1
+        }
+      });
+      const updatedData = await fetchGatewayMethodsForUser(userId, deviceId);
+      return res.json({
+        success: true,
+        is_known_sim: true,
+        message: 'SIM card recognized from memory.',
+        data: updatedData
+      });
+    }
+
+    // Case 3: SIM Roaming (Moved to another Device)
+    // First, delete any existing methods for the target slot on the current device to make room
+    await prisma.gateway_methods.deleteMany({
+      where: {
+        user_id: String(userId),
+        device_id: String(deviceId),
+        sim_slot: slot
+      }
+    });
+
+    // Update the roaming SIM's device_id and sim_slot to the new device & slot
+    await prisma.gateway_methods.updateMany({
+      where: {
+        user_id: String(userId),
+        number: cleanNum
+      },
+      data: {
+        device_id: String(deviceId),
+        sim_slot: slot,
+        is_enabled: 1
+      }
+    });
+
+    const updatedData = await fetchGatewayMethodsForUser(userId, deviceId);
+    console.log(`[GATEWAY] SIM Roamed: ${cleanNum} moved to Device: ${deviceId}, Slot: ${slot}`);
+
+    // Trigger real-time update
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`${userId}:${deviceId}`).emit("sync_gateway_methods", updatedData);
+    }
+
+    return res.json({
+      success: true,
+      is_known_sim: true,
+      message: 'SIM card roamed successfully from another device.',
+      data: updatedData
+    });
+
+  } catch (error) {
+    console.error('[GATEWAY] syncAndValidateSimSwap error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   fetchGatewayMethodsForUser,
   getGatewayMethods,
@@ -545,5 +656,6 @@ module.exports = {
   addGatewayMethod,
   addCustomTemplate,
   addCustomSender,
-  deleteGatewayMethod
+  deleteGatewayMethod,
+  syncAndValidateSimSwap
 };

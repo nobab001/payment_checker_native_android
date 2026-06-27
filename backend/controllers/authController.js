@@ -828,19 +828,27 @@ async function completeProfile(req, res) {
       }
     }
 
-    // Fetch Trial Package config
-    const trialPlanResult = await query("SELECT duration_days FROM subscription_plans WHERE plan_name = 'Trial Package' LIMIT 1");
-    const trialDuration = trialPlanResult.length > 0 ? trialPlanResult[0].duration_days : 3;
+    // Fetch Trial days config from global_config
+    const trialDaysConfig = await query("SELECT config_value FROM global_config WHERE config_key = 'trial_days' LIMIT 1");
+    const trialDays = trialDaysConfig.length > 0 ? parseInt(trialDaysConfig[0].config_value, 10) : 7;
 
     // Hash the 6-digit PIN
     const hashedPin = await bcrypt.hash(pin, 10);
 
     // Update user record and auto-activate Trial Package
-    await query(
-      `UPDATE users SET name = ?, pin = ?, phone = ?, email = ?, profile_complete = 1, 
-       is_paid = 1, active_plan_name = 'Trial Package', expiry_date = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE id = ?`,
-      [name.trim(), hashedPin, finalPhone, finalEmail, trialDuration, userId]
-    );
+    if (trialDays === 0) {
+      await query(
+        `UPDATE users SET name = ?, pin = ?, phone = ?, email = ?, profile_complete = 1, 
+         is_paid = 0, active_plan_name = 'Trial Package', expiry_date = NOW() WHERE id = ?`,
+        [name.trim(), hashedPin, finalPhone, finalEmail, userId]
+      );
+    } else {
+      await query(
+        `UPDATE users SET name = ?, pin = ?, phone = ?, email = ?, profile_complete = 1, 
+         is_paid = 1, active_plan_name = 'Trial Package', expiry_date = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE id = ?`,
+        [name.trim(), hashedPin, finalPhone, finalEmail, trialDays, userId]
+      );
+    }
 
     // Sync verified phone/email to user_credentials table so the user can log in with either
     if (finalPhone) {

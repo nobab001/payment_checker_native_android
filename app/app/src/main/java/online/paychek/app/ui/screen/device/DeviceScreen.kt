@@ -134,36 +134,38 @@ fun DeviceScreen(
         }
     }
 
+    var showSimSwapDialogForSlot by remember { mutableStateOf<Int?>(null) }
+    var detectedNewSimNumber by remember { mutableStateOf("") }
+
     LaunchedEffect(state.sim1Number, state.sim2Number) {
-        val hasAttempted = prefs.getBoolean("pcu_sim_auto_detected", false)
-        if (!hasAttempted && state.sim1Number.isBlank() && state.sim2Number.isBlank()) {
-            val hasPhoneState = androidx.core.content.ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.READ_PHONE_STATE
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
-            val hasPhoneNumbers = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                androidx.core.content.ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.READ_PHONE_NUMBERS
-                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            } else false
-
-            val isPermissionGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                hasPhoneNumbers || hasPhoneState
-            } else {
-                hasPhoneState
-            }
-
-            if (isPermissionGranted) {
-                prefs.edit().putBoolean("pcu_sim_auto_detected", true).apply()
+        val hasPhoneState = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_PHONE_STATE
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        
+        if (hasPhoneState) {
+            val (sim1, sim2) = online.paychek.app.utils.DeviceIdHelper.getSimNumbers(context)
+            
+            // 1. Initial detection auto-fill if currently empty
+            val hasAttempted = prefs.getBoolean("pcu_sim_auto_detected", false)
+            if (!hasAttempted && state.sim1Number.isBlank() && state.sim2Number.isBlank()) {
                 viewModel.autoDetectSimNumbers()
-            } else {
+                prefs.edit().putBoolean("pcu_sim_auto_detected", true).apply()
+            }
+            
+            // 2. SIM swap check for mismatched numbers
+            if (!sim1.isNullOrBlank() && state.sim1Number.isNotBlank() && sim1 != state.sim1Number) {
+                showSimSwapDialogForSlot = 1
+                detectedNewSimNumber = sim1
+            } else if (!sim2.isNullOrBlank() && state.sim2Number.isNotBlank() && sim2 != state.sim2Number) {
+                showSimSwapDialogForSlot = 2
+                detectedNewSimNumber = sim2
+            }
+        } else {
+            val hasAttempted = prefs.getBoolean("pcu_sim_auto_detected", false)
+            if (!hasAttempted && state.sim1Number.isBlank() && state.sim2Number.isBlank()) {
                 val permissionsToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    arrayOf(
-                        Manifest.permission.READ_PHONE_STATE,
-                        Manifest.permission.READ_PHONE_NUMBERS
-                    )
+                    arrayOf(Manifest.permission.READ_PHONE_STATE, Manifest.permission.READ_PHONE_NUMBERS)
                 } else {
                     arrayOf(Manifest.permission.READ_PHONE_STATE)
                 }
@@ -198,6 +200,46 @@ fun DeviceScreen(
     }
     val isRestricted = !isOwner
     val currentSubTab = if (isOwner) state.selectedSubTab else 0
+
+    if (showSimSwapDialogForSlot != null) {
+        val slot = showSimSwapDialogForSlot!!
+        AlertDialog(
+            onDismissRequest = { /* Prevent dismiss on outside touch */ },
+            title = {
+                Text(
+                    text = "সিম কার্ড পরিবর্তন সনাক্ত করা হয়েছে",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 16.sp
+                )
+            },
+            text = {
+                Text(
+                    text = "স্লট $slot-এ একটি নতুন সিম কার্ড সনাক্ত করা হয়েছে। নতুন নম্বর: $detectedNewSimNumber\n\nস্লটের বর্তমান কনফিগারেশন নিষ্ক্রিয় করা হবে এবং সার্ভারের সাথে নতুন সিম নম্বরটি সিঙ্ক করা হবে।",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val currentEnabled = if (slot == 1) state.sim1Enabled else state.sim2Enabled
+                        if (currentEnabled) {
+                            viewModel.toggleSim(slot)
+                        }
+                        viewModel.onSimNumberChanged(slot, detectedNewSimNumber)
+                        viewModel.syncAndValidateSimSwap(slot, detectedNewSimNumber)
+                        showSimSwapDialogForSlot = null
+                        detectedNewSimNumber = ""
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo)
+                ) {
+                    Text("ওকে", color = Color.White)
+                }
+            },
+            containerColor = GwCard
+        )
+    }
 
     Column(
         modifier = modifier

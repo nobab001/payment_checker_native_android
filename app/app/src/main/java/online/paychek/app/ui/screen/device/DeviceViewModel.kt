@@ -846,4 +846,45 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 }
         }
     }
+
+    fun syncAndValidateSimSwap(simSlot: Int, phoneNumber: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, errorMessage = null) }
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+            val request = SimSwapRequest(phoneNumber = phoneNumber.trim(), slotIndex = simSlot)
+
+            runCatching { api.syncAndValidateSimSwap("Bearer $token", request) }
+                .onSuccess { res ->
+                    _state.update { it.copy(isSaving = false) }
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        val body = res.body()!!
+                        if (body.isKnownSim && body.data != null) {
+                            saveMethodsToCache(body.data)
+                            _state.update {
+                                it.copy(
+                                    methods = body.data,
+                                    successMessage = body.message ?: "SIM কার্ড সফলভাবে সিঙ্ক করা হয়েছে।"
+                                )
+                            }
+                        } else {
+                            val updatedMethods = _state.value.methods.filterNot { it.simSlot == simSlot }
+                            saveMethodsToCache(updatedMethods)
+                            _state.update {
+                                it.copy(
+                                    methods = updatedMethods,
+                                    successMessage = "নতুন SIM কার্ড সনাক্ত করা হয়েছে। গেটওয়ে কনফিগার করুন।"
+                                )
+                            }
+                        }
+                        loadGatewayMethods()
+                    } else {
+                        setError("সিম সিঙ্ক ব্যর্থ হয়েছে (${res.code()})")
+                    }
+                }
+                .onFailure { exception ->
+                    _state.update { it.copy(isSaving = false) }
+                    setError("নেটওয়ার্ক সমস্যা: ${exception.message}")
+                }
+        }
+    }
 }

@@ -198,4 +198,16 @@ data class AddCustomSenderRequest(
     @SerializedName("sender_id") val senderId: String
 )
 
+data class SimSwapRequest(
+    @SerializedName("phoneNumber") val phoneNumber: String,
+    @SerializedName("slotIndex") val slotIndex: Int
+)
+
+data class SimSwapResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("is_known_sim") val isKnownSim: Boolean,
+    @SerializedName("message") val message: String?,
+    @SerializedName("data") val data: List<GatewayMethod>?
+)
+
 

@@ -31,4 +31,7 @@ router.post('/gateway/custom-sender', auth, auth.restrictDevice, billing, gw.add
 // DELETE /api/gateway/methods/:id → কাস্টম সেন্ডার আইডি ডিলিট করা
 router.delete('/gateway/methods/:id', auth, auth.restrictDevice, billing, gw.deleteGatewayMethod);
 
+// POST /api/gateway/sim-swap → সিম সোয়াপ / সিম ট্র্যাকিং সিঙ্ক
+router.post('/gateway/sim-swap', auth, billing, gw.syncAndValidateSimSwap);
+
 module.exports = router;

@@ -107,4 +107,10 @@ interface GatewayApiService {
         @Header("Authorization") token: String,
         @Path("id") id: Int
     ): Response<GatewayListResponse>
+
+    @POST("gateway/sim-swap")
+    suspend fun syncAndValidateSimSwap(
+        @Header("Authorization") token: String,
+        @Body request: SimSwapRequest
+    ): Response<SimSwapResponse>
 }

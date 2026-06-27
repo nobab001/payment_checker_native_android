@@ -260,11 +260,12 @@ fun DashboardScreen(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(DashBg)
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .background(DashBg)
+        ) {
         if (!isNetworkAvailable) {
             ConnectivityBanner()
         }
@@ -729,6 +730,56 @@ fun DashboardScreen(
             }
         }
     }
+
+    if (screenState.uiState is DashboardUiState.Success && !isPaid) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xE60B0E14)) // Semi-transparent dark overlay
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = DashCard),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
+                modifier = Modifier.fillMaxWidth().padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Expired",
+                        tint = StatusRed,
+                        modifier = Modifier.size(56.dp)
+                    )
+                    Text(
+                        text = "প্যাকেজের মেয়াদ শেষ",
+                        color = TextWhite,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                    Text(
+                        text = "আপনার সাবস্ক্রিপশন বা ফ্রি ট্রায়াল প্যাকেজের মেয়াদ শেষ হয়ে গেছে। এসএমএস মনিটরিং সচল করতে অনুগ্রহ করে একটি প্যাকেজ কিনুন বা রিনিউ করুন।",
+                        color = TextMuted,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Button(
+                        onClick = onNavigateToSubscription,
+                        colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("প্যাকেজ কিনুন (Buy Package)", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
 
     if (showSmsPermissionRationaleDialog) {
         AlertDialog(
