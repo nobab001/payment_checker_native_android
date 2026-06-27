@@ -51,7 +51,10 @@ data class GatewayMethod(
     val singleNumberInstruction: String?,
 
     @SerializedName("multiple_number_instruction")
-    val multipleNumberInstruction: String?
+    val multipleNumberInstruction: String?,
+
+    @SerializedName("created_at")
+    val createdAt: String? = null
 )
 
 // =============================================================================

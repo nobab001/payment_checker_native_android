@@ -10,7 +10,7 @@ async function fetchGatewayMethodsForUser(userId, deviceId) {
     } catch(e) { console.error('Fallback update error', e); }
   }
   const rows = await prisma.$queryRaw`
-    SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.is_enabled, gm.priority, gm.template_id, gm.custom_patterns,
+    SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.is_enabled, gm.priority, gm.template_id, gm.custom_patterns, gm.created_at,
             t.sender_id, t.sender_number, t.matching_keyword, t.regex_pattern AS regex_pattern, 
             COALESCE(t.is_official, 1) AS is_official, COALESCE(t.is_parseable, 1) AS is_parseable,
             cvt.single_number_instruction, cvt.multiple_number_instruction

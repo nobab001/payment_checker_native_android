@@ -1854,12 +1854,15 @@ private fun CustomArchiveRow(
                     .background(DashCardAlt)
                     .padding(12.dp)
             ) {
-                Text(
-                    text = item.fullSms,
-                    color = TextWhite,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp
-                )
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text(
+                        text = item.fullSms,
+                        color = TextWhite,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
 
             // Copy Action Button

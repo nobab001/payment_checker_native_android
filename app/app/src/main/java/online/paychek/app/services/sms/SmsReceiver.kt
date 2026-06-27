@@ -194,63 +194,67 @@ class SmsReceiver(
                 }
             }
 
-            for (msg in messages) {
-                // Read live cache for each message dynamically
-                val methodsJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(context)
-                val methodsType = object : com.google.gson.reflect.TypeToken<List<GatewayMethod>>() {}.type
-                val cachedMethods: List<GatewayMethod> = try {
-                    online.paychek.app.utils.GsonUtils.gson.fromJson(methodsJson, methodsType)
-                } catch (e: Exception) {
-                    emptyList()
+            // Combine multi-part SMS parts into a single message body
+            val sender = messages[0].originatingAddress ?: return
+            val timestamp = messages[0].timestampMillis
+            val body = StringBuilder().apply {
+                for (msg in messages) {
+                    msg.messageBody?.let { append(it) }
                 }
+            }.toString()
 
-                val sender    = msg.originatingAddress ?: continue
-                val body      = msg.messageBody       ?: continue
-                val timestamp = msg.timestampMillis
+            // Read live cache dynamically
+            val methodsJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(context)
+            val methodsType = object : com.google.gson.reflect.TypeToken<List<GatewayMethod>>() {}.type
+            val cachedMethods: List<GatewayMethod> = try {
+                online.paychek.app.utils.GsonUtils.gson.fromJson(methodsJson, methodsType)
+            } catch (e: Exception) {
+                emptyList()
+            }
 
-                Log.d(TAG, "Incoming SMS — From: $sender | SIM Slot: $simSlot | Length: ${body.length}")
+            Log.d(TAG, "Incoming SMS — From: $sender | SIM Slot: $simSlot | Length: ${body.length}")
 
-                val cleanSender = sender.trim().lowercase(Locale.US)
+            val cleanSender = sender.trim().lowercase(Locale.US)
 
-                // ── 4-Step Verification Chain (Dynamic) ──────────────────────
-                // Step 1: SIM Slot   — already filtered above
-                // Step 2: Sender ID  — alphanumeric/phone sender match
-                // Step 3: Sender Number — separate sender_number field match
-                // Step 4: SMS Body   — matching keywords from template conditions
-                val matchingMethod = cachedMethods.firstOrNull { method ->
-                    // Step 1: Method must be enabled and SIM slot must match
-                    method.isEnabled == 1 &&
-                    (simSlot == null || method.simSlot == simSlot) &&
-                    // Step 2: Sender ID match
-                    (
-                        if (method.templateId == null) {
-                            cleanSender == method.provider.trim().lowercase(Locale.US)
-                        } else {
-                            val targetSender = method.senderId?.trim()?.lowercase(Locale.US) ?: method.provider.lowercase(Locale.US)
-                            cleanSender.contains(targetSender)
-                        }
-                    ) &&
-                    // Step 3: Sender Number match (if configured)
-                    (
-                        method.senderNumber.isNullOrBlank() ||
-                        run {
-                            val targetSenderNumber = method.senderNumber.trim().lowercase(Locale.US)
-                            cleanSender.contains(targetSenderNumber)
-                        }
-                    ) &&
-                    // Step 4: SMS Body keyword conditions (any one keyword match)
-                    (
-                        method.matchingKeyword.isNullOrBlank() ||
-                        method.matchingKeyword.split(",").map { it.trim() }.filter { it.isNotEmpty() }.any { keyword ->
-                            body.contains(keyword, ignoreCase = true)
-                        }
-                    )
-                }
+            // ── 4-Step Verification Chain (Dynamic) ──────────────────────
+            // Step 1: SIM Slot   — already filtered above
+            // Step 2: Sender ID  — alphanumeric/phone sender match
+            // Step 3: Sender Number — separate sender_number field match
+            // Step 4: SMS Body   — matching keywords from template conditions
+            val matchingMethod = cachedMethods.firstOrNull { method ->
+                // Step 1: Method must be enabled and SIM slot must match
+                method.isEnabled == 1 &&
+                (simSlot == null || method.simSlot == simSlot) &&
+                // Step 2: Sender ID match
+                (
+                    if (method.templateId == null) {
+                        cleanSender == method.provider.trim().lowercase(Locale.US)
+                    } else {
+                        val targetSender = method.senderId?.trim()?.lowercase(Locale.US) ?: method.provider.lowercase(Locale.US)
+                        cleanSender.contains(targetSender)
+                    }
+                ) &&
+                // Step 3: Sender Number match (if configured)
+                (
+                    method.senderNumber.isNullOrBlank() ||
+                    run {
+                        val targetSenderNumber = method.senderNumber.trim().lowercase(Locale.US)
+                        cleanSender.contains(targetSenderNumber)
+                    }
+                ) &&
+                // Step 4: SMS Body keyword conditions (any one keyword match)
+                (
+                    method.matchingKeyword.isNullOrBlank() ||
+                    method.matchingKeyword.split(",").map { it.trim() }.filter { it.isNotEmpty() }.any { keyword ->
+                        body.contains(keyword, ignoreCase = true)
+                    }
+                )
+            }
 
-                if (matchingMethod == null) {
-                    Log.d(TAG, "Payment SMS ignored: No matching gateway config found for $sender or keywords mismatch")
-                    continue
-                }
+            if (matchingMethod == null) {
+                Log.d(TAG, "Payment SMS ignored: No matching gateway config found for $sender or keywords mismatch")
+                return
+            }
 
                 // ── Body Pattern Match Verification ───────────────────────────
                 // App only VERIFIES that the SMS body matches one of the template
@@ -281,7 +285,7 @@ class SmsReceiver(
 
                 if (!bodyMatched) {
                     Log.d(TAG, "Payment SMS ignored: Regex patterns did not match the full body structure.")
-                    continue
+                    return
                 }
 
                 // Build minimal payload — server will parse amount/trxId from rawBody
@@ -301,7 +305,6 @@ class SmsReceiver(
 
                 Log.i(TAG, "4 Conditions Met. Forwarding RAW SMS payload to queue. Provider: ${matchingMethod.provider}")
                 saveToOfflineQueueAndForward(context, parsedPayment)
-            }
 
         } catch (e: SecurityException) {
             Log.e(TAG, "SecurityException — no SIM read permission: ${e.message}")

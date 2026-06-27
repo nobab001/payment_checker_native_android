@@ -1095,6 +1095,23 @@ Clients connect and pass a JWT token and hardware device ID during the connectio
 
 ---
 
+### ✅ Session: 2026-06-27 (Part 8) — Real-Time Template Sync & Custom Sender Isolation
+**কী করা হয়েছে:**
+- **Custom Template Isolation**: `sms_templates` টেবিলে `device_id` যুক্ত করা হয়েছে, যার ফলে ইউজারের কাস্টম সেন্ডার টেমপ্লেটগুলো শুধুমাত্র সেই নির্দিষ্ট ডিভাইসের সাথে আবদ্ধ থাকবে।
+- **Real-Time Sync**: Socket.IO-তে `"force_template_sync"` ইভেন্ট লিসেনার যুক্ত করা হয়েছে, যার ফলে ব্যাকগ্রাউন্ড সার্ভিস চালু থাকা অবস্থায় গেটওয়ে মেথড এবং টেমপ্লেট লাইভ আপডেট হবে।
+- **Zero-Server-Call & Suggestion Filter**: গেটওয়ে পেজে ঢোকার পর লোকাল ক্যাশ থাকলে এপিআই কল বাইপাস করা হয়েছে এবং হোমপেজের সাজেশন থেকে কাস্টম ও ইন-অ্যাক্টিভ টেমপ্লেটগুলোকে ফিল্টার আউট করা হয়েছে।
+
+---
+
+### ✅ Session: 2026-06-27 (Part 9) — Fix SMS Scanning, Segments Splitting & Enable Selection Copying
+**কী করা হয়েছে:**
+- **Custom Sender Ingestion Control**: গেটওয়ে মেথডের সাথে `created_at` কলাম ক্লায়েন্টে পাঠানো হয়েছে। `SmsPollWorker` স্ক্যান করার সময় শুধুমাত্র কাস্টম সেন্ডার যোগ হওয়ার পরের (ভবিষ্যতের) মেসেজগুলো রিড করবে এবং ওল্ড মেসেজ হিস্ট্রি স্কিপ করবে।
+- **Inbox Scanner Crash Fix**: `SmsInboxScanner.kt`-এ aggregate `MAX(_id)` কোয়েরি বদলে স্ট্যান্ডার্ড `DESC LIMIT 1` কোয়েরি ব্যবহার করা হয়েছে, যা ডিভাইস স্পেসিফিক কুয়েরি ক্র্যাশ দূর করেছে।
+- **Fix Segment Splitting**: `SmsReceiver.kt`-এ মাল্টি-পার্ট SMS এর পার্টগুলো লুপ দিয়ে আলাদা প্রসেস না করে প্রথমে StringBuilder দিয়ে কম্বাইন করে সম্পূর্ণ বডি একবারে প্রসেস করা হয়েছে, যা বড় ওটিপি বিভক্ত হয়ে যাওয়ার সমস্যা সমাধান করেছে।
+- **Select & Copy Custom Archives**: ড্যাশবোর্ডে কাস্টম আর্কাইভ টেক্সটকে `SelectionContainer` দিয়ে আবৃত করা হয়েছে যাতে ইউজার ওটিপি বডি চাপ দিয়ে ধরে সিলেক্ট ও কপি করতে পারেন।
+
+---
+
 ### 📌 Current Tech Stack
 
 | Layer | Technology |

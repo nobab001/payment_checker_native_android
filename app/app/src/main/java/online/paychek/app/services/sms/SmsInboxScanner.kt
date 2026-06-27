@@ -160,12 +160,12 @@ class SmsInboxScanner(private val context: Context) {
         return try {
             val cursor: Cursor? = context.contentResolver.query(
                 SMS_INBOX_URI,
-                arrayOf("MAX(_id) AS maxId"),
-                null, null, null
+                arrayOf(COL_ID),
+                null, null, "$COL_ID DESC LIMIT 1"
             )
             cursor?.use {
                 if (it.moveToFirst()) {
-                    val idx = it.getColumnIndex("maxId")
+                    val idx = it.getColumnIndex(COL_ID)
                     if (idx >= 0) it.getLong(idx) else 0L
                 } else 0L
             } ?: 0L

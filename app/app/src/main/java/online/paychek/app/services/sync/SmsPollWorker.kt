@@ -211,6 +211,15 @@ class SmsPollWorker(
                     continue
                 }
 
+                val createdAtStr = matchingMethod.createdAt
+                if (!createdAtStr.isNullOrBlank()) {
+                    val createdTimeMs = parseIsoDateToMillis(createdAtStr)
+                    if (createdTimeMs > 0L && candidate.timestamp < createdTimeMs) {
+                        Log.d(TAG, "[Guard-2] Skip old SMS for '${candidate.sender}' — timestamp (${candidate.timestamp}) is before creation time ($createdTimeMs)")
+                        continue
+                    }
+                }
+
                 // Forward RAW SMS payload directly with parsed amount and trxId
                 val payment = SmsParser.parseWithDynamicRegex(
                     body = candidate.body,
@@ -297,6 +306,24 @@ class SmsPollWorker(
             }
         } catch (e: Exception) {
             null
+        }
+    }
+
+    private fun parseIsoDateToMillis(isoString: String): Long {
+        return try {
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }
+            sdf.parse(isoString)?.time ?: 0L
+        } catch (e: Exception) {
+            try {
+                val sdfNoMillis = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply {
+                    timeZone = java.util.TimeZone.getTimeZone("UTC")
+                }
+                sdfNoMillis.parse(isoString)?.time ?: 0L
+            } catch (e2: Exception) {
+                0L
+            }
         }
     }
 }
