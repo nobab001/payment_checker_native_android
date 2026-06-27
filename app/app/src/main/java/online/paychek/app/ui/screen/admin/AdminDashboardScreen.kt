@@ -762,6 +762,7 @@ private fun SmsTemplateEditDialog(
     }
     var newRegex by remember { mutableStateOf("") }
     var isActive by remember { mutableIntStateOf(template.isActive) }
+    var isParseable by remember { mutableIntStateOf(template.isParseable) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -931,6 +932,18 @@ private fun SmsTemplateEditDialog(
                 }
 
                 Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column {
+                        Text("পার্স করা যাবে কি না (Is Parseable)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text("মেথডের এসএমএস বডি সার্ভারে পার্স করা হবে কি না", color = TextSecondary, fontSize = 11.sp)
+                    }
+                    Switch(checked = isParseable == 1, onCheckedChange = { isParseable = if (it) 1 else 0 })
+                }
+
+                Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
@@ -946,7 +959,8 @@ private fun SmsTemplateEditDialog(
                                     senderNumber = senderNumber.ifBlank { null },
                                     matchingKeyword = "", // default empty since UI is removed
                                     regexPattern = finalRegexPattern,
-                                    isActive = isActive
+                                    isActive = isActive,
+                                    isParseable = isParseable
                                 )
                             )
                         },

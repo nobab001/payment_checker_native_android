@@ -25,7 +25,8 @@ data class SmsTemplateDto(
     @SerializedName("matching_keyword") val matchingKeyword: String,
     @SerializedName("regex_pattern") val regexPattern: String,
     @SerializedName("is_official") val isOfficial: Int?,
-    @SerializedName("is_active") val isActive: Int
+    @SerializedName("is_active") val isActive: Int,
+    @SerializedName("is_parseable") val isParseable: Int = 1
 )
 
 data class SmsTemplatesResponse(

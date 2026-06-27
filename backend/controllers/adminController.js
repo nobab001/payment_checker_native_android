@@ -133,7 +133,7 @@ async function getSmsTemplates(req, res) {
 
 async function saveSmsTemplate(req, res) {
   try {
-    const { id, template_name, sender_id, sender_number, matching_keyword, regex_pattern, is_active } = req.body;
+    const { id, template_name, sender_id, sender_number, matching_keyword, regex_pattern, is_active, is_parseable } = req.body;
     if (!template_name || !sender_id) {
       return res.status(400).json({ error: 'Missing required template fields' });
     }
@@ -145,6 +145,7 @@ async function saveSmsTemplate(req, res) {
       matching_keyword: matching_keyword || '',
       regex_pattern: generateCustomRegex(regex_pattern ? regex_pattern.trim() : ''),
       is_active: is_active === undefined ? 1 : (is_active ? 1 : 0),
+      is_parseable: is_parseable === undefined ? 1 : (is_parseable ? 1 : 0),
       is_official: 1,
       updated_at: new Date()
     };

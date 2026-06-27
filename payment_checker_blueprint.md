@@ -1110,6 +1110,11 @@ Clients connect and pass a JWT token and hardware device ID during the connectio
 - **Fix Segment Splitting**: `SmsReceiver.kt`-এ মাল্টি-পার্ট SMS এর পার্টগুলো লুপ দিয়ে আলাদা প্রসেস না করে প্রথমে StringBuilder দিয়ে কম্বাইন করে সম্পূর্ণ বডি একবারে প্রসেস করা হয়েছে, যা বড় ওটিপি বিভক্ত হয়ে যাওয়ার সমস্যা সমাধান করেছে।
 - **Select & Copy Custom Archives**: ড্যাশবোর্ডে কাস্টম আর্কাইভ টেক্সটকে `SelectionContainer` দিয়ে আবৃত করা হয়েছে যাতে ইউজার ওটিপি বডি চাপ দিয়ে ধরে সিলেক্ট ও কপি করতে পারেন।
 
+### ✅ Session: 2026-06-27 (Part 10) — Add is_parseable to Admin & Fix bKash Personal Template
+**কী করা হয়েছে:**
+- **Add is_parseable to Admin**: `adminController.js` এবং অ্যান্ড্রয়েড ক্লায়েন্টের `AdminDashboardScreen.kt`, `AdminDtos.kt`-এ `is_parseable` কনফিগার করার সুবিধা যুক্ত করা হয়েছে। এর মাধ্যমে এডমিনরা টেমপ্লেট তৈরির সময় এটি পার্স করা যাবে কি না তা নির্ধারণ করতে পারবেন।
+- **bKash Personal sender_number Fix**: ডাটাবেজ প্যাচ স্ক্রিপ্টের মাধ্যমে bKash Personal টেমপ্লেটের (ID 1) `sender_number` ভ্যালু `NULL` থেকে আপডেট করে `'bKash'` করা হয়েছে এবং গ্লোবাল সিঙ্ক টাইমস্ট্যাম্প আপডেট করা হয়েছে।
+
 ---
 
 ### 📌 Current Tech Stack
