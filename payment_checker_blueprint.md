@@ -883,6 +883,8 @@ Clients connect and pass a JWT token and hardware device ID during the connectio
 | **POST** | `/api/verify-otp` | Verify OTP, returns session token & user info | No |
 | **POST** | `/api/complete-profile` | Complete profile for new registration | Yes |
 | **GET** | `/api/me` | Fetch active user profile statistics | Yes |
+| **GET** | `/api/sms-history` | Fetch transaction history (strictly limited to 20 unless `startDate` and `endDate` are provided to fetch all in range) | Yes |
+| **GET** | `/api/dashboard/stats` | Fetch dashboard summary metrics and the 20 most recent transactions | Yes |
 | **GET** | `/api/config` | Load global configurations and switches | No |
 | **GET** | `/api/devices` | Get all registered parent and child devices | Yes |
 | **POST** | `/api/devices` | Register a new device hardware ID | Yes |
