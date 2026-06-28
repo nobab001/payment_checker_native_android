@@ -191,16 +191,25 @@ fun SubscriptionPackagesScreen(
                             )
                         }
                         else -> {
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                items(plans, key = { it.planName }) { plan ->
-                                    PackageCard(
-                                        plan = plan,
-                                        onBuyNowClick = onNavigateToPaymentMock
-                                    )
+                            val mainPlans = plans.filter { !it.planName.contains("custom sender", ignoreCase = true) }
+                            if (mainPlans.isEmpty()) {
+                                Text(
+                                    text = "কোনো প্যাকেজ পাওয়া যায়নি।",
+                                    color = TextM,
+                                    fontSize = 14.sp
+                                )
+                            } else {
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    items(mainPlans, key = { it.planName }) { plan ->
+                                        PackageCard(
+                                            plan = plan,
+                                            onBuyNowClick = onNavigateToPaymentMock
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -208,6 +217,7 @@ fun SubscriptionPackagesScreen(
                 } else {
                     // Render Custom Sender Add-on Card
                     var isAddonPurchasing by remember { mutableStateOf(false) }
+                    val addonPlan = plans.find { it.planName.contains("custom sender", ignoreCase = true) }
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -234,7 +244,7 @@ fun SubscriptionPackagesScreen(
                                 ) {
                                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Text(
-                                            text = "কাস্টম সেন্ডার আইডি অ্যাড-অন",
+                                            text = addonPlan?.planName ?: "কাস্টম সেন্ডার আইডি অ্যাড-অন",
                                             fontWeight = FontWeight.ExtraBold,
                                             fontSize = 18.sp,
                                             color = TextW
@@ -248,7 +258,7 @@ fun SubscriptionPackagesScreen(
                                     }
                                     
                                     Text(
-                                        text = "৳২৫০",
+                                        text = "৳${addonPlan?.price?.toInt() ?: 250}",
                                         fontWeight = FontWeight.Black,
                                         fontSize = 24.sp,
                                         color = Color(0xFF22D3EE)
@@ -261,6 +271,7 @@ fun SubscriptionPackagesScreen(
                                     PlanLimitItem(label = "আনলিমিটেড নিজস্ব কাস্টম সেন্ডার আইডি সেট করুন")
                                     PlanLimitItem(label = "নন-পার্সেবল বার্তার জন্য সার্ভার সাইড জিরো ওভারহেড স্টোরেজ")
                                     PlanLimitItem(label = "কাস্টম আর্কাইভ ট্যাবে সর্বশেষ ২৫০০টি ডেটা রেকর্ডস")
+                                    PlanLimitItem(label = "মেয়াদ: ${addonPlan?.durationDays ?: 365} দিন")
                                     PlanLimitItem(label = "২৪/৭ রিয়েল-টাইম অটোমেটেড এসএমএস ট্র্যাকিং")
                                 }
                                 

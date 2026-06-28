@@ -628,6 +628,7 @@ CREATE TABLE users (
   blocked          TINYINT(1)    NOT NULL DEFAULT 0,
   role             VARCHAR(20)   NOT NULL DEFAULT 'user',
   profile_complete TINYINT(1)    NOT NULL DEFAULT 0 COMMENT '0 = new (finish signup), 1 = active',
+  custom_sender_ends_at DATE         DEFAULT NULL,
   created_at       TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
   updated_at       TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_phone (phone),
@@ -1141,12 +1142,13 @@ Clients connect and pass a JWT token and hardware device ID during the connectio
 
 ---
 
-### ✅ Session: 2026-06-28 — Admin Gmail OTP Login & Plan Edit with Custom Sender Permissions
+### ✅ Session: 2026-06-28 — Admin Gmail OTP Login & Dynamic Custom Sender Package Configuration
 
 **কী করা হয়েছে:**
 - **Admin Gmail OTP Login**: এডমিন অ্যাকাউন্টের ওটিপি বাইপাস ব্যবস্থার পাশাপাশি নতুন করে জিমেইল কোড লগইন সিস্টেম যুক্ত করা হয়েছে। ব্যাকএন্ডের `.env` ফাইলে `ADMIN_EMAIL` ভ্যালু সেট করে অ্যাপের লগইন বক্সে উক্ত মেইল দিয়ে কোডের জন্য ওটিপি পাঠালে, সিস্টেমে রিয়েল ৬-ডিজিটের ওটিপি জেনারেট হয়ে এডমিনের মেইলে প্রেরিত হবে। উক্ত কোড ভেরিফাই করার মাধ্যমে সফলভাবে এডমিন ড্যাশবোর্ডে লগইন করা যাবে।
-- **Edit Plan Name**: সাবস্ক্রিপশন প্ল্যান তৈরির পাশাপাশি সেভ করার সময় `plan_name` দিয়ে ডুপ্লিকেট চেকের পূর্বে `id` দিয়ে ম্যাচিং নিশ্চিত করা হয়েছে, যার ফলে পূর্বে ব্লক থাকা প্ল্যান নেম এডিটিং এখন সম্পূর্ণরূপে আনলক করা হয়েছে।
-- **Enable Custom Sender Permissions**: ডাটাবেজে থাকা অব্যবহৃত কলাম `is_custom_sender_allowed` ফিচারকে ব্যাকএন্ডে ম্যাপ ও ইন্টিগ্রেট করা হয়েছে। অ্যান্ড্রয়েড ক্লায়েন্টের `SubscriptionPlanDto` আপডেট করে এবং `BillingConfigScreen.kt` এর "প্ল্যান সম্পাদন করুন" ডায়ালগে একটি "কাস্টম সেন্ডার আইডি ব্যবহারের অনুমতি" সুইচ রো যুক্ত করা হয়েছে। এর মাধ্যমে এডমিনরা প্রতিটি প্যাকেজের জন্য কাস্টম সেন্ডার আইডি পারমিশন প্রোভাইড বা কন্ট্রোল করতে পারবেন।
+- **Edit Plan Name & Custom Sender Toggling**: সাবস্ক্রিপশন প্ল্যান তৈরির পাশাপাশি সেভ করার সময় `plan_name` দিয়ে ডুপ্লিকেট চেকের পূর্বে `id` দিয়ে ম্যাচিং নিশ্চিত করা হয়েছে, যার ফলে পূর্বে ব্লক থাকা প্ল্যান নেম এডিটিং এখন সম্পূর্ণরূপে আনলক করা হয়েছে। অ্যান্ড্রয়েড ক্লায়েন্টের `SubscriptionPlanDto` আপডেট করে এবং `BillingConfigScreen.kt` এর "প্ল্যান সম্পাদন করুন" ডায়ালগে একটি "কাস্টম সেন্ডার আইডি ব্যবহারের অনুমতি" সুইচ রো যুক্ত করা হয়েছে। এর মাধ্যমে এডমিনরা প্রতিটি প্যাকেজের জন্য কাস্টম সেন্ডার আইডি পারমিশন প্রোভাইড বা কন্ট্রোল করতে পারবেন।
+- **Dynamic Custom Sender Configuration**: কাস্টম সেন্ডার অ্যাড-অন প্যাকেজকে ডায়নামিক করা হয়েছে। সিস্টেমে "custom sender" কী-ওয়ার্ড সম্বলিত প্ল্যান তৈরি/এডিট করলে তা ইউজার অ্যাপের অ্যাড-অন স্ক্রিনে অটোমেটিক নতুন মূল্য এবং মেয়াদ অনুযায়ী রেন্ডার হবে এবং মূল প্যাকেজ তালিকা থেকে আলাদা থাকবে।
+- **Parallel Subscriptions (custom_sender_ends_at)**: ডাটাবেজের `users` টেবিলে `custom_sender_ends_at` ডেট কলাম যুক্ত করা হয়েছে। কাস্টম সেন্ডার প্যাকেজ ক্রয় করলে এটি ইউজারের বেস প্ল্যানকে ওভাররাইট না করে সমান্তরালে (Parallelly) কাস্টম সেন্ডার মেয়াদ বৃদ্ধি করবে। গেটওয়ে কন্ট্রোলারেও কাস্টম সেন্ডার ব্যবহারের সময় এই এক্সপায়ারি ডেট চেক করা হবে।
 - **Verification & Kotlin Compilation**: অ্যান্ড্রয়েড কোডে নতুন ডাটা অ্যাট্রিবিউট ও লেআউট পরিবর্তনের পর সম্পূর্ণ ক্লায়েন্ট অ্যাপ্লিকেশন কম্পাইল করা হয়েছে (`.\gradlew.bat compileDebugKotlin` passes).
 
 ---

@@ -298,6 +298,7 @@ model users {
   sms_enabled             Int                  @default(1) @db.TinyInt
   gmail_enabled           Int                  @default(0) @db.TinyInt
   has_custom_sender_addon Int                  @default(0) @db.TinyInt
+  custom_sender_ends_at   DateTime?            @db.Date
   fcm_token               String?              @db.VarChar(512)
   secretKey          String?              @db.VarChar(128)
   secretKeyVersion   Int                  @default(1) @db.UnsignedInt

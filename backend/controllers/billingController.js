@@ -33,11 +33,50 @@ async function purchaseSubscription(req, res) {
     // ২. ইউজারের বর্তমান সাবস্ক্রিপশন স্ট্যাটাস পড়া
     const user = await prisma.users.findUnique({
       where: { id: userId },
-      select: { is_paid: true, active_plan_name: true, expiry_date: true }
+      select: { is_paid: true, active_plan_name: true, expiry_date: true, custom_sender_ends_at: true }
     });
     
     if (!user) {
       return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const isCustomSenderPlan = plan.plan_name.toLowerCase().includes('custom sender');
+
+    if (isCustomSenderPlan) {
+      let baseDate = new Date();
+      if (user.custom_sender_ends_at) {
+        const existingExpiry = new Date(user.custom_sender_ends_at);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (existingExpiry > today) {
+          baseDate = existingExpiry;
+        }
+      }
+
+      baseDate.setDate(baseDate.getDate() + durationDays);
+      const newCustomSenderExpiry = new Date(baseDate);
+
+      await prisma.users.update({
+        where: { id: userId },
+        data: {
+          has_custom_sender_addon: 1,
+          custom_sender_ends_at: newCustomSenderExpiry
+        }
+      });
+
+      const year = newCustomSenderExpiry.getFullYear();
+      const month = String(newCustomSenderExpiry.getMonth() + 1).padStart(2, '0');
+      const day = String(newCustomSenderExpiry.getDate()).padStart(2, '0');
+      const formattedExpiry = `${year}-${month}-${day}`;
+
+      console.log(`[Subscription] ✅ User ${userId} purchased Custom Sender Add-on "${plan.plan_name}". Expiry stacked to: ${formattedExpiry} (+${durationDays} days)`);
+
+      return res.json({
+        success: true,
+        message: `${plan.plan_name} সফলভাবে সক্রিয় করা হয়েছে। মেয়াদ: ${formattedExpiry}`,
+        has_custom_sender_addon: 1,
+        custom_sender_ends_at: formattedExpiry
+      });
     }
 
     // ৩. Date Stacking Logic
@@ -200,19 +239,54 @@ async function purchaseCustomSenderAddon(req, res) {
   try {
     const userId = req.user.userId;
 
-    await prisma.users.update({
-      where: { id: userId },
-      data: {
-        has_custom_sender_addon: 1
+    const plan = await prisma.subscription_plans.findFirst({
+      where: {
+        plan_name: {
+          contains: 'custom sender'
+        }
       }
     });
 
-    console.log(`[Subscription] ✅ User ${userId} subscribed to Custom Sender Add-on.`);
+    const durationDays = plan ? (plan.duration_days || 365) : 365;
+
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { custom_sender_ends_at: true }
+    });
+
+    let baseDate = new Date();
+    if (user && user.custom_sender_ends_at) {
+      const existingExpiry = new Date(user.custom_sender_ends_at);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (existingExpiry > today) {
+        baseDate = existingExpiry;
+      }
+    }
+
+    baseDate.setDate(baseDate.getDate() + durationDays);
+    const newCustomSenderExpiry = new Date(baseDate);
+
+    await prisma.users.update({
+      where: { id: userId },
+      data: {
+        has_custom_sender_addon: 1,
+        custom_sender_ends_at: newCustomSenderExpiry
+      }
+    });
+
+    console.log(`[Subscription] ✅ User ${userId} purchased Custom Sender Add-on (+${durationDays} days).`);
+
+    const year = newCustomSenderExpiry.getFullYear();
+    const month = String(newCustomSenderExpiry.getMonth() + 1).padStart(2, '0');
+    const day = String(newCustomSenderExpiry.getDate()).padStart(2, '0');
+    const formattedExpiry = `${year}-${month}-${day}`;
 
     return res.json({
       success: true,
-      message: 'কাস্টম সেন্ডার অ্যাড-অন সফলভাবে সক্রিয় করা হয়েছে।',
-      has_custom_sender_addon: 1
+      message: `কাস্টম সেন্ডার অ্যাড-অন সফলভাবে সক্রিয় করা হয়েছে। মেয়াদ: ${formattedExpiry}`,
+      has_custom_sender_addon: 1,
+      custom_sender_ends_at: formattedExpiry
     });
   } catch (error) {
     console.error('[Billing Controller] purchaseCustomSenderAddon error:', error);

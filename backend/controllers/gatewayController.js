@@ -381,7 +381,7 @@ async function addCustomSender(req, res) {
     // User must either have has_custom_sender_addon === 1 OR their active subscription plan must allow custom sender.
     const user = await prisma.users.findUnique({
       where: { id: userId },
-      select: { is_paid: true, active_plan_name: true, role: true, has_custom_sender_addon: true }
+      select: { is_paid: true, active_plan_name: true, role: true, has_custom_sender_addon: true, custom_sender_ends_at: true }
     });
 
     if (!user) {
@@ -389,8 +389,19 @@ async function addCustomSender(req, res) {
     }
 
     let isAllowed = false;
-    if (user.role === 'admin' || user.has_custom_sender_addon === 1) {
+    if (user.role === 'admin') {
       isAllowed = true;
+    } else if (user.has_custom_sender_addon === 1) {
+      if (user.custom_sender_ends_at) {
+        const endsAt = new Date(user.custom_sender_ends_at);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (endsAt >= today) {
+          isAllowed = true;
+        }
+      } else {
+        isAllowed = true;
+      }
     } else if (user.is_paid && user.active_plan_name) {
       if (user.active_plan_name === 'Trial Package') {
         const configVal = await prisma.global_config.findUnique({
