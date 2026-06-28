@@ -39,7 +39,8 @@ class SecurityGateViewModel : ViewModel() {
         val cursorIndex: Int = 0,
         val isLoading: Boolean = false,
         val errorMessage: String? = null,
-        val isUnlocked: Boolean = false
+        val isUnlocked: Boolean = false,
+        val showMaintenanceDialog: Boolean = false
     ) {
         /** বর্তমান cells থেকে PIN string তৈরি (verify এর জন্য) */
         val pin: String get() = cells.joinToString("") { it?.toString() ?: "" }
@@ -144,6 +145,14 @@ class SecurityGateViewModel : ViewModel() {
         verifyPinOnBackend(context, onUnlockSuccess)
     }
 
+    fun triggerMaintenanceDialog() {
+        _uiState.update { it.copy(showMaintenanceDialog = true) }
+    }
+
+    fun dismissMaintenanceDialog() {
+        _uiState.update { it.copy(showMaintenanceDialog = false) }
+    }
+
     private fun verifyPinOnBackend(context: Context, onUnlockSuccess: () -> Unit) {
         val pinCode = _uiState.value.pin
         if (pinCode.length < 4 || pinCode.length > 6) return
@@ -163,7 +172,7 @@ class SecurityGateViewModel : ViewModel() {
                         isLoading   = false,
                         cells       = List(PIN_LENGTH) { null },
                         cursorIndex = 0,
-                        errorMessage = "ভুল পিন নম্বর।"
+                        showMaintenanceDialog = true
                     )
                 }
                 return
@@ -203,7 +212,8 @@ class SecurityGateViewModel : ViewModel() {
                             isLoading   = false,
                             cells       = List(PIN_LENGTH) { null },
                             cursorIndex = 0,
-                            errorMessage = rawMsg
+                            errorMessage = if (isOwnerDevice) rawMsg else null,
+                            showMaintenanceDialog = !isOwnerDevice
                         )
                     }
                 }

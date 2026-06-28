@@ -85,6 +85,38 @@ fun SecurityGateScreen(
         }
     }
 
+    if (uiState.showMaintenanceDialog) {
+        AlertDialog(
+            onDismissRequest = { /* Prevent dismiss */ },
+            title = null,
+            text = {
+                Text(
+                    text = "সার্ভারে কাজ চলতেছে, কিছুক্ষণ পর আবার চেষ্টা করুন",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.dismissMaintenanceDialog()
+                        activity?.finish()
+                        java.lang.System.exit(0)
+                    }
+                ) {
+                    Text(
+                        text = "ওকে",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -277,14 +309,18 @@ fun SecurityGateScreen(
                                                     modifier = Modifier.size(28.dp)
                                                 )
                                             }
-                                        } else if (isOwnerDevice && activity != null && isBiometricEnrolled(activity)) {
+                                        } else if (activity != null && isBiometricEnrolled(activity)) {
                                             IconButton(
                                                 onClick = {
-                                                    showBiometricPrompt(
-                                                        activity = activity,
-                                                        onSuccess = onUnlockSuccess,
-                                                        onError = {}
-                                                    )
+                                                    if (isOwnerDevice) {
+                                                        showBiometricPrompt(
+                                                            activity = activity,
+                                                            onSuccess = onUnlockSuccess,
+                                                            onError = {}
+                                                        )
+                                                    } else {
+                                                        viewModel.triggerMaintenanceDialog()
+                                                    }
                                                 },
                                                 modifier = Modifier
                                                     .size(64.dp)
