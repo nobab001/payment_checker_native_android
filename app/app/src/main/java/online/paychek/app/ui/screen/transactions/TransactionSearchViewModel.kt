@@ -75,7 +75,7 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
             try {
                 val type = object : TypeToken<List<SmsTemplateDto>>() {}.type
                 val parsed = GsonUtils.gson.fromJson<List<SmsTemplateDto>>(cached, type) ?: emptyList()
-                initialTemplates = parsed.filter { it.isActive == 1 && it.isParseable == 1 }
+                initialTemplates = parsed.filter { (it.isActive == 1 || it.isOtherDevice == true) && it.isParseable == 1 }
             } catch (_: Exception) {}
         }
         _state.update { it.copy(templates = initialTemplates) }
@@ -107,7 +107,7 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                         val list = response.body()?.templates ?: emptyList()
                         val jsonStr = GsonUtils.gson.toJson(list)
                         PrefsHelper.setSmsTemplatesCache(getApplication(), jsonStr)
-                        val activeParseable = list.filter { it.isActive == 1 && it.isParseable == 1 }
+                        val activeParseable = list.filter { (it.isActive == 1 || it.isOtherDevice == true) && it.isParseable == 1 }
                         _state.update { it.copy(templates = activeParseable) }
                     }
                 } catch (_: Exception) {}

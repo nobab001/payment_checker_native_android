@@ -220,14 +220,25 @@ async function getTemplates(req, res) {
         matching_keyword: true,
         regex_pattern: true,
         is_official: true,
-        is_active: true
+        is_active: true,
+        device_id: true
       }
     });
 
-    const formatted = rows.map(r => ({
-      ...r,
-      regex_pattern: r.regex_pattern || ''
-    }));
+    const formatted = rows.map(r => {
+      const isOther = r.is_official === 0 && r.device_id !== deviceId;
+      return {
+        id: r.id,
+        template_name: r.template_name,
+        sender_id: r.sender_id,
+        sender_number: r.sender_number,
+        matching_keyword: r.matching_keyword,
+        regex_pattern: r.regex_pattern || '',
+        is_official: r.is_official,
+        is_active: isOther ? 0 : r.is_active,
+        is_other_device: isOther
+      };
+    });
 
     return res.json({ success: true, templates: formatted });
   } catch (error) {
@@ -432,7 +443,8 @@ async function addCustomSender(req, res) {
     let template = await prisma.sms_templates.findFirst({
       where: {
         user_id: userId,
-        sender_id: cleanSenderId
+        sender_id: cleanSenderId,
+        device_id: deviceId
       }
     });
 

@@ -418,28 +418,35 @@ private fun M3FilterChipsRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(templates) { template ->
-            val isSelected = selected.lowercase() == template.senderId.lowercase()
+            val isOther = template.isOtherDevice == true
+            val isSelected = !isOther && selected.lowercase() == template.senderId.lowercase()
+            val labelText = if (isOther) "${template.templateName} (অন্য ডিভাইসে তৈরি)" else template.templateName
+
             FilterChip(
                 selected = isSelected,
-                onClick = { onSelect(template.senderId) },
+                onClick = {
+                    if (!isOther) {
+                        onSelect(template.senderId)
+                    }
+                },
                 label = {
                     Text(
-                        text = template.templateName,
+                        text = labelText,
                         fontSize = adaptiveTextSize(11.sp, 13.sp),
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                     )
                 },
                 colors = FilterChipDefaults.filterChipColors(
-                    containerColor = HistCard,
-                    labelColor = TextMuted,
+                    containerColor = if (isOther) HistCard.copy(alpha = 0.5f) else HistCard,
+                    labelColor = if (isOther) TextMuted.copy(alpha = 0.4f) else TextMuted,
                     selectedContainerColor = AccentCyan.copy(alpha = 0.18f),
                     selectedLabelColor = AccentCyan,
                     selectedLeadingIconColor = AccentCyan
                 ),
                 border = FilterChipDefaults.filterChipBorder(
-                    enabled = true,
+                    enabled = !isOther,
                     selected = isSelected,
-                    borderColor = TextMuted.copy(alpha = 0.25f),
+                    borderColor = if (isOther) TextMuted.copy(alpha = 0.15f) else TextMuted.copy(alpha = 0.25f),
                     selectedBorderColor = AccentCyan,
                     borderWidth = 1.dp,
                     selectedBorderWidth = 1.dp

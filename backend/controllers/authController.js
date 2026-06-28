@@ -1925,11 +1925,14 @@ async function getProfile(req, res) {
         'UPDATE sms_templates SET is_parseable = 1 WHERE user_id = ? AND is_official = 0',
         [userId]
       );
-      // 2. Ensure all custom gateway methods of this user are enabled
-      await query(
-        "UPDATE gateway_methods SET is_enabled = 1 WHERE user_id = ? AND provider LIKE 'Custom-%' AND is_enabled = 0",
-        [String(userId)]
-      );
+      // 2. Ensure all custom gateway methods of this user on the current device are enabled
+      const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+      if (deviceId) {
+        await query(
+          "UPDATE gateway_methods SET is_enabled = 1 WHERE user_id = ? AND device_id = ? AND provider LIKE 'Custom-%' AND is_enabled = 0",
+          [String(userId), String(deviceId)]
+        );
+      }
     }
 
     return res.json({

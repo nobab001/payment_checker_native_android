@@ -550,25 +550,55 @@ fun DashboardScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val activeParseable = screenState.globalTemplates.filter { it.isActive == 1 && it.isParseable == 1 }
+                            val activeParseable = screenState.globalTemplates.filter { (it.isActive == 1 || it.isOtherDevice == true) && it.isParseable == 1 }
                             val providerFilters = activeParseable.map { template ->
                                 val tag = template.senderId
-                                val label = template.templateName
-                                val color = when (tag.lowercase(Locale.US)) {
-                                    "bkash" -> Color(0xFF10B981)
-                                    "nagad" -> Color(0xFFF97316)
-                                    "rocket" -> Color(0xFF8B5CF6)
-                                    "upay" -> Color(0xFFEAB308)
-                                    else -> AccentCyan
+                                val isOther = template.isOtherDevice == true
+                                val label = if (isOther) "${template.templateName} (অন্য ডিভাইসে তৈরি)" else template.templateName
+                                val color = if (isOther) Color(0xFF94A3B8).copy(alpha = 0.5f) else {
+                                    when (tag.lowercase(Locale.US)) {
+                                        "bkash" -> Color(0xFF10B981)
+                                        "nagad" -> Color(0xFFF97316)
+                                        "rocket" -> Color(0xFF8B5CF6)
+                                        "upay" -> Color(0xFFEAB308)
+                                        else -> AccentCyan
+                                    }
                                 }
-                                tag to (label to color)
+                                Triple(tag, label, color) to template
                             }
-                            providerFilters.forEach { (tag, info) ->
-                                val (label, dotColor) = info
-                                val isSelected = selectedProviderName == label
-                                val chipBgColor = if (isSelected) AccentCyan.copy(alpha = 0.18f) else DashCard
-                                val chipBorderColor = if (isSelected) AccentCyan else TextMuted.copy(alpha = 0.25f)
-                                val chipTextColor = if (isSelected) AccentCyan else TextMuted
+                            providerFilters.forEach { (info, template) ->
+                                val (tag, label, dotColor) = info
+                                val isOther = template.isOtherDevice == true
+                                val isSelected = !isOther && selectedProviderName == template.templateName
+                                val chipBgColor = when {
+                                    isOther -> DashCard.copy(alpha = 0.5f)
+                                    isSelected -> AccentCyan.copy(alpha = 0.18f)
+                                    else -> DashCard
+                                }
+                                val chipBorderColor = when {
+                                    isOther -> TextMuted.copy(alpha = 0.15f)
+                                    isSelected -> AccentCyan
+                                    else -> TextMuted.copy(alpha = 0.25f)
+                                }
+                                val chipTextColor = when {
+                                    isOther -> TextMuted.copy(alpha = 0.4f)
+                                    isSelected -> AccentCyan
+                                    else -> TextMuted
+                                }
+
+                                val chipModifier = if (isOther) {
+                                    Modifier
+                                } else {
+                                    Modifier.clickable {
+                                        if (isSelected) {
+                                            selectedProviderName = null
+                                            selectedProvider = null
+                                        } else {
+                                            selectedProviderName = template.templateName
+                                            selectedProvider = tag
+                                        }
+                                    }
+                                }
 
                                 Box(
                                     modifier = Modifier
@@ -579,15 +609,7 @@ fun DashboardScreen(
                                         )
                                         .clip(RoundedCornerShape(20.dp))
                                         .background(chipBgColor)
-                                        .clickable {
-                                            if (isSelected) {
-                                                selectedProviderName = null
-                                                selectedProvider = null
-                                            } else {
-                                                selectedProviderName = label
-                                                selectedProvider = tag
-                                            }
-                                        }
+                                        .then(chipModifier)
                                         .padding(horizontal = 12.dp, vertical = 6.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
