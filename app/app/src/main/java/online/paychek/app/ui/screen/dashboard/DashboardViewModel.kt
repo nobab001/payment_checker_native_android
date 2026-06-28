@@ -46,6 +46,8 @@ data class DashboardScreenState(
     val showPurchaseDialog: Boolean    = false,
     val purchaseLoading: Boolean       = false,
     val globalTemplates: List<SmsTemplateDto> = emptyList(),
+    val dateFilteredTransactions: List<TransactionItem> = emptyList(),
+    val isFilterLoading: Boolean       = false,
     // Custom Sender ID Archive additions
     val selectedTab: Int               = 0, // 0 = Payment Records, 1 = Custom Archive
     val customArchives: List<CustomArchiveItem> = emptyList(),
@@ -337,5 +339,36 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             )
         }
+    }
+
+    fun fetchDateFilteredTransactions(startDate: String, endDate: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(isFilterLoading = true) }
+            val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
+            if (token.isNotEmpty()) {
+                val result = repository.fetchTransactionHistory(
+                    token = token,
+                    page = 1,
+                    limit = 100, // Load all matching range
+                    provider = "all",
+                    startDate = startDate,
+                    endDate = endDate
+                )
+                result.fold(
+                    onSuccess = { items ->
+                        _state.update { it.copy(dateFilteredTransactions = items, isFilterLoading = false) }
+                    },
+                    onFailure = {
+                        _state.update { it.copy(dateFilteredTransactions = emptyList(), isFilterLoading = false) }
+                    }
+                )
+            } else {
+                _state.update { it.copy(isFilterLoading = false) }
+            }
+        }
+    }
+
+    fun clearDateFilter() {
+        _state.update { it.copy(dateFilteredTransactions = emptyList()) }
     }
 }

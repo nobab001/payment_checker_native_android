@@ -84,6 +84,7 @@ private val AccentAmber   = Color(0xFFF59E0B)   // Amber (stats icon)
 private val TextWhite: Color @Composable get() = MaterialTheme.colorScheme.onBackground
 private val TextMuted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 private val ToggleOff     = Color(0xFF475569)   // Slate (toggle OFF)
+private val AccentRed     = Color(0xFFEF4444)
 
 private val GradientHeader = Brush.linearGradient(
     colors = listOf(Color(0xFF1A237E), Color(0xFF0D47A1), Color(0xFF006064))
@@ -136,6 +137,7 @@ fun DashboardScreen(
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedProvider by remember { mutableStateOf<String?>(null) }
+    var selectedProviderName by remember { mutableStateOf<String?>(null) }
     var selectedDate by remember { mutableStateOf<String?>("today") }
     var showDateRangePicker by remember { mutableStateOf(false) }
     var customStartDate by remember { mutableStateOf<Long?>(null) }
@@ -218,6 +220,9 @@ fun DashboardScreen(
                             customStartDate = startMillis
                             customEndDate = endMillis
                             selectedDate = "custom"
+                            val startStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(startMillis))
+                            val endStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(endMillis))
+                            viewModel.fetchDateFilteredTransactions(startStr, endStr)
                         }
                     }
                 ) { Text("OK", color = AccentCyan, fontWeight = FontWeight.Bold) }
@@ -490,6 +495,21 @@ fun DashboardScreen(
                                             )
                                         }
                                     }
+                                    if (selectedDate == "custom") {
+                                        IconButton(onClick = {
+                                            selectedDate = "today"
+                                            customStartDate = null
+                                            customEndDate = null
+                                            viewModel.clearDateFilter()
+                                        }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Clear Date Filter",
+                                                tint = AccentRed,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
                                     IconButton(onClick = { showDateRangePicker = true }) {
                                         Icon(
                                             imageVector = Icons.Default.DateRange,
@@ -530,24 +550,22 @@ fun DashboardScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val providerFilters = screenState.globalTemplates
-                                .distinctBy { it.templateName.split(" ")[0].lowercase(Locale.US) }
-                                .map { template ->
-                                    val providerName = template.templateName
-                                    val tag = providerName.split(" ")[0].lowercase(Locale.US)
-                                    val label = providerName
-                                    val color = when (tag) {
-                                        "bkash" -> Color(0xFF10B981)
-                                        "nagad" -> Color(0xFFF97316)
-                                        "rocket" -> Color(0xFF8B5CF6)
-                                        "upay" -> Color(0xFFEAB308)
-                                        else -> AccentCyan
-                                    }
-                                    tag to (label to color)
+                            val activeParseable = screenState.globalTemplates.filter { it.isActive == 1 && it.isParseable == 1 }
+                            val providerFilters = activeParseable.map { template ->
+                                val tag = template.senderId
+                                val label = template.templateName
+                                val color = when (tag.lowercase(Locale.US)) {
+                                    "bkash" -> Color(0xFF10B981)
+                                    "nagad" -> Color(0xFFF97316)
+                                    "rocket" -> Color(0xFF8B5CF6)
+                                    "upay" -> Color(0xFFEAB308)
+                                    else -> AccentCyan
                                 }
+                                tag to (label to color)
+                            }
                             providerFilters.forEach { (tag, info) ->
                                 val (label, dotColor) = info
-                                val isSelected = selectedProvider == tag
+                                val isSelected = selectedProviderName == label
                                 val chipBgColor = if (isSelected) AccentCyan.copy(alpha = 0.18f) else DashCard
                                 val chipBorderColor = if (isSelected) AccentCyan else TextMuted.copy(alpha = 0.25f)
                                 val chipTextColor = if (isSelected) AccentCyan else TextMuted
@@ -562,7 +580,13 @@ fun DashboardScreen(
                                         .clip(RoundedCornerShape(20.dp))
                                         .background(chipBgColor)
                                         .clickable {
-                                            selectedProvider = if (isSelected) null else tag
+                                            if (isSelected) {
+                                                selectedProviderName = null
+                                                selectedProvider = null
+                                            } else {
+                                                selectedProviderName = label
+                                                selectedProvider = tag
+                                            }
                                         }
                                         .padding(horizontal = 12.dp, vertical = 6.dp),
                                     contentAlignment = Alignment.Center
@@ -619,8 +643,12 @@ fun DashboardScreen(
 
                 // ৬. আজকের ট্রানজেকশন list
                 // - "সব দেখুন" বাটন সহ
-                val recentList = (screenState.uiState as? DashboardUiState.Success)
-                    ?.stats?.recentTransactions ?: emptyList()
+                val recentList = if (screenState.dateFilteredTransactions.isNotEmpty()) {
+                    screenState.dateFilteredTransactions
+                } else {
+                    (screenState.uiState as? DashboardUiState.Success)
+                        ?.stats?.recentTransactions ?: emptyList()
+                }
 
                 val filteredList = recentList.filter { trx ->
                     val matchesQuery = searchQuery.isEmpty() ||
@@ -636,7 +664,18 @@ fun DashboardScreen(
                     matchesQuery && matchesProvider && matchesDate
                 }
 
-                if (filteredList.isNotEmpty()) {
+                if (screenState.isFilterLoading) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(color = AccentCyan)
+                        }
+                    }
+                } else if (filteredList.isNotEmpty()) {
                     item {
                         RecentTransactionsHeader(onSeeAll = onNavigateToHistory)
                     }
