@@ -72,7 +72,9 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.zIndex
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import online.paychek.app.utils.RefreshCooldown
 import online.paychek.app.utils.adaptivePadding
+import online.paychek.app.utils.adaptiveTextSize
 import online.paychek.app.utils.adaptiveTextSize
 
 
@@ -141,6 +143,19 @@ fun ProfileSettingsScreen(
     }
     var selectedUriForCrop by remember { mutableStateOf<android.net.Uri?>(null) }
     var bitmapToCrop by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+
+    val refreshProfileData: () -> Unit = {
+        if (!RefreshCooldown.tryRefresh {
+            viewModel.fetchProfile()
+            viewModel.loadCredentials()
+        }) {
+            android.widget.Toast.makeText(
+                context,
+                "৫ সেকেন্ড পরে আবার রিফ্রেশ করুন",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.fetchProfile()
@@ -227,7 +242,8 @@ fun ProfileSettingsScreen(
                     }
                     sharedPrefs.edit().putString("pcu_app_theme", nextTheme).apply()
                 },
-                onNavigateBack = onNavigateBack
+                onNavigateBack = onNavigateBack,
+                onRefresh = refreshProfileData
             )
         }
     ) { innerPadding ->
@@ -343,7 +359,8 @@ private fun ProfileTopBar(
     isDark: Boolean,
     currentTheme: String,
     onThemeToggle: () -> Unit,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onRefresh: () -> Unit
 ) {
     val icon = if (isDark) Icons.Rounded.LightMode else Icons.Rounded.DarkMode
     val iconColor = if (isDark) Color(0xFFF5F7FA) else Color(0xFF12161F)
@@ -370,6 +387,14 @@ private fun ProfileTopBar(
             }
         },
         actions = {
+            IconButton(onClick = onRefresh, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "রিফ্রেশ",
+                    tint = PsCyan,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
             IconButton(onClick = onThemeToggle, modifier = Modifier.padding(end = 8.dp)) {
                 Icon(
                     imageVector = icon,

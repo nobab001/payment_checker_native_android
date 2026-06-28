@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import online.paychek.app.config.AppConfig
+import online.paychek.app.utils.RefreshCooldown
 import online.paychek.app.data.remote.dto.*
 import online.paychek.app.data.repository.PaymentRepository
 import online.paychek.app.services.foreground.SmsMonitorService
@@ -197,15 +198,17 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // Pull-to-refresh সাপোর্ট
-    fun onRefresh() {
-        _state.update { it.copy(isRefreshing = true) }
-        if (_state.value.selectedTab == 1) {
-            viewModelScope.launch {
-                loadCustomArchives()
-                _state.update { it.copy(isRefreshing = false) }
+    fun onRefresh(): Boolean {
+        return RefreshCooldown.tryRefresh {
+            _state.update { it.copy(isRefreshing = true) }
+            if (_state.value.selectedTab == 1) {
+                viewModelScope.launch {
+                    loadCustomArchives()
+                    _state.update { it.copy(isRefreshing = false) }
+                }
+            } else {
+                loadDashboardStats()
             }
-        } else {
-            loadDashboardStats()
         }
     }
 

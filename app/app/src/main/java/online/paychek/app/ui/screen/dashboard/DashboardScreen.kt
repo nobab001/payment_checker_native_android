@@ -323,7 +323,15 @@ fun DashboardScreen(
 
         PullToRefreshBox(
             isRefreshing = screenState.isRefreshing,
-            onRefresh    = { viewModel.onRefresh() },
+            onRefresh    = {
+                if (!viewModel.onRefresh()) {
+                    android.widget.Toast.makeText(
+                        context,
+                        "৫ সেকেন্ড পরে আবার রিফ্রেশ করুন",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            },
             modifier     = Modifier
                 .weight(1f)
                 .fillMaxWidth()

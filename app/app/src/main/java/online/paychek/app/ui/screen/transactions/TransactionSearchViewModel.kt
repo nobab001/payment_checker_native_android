@@ -12,6 +12,8 @@ import online.paychek.app.data.remote.dto.TransactionItem
 import online.paychek.app.data.repository.PaymentRepository
 import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.utils.NetworkConnectivityObserver
+import online.paychek.app.utils.RefreshCooldown
+import online.paychek.app.utils.BangladeshTimeUtil
 import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.data.remote.dto.SmsTemplateDto
 import online.paychek.app.data.local.prefs.PrefsHelper
@@ -37,6 +39,8 @@ data class TransactionSearchState(
     val hasMore:            Boolean = true,
     val isInitialLoading:   Boolean = true,
     val isLoadingMore:      Boolean = false,
+    val isRefreshing:       Boolean = false,
+    val lastUpdatedAtMs:    Long?   = null,
     val startDate: String? = null,
     val endDate: String? = null,
     val errorMessage: String? = null,
@@ -176,8 +180,11 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
         fetchPage(page = current.currentPage + 1)
     }
 
-    fun onRefresh() {
-        loadFirstPage()
+    fun onRefresh(): Boolean {
+        return RefreshCooldown.tryRefresh {
+            _state.update { it.copy(isRefreshing = true) }
+            loadFirstPage()
+        }
     }
 
     private fun fetchPage(page: Int) {
@@ -208,15 +215,17 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                 onSuccess = { newItems ->
                     _state.update { current ->
                         val merged = if (page == 1) newItems else current.rawList + newItems
-                        val updated = current.copy(
+                        val dbLatest = BangladeshTimeUtil.latestTransactionEpochMs(merged)
+                        current.copy(
                             rawList          = merged,
                             currentPage      = page,
                             hasMore          = if (current.startDate != null && current.endDate != null) false else (newItems.size >= PAGE_SIZE),
                             isInitialLoading = false,
                             isLoadingMore    = false,
+                            isRefreshing     = false,
+                            lastUpdatedAtMs  = dbLatest ?: System.currentTimeMillis(),
                             errorMessage     = null
                         )
-                        updated
                     }
                     applyLocalFilter()
                 },
@@ -225,6 +234,7 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                         it.copy(
                             isInitialLoading = false,
                             isLoadingMore    = false,
+                            isRefreshing     = false,
                             errorMessage     = error.message ?: "ডেটা লোড ব্যর্থ হয়েছে"
                         )
                     }

@@ -34,7 +34,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 
 import androidx.compose.foundation.BorderStroke
+import online.paychek.app.utils.RefreshCooldown
 import online.paychek.app.utils.adaptivePadding
+import online.paychek.app.utils.adaptiveTextSize
 import online.paychek.app.utils.adaptiveTextSize
 
 // =============================================================================
@@ -87,7 +89,13 @@ fun ApiIntegrationScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = ApiCard),
                 actions = {
                     IconButton(onClick = {
-                        Toast.makeText(context, "ড্যাশবোর্ড রিফ্রেশ করা হয়েছে।", Toast.LENGTH_SHORT).show()
+                        if (RefreshCooldown.tryRefresh {
+                            Toast.makeText(context, "ড্যাশবোর্ড রিফ্রেশ করা হয়েছে।", Toast.LENGTH_SHORT).show()
+                        }) {
+                            // refreshed
+                        } else {
+                            Toast.makeText(context, "৫ সেকেন্ড পরে আবার রিফ্রেশ করুন", Toast.LENGTH_SHORT).show()
+                        }
                     }, modifier = Modifier.size(36.dp)) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = AccentCyan, modifier = Modifier.size(20.dp))
                     }

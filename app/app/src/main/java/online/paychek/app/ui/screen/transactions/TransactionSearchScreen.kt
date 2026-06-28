@@ -24,6 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -35,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import online.paychek.app.data.remote.dto.TransactionItem
 import online.paychek.app.ui.components.ConnectivityBanner
+import online.paychek.app.ui.components.LastUpdateRow
 import online.paychek.app.utils.adaptivePadding
 import online.paychek.app.utils.adaptiveTextSize
 import online.paychek.app.utils.screenWidth
@@ -83,6 +86,7 @@ fun TransactionSearchScreen(
     val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsStateWithLifecycle()
     val listState    = rememberLazyListState()
     val focusManager = LocalFocusManager.current
+    val context      = LocalContext.current
 
     var showDatePicker by remember { mutableStateOf(false) }
     val datePickerState = rememberDateRangePickerState()
@@ -106,132 +110,134 @@ fun TransactionSearchScreen(
         if (!isNetworkAvailable) {
             ConnectivityBanner()
         }
-        
-        PullToRefreshBox(
-            isRefreshing = false,
-            onRefresh    = { viewModel.onRefresh() },
-            modifier     = Modifier
-                .weight(1f)
+
+        SearchTopBar()
+
+        SearchBox(
+            query         = state.searchQuery,
+            onQueryChange = { viewModel.onSearchQueryChanged(it) },
+            onClear       = { viewModel.onSearchQueryChanged("") },
+            onDone        = { focusManager.clearFocus() },
+            isDateActive  = state.startDate != null || state.endDate != null,
+            onDateClick   = { showDatePicker = true },
+            onClearDate   = { viewModel.onDateRangeChanged(null, null, null) },
+            modifier      = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+
+        Row(
+            modifier = Modifier
                 .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-        LazyColumn(
-            state               = listState,
-            modifier            = Modifier.fillMaxSize(),
-            contentPadding      = PaddingValues(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(0.dp)
-        ) {
+            val quickDaysList = listOf(2, 7, 15, 21, 30)
+            quickDaysList.forEach { days ->
+                val isSelected = state.selectedQuickDays == days
+                val chipBgColor = if (isSelected) AccentCyan.copy(alpha = 0.18f) else HistCard
+                val chipBorderColor = if (isSelected) AccentCyan else TextMuted.copy(alpha = 0.25f)
+                val chipTextColor = if (isSelected) AccentCyan else TextMuted
 
-            // ─── ১. Top Bar (Title) ────────────────────────────────────────
-            item {
-                SearchTopBar()
-            }
-
-            // ─── ২. Search Box ─────────────────────────────────────────────
-            item {
-                SearchBox(
-                    query         = state.searchQuery,
-                    onQueryChange = { viewModel.onSearchQueryChanged(it) },
-                    onClear       = { viewModel.onSearchQueryChanged("") },
-                    onDone        = { focusManager.clearFocus() },
-                    isDateActive  = state.startDate != null || state.endDate != null,
-                    onDateClick   = { showDatePicker = true },
-                    onClearDate   = { viewModel.onDateRangeChanged(null, null, null) },
-                    modifier      = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-            }
-
-            // ─── ২.৫. Quick Date Filters ─────────────────────────────
-            item {
-                Row(
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val quickDaysList = listOf(2, 7, 15, 21, 30)
-                    quickDaysList.forEach { days ->
-                        val isSelected = state.selectedQuickDays == days
-                        val chipBgColor = if (isSelected) AccentCyan.copy(alpha = 0.18f) else HistCard
-                        val chipBorderColor = if (isSelected) AccentCyan else TextMuted.copy(alpha = 0.25f)
-                        val chipTextColor = if (isSelected) AccentCyan else TextMuted
-                        
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .border(
-                                    width = 1.dp,
-                                    color = chipBorderColor,
-                                    shape = RoundedCornerShape(20.dp)
-                                )
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(chipBgColor)
-                                .clickable {
-                                    if (isSelected) {
-                                        viewModel.onDateRangeChanged(null, null, null)
-                                    } else {
-                                        val range = calculateDateRange(days)
-                                        viewModel.onDateRangeChanged(range.first, range.second, days)
-                                    }
-                                }
-                                .padding(vertical = 6.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "$days দিন",
-                                color = chipTextColor,
-                                fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            )
+                        .weight(1f)
+                        .border(
+                            width = 1.dp,
+                            color = chipBorderColor,
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(chipBgColor)
+                        .clickable {
+                            if (isSelected) {
+                                viewModel.onDateRangeChanged(null, null, null)
+                            } else {
+                                val range = calculateDateRange(days)
+                                viewModel.onDateRangeChanged(range.first, range.second, days)
+                            }
                         }
-                    }
-                }
-            }
-
-            // ─── ৩. M3 Filter Chips Row ────────────────────────────────────
-            item {
-                M3FilterChipsRow(
-                    templates = state.templates,
-                    selected = state.selectedProvider,
-                    onSelect = { provider ->
-                        val target = if (state.selectedProvider.lowercase() == provider.lowercase()) "all" else provider
-                        viewModel.onProviderFilterChanged(target)
-                    },
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-            }
-
-            // ─── ৪. Summary Row ────────────────────────────────────────────
-            if (!state.isInitialLoading && state.errorMessage == null) {
-                item {
-                    SummaryRow(
-                        displayCount = state.displayList.size,
-                        rawCount     = state.rawList.size,
-                        hasSearch    = state.searchQuery.isNotEmpty(),
-                        modifier     = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        .padding(vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "$days দিন",
+                        color = chipTextColor,
+                        fontSize = 11.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                     )
                 }
             }
+        }
 
-            // ─── ৫. Loading / Skeleton ───────────────────────────────────
+        M3FilterChipsRow(
+            templates = state.templates,
+            selected = state.selectedProvider,
+            onSelect = { provider ->
+                val target = if (state.selectedProvider.lowercase() == provider.lowercase()) "all" else provider
+                viewModel.onProviderFilterChanged(target)
+            },
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        if (!state.isInitialLoading && state.errorMessage == null) {
+            LastUpdateRow(
+                lastUpdatedAtMs = state.lastUpdatedAtMs,
+                isRefreshing = state.isRefreshing,
+                onReload = { viewModel.onRefresh() },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                accentColor = AccentCyan,
+                mutedColor = TextMuted
+            )
+        }
+
+        PullToRefreshBox(
+            isRefreshing = state.isRefreshing,
+            onRefresh = {
+                if (!viewModel.onRefresh()) {
+                    Toast.makeText(
+                        context,
+                        "৫ সেকেন্ড পরে আবার রিফ্রেশ করুন",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            },
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
+            LazyColumn(
+                state               = listState,
+                modifier            = Modifier.fillMaxSize(),
+                contentPadding      = PaddingValues(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(0.dp)
+            ) {
+            // ─── Loading / Skeleton ───────────────────────────────────────
             if (state.isInitialLoading) {
                 items(6) { SkeletonTransactionCard() }
             }
 
-            // ─── ৬. Error State ────────────────────────────────────────────
+            // ─── Error State ────────────────────────────────────────────
             if (isNetworkAvailable) {
                 state.errorMessage?.let { msg ->
                     item {
                         HistoryErrorCard(
                             message = msg,
-                            onRetry = { viewModel.onRefresh() },
+                            onRetry = {
+                                if (!viewModel.onRefresh()) {
+                                    Toast.makeText(
+                                        context,
+                                        "৫ সেকেন্ড পরে আবার রিফ্রেশ করুন",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
                             modifier = Modifier.padding(16.dp)
                         )
                     }
                 }
             }
 
-            // ─── ৭. Empty State ────────────────────────────────────────────
+            // ─── Empty State ────────────────────────────────────────────
             if (!state.isInitialLoading &&
                 state.errorMessage == null &&
                 state.displayList.isEmpty()
@@ -239,7 +245,7 @@ fun TransactionSearchScreen(
                 item { EmptyStateCard(hasFilter = state.selectedProvider != "all") }
             }
 
-            // ─── ৮. Transaction List ───────────────────────────────────────
+            // ─── Transaction List ───────────────────────────────────────
             if (!state.isInitialLoading && state.errorMessage == null) {
                 itemsIndexed(
                     items = state.displayList,
@@ -255,7 +261,7 @@ fun TransactionSearchScreen(
                 }
             }
 
-            // ─── ৯. Loading More Spinner ────────────────────────────────────
+            // ─── Loading More Spinner ───────────────────────────────────
             if (state.isLoadingMore) {
                 item {
                     Box(
@@ -271,7 +277,7 @@ fun TransactionSearchScreen(
                 }
             }
 
-            // ─── ১০. End of List Footer ──────────────────────────────────────
+            // ─── End of List Footer ─────────────────────────────────────
             if (!state.isInitialLoading && !state.hasMore && state.displayList.isNotEmpty()) {
                 item {
                     Box(
@@ -286,6 +292,7 @@ fun TransactionSearchScreen(
                     }
                 }
             }
+        }
         }
     }
 
@@ -313,7 +320,6 @@ fun TransactionSearchScreen(
             DateRangePicker(state = datePickerState, modifier = Modifier.weight(1f))
         }
     }
-}
 }
 
 // =============================================================================
@@ -501,31 +507,6 @@ private fun M3FilterChipsRow(
                 )
             )
         }
-    }
-}
-
-// =============================================================================
-// Component 4 — Summary Row
-// =============================================================================
-@Composable
-private fun SummaryRow(
-    displayCount: Int,
-    rawCount: Int,
-    hasSearch: Boolean,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier          = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text     = if (hasSearch)
-                "$displayCount টি ফলাফল পাওয়া গেছে ($rawCount লোড হয়েছে)"
-            else
-                "$rawCount টি ট্রানজেকশন লোড হয়েছে",
-            color    = TextMuted,
-            fontSize = 11.sp
-        )
     }
 }
 

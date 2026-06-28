@@ -54,7 +54,9 @@ import online.paychek.app.ui.components.ConnectivityBanner
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import androidx.compose.foundation.BorderStroke
+import online.paychek.app.utils.RefreshCooldown
 import online.paychek.app.utils.adaptivePadding
+import online.paychek.app.utils.adaptiveTextSize
 import online.paychek.app.utils.adaptiveTextSize
 
 // =============================================================================
@@ -105,6 +107,17 @@ fun DeviceScreen(
                 viewModel.loadGatewayMethods()
                 viewModel.loadTemplates()
             }
+        }
+    }
+
+    val refreshCooldownMessage = "৫ সেকেন্ড পরে আবার রিফ্রেশ করুন"
+    val refreshDeviceData: () -> Unit = {
+        if (!RefreshCooldown.tryRefresh {
+            viewModel.loadGatewayMethods()
+            viewModel.loadTemplates()
+            viewModel.loadChildDevices()
+        }) {
+            android.widget.Toast.makeText(context, refreshCooldownMessage, android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -308,7 +321,7 @@ fun DeviceScreen(
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
             // ─── Header ──────────────────────────────────────────────────────
-            item { DeviceTopBar(isSaving = state.isSaving, onNavigateBack = onNavigateBack) }
+            item { DeviceTopBar(isSaving = state.isSaving, onNavigateBack = onNavigateBack, onRefresh = refreshDeviceData) }
 
             // ─── Success Toast ────────────────────────────────────────────────
             state.successMessage?.let { msg ->
@@ -369,7 +382,7 @@ fun DeviceScreen(
                     item {
                         ErrorBanner(
                             message = state.errorMessage!!,
-                            onRetry = { viewModel.loadGatewayMethods() },
+                            onRetry = refreshDeviceData,
                             modifier = Modifier.padding(16.dp)
                         )
                     }
@@ -431,7 +444,7 @@ fun DeviceScreen(
                     item {
                         ErrorBanner(
                             message = state.errorMessage!!,
-                            onRetry = { viewModel.loadChildDevices() },
+                            onRetry = refreshDeviceData,
                             modifier = Modifier.padding(16.dp)
                         )
                     }
@@ -1129,7 +1142,11 @@ fun DeviceScreen(
 // =============================================================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DeviceTopBar(isSaving: Boolean, onNavigateBack: (() -> Unit)? = null) {
+private fun DeviceTopBar(
+    isSaving: Boolean,
+    onNavigateBack: (() -> Unit)? = null,
+    onRefresh: (() -> Unit)? = null
+) {
     TopAppBar(
         modifier = Modifier.height(adaptivePadding(56.dp, 62.dp)),
         windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
@@ -1180,6 +1197,16 @@ private fun DeviceTopBar(isSaving: Boolean, onNavigateBack: (() -> Unit)? = null
             }
         },
         actions = {
+            if (!isSaving && onRefresh != null) {
+                IconButton(onClick = onRefresh, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "রিফ্রেশ",
+                        tint = AccentCyan,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
             if (isSaving) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
