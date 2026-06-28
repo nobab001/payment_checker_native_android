@@ -345,60 +345,49 @@ fun DashboardScreen(
                     isServiceActive = screenState.isServiceActive,
                     onServiceToggle = { enable ->
                         if (enable) {
-                            if (!isAccessibilityEnabled) {
+                            val prefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
+                            val sim1Enabled = prefs.getBoolean(online.paychek.app.config.AppConfig.KEY_SIM1_ENABLED, true)
+                            val sim2Enabled = prefs.getBoolean(online.paychek.app.config.AppConfig.KEY_SIM2_ENABLED, true)
+                            val isAnySimActive = sim1Enabled || sim2Enabled
+
+                            if (!isPaid) {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "SMS মনিটর চালু করতে প্যাকেজ কিনুন",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            } else if (!isAnySimActive) {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "ডিভাইস সেটিংসে গিয়ে SIM সক্রিয় করুন",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            } else if (!isAccessibilityEnabled) {
                                 android.widget.Toast.makeText(
                                     context,
                                     "প্রথমে এক্সেসিবিলিটি পারমিশন সক্রিয় করুন",
                                     android.widget.Toast.LENGTH_LONG
                                 ).show()
                             } else {
-                                val prefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
-                                val sim1Enabled = prefs.getBoolean(online.paychek.app.config.AppConfig.KEY_SIM1_ENABLED, true)
-                                val sim2Enabled = prefs.getBoolean(online.paychek.app.config.AppConfig.KEY_SIM2_ENABLED, true)
-                                val isAnySimActive = sim1Enabled || sim2Enabled
+                                val hasReceiveSms = androidx.core.content.ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.RECEIVE_SMS
+                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                val hasReadSms = androidx.core.content.ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.READ_SMS
+                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
-                                if (!isPaid) {
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "SMS মনিটর চালু করতে প্যাকেজ কিনুন",
-                                        android.widget.Toast.LENGTH_LONG
-                                    ).show()
-                                } else if (!isAnySimActive) {
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "ডিভাইস সেটিংসে গিয়ে SIM সক্রিয় করুন",
-                                        android.widget.Toast.LENGTH_LONG
-                                    ).show()
+                                if (hasReceiveSms && hasReadSms) {
+                                    viewModel.toggleSmsService(true)
                                 } else {
-                                    val simStatus = online.paychek.app.utils.DeviceIdHelper.getSimSlotIds(context)
-                                    if (simStatus == "no_sims" || simStatus == "permission_denied") {
-                                        android.widget.Toast.makeText(
-                                            context,
-                                            "সক্রিয় সিম কার্ড এবং প্রয়োজনীয় পারমিশন ছাড়া মনিটরিং চালু করা সম্ভব নয়।",
-                                            android.widget.Toast.LENGTH_LONG
-                                        ).show()
-                                    } else {
-                                        val hasReceiveSms = androidx.core.content.ContextCompat.checkSelfPermission(
-                                            context,
-                                            Manifest.permission.RECEIVE_SMS
-                                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                                        val hasReadSms = androidx.core.content.ContextCompat.checkSelfPermission(
-                                            context,
+                                    online.paychek.app.MainActivity.isRequestingPermission = true
+                                    smsPermissionsLauncher.launch(
+                                        arrayOf(
+                                            Manifest.permission.RECEIVE_SMS,
                                             Manifest.permission.READ_SMS
-                                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
-                                        if (hasReceiveSms && hasReadSms) {
-                                            viewModel.toggleSmsService(true)
-                                        } else {
-                                            online.paychek.app.MainActivity.isRequestingPermission = true
-                                            smsPermissionsLauncher.launch(
-                                                arrayOf(
-                                                    Manifest.permission.RECEIVE_SMS,
-                                                    Manifest.permission.READ_SMS
-                                                )
-                                            )
-                                        }
-                                    }
+                                        )
+                                    )
                                 }
                             }
                         } else {
