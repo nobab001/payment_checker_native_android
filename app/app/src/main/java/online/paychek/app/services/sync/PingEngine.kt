@@ -7,14 +7,15 @@ import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.services.sms.SmsReceiver
 
 /**
- * Demand-Driven Conditional Lightweight HEAD Ping Engine.
- * 
- * Activated only when an API request fails (e.g., offline or 5xx).
- * Pings the zero-overhead /api/ping endpoint every 15 seconds.
- * Upon receiving HTTP 200 OK, it flushes the offline queue using bulk sync and stops itself.
+ * Demand-Driven Conditional Lightweight Ping Engine.
+ *
+ * Activated when offline or API request fails (e.g., 5xx).
+ * Pings GET /api/ping immediately, then every 15 seconds.
+ * On HTTP 200 OK, flushes the offline queue and stops only after sync succeeds.
  */
 object PingEngine {
     private const val TAG = "PingEngine"
+    private const val PING_INTERVAL_MS = 15_000L
     private var pingJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -25,27 +26,28 @@ object PingEngine {
             return
         }
 
+        val appContext = context.applicationContext
         Log.i(TAG, "Starting Lightweight Ping Engine...")
         pingJob = scope.launch {
             while (isActive) {
-                delay(15_000L) // Ping every 15 seconds
-                
                 try {
                     val response = RetrofitClient.paymentApiService.pingServer()
                     if (response.isSuccessful) {
                         Log.i(TAG, "Received HTTP 200 OK from ping. Server is LIVE. Triggering bulk sync...")
-                        
-                        // Fire the bulk sync asynchronously to not block the engine shutdown
-                        SmsReceiver.syncPendingQueue(context)
-                        
-                        // Self-shutdown
-                        stop()
+                        val syncOk = SmsReceiver.syncPendingQueueAndAwait(appContext)
+                        if (syncOk) {
+                            Log.i(TAG, "Bulk sync complete — stopping PingEngine")
+                            stop()
+                            break
+                        }
+                        Log.w(TAG, "Bulk sync after ping had failures — continuing to ping")
                     } else {
                         Log.w(TAG, "Ping received HTTP ${response.code()}. Server still down.")
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Ping failed (Network issue): ${e.message}")
                 }
+                delay(PING_INTERVAL_MS)
             }
         }
     }

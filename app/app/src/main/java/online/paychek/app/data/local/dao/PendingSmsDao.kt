@@ -108,4 +108,17 @@ interface PendingSmsDao {
      */
     @Query("SELECT COUNT(*) FROM pending_sms_queue WHERE isPermanentlyFailed = 1")
     suspend fun countPermanentlyFailed(): Int
+
+    /**
+     * retryCount >= 10 কিন্তু এখনো permanently failed নয় — zombie rows cleanup।
+     */
+    @Query("""
+        UPDATE pending_sms_queue
+        SET isPermanentlyFailed = 1,
+            lastAttemptAt = :nowMs
+        WHERE isSynced = 0
+          AND isPermanentlyFailed = 0
+          AND retryCount >= 10
+    """)
+    suspend fun markExhaustedRetriesAsPermanentlyFailed(nowMs: Long)
 }

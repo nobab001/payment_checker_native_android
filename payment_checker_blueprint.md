@@ -1160,6 +1160,29 @@ Clients connect and pass a JWT token and hardware device ID during the connectio
 
 ---
 
+### Offline SMS Queue & Server Recovery (Native Android)
+
+**Capture:** Guard-1 `SmsReceiver` (real-time broadcast) → `ProcessIncomingSmsUseCase` → Room `pending_sms_queue` (HMAC + `rawBodyHash` dedup). Guard-2 `SmsPollWorker` (15-min WorkManager inbox scan via `SmsInboxScanner`).
+
+**Online path:** After Room insert, if `ConnectivityService.isOnline()` → `SmsReceiver.syncPendingQueue()` → `POST /api/payment-sms-ingest/bulk` (202 Accepted).
+
+**Offline path:** Room insert → `PingEngine.start()` → `GET /api/ping` immediately, then every 15s until HTTP 200 → `syncPendingQueueAndAwait()` → stop only when queue flush succeeds.
+
+**Recovery triggers (all call `SmsReceiver.syncPendingQueue()`):**
+- `ConnectivityService.observe()` in `SmsMonitorService` (network restored)
+- Service startup flush (`flushPendingOnStartup`) when pending items exist
+- `Socket.EVENT_CONNECT` (server reconnect safety net)
+- `SyncWorker` periodic 15-min WorkManager fallback (scheduled in `SmsMonitorService.onStartCommand`)
+- Sync failure / exception → `PingEngine.start()`
+
+**Retry policy:** HTTP 2xx → `markAsSynced`; HTTP 422 → `markPermanentlyFailed`; other errors → exponential backoff (30s→6h cap); `retryCount >= 10` → `markPermanentlyFailed`.
+
+**Socket.IO role:** Push-driven gateway/template cache sync only (`sync_gateway_methods`, `force_template_sync`) — not server health check (that is `PingEngine`).
+
+**Key files:** `SmsMonitorService.kt`, `SmsReceiver.kt`, `ProcessIncomingSmsUseCase.kt`, `PingEngine.kt`, `SyncWorker.kt`, `SmsPollWorker.kt`, `ConnectivityService.kt`, `PendingSmsDao.kt`.
+
+---
+
 ### 📌 Current Tech Stack
 
 | Layer | Technology |
@@ -1170,8 +1193,8 @@ Clients connect and pass a JWT token and hardware device ID during the connectio
 | Network | Retrofit2 + OkHttp |
 | Auth Token Storage | SecurePreferences (EncryptedSharedPreferences) |
 | HMAC | HMAC-SHA256 (rawBodyHash) |
-| SMS Pipeline | BroadcastReceiver → ProcessIncomingSmsUseCase → Room → Retrofit |
-| Background Sync | WorkManager |
+| SMS Pipeline | BroadcastReceiver → ProcessIncomingSmsUseCase → Room → Retrofit bulk ingest |
+| Offline Recovery | PingEngine (`/api/ping`) + ConnectivityService + SyncWorker + Socket reconnect flush |
 | Backend | Node.js + Express + MySQL |
 | Navigation | Navigation3 (rememberNavBackStack) |
 

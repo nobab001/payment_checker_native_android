@@ -10,6 +10,7 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import online.paychek.app.config.AppConfig
 import online.paychek.app.data.local.AppDatabase
 import online.paychek.app.data.remote.api.RetrofitClient
@@ -82,83 +83,118 @@ class SmsReceiver(
          */
         fun syncPendingQueue(context: Context) {
             CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    val db  = AppDatabase.getInstance(context)
-                    val dao = db.pendingSmsDao()
-                    val nowMs = System.currentTimeMillis()
-                    val pendingItems = dao.getPendingItemsForRetry(nowMs)
-                    if (pendingItems.isEmpty()) return@launch
+                syncPendingQueueInternal(context)
+            }
+        }
 
-                    Log.i(TAG, "[Sync] ${pendingItems.size} pending SMS sync starting...")
+        /**
+         * @return true if queue empty or all eligible items synced; false if failures remain
+         */
+        suspend fun syncPendingQueueAndAwait(context: Context): Boolean {
+            return withContext(Dispatchers.IO) {
+                syncPendingQueueInternal(context)
+            }
+        }
 
-                    val token = SecurePreferences.decrypt(context, AppConfig.KEY_AUTH_TOKEN)
-                    if (token.isBlank()) {
-                        Log.w(TAG, "[Sync] Token missing — sync skipped")
-                        return@launch
-                    }
+        private suspend fun syncPendingQueueInternal(context: Context): Boolean {
+            return try {
+                val db  = AppDatabase.getInstance(context)
+                val dao = db.pendingSmsDao()
+                val nowMs = System.currentTimeMillis()
 
-                    val chunks = pendingItems.chunked(50)
-                    for (chunk in chunks) {
-                        try {
-                            val methodsJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(context)
-                            val methodsType = object : com.google.gson.reflect.TypeToken<List<online.paychek.app.data.remote.dto.GatewayMethod>>() {}.type
-                            val cachedMethods: List<online.paychek.app.data.remote.dto.GatewayMethod> = try {
-                                online.paychek.app.utils.GsonUtils.gson.fromJson(methodsJson, methodsType)
-                            } catch (e: Exception) {
-                                emptyList()
-                            }
+                dao.markExhaustedRetriesAsPermanentlyFailed(nowMs)
 
-                            val requestItems = chunk.map { item ->
-                                val matchedMethod = cachedMethods.find { it.provider == item.providerTag }
-                                val isParseableVal = matchedMethod?.isParseable ?: 1
-                                online.paychek.app.data.remote.dto.PaymentIngestRequest(
-                                    amount         = 0.0, // Server will parse from rawBody
-                                    trxId          = "",
-                                    providerTag    = item.providerTag, // Keep this so backend knows which template to use
-                                    senderNumber   = item.senderNumber ?: "",
-                                    receiverNumber = null,
-                                    smsTimestamp   = item.smsTimestamp,
-                                    rawBody        = item.rawBody,
-                                    simSlot        = item.simSlot,
-                                    simNumber      = item.simNumber,
-                                    isParseable    = isParseableVal,
-                                    hmacSignature  = item.hmacSignature,
-                                    isOfflineSync  = true
-                                )
-                            }
-                            
-                            val response = RetrofitClient.paymentApiService.ingestPaymentSmsBulk(
-                                token = "Bearer $token",
-                                request = online.paychek.app.data.remote.dto.BulkPaymentIngestRequest(requestItems)
+                val pendingItems = dao.getPendingItemsForRetry(nowMs)
+                if (pendingItems.isEmpty()) return true
+
+                Log.i(TAG, "[Sync] ${pendingItems.size} pending SMS sync starting...")
+
+                val token = SecurePreferences.decrypt(context, AppConfig.KEY_AUTH_TOKEN)
+                if (token.isBlank()) {
+                    Log.w(TAG, "[Sync] Token missing — sync skipped")
+                    return false
+                }
+
+                var syncHadFailure = false
+                val chunks = pendingItems.chunked(50)
+                for (chunk in chunks) {
+                    try {
+                        val methodsJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(context)
+                        val methodsType = object : com.google.gson.reflect.TypeToken<List<online.paychek.app.data.remote.dto.GatewayMethod>>() {}.type
+                        val cachedMethods: List<online.paychek.app.data.remote.dto.GatewayMethod> = try {
+                            online.paychek.app.utils.GsonUtils.gson.fromJson(methodsJson, methodsType)
+                        } catch (e: Exception) {
+                            emptyList()
+                        }
+
+                        val requestItems = chunk.map { item ->
+                            val matchedMethod = cachedMethods.find { it.provider == item.providerTag }
+                            val isParseableVal = matchedMethod?.isParseable ?: 1
+                            online.paychek.app.data.remote.dto.PaymentIngestRequest(
+                                amount         = 0.0,
+                                trxId          = "",
+                                providerTag    = item.providerTag,
+                                senderNumber   = item.senderNumber ?: "",
+                                receiverNumber = null,
+                                smsTimestamp   = item.smsTimestamp,
+                                rawBody        = item.rawBody,
+                                simSlot        = item.simSlot,
+                                simNumber      = item.simNumber,
+                                isParseable    = isParseableVal,
+                                hmacSignature  = item.hmacSignature,
+                                isOfflineSync  = true
                             )
-                            
-                            if (response.isSuccessful) {
+                        }
+
+                        val response = RetrofitClient.paymentApiService.ingestPaymentSmsBulk(
+                            token = "Bearer $token",
+                            request = online.paychek.app.data.remote.dto.BulkPaymentIngestRequest(requestItems)
+                        )
+
+                        when {
+                            response.isSuccessful -> {
                                 chunk.forEach { dao.markAsSynced(it.id) }
                                 Log.i(TAG, "[Sync] OK Bulk synced ${chunk.size} items successfully")
-                            } else {
-                                chunk.forEach { item ->
-                                    val nextRetry = calculateNextRetryMs(item.retryCount, nowMs)
-                                    dao.markRetryFailed(item.id, nowMs, nextRetry)
-                                }
+                            }
+                            response.code() == 422 -> {
+                                chunk.forEach { dao.markPermanentlyFailed(it.id, nowMs) }
+                                Log.w(TAG, "[Sync] HTTP 422 — ${chunk.size} items marked permanently failed")
+                            }
+                            else -> {
+                                chunk.forEach { item -> handleSyncFailure(dao, item, nowMs) }
                                 Log.w(TAG, "[Sync] FAIL Bulk HTTP ${response.code()} — starting PingEngine")
                                 online.paychek.app.services.sync.PingEngine.start(context)
+                                syncHadFailure = true
                             }
-                        } catch (e: Exception) {
-                            chunk.forEach { item ->
-                                val nextRetry = calculateNextRetryMs(item.retryCount, nowMs)
-                                dao.markRetryFailed(item.id, nowMs, nextRetry)
-                            }
-                            Log.e(TAG, "[Sync] EXCEPTION Bulk Sync: ${e.message} — starting PingEngine")
-                            online.paychek.app.services.sync.PingEngine.start(context)
                         }
+                    } catch (e: Exception) {
+                        chunk.forEach { item -> handleSyncFailure(dao, item, nowMs) }
+                        Log.e(TAG, "[Sync] EXCEPTION Bulk Sync: ${e.message} — starting PingEngine")
+                        online.paychek.app.services.sync.PingEngine.start(context)
+                        syncHadFailure = true
                     }
-
-                    // Clean up synced entries older than 7 days
-                    val cutoff = nowMs - (7L * 24 * 60 * 60 * 1000)
-                    dao.deleteSyncedBefore(cutoff)
-                } catch (e: Exception) {
-                    Log.e(TAG, "[Sync] Queue sync failed: ${e.message}", e)
                 }
+
+                val cutoff = nowMs - (7L * 24 * 60 * 60 * 1000)
+                dao.deleteSyncedBefore(cutoff)
+
+                !syncHadFailure && dao.getPendingItemsForRetry(System.currentTimeMillis()).isEmpty()
+            } catch (e: Exception) {
+                Log.e(TAG, "[Sync] Queue sync failed: ${e.message}", e)
+                false
+            }
+        }
+
+        private suspend fun handleSyncFailure(
+            dao: online.paychek.app.data.local.dao.PendingSmsDao,
+            item: online.paychek.app.data.local.entity.PendingSmsEntity,
+            nowMs: Long
+        ) {
+            if (item.retryCount + 1 >= 10) {
+                dao.markPermanentlyFailed(item.id, nowMs)
+            } else {
+                val nextRetry = calculateNextRetryMs(item.retryCount, nowMs)
+                dao.markRetryFailed(item.id, nowMs, nextRetry)
             }
         }
     }

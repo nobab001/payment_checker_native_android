@@ -14,9 +14,15 @@ import android.provider.Telephony
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collect
 import online.paychek.app.config.AppConfig
+import online.paychek.app.data.local.AppDatabase
 import online.paychek.app.data.remote.api.RetrofitClient
+import online.paychek.app.services.connectivity.ConnectivityService
 import online.paychek.app.services.sms.SmsReceiver
+import online.paychek.app.services.sync.PingEngine
+import online.paychek.app.services.sync.SmsPollWorker
+import online.paychek.app.services.sync.SyncWorker
 import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.utils.SmsParser
 import org.json.JSONArray
@@ -46,6 +52,7 @@ class SmsMonitorService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var smsReceiver: SmsReceiver? = null
     private var socket: Socket? = null
+    private var connectivityJob: Job? = null
 
     // সর্বশেষ সফল পেমেন্টের সময় (notification-এ দেখানোর জন্য)
     private var lastPaymentTime: String = "এখনো কোনো পেমেন্ট আসেনি"
@@ -100,6 +107,9 @@ class SmsMonitorService : Service() {
         // SMS BroadcastReceiver রেজিস্টার করা
         registerSmsReceiver()
 
+        // ── Offline recovery: WorkManager + network observer + startup flush ──
+        startOfflineRecovery()
+
         // ── Push-Driven Cache Sync ─────────────────────────────
         startSocketConnection()
 
@@ -129,6 +139,43 @@ class SmsMonitorService : Service() {
             registerReceiver(smsReceiver, filter)
         }
         Log.d(TAG, "SmsReceiver dynamically registered ✅")
+    }
+
+    private fun startOfflineRecovery() {
+        SyncWorker.schedule(this)
+        SmsPollWorker.schedule(this)
+
+        if (connectivityJob?.isActive != true) {
+            connectivityJob = serviceScope.launch {
+                ConnectivityService(this@SmsMonitorService).observe().collect { isOnline ->
+                    if (isOnline) {
+                        Log.i(TAG, "Network available — flushing offline SMS queue")
+                        SmsReceiver.syncPendingQueue(this@SmsMonitorService)
+                    }
+                }
+            }
+        }
+
+        serviceScope.launch {
+            flushPendingOnStartup()
+        }
+    }
+
+    private suspend fun flushPendingOnStartup() {
+        val connectivity = ConnectivityService(this)
+        val dao = AppDatabase.getInstance(this).pendingSmsDao()
+        val nowMs = System.currentTimeMillis()
+        val hasPending = dao.getPendingItemsForRetry(nowMs).isNotEmpty()
+
+        if (!hasPending) return
+
+        if (connectivity.isOnline()) {
+            Log.i(TAG, "Service start — pending queue found, flushing")
+            SmsReceiver.syncPendingQueueAndAwait(this)
+        } else {
+            Log.i(TAG, "Service start — pending queue found while offline, starting PingEngine")
+            PingEngine.start(this)
+        }
     }
 
     private fun unregisterSmsReceiver() {
@@ -173,6 +220,7 @@ class SmsMonitorService : Service() {
             
             socket?.on(Socket.EVENT_CONNECT) {
                 Log.i(TAG, "Socket.IO Connected to Room: $userId:$deviceId")
+                SmsReceiver.syncPendingQueue(this@SmsMonitorService)
             }
             
             socket?.on("sync_gateway_methods") { args ->
@@ -313,6 +361,8 @@ class SmsMonitorService : Service() {
         Log.i(TAG, "Foreground service onDestroy")
         releaseWakeLock()
         unregisterSmsReceiver()
+        connectivityJob?.cancel()
+        connectivityJob = null
         socket?.disconnect()
         socket?.off()
         serviceScope.cancel()
