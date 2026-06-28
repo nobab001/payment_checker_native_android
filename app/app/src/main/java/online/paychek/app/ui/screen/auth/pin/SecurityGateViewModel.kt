@@ -163,21 +163,9 @@ class SecurityGateViewModel : ViewModel() {
                         isLoading   = false,
                         cells       = List(PIN_LENGTH) { null },
                         cursorIndex = 0,
-                        errorMessage = "সার্ভারে কাজ চলতেছে, কিছুক্ষণ পর আবার ট্রাই করুন।"
+                        errorMessage = "ভুল পিন নম্বর।"
                     )
                 }
-                
-                SecurePreferences.remove(context, AppConfig.KEY_AUTH_TOKEN)
-                SecurePreferences.remove(context, "pcu_user_role")
-                SecurePreferences.remove(context, "pcu_profile_complete")
-                SecurePreferences.remove(context, "pcu_contact")
-                
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    val intent = android.content.Intent(context, online.paychek.app.MainActivity::class.java).apply {
-                        flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
-                    }
-                    context.startActivity(intent)
-                }, 2000)
                 return
             }
             // If deviceSpecificPin is empty, proceed to check against API (owner's PIN)
@@ -210,36 +198,13 @@ class SecurityGateViewModel : ViewModel() {
                     } catch (e: Exception) {
                         "পিনটি সঠিক নয়।"
                     }
-                    if (!isOwnerDevice) {
-                        _uiState.update {
-                            it.copy(
-                                isLoading   = false,
-                                cells       = List(PIN_LENGTH) { null },
-                                cursorIndex = 0,
-                                errorMessage = "সার্ভারে কাজ চলতেছে, কিছুক্ষণ পর আবার ট্রাই করুন।"
-                            )
-                        }
-                        
-                        SecurePreferences.remove(context, AppConfig.KEY_AUTH_TOKEN)
-                        SecurePreferences.remove(context, "pcu_user_role")
-                        SecurePreferences.remove(context, "pcu_profile_complete")
-                        SecurePreferences.remove(context, "pcu_contact")
-                        
-                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                            val intent = android.content.Intent(context, online.paychek.app.MainActivity::class.java).apply {
-                                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
-                            }
-                            context.startActivity(intent)
-                        }, 2000)
-                    } else {
-                        _uiState.update {
-                            it.copy(
-                                isLoading   = false,
-                                cells       = List(PIN_LENGTH) { null },
-                                cursorIndex = 0,
-                                errorMessage = rawMsg
-                            )
-                        }
+                    _uiState.update {
+                        it.copy(
+                            isLoading   = false,
+                            cells       = List(PIN_LENGTH) { null },
+                            cursorIndex = 0,
+                            errorMessage = rawMsg
+                        )
                     }
                 }
             } catch (e: Exception) {

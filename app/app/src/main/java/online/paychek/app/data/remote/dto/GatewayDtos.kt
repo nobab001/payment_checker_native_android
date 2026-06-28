@@ -190,7 +190,8 @@ data class ApprovalStatusResponse(
     @SerializedName("success") val success: Boolean,
     @SerializedName("isApproved") val isApproved: Boolean,
     @SerializedName("deviceRole") val deviceRole: String?,
-    @SerializedName("status") val status: String?
+    @SerializedName("status") val status: String?,
+    @SerializedName("deviceSpecificPin") val deviceSpecificPin: String? = null
 )
 
 data class AddCustomSenderRequest(

@@ -214,6 +214,12 @@ fun HomeScreen(
                             if (body.isApproved) {
                                 SecurePreferences.encrypt(context, "pcu_is_approved", "true")
                                 SecurePreferences.encrypt(context, "pcu_device_role", body.deviceRole ?: "pending")
+                                SecurePreferences.encrypt(context, online.paychek.app.config.AppConfig.KEY_IS_OWNER_DEVICE, if (body.deviceRole == "owner") "true" else "false")
+                                if (!body.deviceSpecificPin.isNullOrEmpty()) {
+                                    SecurePreferences.encrypt(context, online.paychek.app.config.AppConfig.KEY_DEVICE_SPECIFIC_PIN, body.deviceSpecificPin)
+                                } else {
+                                    SecurePreferences.remove(context, online.paychek.app.config.AppConfig.KEY_DEVICE_SPECIFIC_PIN)
+                                }
                                 isApproved = true
                                 deviceRole = body.deviceRole ?: "pending"
                                 break

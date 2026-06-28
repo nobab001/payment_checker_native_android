@@ -2012,13 +2012,14 @@ async function approveByPin(req, res) {
 
     // Validate deviceRole
     const role = (deviceRole === 'owner' || deviceRole === 'restricted') ? deviceRole : 'restricted';
+    const isOwnerDeviceVal = role === 'owner' ? 1 : 0;
 
     // 2. Update device status to approved, active, and set the role
     const result = await query(
       `UPDATE registered_devices 
-       SET is_approved = 1, status = 'active', device_role = ? 
+       SET is_approved = 1, status = 'active', device_role = ?, is_owner_device = ? 
        WHERE user_id = ? AND device_id = ?`,
-      [role, userId, deviceId]
+      [role, isOwnerDeviceVal, userId, deviceId]
     );
 
     if (result.affectedRows === 0) {
@@ -2066,7 +2067,7 @@ async function checkApprovalStatus(req, res) {
     const deviceId = req.user.deviceId;
 
     const devices = await query(
-      `SELECT is_approved, device_role, status 
+      `SELECT is_approved, device_role, status, device_specific_pin 
        FROM registered_devices 
        WHERE user_id = ? AND device_id = ? LIMIT 1`,
       [userId, deviceId]
@@ -2081,7 +2082,8 @@ async function checkApprovalStatus(req, res) {
       success: true,
       isApproved: device.is_approved === 1 || device.is_approved === true,
       deviceRole: device.device_role || 'pending',
-      status: device.status
+      status: device.status,
+      deviceSpecificPin: device.device_specific_pin
     });
   } catch (error) {
     console.error('Error checking approval status:', error);
@@ -2120,11 +2122,12 @@ async function toggleRemoteRole(req, res) {
     }
 
     // 2. Update device role
+    const isOwnerDeviceVal = newRole === 'owner' ? 1 : 0;
     const result = await query(
       `UPDATE registered_devices 
-       SET device_role = ? 
+       SET device_role = ?, is_owner_device = ? 
        WHERE user_id = ? AND device_id = ?`,
-      [newRole, userId, remoteDeviceId]
+      [newRole, isOwnerDeviceVal, userId, remoteDeviceId]
     );
 
     if (result.affectedRows === 0) {
