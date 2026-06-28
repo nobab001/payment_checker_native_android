@@ -1899,7 +1899,7 @@ async function getProfile(req, res) {
   try {
     const userId = req.user.userId;
     const users = await query(
-      'SELECT id, name, phone, email, role, is_paid, active_plan_name, expiry_date, avatar FROM users WHERE id = ? LIMIT 1',
+      'SELECT id, name, phone, email, role, is_paid, active_plan_name, expiry_date, avatar, has_custom_sender_addon FROM users WHERE id = ? LIMIT 1',
       [userId]
     );
 
@@ -1907,18 +1907,43 @@ async function getProfile(req, res) {
       return res.status(404).json({ error: 'ইউজার খুঁজে পাওয়া যায়নি।' });
     }
 
+    const dbUser = users[0];
+    if (dbUser.active_plan_name && dbUser.has_custom_sender_addon === 0) {
+      const plans = await query(
+        'SELECT is_custom_sender_allowed FROM subscription_plans WHERE plan_name = ? LIMIT 1',
+        [dbUser.active_plan_name]
+      );
+      if (plans.length > 0 && plans[0].is_custom_sender_allowed === 1) {
+        await query('UPDATE users SET has_custom_sender_addon = 1 WHERE id = ?', [userId]);
+        dbUser.has_custom_sender_addon = 1;
+      }
+    }
+
+    if (dbUser.has_custom_sender_addon === 1) {
+      // 1. Ensure all custom templates of this user are parseable
+      await query(
+        'UPDATE sms_templates SET is_parseable = 1 WHERE user_id = ? AND is_official = 0',
+        [userId]
+      );
+      // 2. Ensure all custom gateway methods of this user are enabled
+      await query(
+        "UPDATE gateway_methods SET is_enabled = 1 WHERE user_id = ? AND provider LIKE 'Custom-%' AND is_enabled = 0",
+        [String(userId)]
+      );
+    }
+
     return res.json({
       success: true,
       user: {
-        id: users[0].id,
-        name: users[0].name,
-        phone: users[0].phone,
-        email: users[0].email,
-        role: users[0].role,
-        isPaid: !!users[0].is_paid,
-        activePlanName: users[0].active_plan_name,
-        expiryDate: users[0].expiry_date,
-        avatar: users[0].avatar
+        id: dbUser.id,
+        name: dbUser.name,
+        phone: dbUser.phone,
+        email: dbUser.email,
+        role: dbUser.role,
+        isPaid: !!dbUser.is_paid,
+        activePlanName: dbUser.active_plan_name,
+        expiryDate: dbUser.expiry_date,
+        avatar: dbUser.avatar
       }
     });
   } catch (err) {

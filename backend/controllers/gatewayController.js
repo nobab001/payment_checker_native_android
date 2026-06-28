@@ -209,7 +209,7 @@ async function getTemplates(req, res) {
       where: {
         OR: [
           { is_official: 1, is_active: { in: [0, 1] } },
-          { is_official: 0, user_id: userId, device_id: deviceId }
+          { is_official: 0, user_id: userId }
         ]
       },
       select: {
@@ -432,8 +432,7 @@ async function addCustomSender(req, res) {
     let template = await prisma.sms_templates.findFirst({
       where: {
         user_id: userId,
-        sender_id: cleanSenderId,
-        device_id: deviceId
+        sender_id: cleanSenderId
       }
     });
 
@@ -449,7 +448,7 @@ async function addCustomSender(req, res) {
           matching_keyword: '',
           is_official: 0,
           is_active: 0, // Set to 0 (Value 0 - Hidden from Homepage suggestions)
-          is_parseable: 0
+          is_parseable: 1
         }
       });
     }

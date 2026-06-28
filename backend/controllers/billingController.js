@@ -101,7 +101,8 @@ async function purchaseSubscription(req, res) {
       data: {
         is_paid: 1,
         active_plan_name: plan.plan_name,
-        expiry_date: newExpiryDate
+        expiry_date: newExpiryDate,
+        ...(plan.is_custom_sender_allowed === 1 ? { has_custom_sender_addon: 1 } : {})
       }
     });
 
