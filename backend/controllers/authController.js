@@ -232,7 +232,25 @@ async function sendOtp(req, res) {
     // Fix 2: Run cleanup on every login attempt (non-blocking)
     cleanupIncompleteAccounts().catch(() => {});
 
-    // 👑 ADMIN BYPASS
+    // 👑 ADMIN BYPASS & GMAIL LOGIN GATEWAY
+    const adminEmail = process.env.ADMIN_EMAIL || '';
+    if (adminEmail && cleanedContact === adminEmail.trim()) {
+      const otpCode = generateOtpCode();
+      await query(
+        'INSERT INTO otps (contact, code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))',
+        [cleanedContact, encryptOtp(otpCode)]
+      );
+      const success = await sendOtpDispatch(cleanedContact, otpCode);
+      if (!success) {
+        return res.status(503).json({
+          success: false,
+          action: 'EMAIL_ALL_FAILED',
+          message: 'ইমেইল OTP পাঠানো সম্ভব হয়নি। মোবাইল নম্বর দিয়ে লগইন করুন বা পুনরায় চেষ্টা করুন।'
+        });
+      }
+      return res.json({ success: true, message: 'এডমিন ওটিপি পাঠানো হয়েছে আপনার জিমেইলে।' });
+    }
+
     if (cleanedContact === adminSecretUsername) {
       return res.json({ success: true, message: 'এডমিন ওটিপি বাইপাস সক্রিয়। অনুগ্রহ করে পাসওয়ার্ড দিন।' });
     }
@@ -437,26 +455,53 @@ async function verifyOtp(req, res) {
     const adminSecretUsername = process.env.ADMIN_SECRET_USERNAME || 'admin';
 
     // 👑 ADMIN BYPASS GATEKEEPER & TIME-SLOT PASS ENGINE
-    if (cleanedContact === adminSecretUsername) {
-      if (!code) {
-        return res.status(401).json({ error: 'Wrong Password', message: 'Wrong Password' });
-      }
-      const cleanedCode = code.trim();
-      const duration = req.body.duration !== undefined ? parseInt(req.body.duration, 10) : NaN;
+    const adminEmail = process.env.ADMIN_EMAIL || '';
+    const isAdminEmail = (adminEmail && cleanedContact === adminEmail.trim());
 
-      let expectedPass = '';
-      if (!isNaN(duration)) {
-        if (duration >= 0 && duration <= 5) {
-          expectedPass = process.env.ADMIN_SLOT1_PASS || 'boss_gate_0_30';
-        } else if (duration >= 6 && duration <= 30) {
-          expectedPass = process.env.ADMIN_SLOT2_PASS || 'boss_gate_31_60';
-        } else if (duration >= 31 && duration <= 60) {
-          expectedPass = process.env.ADMIN_SLOT3_PASS || 'boss_gate_61_120';
+    if (cleanedContact === adminSecretUsername || isAdminEmail) {
+      if (isAdminEmail) {
+        if (!code) {
+          return res.status(400).json({ error: 'Code is required' });
         }
-      }
+        
+        const records = await query(
+          'SELECT * FROM otps WHERE contact = ? AND used_at IS NULL AND expires_at > NOW() ORDER BY id DESC LIMIT 1',
+          [cleanedContact]
+        );
 
-      if (!expectedPass || cleanedCode !== expectedPass) {
-        return res.status(401).json({ error: 'Wrong Password', message: 'Wrong Password' });
+        if (records.length === 0) {
+          return res.status(401).json({ error: 'Wrong Code', message: 'Wrong OTP Code' });
+        }
+
+        const record = records[0];
+        const decryptedCode = decryptOtp(record.code);
+        if (code.trim() !== decryptedCode) {
+          return res.status(401).json({ error: 'Wrong Code', message: 'Wrong OTP Code' });
+        }
+
+        // Mark OTP as used
+        await query('UPDATE otps SET used_at = NOW() WHERE id = ?', [record.id]);
+      } else {
+        if (!code) {
+          return res.status(401).json({ error: 'Wrong Password', message: 'Wrong Password' });
+        }
+        const cleanedCode = code.trim();
+        const duration = req.body.duration !== undefined ? parseInt(req.body.duration, 10) : NaN;
+
+        let expectedPass = '';
+        if (!isNaN(duration)) {
+          if (duration >= 0 && duration <= 5) {
+            expectedPass = process.env.ADMIN_SLOT1_PASS || 'boss_gate_0_30';
+          } else if (duration >= 6 && duration <= 30) {
+            expectedPass = process.env.ADMIN_SLOT2_PASS || 'boss_gate_31_60';
+          } else if (duration >= 31 && duration <= 60) {
+            expectedPass = process.env.ADMIN_SLOT3_PASS || 'boss_gate_61_120';
+          }
+        }
+
+        if (!expectedPass || cleanedCode !== expectedPass) {
+          return res.status(401).json({ error: 'Wrong Password', message: 'Wrong Password' });
+        }
       }
 
       const token = jwt.sign(
@@ -470,7 +515,7 @@ async function verifyOtp(req, res) {
         requiresSecurityPin: false,
         user: {
           id: 0, name: 'Global Admin', phone: adminSecretUsername,
-          email: 'admin@paychek.online', role: 'admin', balance: 0.00,
+          email: adminEmail || 'admin@paychek.online', role: 'admin', balance: 0.00,
           blocked: 0, profileComplete: 1, smsEnabled: 1, gmailEnabled: 1
         },
         device: {
