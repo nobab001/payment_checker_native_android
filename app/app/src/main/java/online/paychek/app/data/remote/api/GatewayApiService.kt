@@ -12,13 +12,15 @@ interface GatewayApiService {
     // ── মেথড তালিকা লোড করা ─────────────────────────────────────────────────
     @GET("gateway/methods")
     suspend fun getGatewayMethods(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
+        @Header("X-Gateway-Last-Sync") lastSync: Long = 0L
     ): Response<GatewayListResponse>
 
     // ── টেমপ্লেট তালিকা লোড করা ───────────────────────────────────────────────
     @GET("gateway/templates")
     suspend fun getTemplates(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
+        @Header("X-Gateway-Last-Sync") lastSync: Long = 0L
     ): Response<SmsTemplatesResponse>
 
     // ── নতুন মেথড যোগ করা ──────────────────────────────────────────────────

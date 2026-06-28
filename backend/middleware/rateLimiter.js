@@ -1,12 +1,8 @@
 const rateLimit = require('express-rate-limit');
 const { RedisStore } = require('rate-limit-redis');
-const Redis = require('ioredis');
+const { getRedisClient } = require('../services/redisClient');
 
-// Connect to Redis
-const redisClient = new Redis({
-  host: process.env.REDIS_HOST || '127.0.0.1',
-  port: process.env.REDIS_PORT || 6379,
-});
+const redisClient = getRedisClient();
 
 const apiRateLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute window

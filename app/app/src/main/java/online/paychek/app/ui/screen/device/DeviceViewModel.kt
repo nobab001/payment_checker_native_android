@@ -159,11 +159,24 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, errorMessage = null) }
             val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+            val lastSync = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsLastSync(getApplication())
 
-            runCatching { api.getGatewayMethods("Bearer $token") }
+            runCatching { api.getGatewayMethods("Bearer $token", lastSync) }
                 .onSuccess { res ->
                     if (res.isSuccessful && res.body()?.success == true) {
-                        val sorted = (res.body()!!.data).sortedBy { it.priority }
+                        val body = res.body()!!
+                        body.dataVersion?.takeIf { it > 0 }?.let {
+                            online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsLastSync(getApplication(), it)
+                        }
+
+                        if (body.unchanged == true || body.data == null) {
+                            _state.update { it.copy(isLoading = false) }
+                            validateAndSyncSimToggles()
+                            performDropSync()
+                            return@onSuccess
+                        }
+
+                        val sorted = body.data.sortedBy { it.priority }
                         val sim1Num = sorted.find { it.simSlot == 1 && !it.number.isNullOrEmpty() }?.number ?: _state.value.sim1Number
                         val sim2Num = sorted.find { it.simSlot == 2 && !it.number.isNullOrEmpty() }?.number ?: _state.value.sim2Number
                         _state.update { 
@@ -681,16 +694,26 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             _state.update { it.copy(isTemplatesLoading = true) }
             val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
-            runCatching { api.getTemplates("Bearer $token") }
+            val lastSync = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsLastSync(getApplication())
+            runCatching { api.getTemplates("Bearer $token", lastSync) }
                 .onSuccess { res ->
                     if (res.isSuccessful && res.body()?.success == true) {
-                        val list = res.body()!!.templates
-                        _state.update { it.copy(templates = list, isTemplatesLoading = false) }
-                        try {
-                            val json = online.paychek.app.utils.GsonUtils.gson.toJson(list)
-                            online.paychek.app.data.local.prefs.PrefsHelper.setSmsTemplatesCache(getApplication(), json)
-                        } catch (e: Exception) {
-                            e.printStackTrace()
+                        val body = res.body()!!
+                        body.dataVersion?.takeIf { it > 0 }?.let {
+                            online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsLastSync(getApplication(), it)
+                        }
+
+                        val list = body.templates
+                        if (list != null) {
+                            _state.update { it.copy(templates = list, isTemplatesLoading = false) }
+                            try {
+                                val json = online.paychek.app.utils.GsonUtils.gson.toJson(list)
+                                online.paychek.app.data.local.prefs.PrefsHelper.setSmsTemplatesCache(getApplication(), json)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        } else {
+                            _state.update { it.copy(isTemplatesLoading = false) }
                         }
                         performDropSync()
                     } else {

@@ -63,7 +63,9 @@ data class GatewayMethod(
 data class GatewayListResponse(
     val success: Boolean,
     val message: String? = null,
-    val data: List<GatewayMethod>
+    val data: List<GatewayMethod>? = null,
+    @SerializedName("data_version") val dataVersion: Long? = null,
+    val unchanged: Boolean? = false
 )
 
 // =============================================================================

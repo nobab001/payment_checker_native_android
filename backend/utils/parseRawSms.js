@@ -1,4 +1,5 @@
 const prisma = require('../db/prisma');
+const dataSyncCache = require('../services/dataSyncCache');
 
 /**
  * parseRawSms — RAW SMS body থেকে server-side এ payment data extract করে।
@@ -29,10 +30,8 @@ async function parseRawSms(rawBody, senderHint = '', providerTag = '') {
   const cleanBody   = rawBody.trim();
   const cleanSender = senderHint.trim().toLowerCase();
 
-  // Query active templates from database
-  const templates = await prisma.sms_templates.findMany({
-    where: { is_active: 1 }
-  });
+  // Query active templates from Redis cache (falls back to DB)
+  const templates = await dataSyncCache.getActiveTemplatesForParsing();
 
   for (const template of templates) {
     let isMatch = false;

@@ -107,13 +107,20 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
             val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
             if (token.isNotEmpty()) {
                 try {
-                    val response = RetrofitClient.gatewayApiService.getTemplates("Bearer $token")
+                    val lastSync = PrefsHelper.getGatewayMethodsLastSync(getApplication())
+                    val response = RetrofitClient.gatewayApiService.getTemplates("Bearer $token", lastSync)
                     if (response.isSuccessful) {
-                        val list = response.body()?.templates ?: emptyList()
-                        val jsonStr = GsonUtils.gson.toJson(list)
-                        PrefsHelper.setSmsTemplatesCache(getApplication(), jsonStr)
-                        val activeParseable = list.filter { (it.isActive == 1 || it.isOtherDevice == true) && it.isParseable == 1 }
-                        _state.update { it.copy(templates = activeParseable) }
+                        val body = response.body()
+                        body?.dataVersion?.takeIf { it > 0 }?.let {
+                            PrefsHelper.setGatewayMethodsLastSync(getApplication(), it)
+                        }
+                        val list = body?.templates
+                        if (list != null) {
+                            val jsonStr = GsonUtils.gson.toJson(list)
+                            PrefsHelper.setSmsTemplatesCache(getApplication(), jsonStr)
+                            val activeParseable = list.filter { (it.isActive == 1 || it.isOtherDevice == true) && it.isParseable == 1 }
+                            _state.update { it.copy(templates = activeParseable) }
+                        }
                     }
                 } catch (_: Exception) {}
             }

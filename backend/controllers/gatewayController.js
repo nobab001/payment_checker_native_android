@@ -1,4 +1,12 @@
 const prisma = require('../db/prisma');
+const dataSyncCache = require('../services/dataSyncCache');
+
+async function touchDeviceSync(userId, deviceId, opts = {}) {
+  await dataSyncCache.bumpDeviceSyncVersion(userId, deviceId);
+  if (opts.userCustomChanged) {
+    await dataSyncCache.bumpUserCustomTemplateVersion(userId);
+  }
+}
 
 async function fetchGatewayMethodsForUser(userId, deviceId) {
   if (deviceId) {
@@ -48,9 +56,21 @@ async function getGatewayMethods(req, res) {
     const userId = req.user.userId;
 
     const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+    const lastSync = parseInt(req.headers['x-gateway-last-sync'] || '0', 10);
+    const serverVersion = await dataSyncCache.getDeviceSyncVersion(userId, deviceId);
+
+    if (dataSyncCache.isClientSyncCurrent(lastSync, serverVersion)) {
+      return res.json({
+        success: true,
+        data: null,
+        data_version: serverVersion,
+        unchanged: true,
+      });
+    }
+
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
 
-    return res.json({ success: true, data });
+    return res.json({ success: true, data, data_version: serverVersion, unchanged: false });
   } catch (error) {
     console.error('[GATEWAY] getGatewayMethods error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
@@ -93,6 +113,8 @@ async function updatePriority(req, res) {
     } else if (io) {
         io.emit("sync_gateway_methods", data);
     }
+
+    await touchDeviceSync(userId, deviceId);
 
     return res.json({ success: true, message: 'Priority ক্রম সফলভাবে আপডেট হয়েছে।', data });
 
@@ -139,6 +161,8 @@ async function toggleMethod(req, res) {
     if (io && targetDeviceId) {
         io.to(`${userId}:${targetDeviceId}`).emit("sync_gateway_methods", data);
     }
+
+    await touchDeviceSync(userId, deviceId);
 
     return res.json({ success: true, message: `মেথড ${status} করা হয়েছে।`, data });
 
@@ -188,6 +212,8 @@ async function updateMethod(req, res) {
         io.to(`${userId}:${targetDeviceId}`).emit("sync_gateway_methods", updatedData);
     }
 
+    await touchDeviceSync(userId, deviceId);
+
     return res.json({ success: true, message: 'মেথড আপডেট হয়েছে।', data: updatedData });
 
   } catch (error) {
@@ -204,14 +230,21 @@ async function getTemplates(req, res) {
   try {
     const userId = req.user.userId;
     const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+    const lastSync = parseInt(req.headers['x-gateway-last-sync'] || '0', 10);
+    const serverVersion = await dataSyncCache.getDeviceSyncVersion(userId, deviceId);
 
-    const rows = await prisma.sms_templates.findMany({
-      where: {
-        OR: [
-          { is_official: 1, is_active: { in: [0, 1] } },
-          { is_official: 0, user_id: userId }
-        ]
-      },
+    if (dataSyncCache.isClientSyncCurrent(lastSync, serverVersion)) {
+      return res.json({
+        success: true,
+        templates: null,
+        data_version: serverVersion,
+        unchanged: true,
+      });
+    }
+
+    const officialRows = await dataSyncCache.getOfficialTemplatesForAdmin();
+    const customRows = await prisma.sms_templates.findMany({
+      where: { is_official: 0, user_id: userId },
       select: {
         id: true,
         template_name: true,
@@ -224,6 +257,8 @@ async function getTemplates(req, res) {
         device_id: true
       }
     });
+
+    const rows = [...officialRows, ...customRows];
 
     const formatted = rows.map(r => {
       const isOther = r.is_official === 0 && r.device_id !== deviceId;
@@ -240,7 +275,7 @@ async function getTemplates(req, res) {
       };
     });
 
-    return res.json({ success: true, templates: formatted });
+    return res.json({ success: true, templates: formatted, data_version: serverVersion, unchanged: false });
   } catch (error) {
     console.error('[GATEWAY] getTemplates error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
@@ -289,6 +324,8 @@ async function addGatewayMethod(req, res) {
     if (io && targetDeviceId) {
         io.to(`${userId}:${targetDeviceId}`).emit("sync_gateway_methods", data);
     }
+
+    await touchDeviceSync(userId, deviceId);
 
     return res.json({ success: true, id: result.id, message: 'মেথড সফলভাবে যোগ করা হয়েছে।', data });
   } catch (error) {
@@ -368,6 +405,8 @@ async function addCustomTemplate(req, res) {
     if (io && targetDeviceId) {
         io.to(`${userId}:${targetDeviceId}`).emit("sync_gateway_methods", data);
     }
+
+    await touchDeviceSync(userId, deviceId, { userCustomChanged: true });
 
     return res.json({ success: true, message: 'কাস্টম টেমপ্লেট যোগ করা হয়েছে।', data });
   } catch (error) {
@@ -522,6 +561,8 @@ async function addCustomSender(req, res) {
       io.to(`${userId}:${deviceId}`).emit("sync_gateway_methods", data);
     }
 
+    await touchDeviceSync(userId, deviceId, { userCustomChanged: true });
+
     return res.json({ success: true, message: 'কাস্টম সেন্ডার সফলভাবে যুক্ত করা হয়েছে।', data });
   } catch (error) {
     console.error('[GATEWAY] addCustomSender error:', error);
@@ -549,6 +590,7 @@ async function deleteGatewayMethod(req, res) {
     });
 
     // Clean up custom template if not used anywhere else
+    let customTemplateDeleted = false;
     if (method.template_id) {
       const template = await prisma.sms_templates.findUnique({
         where: { id: method.template_id }
@@ -561,6 +603,7 @@ async function deleteGatewayMethod(req, res) {
           await prisma.sms_templates.delete({
             where: { id: method.template_id }
           });
+          customTemplateDeleted = true;
         }
       }
     }
@@ -572,6 +615,8 @@ async function deleteGatewayMethod(req, res) {
     if (io && deviceId) {
       io.to(`${userId}:${deviceId}`).emit("sync_gateway_methods", data);
     }
+
+    await touchDeviceSync(userId, deviceId, { userCustomChanged: customTemplateDeleted });
 
     return res.json({ success: true, message: 'মেথড সফলভাবে ডিলিট করা হয়েছে।', data });
   } catch (error) {
@@ -677,6 +722,8 @@ async function syncAndValidateSimSwap(req, res) {
     if (io) {
       io.to(`${userId}:${deviceId}`).emit("sync_gateway_methods", updatedData);
     }
+
+    await touchDeviceSync(userId, deviceId);
 
     return res.json({
       success: true,

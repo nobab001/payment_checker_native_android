@@ -32,7 +32,9 @@ data class SmsTemplateDto(
 
 data class SmsTemplatesResponse(
     @SerializedName("success") val success: Boolean,
-    @SerializedName("templates") val templates: List<SmsTemplateDto>
+    @SerializedName("templates") val templates: List<SmsTemplateDto>? = null,
+    @SerializedName("data_version") val dataVersion: Long? = null,
+    @SerializedName("unchanged") val unchanged: Boolean? = false
 )
 
 data class CheckoutTemplateDto(

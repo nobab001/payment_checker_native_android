@@ -1,4 +1,5 @@
 const prisma = require('../db/prisma');
+const dataSyncCache = require('../services/dataSyncCache');
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_987654321';
@@ -128,9 +129,7 @@ function regexToBrackets(regexPattern) {
 // 2. Official SMS Templates
 async function getSmsTemplates(req, res) {
   try {
-    const templates = await prisma.sms_templates.findMany({
-      where: { is_official: 1 }
-    });
+    const templates = await dataSyncCache.getOfficialTemplatesForAdmin();
     const mapped = templates.map(t => ({
       ...t,
       sender_number: t.sender_number || '',
@@ -172,20 +171,14 @@ async function saveSmsTemplate(req, res) {
       await prisma.sms_templates.create({ data });
     }
 
-    // 🔥 Update global config templates_last_updated
-    await prisma.global_config.upsert({
-      where: { config_key: 'templates_last_updated' },
-      update: { config_value: String(Date.now()), updated_at: new Date() },
-      create: { config_key: 'templates_last_updated', config_value: String(Date.now()), updated_at: new Date() }
-    });
+    const version = await dataSyncCache.bumpGlobalTemplateVersion();
 
-    // 🔥 Trigger background update for all connected apps
     const io = req.app.get('io');
     if (io) {
-      io.emit("force_template_sync", { timestamp: Date.now() });
+      dataSyncCache.scheduleTemplateSyncBroadcast(io, version);
     }
 
-    return res.json({ success: true, message: 'SMS Template saved successfully.' });
+    return res.json({ success: true, message: 'SMS Template saved successfully.', data_version: version });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal Server Error' });
@@ -199,20 +192,14 @@ async function deleteSmsTemplate(req, res) {
       where: { id: parseInt(id), is_official: 1 }
     });
 
-    // 🔥 Update global config templates_last_updated
-    await prisma.global_config.upsert({
-      where: { config_key: 'templates_last_updated' },
-      update: { config_value: String(Date.now()), updated_at: new Date() },
-      create: { config_key: 'templates_last_updated', config_value: String(Date.now()), updated_at: new Date() }
-    });
+    const version = await dataSyncCache.bumpGlobalTemplateVersion();
 
-    // 🔥 Trigger background update for all connected apps
     const io = req.app.get('io');
     if (io) {
-      io.emit("force_template_sync", { timestamp: Date.now() });
+      dataSyncCache.scheduleTemplateSyncBroadcast(io, version);
     }
 
-    return res.json({ success: true, message: 'Official SMS Template deleted successfully.' });
+    return res.json({ success: true, message: 'Official SMS Template deleted successfully.', data_version: version });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal Server Error' });

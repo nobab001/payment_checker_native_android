@@ -8,6 +8,7 @@ const {
     assertRawBodyIntegrity,
 } = require('../utils/smsSecuritySpec');
 const { fetchGatewayMethodsForUser } = require('./gatewayController');
+const dataSyncCache = require('../services/dataSyncCache');
 
 const { smsQueue } = require('../services/smsQueue');
 
@@ -254,33 +255,19 @@ async function getDashboardStats(req, res) {
     console.log(`[STATS] Dashboard loaded for user: ${userId} | Today: ${todayDate} | Paid: ${isPaid} | Plan: ${activePlanName}`);
 
     const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
-    const lastSync = req.headers['x-gateway-last-sync'] ? parseInt(req.headers['x-gateway-last-sync']) : 0;
-
-    // Fetch latest gateway method update time for user/device
-    const lastMethod = await prisma.gateway_methods.findFirst({
-      where: { user_id: String(userId), device_id: String(deviceId) },
-      orderBy: { updated_at: 'desc' },
-      select: { updated_at: true }
-    });
-    const lastMethodTime = lastMethod ? new Date(lastMethod.updated_at).getTime() : 0;
-
-    // Fetch latest template update time from global config
-    const globalConfig = await prisma.global_config.findUnique({
-      where: { config_key: 'templates_last_updated' }
-    });
-    const lastTemplateTime = globalConfig ? parseInt(globalConfig.config_value) : 0;
-
-    const latestServerUpdateTime = Math.max(lastMethodTime, lastTemplateTime);
+    const lastSync = req.headers['x-gateway-last-sync'] ? parseInt(req.headers['x-gateway-last-sync'], 10) : 0;
+    const latestServerUpdateTime = await dataSyncCache.getDeviceSyncVersion(userId, deviceId);
+    const cacheHit = dataSyncCache.isClientSyncCurrent(lastSync, latestServerUpdateTime);
 
     let gatewayMethods = null;
-    if (lastSync < latestServerUpdateTime || lastSync === 0) {
+    let globalTemplates = null;
+    if (!cacheHit) {
       gatewayMethods = await fetchGatewayMethodsForUser(userId, deviceId);
+      globalTemplates = await dataSyncCache.getActiveTemplatesForDashboard();
       console.log(`[STATS] Client cache outdated (${lastSync} < ${latestServerUpdateTime}). Syncing ${gatewayMethods.length} methods.`);
+    } else {
+      console.log(`[STATS] Client cache current (${lastSync} >= ${latestServerUpdateTime}). Skipping template/method payload.`);
     }
-
-    const globalTemplates = await prisma.sms_templates.findMany({
-      where: { is_active: 1 }
-    });
 
     return res.json({
       success: true,
@@ -300,7 +287,9 @@ async function getDashboardStats(req, res) {
         recent_transactions: mappedRecentRows,
         global_templates:    globalTemplates,
         gateway_methods:     gatewayMethods,
-        gateway_methods_last_sync: latestServerUpdateTime
+        gateway_methods_last_sync: latestServerUpdateTime,
+        data_version:        latestServerUpdateTime,
+        cache_hit:           cacheHit
       }
     });
 

@@ -150,6 +150,12 @@ data class DashboardStats(
     @SerializedName("gateway_methods_last_sync")
     val gatewayMethodsLastSync: Long? = 0L,
 
+    @SerializedName("data_version")
+    val dataVersion: Long? = null,
+
+    @SerializedName("cache_hit")
+    val cacheHit: Boolean? = false,
+
     @SerializedName("secretKey")
     val secretKey: String?,
 

@@ -1,5 +1,5 @@
 const { Worker } = require('bullmq');
-const Redis = require('ioredis');
+const { getRedisClient } = require('../services/redisClient');
 const prisma = require('../db/prisma');
 const crypto = require('crypto');
 const { verifyHmac } = require('../utils/verifyHmac');
@@ -9,11 +9,7 @@ function sha256(data) {
   return crypto.createHash('sha256').update(data, 'utf8').digest('hex');
 }
 
-const connection = new Redis({
-  host: process.env.REDIS_HOST || '127.0.0.1',
-  port: process.env.REDIS_PORT || 6379,
-  maxRetriesPerRequest: null,
-});
+const connection = getRedisClient();
 
 const smsWorker = new Worker('smsIngestQueue', async (job) => {
   const { userId, deviceId, rawBody, hmacSignature, senderNumber, smsTimestamp, simSlot, simNumber } = job.data;

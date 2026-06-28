@@ -155,17 +155,25 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         )
                     }
 
+                    val serverSyncTime = stats.dataVersion ?: stats.gatewayMethodsLastSync ?: 0L
+                    if (serverSyncTime > 0) {
+                        online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsLastSync(
+                            getApplication(),
+                            serverSyncTime
+                        )
+                    }
+
                     // Sync gateway methods cache if provided by server
                     if (stats.gatewayMethods != null) {
                         try {
                             val jsonStr = online.paychek.app.utils.GsonUtils.gson.toJson(stats.gatewayMethods)
                             online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(getApplication(), jsonStr)
-                            val serverSyncTime = stats.gatewayMethodsLastSync ?: 0L
-                            online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsLastSync(getApplication(), serverSyncTime)
-                            android.util.Log.i("DashboardViewModel", "✅ Dashboard Sync: Updated gateway methods cache (size=${stats.gatewayMethods.size}) from stats. LastSync=$serverSyncTime")
+                            android.util.Log.i("DashboardViewModel", "✅ Dashboard Sync: Updated gateway methods cache (size=${stats.gatewayMethods.size}). Version=$serverSyncTime")
                         } catch (e: Exception) {
                             e.printStackTrace()
                         }
+                    } else if (stats.cacheHit == true) {
+                        android.util.Log.i("DashboardViewModel", "✅ Dashboard Sync: Cache hit — skipped method/template payload (version=$serverSyncTime)")
                     }
 
                     // Sync global templates cache if provided by server
@@ -179,11 +187,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         }
                     }
 
+                    val templatesForUi = stats.globalTemplates
+                        ?: _state.value.globalTemplates
+
                     _state.update {
                         it.copy(
                             uiState         = DashboardUiState.Success(stats),
                             isRefreshing    = false,
-                            globalTemplates = stats.globalTemplates ?: emptyList(),
+                            globalTemplates = templatesForUi,
                             lastUpdatedAtMs = BangladeshTimeUtil.latestTransactionEpochMs(stats.recentTransactions)
                                 ?: System.currentTimeMillis()
                         )
