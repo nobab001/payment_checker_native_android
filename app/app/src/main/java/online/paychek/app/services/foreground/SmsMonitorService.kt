@@ -197,8 +197,8 @@ class SmsMonitorService : Service() {
                 Log.i(TAG, "✅ Push-Driven Cache Sync: Global template updated. Scheduling random delayed fetch to prevent server overload...")
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
-                        // Jitter: Random delay between 1 and 30 seconds to spread server load (Thundering Herd prevention)
-                        val randomDelayMs = (1000..30000).random().toLong()
+                        // Jitter: Random delay between 500ms and 2s to spread server load
+                        val randomDelayMs = (500..2000).random().toLong()
                         delay(randomDelayMs)
 
                         val token = SecurePreferences.decrypt(this@SmsMonitorService, AppConfig.KEY_AUTH_TOKEN)

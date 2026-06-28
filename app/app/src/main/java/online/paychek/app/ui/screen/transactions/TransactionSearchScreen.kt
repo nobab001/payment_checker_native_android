@@ -47,6 +47,7 @@ import java.util.Locale
 import online.paychek.app.data.local.prefs.PrefsHelper
 import online.paychek.app.utils.GsonUtils
 import online.paychek.app.data.remote.dto.GatewayMethod
+import online.paychek.app.data.remote.dto.SmsTemplateDto
 import com.google.gson.reflect.TypeToken
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -142,9 +143,10 @@ fun TransactionSearchScreen(
             // ─── ৩. M3 Filter Chips Row ────────────────────────────────────
             item {
                 M3FilterChipsRow(
+                    templates = state.templates,
                     selected = state.selectedProvider,
                     onSelect = { provider ->
-                        val target = if (state.selectedProvider == provider) "all" else provider
+                        val target = if (state.selectedProvider.lowercase() == provider.lowercase()) "all" else provider
                         viewModel.onProviderFilterChanged(target)
                     },
                     modifier = Modifier.padding(bottom = 8.dp)
@@ -405,41 +407,24 @@ private fun SearchBox(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun M3FilterChipsRow(
+    templates: List<SmsTemplateDto>,
     selected: String,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val cachedMethodsJson = PrefsHelper.getGatewayMethodsCache(context)
-    val methodsType = object : TypeToken<List<GatewayMethod>>() {}.type
-    val cachedMethods: List<GatewayMethod> = try {
-        GsonUtils.gson.fromJson(cachedMethodsJson, methodsType) ?: emptyList()
-    } catch (e: Exception) {
-        emptyList()
-    }
-
-    val dynamicFilters = mutableListOf("all" to "সব")
-    val activeMethods = cachedMethods.filter { it.isEnabled == 1 }.distinctBy { it.provider }
-    activeMethods.forEach { method ->
-        val provider = method.provider
-        if (provider.isNotEmpty()) {
-            dynamicFilters.add(provider to provider)
-        }
-    }
-
     LazyRow(
         modifier            = modifier,
         contentPadding      = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(dynamicFilters) { (filter, label) ->
-            val isSelected = selected == filter
+        items(templates) { template ->
+            val isSelected = selected.lowercase() == template.senderId.lowercase()
             FilterChip(
                 selected = isSelected,
-                onClick = { onSelect(filter) },
+                onClick = { onSelect(template.senderId) },
                 label = {
                     Text(
-                        text = label,
+                        text = template.templateName,
                         fontSize = adaptiveTextSize(11.sp, 13.sp),
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                     )

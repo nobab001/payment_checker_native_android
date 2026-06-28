@@ -12,6 +12,11 @@ import online.paychek.app.data.remote.dto.TransactionItem
 import online.paychek.app.data.repository.PaymentRepository
 import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.utils.NetworkConnectivityObserver
+import online.paychek.app.data.remote.api.RetrofitClient
+import online.paychek.app.data.remote.dto.SmsTemplateDto
+import online.paychek.app.data.local.prefs.PrefsHelper
+import online.paychek.app.utils.GsonUtils
+import com.google.gson.reflect.TypeToken
 
 // =============================================================================
 // Provider Filter Options
@@ -25,6 +30,7 @@ import online.paychek.app.utils.NetworkConnectivityObserver
 data class TransactionSearchState(
     val rawList:     List<TransactionItem> = emptyList(),
     val displayList: List<TransactionItem> = emptyList(),
+    val templates:   List<SmsTemplateDto>  = emptyList(),
     val selectedProvider: String = "all",
     val searchQuery:      String         = "",
     val currentPage:        Int     = 1,
@@ -63,6 +69,17 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
     private val _searchQuery = MutableStateFlow("")
 
     init {
+        val cached = PrefsHelper.getSmsTemplatesCache(application)
+        var initialTemplates = emptyList<SmsTemplateDto>()
+        if (cached.isNotEmpty()) {
+            try {
+                val type = object : TypeToken<List<SmsTemplateDto>>() {}.type
+                val parsed = GsonUtils.gson.fromJson<List<SmsTemplateDto>>(cached, type) ?: emptyList()
+                initialTemplates = parsed.filter { it.isActive == 1 && it.isParseable == 1 }
+            } catch (_: Exception) {}
+        }
+        _state.update { it.copy(templates = initialTemplates) }
+
         _searchQuery
             .debounce(300)
             .onEach { query ->
@@ -76,6 +93,24 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                 if (available) {
                     loadFirstPage()
                 }
+            }
+        }
+    }
+
+    private fun fetchTemplates() {
+        viewModelScope.launch {
+            val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
+            if (token.isNotEmpty()) {
+                try {
+                    val response = RetrofitClient.gatewayApiService.getTemplates("Bearer $token")
+                    if (response.isSuccessful) {
+                        val list = response.body()?.templates ?: emptyList()
+                        val jsonStr = GsonUtils.gson.toJson(list)
+                        PrefsHelper.setSmsTemplatesCache(getApplication(), jsonStr)
+                        val activeParseable = list.filter { it.isActive == 1 && it.isParseable == 1 }
+                        _state.update { it.copy(templates = activeParseable) }
+                    }
+                } catch (_: Exception) {}
             }
         }
     }
@@ -127,6 +162,7 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                 errorMessage     = null
             )
         }
+        fetchTemplates()
         fetchPage(page = 1)
     }
 
@@ -173,7 +209,7 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                         val updated = current.copy(
                             rawList          = merged,
                             currentPage      = page,
-                            hasMore          = newItems.size >= PAGE_SIZE,
+                            hasMore          = if (current.startDate != null && current.endDate != null) (newItems.size >= PAGE_SIZE) else false,
                             isInitialLoading = false,
                             isLoadingMore    = false,
                             errorMessage     = null

@@ -119,7 +119,8 @@ async function getSmsHistory(req, res) {
       whereClause.provider_tag = provider;
     }
 
-    if (req.query.startDate && req.query.endDate) {
+    const hasDateFilter = req.query.startDate && req.query.endDate;
+    if (hasDateFilter) {
       whereClause.sms_date = {
         gte: new Date(req.query.startDate),
         lte: new Date(req.query.endDate)
@@ -130,16 +131,21 @@ async function getSmsHistory(req, res) {
       where: whereClause
     });
 
-    const rows = await prisma.sms_history.findMany({
+    const queryOptions = {
       where: whereClause,
       select: {
         id: true, provider_tag: true, amount: true, trx_id: true, sender_number: true,
         sim_slot: true, sms_timestamp: true, is_used: true, created_at: true, full_sms: true
       },
-      orderBy: { sms_timestamp: 'desc' },
-      skip: offset,
-      take: limit
-    });
+      orderBy: { sms_timestamp: 'desc' }
+    };
+
+    if (!hasDateFilter) {
+      queryOptions.skip = offset;
+      queryOptions.take = limit;
+    }
+
+    const rows = await prisma.sms_history.findMany(queryOptions);
 
     const userDevices = await prisma.registered_devices.findMany({
       where: { user_id: userId },
