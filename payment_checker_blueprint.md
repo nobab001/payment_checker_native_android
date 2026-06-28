@@ -783,6 +783,18 @@ CREATE TABLE settings (
   setting_value TEXT NOT NULL,
   updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 11. Subscription Plans Table
+CREATE TABLE subscription_plans (
+  id                       INT AUTO_INCREMENT PRIMARY KEY,
+  plan_name                VARCHAR(50)    NOT NULL UNIQUE KEY plan_name,
+  price                    DECIMAL(10,2)  NOT NULL,
+  max_sites                INT            NOT NULL,
+  max_devices              INT            NOT NULL,
+  is_custom_sender_allowed TINYINT(1)     NOT NULL DEFAULT 0,
+  duration_days            INT            DEFAULT 365,
+  created_at               TIMESTAMP      DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
 ---
@@ -1126,6 +1138,16 @@ Clients connect and pass a JWT token and hardware device ID during the connectio
 - **SIM Mismatch & Roaming**: `DeviceScreen.kt` এর সিম মিসম্যাচ ডায়ালগ রিফ্যাক্টর করে শুধুমাত্র একটি "ওকে" (OK) বাটন রাখা হয়েছে। বাটনটি ট্যাপ করলে স্লট ইনপুট টগল অফ হবে, নতুন নম্বর ফেচ হবে এবং ব্যাকএন্ডে সিঙ্ক রিকোয়েস্ট পাঠানো হবে। সার্ভার রোমিং এপিআই (`/api/gateway/sim-swap`) কল করার পর নম্বরটি অন্য ডিভাইস থেকে এই ডিভাইসের বর্তমান স্লটে স্থানান্তরিত (Roaming) হবে এবং পূর্বে সেভ করা টেমপ্লেট চেকবক্সগুলো রিয়েল-টাইমে ক্লায়েন্টে অটো-ফিল হবে।
 - **SMS Monitor Switch Permission Bypass**: হোমস্ক্রিনের SMS পেমেন্ট মনিটর সুইচ অন করার সময় রিজিড ফিজিক্যাল সিম কার্ড স্ট্যাটাস বা ওএস লেভেল পারমিশন এরর বাইপাস করা হয়েছে, যা সিম-রেস্ট্রিক্টেড ডিভাইসেও মনিটর রান করার সুবিধা দেয়।
 - **Remove Database Seeding**: সার্ভার চালু হওয়ার সময় যেসকল হার্ডকোডেড সিড ডাটা (Subscription plans, SMS templates, Checkout templates) স্বয়ংক্রিয়ভাবে ইনসার্ট হতো, তা কোড থেকে সম্পূর্ণ মুছে ফেলা হয়েছে। এখন ডাটাবেজে কেবল ইউজারের নিজের সেট করা ডাটাই সংরক্ষিত থাকবে।
+
+---
+
+### ✅ Session: 2026-06-28 — Admin Gmail OTP Login & Plan Edit with Custom Sender Permissions
+
+**কী করা হয়েছে:**
+- **Admin Gmail OTP Login**: এডমিন অ্যাকাউন্টের ওটিপি বাইপাস ব্যবস্থার পাশাপাশি নতুন করে জিমেইল কোড লগইন সিস্টেম যুক্ত করা হয়েছে। ব্যাকএন্ডের `.env` ফাইলে `ADMIN_EMAIL` ভ্যালু সেট করে অ্যাপের লগইন বক্সে উক্ত মেইল দিয়ে কোডের জন্য ওটিপি পাঠালে, সিস্টেমে রিয়েল ৬-ডিজিটের ওটিপি জেনারেট হয়ে এডমিনের মেইলে প্রেরিত হবে। উক্ত কোড ভেরিফাই করার মাধ্যমে সফলভাবে এডমিন ড্যাশবোর্ডে লগইন করা যাবে।
+- **Edit Plan Name**: সাবস্ক্রিপশন প্ল্যান তৈরির পাশাপাশি সেভ করার সময় `plan_name` দিয়ে ডুপ্লিকেট চেকের পূর্বে `id` দিয়ে ম্যাচিং নিশ্চিত করা হয়েছে, যার ফলে পূর্বে ব্লক থাকা প্ল্যান নেম এডিটিং এখন সম্পূর্ণরূপে আনলক করা হয়েছে।
+- **Enable Custom Sender Permissions**: ডাটাবেজে থাকা অব্যবহৃত কলাম `is_custom_sender_allowed` ফিচারকে ব্যাকএন্ডে ম্যাপ ও ইন্টিগ্রেট করা হয়েছে। অ্যান্ড্রয়েড ক্লায়েন্টের `SubscriptionPlanDto` আপডেট করে এবং `BillingConfigScreen.kt` এর "প্ল্যান সম্পাদন করুন" ডায়ালগে একটি "কাস্টম সেন্ডার আইডি ব্যবহারের অনুমতি" সুইচ রো যুক্ত করা হয়েছে। এর মাধ্যমে এডমিনরা প্রতিটি প্যাকেজের জন্য কাস্টম সেন্ডার আইডি পারমিশন প্রোভাইড বা কন্ট্রোল করতে পারবেন।
+- **Verification & Kotlin Compilation**: অ্যান্ড্রয়েড কোডে নতুন ডাটা অ্যাট্রিবিউট ও লেআউট পরিবর্তনের পর সম্পূর্ণ ক্লায়েন্ট অ্যাপ্লিকেশন কম্পাইল করা হয়েছে (`.\gradlew.bat compileDebugKotlin` passes).
 
 ---
 

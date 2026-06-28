@@ -161,6 +161,7 @@ data class SubscriptionPlanDto(
     @SerializedName("price") val price: Double,
     @SerializedName("max_sites") val maxSites: Int,
     @SerializedName("max_devices") val maxDevices: Int,
+    @SerializedName("is_custom_sender_allowed") val isCustomSenderAllowed: Int = 0,
     @SerializedName("duration_days") val durationDays: Int = 365
 )
 

@@ -137,34 +137,35 @@ async function listPlans(req, res) {
  */
 async function createPlan(req, res) {
   try {
-    const { plan_name, price, max_sites, max_devices, duration_days } = req.body;
+    const { id, plan_name, price, max_sites, max_devices, duration_days, is_custom_sender_allowed } = req.body;
 
     if (!plan_name || price === undefined || max_sites === undefined || max_devices === undefined) {
       return res.status(400).json({ success: false, error: 'Missing required plan fields.' });
     }
 
     const data = {
+      plan_name,
       price,
       max_sites,
       max_devices,
+      is_custom_sender_allowed: is_custom_sender_allowed ? 1 : 0,
       duration_days: duration_days || 365
     };
 
-    const existing = await prisma.subscription_plans.findFirst({
-      where: { plan_name }
-    });
-
-    if (existing) {
+    if (id) {
       await prisma.subscription_plans.update({
-        where: { plan_name },
+        where: { id: parseInt(id, 10) },
         data
       });
     } else {
+      const existingName = await prisma.subscription_plans.findUnique({
+        where: { plan_name }
+      });
+      if (existingName) {
+        return res.status(400).json({ success: false, error: 'PLAN_NAME_EXISTS', message: 'এই নামের একটি প্যাকেজ ইতিমধ্যেই রয়েছে।' });
+      }
       await prisma.subscription_plans.create({
-        data: {
-          plan_name,
-          ...data
-        }
+        data
       });
     }
 

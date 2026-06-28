@@ -51,6 +51,7 @@ fun BillingConfigScreen(
     var planPrice by remember { mutableStateOf("") }
     var planMaxSites by remember { mutableStateOf("") }
     var planMaxDevices by remember { mutableStateOf("") }
+    var planIsCustomSenderAllowed by remember { mutableStateOf(false) }
     var planDurationDays by remember { mutableStateOf("365") }
 
     // PIN Verification Dialog states
@@ -97,7 +98,7 @@ fun BillingConfigScreen(
                         value = planName,
                         onValueChange = { planName = it },
                         label = { Text("প্ল্যানের নাম (যেমন: Basic, Standard)") },
-                        enabled = editingPlan == null,
+                        enabled = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary,
@@ -168,6 +169,18 @@ fun BillingConfigScreen(
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("কাস্টম সেন্ডার আইডি ব্যবহারের অনুমতি", color = TextPrimary, fontSize = 13.sp)
+                        Switch(
+                            checked = planIsCustomSenderAllowed,
+                            onCheckedChange = { planIsCustomSenderAllowed = it }
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -186,6 +199,7 @@ fun BillingConfigScreen(
                                     price = p,
                                     maxSites = ms,
                                     maxDevices = md,
+                                    isCustomSenderAllowed = if (planIsCustomSenderAllowed) 1 else 0,
                                     durationDays = dd
                                 )
                             )
@@ -196,6 +210,7 @@ fun BillingConfigScreen(
                             planMaxSites = ""
                             planMaxDevices = ""
                             planDurationDays = "365"
+                            planIsCustomSenderAllowed = false
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
@@ -213,6 +228,7 @@ fun BillingConfigScreen(
                         planMaxSites = ""
                         planMaxDevices = ""
                         planDurationDays = "365"
+                        planIsCustomSenderAllowed = false
                     }
                 ) {
                     Text("বাতিল", color = TextSecondary)
@@ -491,6 +507,7 @@ fun BillingConfigScreen(
                             planMaxSites = plan.maxSites.toString()
                             planMaxDevices = plan.maxDevices.toString()
                             planDurationDays = plan.durationDays.toString()
+                            planIsCustomSenderAllowed = plan.isCustomSenderAllowed == 1
                             showCreatePlanDialog = true
                         }
                 ) {
@@ -522,7 +539,7 @@ fun BillingConfigScreen(
                                 }
                             }
                         }
-                        Text("সর্বোচ্চ সাইট: ${plan.maxSites} | সর্বোচ্চ ডিভাইস: ${plan.maxDevices}", color = TextSecondary, fontSize = 12.sp)
+                        Text("সর্বোচ্চ সাইট: ${plan.maxSites} | সর্বোচ্চ ডিভাইস: ${plan.maxDevices}${if (plan.isCustomSenderAllowed == 1) " | কাস্টম সেন্ডার: হ্যাঁ" else ""}", color = TextSecondary, fontSize = 12.sp)
                         Text("মেয়াদ: ${plan.durationDays} দিন", color = Color(0xFF10B981), fontSize = 12.sp)
                     }
                 }
