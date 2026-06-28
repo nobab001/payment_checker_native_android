@@ -36,6 +36,7 @@ object AppConfig {
     const val KEY_SIM2_ENABLED        = "pcu_sim2_enabled_cache"
     const val KEY_IS_OWNER_DEVICE     = "pcu_is_owner_device"
     const val KEY_DEVICE_SPECIFIC_PIN = "pcu_device_specific_pin"
+    const val KEY_HAS_CUSTOM_SENDER_ADDON = "pcu_has_custom_sender_addon"
 
     // -----------------------------------------------------------------------
     // P2P Sync defaults

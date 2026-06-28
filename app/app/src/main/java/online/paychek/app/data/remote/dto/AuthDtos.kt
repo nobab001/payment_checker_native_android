@@ -102,7 +102,9 @@ data class UserDto(
     @SerializedName(value = "isPaid", alternate = ["is_paid"]) val isPaid: Boolean = false,
     @SerializedName(value = "activePlanName", alternate = ["active_plan_name"]) val activePlanName: String? = null,
     @SerializedName(value = "expiryDate", alternate = ["expiry_date"]) val expiryDate: String? = null,
-    @SerializedName("avatar") val avatar: String? = null
+    @SerializedName("avatar") val avatar: String? = null,
+    @SerializedName(value = "hasCustomSenderAddon", alternate = ["has_custom_sender_addon"])
+    val hasCustomSenderAddon: Int = 0
 )
 
 data class DeviceDto(

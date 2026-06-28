@@ -1946,7 +1946,8 @@ async function getProfile(req, res) {
         isPaid: !!dbUser.is_paid,
         activePlanName: dbUser.active_plan_name,
         expiryDate: dbUser.expiry_date,
-        avatar: dbUser.avatar
+        avatar: dbUser.avatar,
+        hasCustomSenderAddon: dbUser.has_custom_sender_addon === 1 ? 1 : 0
       }
     });
   } catch (err) {

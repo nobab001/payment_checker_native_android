@@ -62,7 +62,8 @@ data class DeviceUiState(
     val sim2Number: String                    = "",
     val isTemplatesLoading: Boolean           = false,
     val showPremiumUpgradeDialog: Boolean     = false,
-    val dialogErrorMessage: String?           = null
+    val dialogErrorMessage: String?           = null,
+    val hasCustomSenderPermission: Boolean    = false
 )
 
 // =============================================================================
@@ -113,6 +114,9 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
         val cachedSim1Num = cachedList.find { it.simSlot == 1 && !it.number.isNullOrEmpty() }?.number ?: ""
         val cachedSim2Num = cachedList.find { it.simSlot == 2 && !it.number.isNullOrEmpty() }?.number ?: ""
+        val cachedCustomSenderPermission = prefs.getBoolean(AppConfig.KEY_HAS_CUSTOM_SENDER_ADDON, false)
+
+        RetrofitClient.init(application)
 
         _state.update { 
             it.copy(
@@ -122,9 +126,12 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 templates = cachedTemplatesList,
                 sim1Number = cachedSim1Num,
                 sim2Number = cachedSim2Num,
-                isLoading = cachedList.isEmpty()
+                isLoading = cachedList.isEmpty(),
+                hasCustomSenderPermission = cachedCustomSenderPermission
             ) 
         }
+
+        loadCustomSenderPermission()
 
         viewModelScope.launch {
             isNetworkAvailable.collect { available ->
@@ -784,11 +791,40 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(showPremiumUpgradeDialog = show) }
     }
 
+    fun onAddCustomSenderClick(simSlot: Int, onAllowed: (Int) -> Unit) {
+        if (!_state.value.hasCustomSenderPermission) {
+            _state.update { it.copy(showPremiumUpgradeDialog = true) }
+            return
+        }
+        _state.update { it.copy(dialogErrorMessage = null) }
+        onAllowed(simSlot)
+    }
+
+    private fun loadCustomSenderPermission() {
+        viewModelScope.launch {
+            val token = getToken() ?: return@launch
+            runCatching { RetrofitClient.profileApiService.getProfile("Bearer $token") }
+                .onSuccess { res ->
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        val user = res.body()!!.user
+                        val allowed = user.hasCustomSenderAddon == 1 || user.role == "admin"
+                        prefs.edit().putBoolean(AppConfig.KEY_HAS_CUSTOM_SENDER_ADDON, allowed).apply()
+                        _state.update { it.copy(hasCustomSenderPermission = allowed) }
+                    }
+                }
+        }
+    }
+
     fun addCustomSender(simSlot: Int, senderId: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, errorMessage = null, dialogErrorMessage = null) }
             val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
-            val request = AddCustomSenderRequest(simSlot = simSlot, senderId = senderId.trim())
+            val deviceId = DeviceIdHelper.getHashedAndroidId(getApplication())
+            val request = AddCustomSenderRequest(
+                simSlot = simSlot,
+                senderId = senderId.trim(),
+                deviceId = deviceId
+            )
 
             runCatching { api.addCustomSender("Bearer $token", request) }
                 .onSuccess { res ->
@@ -799,20 +835,13 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                             _state.update { it.copy(methods = newData) }
                         }
                         loadGatewayMethods()
+                        loadTemplates()
                         onSuccess()
                     } else if (res.code() == 403) {
-                        // Upgrade required
                         _state.update { it.copy(showPremiumUpgradeDialog = true) }
-                        onSuccess()
                     } else {
-                        val errObj = res.errorBody()?.string()
-                        val msg = if (errObj?.contains("message") == true) {
-                            try {
-                                com.google.gson.JsonParser.parseString(errObj).asJsonObject.get("message").asString
-                            } catch(e: Exception) { "মেথড যোগ করতে ব্যর্থ হয়েছে।" }
-                        } else {
-                            "মেথড যোগ করতে ব্যর্থ হয়েছে (${res.code()})"
-                        }
+                        val msg = online.paychek.app.utils.ApiErrorParser.parse(res.errorBody()?.string())
+                            ?: "মেথড যোগ করতে ব্যর্থ হয়েছে (${res.code()})"
                         _state.update { it.copy(dialogErrorMessage = msg) }
                     }
                 }

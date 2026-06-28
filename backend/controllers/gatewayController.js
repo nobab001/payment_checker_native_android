@@ -381,12 +381,15 @@ async function addCustomSender(req, res) {
     const userId = req.user.userId;
     const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
     const { sim_slot, sender_id } = req.body;
+    const cleanSenderId = typeof sender_id === 'string' ? sender_id.trim() : '';
+    const simSlotNum = parseInt(sim_slot, 10);
 
-    if (!sim_slot || !sender_id) {
-      return res.status(400).json({ error: 'sim_slot এবং sender_id আবশ্যক' });
+    if (!Number.isInteger(simSlotNum) || simSlotNum < 1 || simSlotNum > 2) {
+      return res.status(400).json({ error: 'sim_slot ১ বা ২ হতে হবে' });
     }
-
-    const cleanSenderId = sender_id.trim();
+    if (!cleanSenderId) {
+      return res.status(400).json({ error: 'sender_id আবশ্যক' });
+    }
 
     // Verify user authorization for custom sender feature:
     // User must either have has_custom_sender_addon === 1 OR their active subscription plan must allow custom sender.
@@ -471,12 +474,23 @@ async function addCustomSender(req, res) {
         user_id: String(userId),
         device_id: String(deviceId),
         template_id: template.id,
-        sim_slot: parseInt(sim_slot, 10)
+        sim_slot: simSlotNum
       }
     });
 
     if (existingMethod) {
-      return res.status(400).json({ error: 'এই সেন্ডার আইডিটি ইতিমধ্যেই এই স্লটে যুক্ত করা আছে।' });
+      if (existingMethod.is_enabled === 0) {
+        await prisma.gateway_methods.update({
+          where: { id: existingMethod.id },
+          data: { is_enabled: 1 }
+        });
+      }
+      const data = await fetchGatewayMethodsForUser(userId, deviceId);
+      return res.json({
+        success: true,
+        message: 'কাস্টম সেন্ডার সফলভাবে যুক্ত করা হয়েছে।',
+        data
+      });
     }
 
     // Get max priority to append
@@ -492,7 +506,7 @@ async function addCustomSender(req, res) {
         user_id: String(userId),
         device_id: String(deviceId),
         template_id: template.id,
-        sim_slot: parseInt(sim_slot, 10),
+        sim_slot: simSlotNum,
         provider: `Custom-${cleanSenderId}`,
         number: '',
         is_enabled: 1,

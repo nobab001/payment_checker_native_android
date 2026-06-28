@@ -80,6 +80,9 @@ class MainActivity : FragmentActivity() {
         }
 
         enableEdgeToEdge()
+
+        online.paychek.app.data.remote.api.RetrofitClient.init(applicationContext)
+
         setContent {
             AppTheme {
                 Surface(

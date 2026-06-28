@@ -776,11 +776,12 @@ fun HomeScreen(
                 when (selectedTab) {
                     HomeTab.HOME -> DashboardScreen(
                         onNavigateToHistory = { selectedTab = HomeTab.SEARCH },
-                        onNavigateToSubscription = { onNavigate(AppNavKey.SubscriptionPackages) },
+                        onNavigateToSubscription = { onNavigate(AppNavKey.SubscriptionPackages()) },
                         modifier = Modifier.fillMaxSize()
                     )
                     HomeTab.DEVICE -> DeviceScreen(
                         onNavigateBack = { selectedTab = HomeTab.HOME },
+                        onNavigateToSubscription = { tab -> onNavigate(AppNavKey.SubscriptionPackages(tab)) },
                         modifier = Modifier.fillMaxSize()
                     )
                     HomeTab.SEARCH -> TransactionSearchScreen(
@@ -792,7 +793,7 @@ fun HomeScreen(
                     )
                     HomeTab.PROFILE -> ProfileSettingsScreen(
                         onNavigateBack = { selectedTab = HomeTab.HOME },
-                        onNavigateToSubscription = { onNavigate(AppNavKey.SubscriptionPackages) },
+                        onNavigateToSubscription = { onNavigate(AppNavKey.SubscriptionPackages()) },
                         modifier = Modifier.fillMaxSize()
                     )
                 }

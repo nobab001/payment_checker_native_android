@@ -102,7 +102,7 @@ fun MainNavigation() {
             entry<NavKey.Profile> {
                 ProfileSettingsScreen(
                     onNavigateBack = { backStack.removeLastOrNull() },
-                    onNavigateToSubscription = { backStack.add(NavKey.SubscriptionPackages) },
+                    onNavigateToSubscription = { backStack.add(NavKey.SubscriptionPackages()) },
                     modifier       = Modifier.fillMaxSize()
                 )
             }
@@ -133,8 +133,9 @@ fun MainNavigation() {
                 )
             }
 
-            entry<NavKey.SubscriptionPackages> {
+            entry<NavKey.SubscriptionPackages> { key ->
                 online.paychek.app.ui.screen.billing.SubscriptionPackagesScreen(
+                    initialTab = key.initialTab,
                     onNavigateToPaymentMock = { backStack.add(NavKey.PaymentGatewayMock) },
                     onNavigateBack = { backStack.removeLastOrNull() },
                     modifier = Modifier.fillMaxSize()

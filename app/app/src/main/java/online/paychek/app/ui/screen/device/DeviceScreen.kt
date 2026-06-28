@@ -93,6 +93,7 @@ private fun providerEmoji(tag: String): String = when (tag.lowercase()) {
 @Composable
 fun DeviceScreen(
     onNavigateBack: (() -> Unit)? = null,
+    onNavigateToSubscription: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: DeviceViewModel = viewModel()
 ) {
@@ -400,8 +401,10 @@ fun DeviceScreen(
                             onToggleTemplate = { viewModel.toggleTemplate(1, it) },
                             isRestricted = isRestricted,
                             onAddCustomSenderClick = { slot ->
-                                activeSimSlotForCustomSender = slot
-                                showAddSenderDialog = true
+                                viewModel.onAddCustomSenderClick(slot) { allowedSlot ->
+                                    activeSimSlotForCustomSender = allowedSlot
+                                    showAddSenderDialog = true
+                                }
                             },
                             onDeleteCustomSenderClick = { method ->
                                 methodToDelete = method
@@ -423,8 +426,10 @@ fun DeviceScreen(
                             onToggleTemplate = { viewModel.toggleTemplate(2, it) },
                             isRestricted = isRestricted,
                             onAddCustomSenderClick = { slot ->
-                                activeSimSlotForCustomSender = slot
-                                showAddSenderDialog = true
+                                viewModel.onAddCustomSenderClick(slot) { allowedSlot ->
+                                    activeSimSlotForCustomSender = allowedSlot
+                                    showAddSenderDialog = true
+                                }
                             },
                             onDeleteCustomSenderClick = { method ->
                                 methodToDelete = method
@@ -1121,13 +1126,23 @@ fun DeviceScreen(
                         Button(
                             onClick = {
                                 viewModel.setShowPremiumUpgradeDialog(false)
+                                onNavigateToSubscription(1)
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp),
                             contentPadding = PaddingValues(vertical = 12.dp)
                         ) {
-                            Text("ঠিক আছে", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold)
+                            Text("প্যাকেজ কিনুন", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = { viewModel.setShowPremiumUpgradeDialog(false) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMuted),
+                            contentPadding = PaddingValues(vertical = 12.dp)
+                        ) {
+                            Text("বাতিল")
                         }
                     }
                 }
@@ -1837,7 +1852,7 @@ private fun SimCard(
                     )
                 }
 
-                // Render custom user chips
+                // Render custom user chips on this device
                 methods.filter { it.simSlot == simSlot && it.isOfficial == 0 }.forEach { method ->
                     val isSelected = method.isEnabled == 1
                     val displayName = method.senderId ?: method.provider.removePrefix("Custom-")
@@ -1858,6 +1873,27 @@ private fun SimCard(
                         }
                     )
                 }
+
+                // Other devices' custom senders — visible but inactive on this device
+                val localCustomSenderIds = methods
+                    .filter { it.simSlot == simSlot && it.isOfficial == 0 }
+                    .mapNotNull { it.senderId?.lowercase() }
+                    .toSet()
+                templates
+                    .filter {
+                        it.isOfficial == 0 &&
+                            it.isOtherDevice == true &&
+                            !localCustomSenderIds.contains(it.senderId?.lowercase())
+                    }
+                    .forEach { template ->
+                        TemplateChip(
+                            name = template.senderId ?: template.templateName,
+                            dotColor = Color(0xFF64748B),
+                            isSelected = false,
+                            enabled = false,
+                            onClick = {}
+                        )
+                    }
 
                 // Render Add Custom Sender Plus Chip
                 if (!isRestricted) {
@@ -1898,6 +1934,7 @@ private fun TemplateChip(
     isSelected: Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val borderStroke = if (isSelected) {
@@ -1912,10 +1949,10 @@ private fun TemplateChip(
         Color.Transparent
     }
 
-    val textColor = if (isSelected) {
-        AccentCyan
-    } else {
-        TextMuted
+    val textColor = when {
+        !enabled -> TextMuted.copy(alpha = 0.45f)
+        isSelected -> AccentCyan
+        else -> TextMuted
     }
 
     Row(
@@ -1923,9 +1960,15 @@ private fun TemplateChip(
             .clip(RoundedCornerShape(16.dp))
             .background(bg)
             .border(borderStroke, RoundedCornerShape(16.dp))
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
+            .then(
+                if (enabled) {
+                    Modifier.combinedClickable(
+                        onClick = onClick,
+                        onLongClick = onLongClick
+                    )
+                } else {
+                    Modifier
+                }
             )
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,

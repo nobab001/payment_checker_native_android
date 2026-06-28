@@ -46,6 +46,7 @@ private val GradIndigo = Brush.linearGradient(
 fun SubscriptionPackagesScreen(
     onNavigateToPaymentMock: () -> Unit,
     onNavigateBack: () -> Unit,
+    initialTab: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -55,7 +56,7 @@ fun SubscriptionPackagesScreen(
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var plans by remember { mutableStateOf<List<SubscriptionPlanDto>>(emptyList()) }
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTab by remember { mutableStateOf(initialTab.coerceIn(0, 1)) }
 
     LaunchedEffect(Unit) {
         val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)

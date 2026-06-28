@@ -196,7 +196,8 @@ data class ApprovalStatusResponse(
 
 data class AddCustomSenderRequest(
     @SerializedName("sim_slot") val simSlot: Int,
-    @SerializedName("sender_id") val senderId: String
+    @SerializedName("sender_id") val senderId: String,
+    @SerializedName("deviceId") val deviceId: String? = null
 )
 
 data class SimSwapRequest(
