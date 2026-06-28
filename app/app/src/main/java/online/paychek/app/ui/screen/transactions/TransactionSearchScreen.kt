@@ -135,9 +135,57 @@ fun TransactionSearchScreen(
                     onDone        = { focusManager.clearFocus() },
                     isDateActive  = state.startDate != null || state.endDate != null,
                     onDateClick   = { showDatePicker = true },
-                    onClearDate   = { viewModel.onDateRangeChanged(null, null) },
+                    onClearDate   = { viewModel.onDateRangeChanged(null, null, null) },
                     modifier      = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
+            }
+
+            // ─── ২.৫. Quick Date Filters ─────────────────────────────
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val quickDaysList = listOf(2, 7, 15, 21, 30)
+                    quickDaysList.forEach { days ->
+                        val isSelected = state.selectedQuickDays == days
+                        val chipBgColor = if (isSelected) AccentCyan.copy(alpha = 0.18f) else HistCard
+                        val chipBorderColor = if (isSelected) AccentCyan else TextMuted.copy(alpha = 0.25f)
+                        val chipTextColor = if (isSelected) AccentCyan else TextMuted
+                        
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(
+                                    width = 1.dp,
+                                    color = chipBorderColor,
+                                    shape = RoundedCornerShape(20.dp)
+                                )
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(chipBgColor)
+                                .clickable {
+                                    if (isSelected) {
+                                        viewModel.onDateRangeChanged(null, null, null)
+                                    } else {
+                                        val range = calculateDateRange(days)
+                                        viewModel.onDateRangeChanged(range.first, range.second, days)
+                                    }
+                                }
+                                .padding(vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "$days দিন",
+                                color = chipTextColor,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
             }
 
             // ─── ৩. M3 Filter Chips Row ────────────────────────────────────
@@ -253,7 +301,7 @@ fun TransactionSearchScreen(
                         if (startMillis != null && endMillis != null) {
                             val startStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(startMillis))
                             val endStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(endMillis))
-                            viewModel.onDateRangeChanged(startStr, endStr)
+                            viewModel.onDateRangeChanged(startStr, endStr, null)
                         }
                     }
                 ) { Text("OK") }
@@ -917,4 +965,12 @@ private fun formatTrxTimestamp(raw: String): String {
 // =============================================================================
 // Component 9 — Date Range Filter Row
 // =============================================================================
+
+private fun calculateDateRange(days: Int): Pair<String, String> {
+    val cal = java.util.Calendar.getInstance()
+    val endStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time)
+    cal.add(java.util.Calendar.DAY_OF_YEAR, -(days - 1))
+    val startStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time)
+    return Pair(startStr, endStr)
+}
 

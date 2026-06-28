@@ -138,7 +138,7 @@ fun DashboardScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedProvider by remember { mutableStateOf<String?>(null) }
     var selectedProviderName by remember { mutableStateOf<String?>(null) }
-    var selectedDate by remember { mutableStateOf<String?>("today") }
+    var selectedDate by remember { mutableStateOf<String?>(null) }
     var showDateRangePicker by remember { mutableStateOf(false) }
     var customStartDate by remember { mutableStateOf<Long?>(null) }
     var customEndDate by remember { mutableStateOf<Long?>(null) }
@@ -1263,7 +1263,7 @@ private fun RecentTransactionsHeader(
         verticalAlignment    = Alignment.CenterVertically
     ) {
         Text(
-            text       = "আজকের ট্রানজেকশন",
+            text       = "সাম্প্রতিক ট্রানজেকশন",
             color      = TextWhite,
             fontSize   = 15.sp,
             fontWeight = FontWeight.Bold

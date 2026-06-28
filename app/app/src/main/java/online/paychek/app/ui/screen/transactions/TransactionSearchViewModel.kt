@@ -39,7 +39,8 @@ data class TransactionSearchState(
     val isLoadingMore:      Boolean = false,
     val startDate: String? = null,
     val endDate: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val selectedQuickDays: Int? = null
 )
 
 // =============================================================================
@@ -136,11 +137,12 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
         fetchPage(page = 1)
     }
 
-    fun onDateRangeChanged(start: String?, end: String?) {
+    fun onDateRangeChanged(start: String?, end: String?, quickDays: Int? = null) {
         _state.update {
             it.copy(
                 startDate        = start,
                 endDate          = end,
+                selectedQuickDays = quickDays,
                 rawList          = emptyList(),
                 displayList      = emptyList(),
                 currentPage      = 1,
@@ -209,7 +211,7 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                         val updated = current.copy(
                             rawList          = merged,
                             currentPage      = page,
-                            hasMore          = if (current.startDate != null && current.endDate != null) (newItems.size >= PAGE_SIZE) else false,
+                            hasMore          = if (current.startDate != null && current.endDate != null) false else (newItems.size >= PAGE_SIZE),
                             isInitialLoading = false,
                             isLoadingMore    = false,
                             errorMessage     = null
