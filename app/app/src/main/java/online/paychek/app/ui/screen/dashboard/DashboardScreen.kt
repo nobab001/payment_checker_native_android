@@ -62,6 +62,7 @@ import androidx.compose.foundation.border
 import online.paychek.app.data.remote.dto.DashboardStats
 import online.paychek.app.data.remote.dto.TransactionItem
 import online.paychek.app.ui.components.ConnectivityBanner
+import online.paychek.app.ui.components.LastUpdateRow
 import online.paychek.app.utils.adaptivePadding
 import online.paychek.app.utils.adaptiveTextSize
 import online.paychek.app.utils.screenWidth
@@ -683,6 +684,19 @@ fun DashboardScreen(
                     matchesQuery && matchesProvider && matchesDate
                 }
 
+                if (screenState.uiState is DashboardUiState.Success && !screenState.isFilterLoading) {
+                    item {
+                        LastUpdateRow(
+                            lastUpdatedAtMs = screenState.lastUpdatedAtMs,
+                            isRefreshing = screenState.isRefreshing,
+                            onReload = { viewModel.onRefresh() },
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            accentColor = AccentCyan,
+                            mutedColor = TextMuted
+                        )
+                    }
+                }
+
                 if (screenState.isFilterLoading) {
                     item {
                         Box(
@@ -695,9 +709,6 @@ fun DashboardScreen(
                         }
                     }
                 } else if (filteredList.isNotEmpty()) {
-                    item {
-                        RecentTransactionsHeader(onSeeAll = onNavigateToHistory)
-                    }
                     items(filteredList, key = { it.id }) { trx ->
                         TransactionRow(
                             item     = trx,
@@ -1244,38 +1255,7 @@ private fun StatCard(
 }
 
 // =============================================================================
-// Component 4 — সাম্প্রতিক ট্রানজেকশন Header
-// =============================================================================
-
-@Composable
-private fun RecentTransactionsHeader(
-    onSeeAll: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier             = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment    = Alignment.CenterVertically
-    ) {
-        Text(
-            text       = "সাম্প্রতিক ট্রানজেকশন",
-            color      = TextWhite,
-            fontSize   = 15.sp,
-            fontWeight = FontWeight.Bold
-        )
-        TextButton(onClick = onSeeAll) {
-            Text(
-                text     = "সব দেখুন",
-                color    = AccentCyan,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
+// Component 4 — Transaction Row helpers
 // =============================================================================
 // Component 5 — একটি ট্রানজেকশন রো
 // =============================================================================

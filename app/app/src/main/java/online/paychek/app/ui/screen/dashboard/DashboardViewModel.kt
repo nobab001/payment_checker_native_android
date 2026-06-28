@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import online.paychek.app.config.AppConfig
 import online.paychek.app.utils.RefreshCooldown
+import online.paychek.app.utils.BangladeshTimeUtil
 import online.paychek.app.data.remote.dto.*
 import online.paychek.app.data.repository.PaymentRepository
 import online.paychek.app.services.foreground.SmsMonitorService
@@ -53,7 +54,8 @@ data class DashboardScreenState(
     val selectedTab: Int               = 0, // 0 = Payment Records, 1 = Custom Archive
     val customArchives: List<CustomArchiveItem> = emptyList(),
     val isCustomArchivesLoading: Boolean = false,
-    val customArchivesError: String?   = null
+    val customArchivesError: String?   = null,
+    val lastUpdatedAtMs: Long?         = null
 )
 
 // =============================================================================
@@ -181,7 +183,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         it.copy(
                             uiState         = DashboardUiState.Success(stats),
                             isRefreshing    = false,
-                            globalTemplates = stats.globalTemplates ?: emptyList()
+                            globalTemplates = stats.globalTemplates ?: emptyList(),
+                            lastUpdatedAtMs = BangladeshTimeUtil.latestTransactionEpochMs(stats.recentTransactions)
+                                ?: System.currentTimeMillis()
                         )
                     }
                 },
@@ -359,7 +363,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 )
                 result.fold(
                     onSuccess = { items ->
-                        _state.update { it.copy(dateFilteredTransactions = items, isFilterLoading = false) }
+                        _state.update {
+                            it.copy(
+                                dateFilteredTransactions = items,
+                                isFilterLoading = false,
+                                lastUpdatedAtMs = BangladeshTimeUtil.latestTransactionEpochMs(items)
+                                    ?: it.lastUpdatedAtMs
+                            )
+                        }
                     },
                     onFailure = {
                         _state.update { it.copy(dateFilteredTransactions = emptyList(), isFilterLoading = false) }
