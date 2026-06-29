@@ -165,7 +165,13 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
     }
 
     fun onAddCredentialContactChange(value: String) {
-        _state.update { it.copy(addCredentialContact = value) }
+        val type = _state.value.addCredentialType
+        val formatted = if (type == "phone") {
+            CredentialInputUtils.formatPhoneInput(value)
+        } else {
+            CredentialInputUtils.formatEmailInput(value)
+        }
+        _state.update { it.copy(addCredentialContact = formatted, errorMessage = null) }
     }
 
     fun onAddCredentialOtpChange(value: String) {
@@ -176,11 +182,20 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
     // Add Credential — Send OTP
     // ─────────────────────────────────────────────────────────────
     fun sendCredentialOtp() {
-        val contact = _state.value.addCredentialContact.trim()
-        if (contact.isEmpty()) {
-            _state.update { it.copy(errorMessage = "নম্বর বা ইমেইল প্রবেশ করুন।") }
+        val type = _state.value.addCredentialType
+        val contact = if (type == "phone") {
+            CredentialInputUtils.formatPhoneInput(_state.value.addCredentialContact)
+        } else {
+            CredentialInputUtils.formatEmailInput(_state.value.addCredentialContact)
+        }
+
+        CredentialInputUtils.validateCredential(contact, type)?.let { msg ->
+            _state.update { it.copy(errorMessage = msg) }
             return
         }
+
+        _state.update { it.copy(addCredentialContact = contact) }
+
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, errorMessage = null) }
             try {
@@ -216,8 +231,13 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
     // Add Credential — Verify OTP
     // ─────────────────────────────────────────────────────────────
     fun verifyCredential() {
-        val contact = _state.value.addCredentialContact.trim()
-        val code    = _state.value.addCredentialOtpCode.trim()
+        val type = _state.value.addCredentialType
+        val contact = if (type == "phone") {
+            CredentialInputUtils.formatPhoneInput(_state.value.addCredentialContact)
+        } else {
+            CredentialInputUtils.formatEmailInput(_state.value.addCredentialContact)
+        }
+        val code = CredentialInputUtils.cleanOtp(_state.value.addCredentialOtpCode)
         if (code.length != 6) {
             _state.update { it.copy(errorMessage = "৬-সংখ্যার OTP দিন।") }
             return

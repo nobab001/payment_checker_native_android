@@ -108,9 +108,6 @@ fun ProfileSettingsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scroll = rememberScrollState()
     val context = LocalContext.current
-    val isRestricted = remember(context) {
-        online.paychek.app.utils.SecurePreferences.decrypt(context, "pcu_device_role") == "restricted"
-    }
 
     val sharedPrefs = remember(context) {
         context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
@@ -272,13 +269,11 @@ fun ProfileSettingsScreen(
                          imagePickerLauncher.launch("image/*")
                      },
                     onRenewClick     = onNavigateToSubscription,
-                    isRestricted     = isRestricted,
                     modifier         = Modifier.padding(horizontal = adaptivePadding(12.dp, 16.dp))
                 )
 
                 // ── Section 2: Linked Credentials ─────────────────────────
                 ProfileCredentialsCard(
-                    isRestricted   = isRestricted,
                     modifier       = Modifier.padding(horizontal = adaptivePadding(12.dp, 16.dp))
                 )
 
@@ -286,7 +281,6 @@ fun ProfileSettingsScreen(
                 SecurityPinCard(
                     onChangePin    = { viewModel.openChangePinDialog() },
                     onForgotPin    = { viewModel.openResetPinDialog() },
-                    isRestricted   = isRestricted,
                     modifier       = Modifier.padding(horizontal = adaptivePadding(12.dp, 16.dp))
                 )
 
@@ -668,9 +662,6 @@ private fun AddCredentialDialog(
     state: ProfileSettingsState,
     viewModel: ProfileSettingsViewModel
 ) {
-    val addCredentialOtpFocusRequester = remember { FocusRequester() }
-    val addCredentialOtpInteractionSource = remember { MutableInteractionSource() }
-
     val isPhone = state.addCredentialType == "phone"
     val label   = if (isPhone) "মোবাইল নম্বর" else "Gmail ঠিকানা"
     val icon    = if (isPhone) Icons.Default.PhoneAndroid else Icons.Default.Email
@@ -728,207 +719,11 @@ private fun AddCredentialDialog(
 
                     // OTP input (visible after send)
                     AnimatedVisibility(visible = state.addCredentialOtpSent) {
-                        val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-                        // Hidden BasicTextField state (declared outside / above the Box modifier so it is in scope)
-                        var addCredOtpState by remember {
-                            val padded = state.addCredentialOtpCode.padEnd(6, ' ')
-                            val firstEmpty = state.addCredentialOtpCode.indexOf(' ')
-                            val selIndex = if (firstEmpty != -1) firstEmpty else minOf(state.addCredentialOtpCode.length, 5)
-                            mutableStateOf(
-                                TextFieldValue(
-                                    text = padded,
-                                    selection = TextRange(selIndex, selIndex + 1)
-                                )
-                            )
-                        }
-                        LaunchedEffect(state.addCredentialOtpCode) {
-                            val padded = state.addCredentialOtpCode.padEnd(6, ' ')
-                            if (padded != addCredOtpState.text) {
-                                val firstEmpty = state.addCredentialOtpCode.indexOf(' ')
-                                val selIndex = if (firstEmpty != -1) firstEmpty else minOf(state.addCredentialOtpCode.length, 5)
-                                addCredOtpState = TextFieldValue(
-                                    text = padded,
-                                    selection = TextRange(selIndex, selIndex + 1)
-                                )
-                            }
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(
-                                    interactionSource = addCredentialOtpInteractionSource,
-                                    indication = null
-                                ) {
-                                    addCredentialOtpFocusRequester.requestFocus()
-                                    keyboardController?.show()
-                                    val firstEmpty = state.addCredentialOtpCode.indexOf(' ')
-                                    val selIndex = if (firstEmpty != -1) firstEmpty else minOf(state.addCredentialOtpCode.length, 5)
-                                    addCredOtpState = addCredOtpState.copy(
-                                        selection = TextRange(selIndex, selIndex + 1)
-                                    )
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            // Visual OTP Boxes
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                for (i in 0 until 6) {
-                                    val char = state.addCredentialOtpCode.getOrNull(i)?.toString() ?: " "
-                                    val isFocused = (addCredOtpState.selection.start == i) || (i == 5 && addCredOtpState.selection.start == 6)
-
-                                    Box(
-                                        modifier = Modifier
-                                            .size(width = 40.dp, height = 48.dp)
-                                            .background(
-                                                color = if (char.isNotBlank()) Color.White.copy(alpha = 0.05f) else PsCardAlt,
-                                                shape = RoundedCornerShape(10.dp)
-                                            )
-                                            .border(
-                                                width = if (isFocused) 2.dp else 1.dp,
-                                                color = if (isFocused) accent else PsCardAlt,
-                                                shape = RoundedCornerShape(10.dp)
-                                            )
-                                            .clickable(
-                                                interactionSource = remember { MutableInteractionSource() },
-                                                indication = null
-                                            ) {
-                                                addCredentialOtpFocusRequester.requestFocus()
-                                                keyboardController?.show()
-                                                addCredOtpState = addCredOtpState.copy(
-                                                    selection = TextRange(i, i + 1)
-                                                )
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.Center
-                                        ) {
-                                            Text(
-                                                text = char,
-                                                fontSize = 18.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = TextW,
-                                                textAlign = TextAlign.Center
-                                            )
-                                            if (isFocused && (addCredOtpState.selection.start == i || (i == 5 && addCredOtpState.selection.start == 6)) && char.isNotBlank()) {
-                                                BlinkingCursor(color = accent)
-                                            }
-                                        }
-                                        if (isFocused && char.isBlank()) {
-                                            BlinkingCursor(color = accent)
-                                        }
-                                    }
-                                }
-                            }
-
-                            val emptyTextToolbar = object : androidx.compose.ui.platform.TextToolbar {
-                                override fun showMenu(
-                                    rect: androidx.compose.ui.geometry.Rect,
-                                    onCopy: (() -> Unit)?,
-                                    onPaste: (() -> Unit)?,
-                                    onCut: (() -> Unit)?,
-                                    onSelectAll: (() -> Unit)?
-                                ) {}
-                                override fun hide() {}
-                                override val status: androidx.compose.ui.platform.TextToolbarStatus = androidx.compose.ui.platform.TextToolbarStatus.Hidden
-                            }
-
-                            CompositionLocalProvider(androidx.compose.ui.platform.LocalTextToolbar provides emptyTextToolbar) {
-                                BasicTextField(
-                                    value = addCredOtpState,
-                                    onValueChange = { newValue ->
-                                        val oldText = addCredOtpState.text
-                                        val newText = newValue.text
-                                        val oldSelection = addCredOtpState.selection
-
-                                        val (sanitized, targetSelection) = if (newText.length < oldText.length) {
-                                            val i = oldSelection.start
-                                            val isBoxEmpty = oldSelection.collapsed || i >= oldText.length || oldText[i] == ' '
-
-                                            if (!isBoxEmpty) {
-                                                val sb = StringBuilder(oldText)
-                                                if (i >= 0 && i < oldText.length) {
-                                                    sb.setCharAt(i, ' ')
-                                                }
-                                                val updatedText = sb.toString()
-                                                val sel = TextRange(i, i + 1)
-                                                Pair(updatedText, sel)
-                                            } else {
-                                                val deleteIndex = i - 1
-                                                val sb = StringBuilder(oldText)
-                                                if (deleteIndex >= 0 && deleteIndex < oldText.length) {
-                                                    sb.setCharAt(deleteIndex, ' ')
-                                                }
-                                                val updatedText = sb.toString()
-                                                val newCursor = maxOf(0, deleteIndex)
-                                                val sel = TextRange(newCursor, newCursor + 1)
-                                                Pair(updatedText, sel)
-                                            }
-                                        } else if (newText != oldText) {
-                                            val insertedLength = newText.length - oldText.length + (oldSelection.end - oldSelection.start)
-                                            if (insertedLength > 0 && oldSelection.start < 6) {
-                                                val insertedText = newText.substring(oldSelection.start, minOf(oldSelection.start + insertedLength, newText.length))
-                                                val digitsOnly = insertedText.filter { it.isDigit() }
-                                                if (digitsOnly.isNotEmpty()) {
-                                                    val sb = StringBuilder(oldText)
-                                                    for (idx in 0 until digitsOnly.length) {
-                                                        val targetIdx = oldSelection.start + idx
-                                                        if (targetIdx < 6) {
-                                                            sb.setCharAt(targetIdx, digitsOnly[idx])
-                                                        }
-                                                    }
-                                                    val updatedText = sb.toString()
-                                                    val nextIndex = oldSelection.start + digitsOnly.length
-                                                    val sel = if (nextIndex < 6) {
-                                                        TextRange(nextIndex, nextIndex + 1)
-                                                    } else {
-                                                        TextRange(5, 6)
-                                                    }
-                                                    Pair(updatedText, sel)
-                                                } else {
-                                                    Pair(oldText, oldSelection)
-                                                }
-                                            } else {
-                                                Pair(oldText, oldSelection)
-                                            }
-                                        } else {
-                                            Pair(oldText, oldSelection)
-                                        }
-
-                                        if (sanitized != state.addCredentialOtpCode) {
-                                            viewModel.onAddCredentialOtpChange(sanitized)
-                                        }
-                                        addCredOtpState = TextFieldValue(
-                                            text = sanitized,
-                                            selection = targetSelection
-                                        )
-                                        if (newText.length < oldText.length) {
-                                            addCredentialOtpFocusRequester.requestFocus()
-                                            keyboardController?.show()
-                                        }
-                                    },
-                                    keyboardOptions = KeyboardOptions(
-                                        keyboardType = KeyboardType.Number,
-                                        imeAction = ImeAction.Done
-                                    ),
-                                    textStyle = androidx.compose.ui.text.TextStyle(
-                                        color = Color.Transparent,
-                                        fontSize = 1.sp,
-                                        textAlign = TextAlign.Center
-                                    ),
-                                    cursorBrush = SolidColor(Color.Transparent),
-                                    modifier = Modifier
-                                        .size(1.dp)
-                                        .alpha(0f)
-                                        .focusRequester(addCredentialOtpFocusRequester)
-                                )
-                            }
-                        }
+                        OtpInputRow(
+                            otpValue = state.addCredentialOtpCode,
+                            onOtpChange = { viewModel.onAddCredentialOtpChange(it) },
+                            accentColor = accent
+                        )
                     }
 
 

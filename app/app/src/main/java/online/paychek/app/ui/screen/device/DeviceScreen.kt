@@ -129,7 +129,12 @@ fun DeviceScreen(
 
     var showAddSenderDialog by remember { mutableStateOf(false) }
     var activeSimSlotForCustomSender by remember { mutableStateOf(1) }
+    var showRemoteAddSenderDialog by remember { mutableStateOf(false) }
+    var remoteActiveSimSlotForCustomSender by remember { mutableStateOf(1) }
+    var remoteMethodToDelete by remember { mutableStateOf<GatewayMethod?>(null) }
     var customSenderInput by remember { mutableStateOf("") }
+    var selectedOfficialTemplateId by remember { mutableStateOf<Int?>(null) }
+    var forcePersonalSender by remember { mutableStateOf(false) }
     var methodToDelete by remember { mutableStateOf<GatewayMethod?>(null) }
 
     val prefs = remember(context) {
@@ -148,32 +153,17 @@ fun DeviceScreen(
         }
     }
 
-    var showSimSwapDialogForSlot by remember { mutableStateOf<Int?>(null) }
-    var detectedNewSimNumber by remember { mutableStateOf("") }
-
-    LaunchedEffect(state.sim1Number, state.sim2Number) {
+    LaunchedEffect(Unit) {
         val hasPhoneState = androidx.core.content.ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.READ_PHONE_STATE
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        
+
         if (hasPhoneState) {
-            val (sim1, sim2) = online.paychek.app.utils.DeviceIdHelper.getSimNumbers(context)
-            
-            // 1. Initial detection auto-fill if currently empty
             val hasAttempted = prefs.getBoolean("pcu_sim_auto_detected", false)
             if (!hasAttempted && state.sim1Number.isBlank() && state.sim2Number.isBlank()) {
                 viewModel.autoDetectSimNumbers()
                 prefs.edit().putBoolean("pcu_sim_auto_detected", true).apply()
-            }
-            
-            // 2. SIM swap check for mismatched numbers
-            if (!sim1.isNullOrBlank() && state.sim1Number.isNotBlank() && sim1 != state.sim1Number) {
-                showSimSwapDialogForSlot = 1
-                detectedNewSimNumber = sim1
-            } else if (!sim2.isNullOrBlank() && state.sim2Number.isNotBlank() && sim2 != state.sim2Number) {
-                showSimSwapDialogForSlot = 2
-                detectedNewSimNumber = sim2
             }
         } else {
             val hasAttempted = prefs.getBoolean("pcu_sim_auto_detected", false)
@@ -209,11 +199,7 @@ fun DeviceScreen(
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
     }
 
-    val isOwner = remember(context) {
-        online.paychek.app.utils.SecurePreferences.decrypt(context, "pcu_device_role") == "owner"
-    }
-    val isRestricted = !isOwner
-    val currentSubTab = if (isOwner) state.selectedSubTab else 0
+    val currentSubTab = state.selectedSubTab
 
     if (state.pendingSimConflict != null) {
         val conflict = state.pendingSimConflict!!
@@ -240,42 +226,6 @@ fun DeviceScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo)
                 ) {
                     Text("ঠিক আছে", color = Color.White)
-                }
-            },
-            containerColor = GwCard
-        )
-    }
-
-    if (showSimSwapDialogForSlot != null) {
-        val slot = showSimSwapDialogForSlot!!
-        AlertDialog(
-            onDismissRequest = { /* Prevent dismiss on outside touch */ },
-            title = {
-                Text(
-                    text = "সিম কার্ড পরিবর্তন সনাক্ত করা হয়েছে",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 16.sp
-                )
-            },
-            text = {
-                Text(
-                    text = "স্লট $slot-এ একটি নতুন সিম কার্ড সনাক্ত করা হয়েছে। নতুন নম্বর: $detectedNewSimNumber\n\nস্লটের বর্তমান কনফিগারেশন নিষ্ক্রিয় করা হবে এবং সার্ভারের সাথে নতুন সিম নম্বরটি সিঙ্ক করা হবে।",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 14.sp
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.onSimNumberChanged(slot, detectedNewSimNumber)
-                        viewModel.syncAndValidateSimSwap(slot, detectedNewSimNumber)
-                        showSimSwapDialogForSlot = null
-                        detectedNewSimNumber = ""
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo)
-                ) {
-                    Text("ওকে", color = Color.White)
                 }
             },
             containerColor = GwCard
@@ -357,9 +307,8 @@ fun DeviceScreen(
             }
 
             // ─── Tab Row ─────────────────────────────────────────────────────
-            if (isOwner) {
-                item {
-                    SecondaryTabRow(
+            item {
+                SecondaryTabRow(
                         selectedTabIndex = currentSubTab,
                         containerColor = GwBg,
                         contentColor = AccentCyan,
@@ -396,7 +345,6 @@ fun DeviceScreen(
                             }
                         )
                     }
-                }
             }
 
             // ─── Loading Skeleton ─────────────────────────────────────────────
@@ -426,7 +374,6 @@ fun DeviceScreen(
                             templates = state.templates,
                             methods = state.methods,
                             onToggleTemplate = { viewModel.toggleTemplate(1, it) },
-                            isRestricted = isRestricted,
                             onAddCustomSenderClick = { slot ->
                                 viewModel.onAddCustomSenderClick(slot) { allowedSlot ->
                                     activeSimSlotForCustomSender = allowedSlot
@@ -451,7 +398,6 @@ fun DeviceScreen(
                             templates = state.templates,
                             methods = state.methods,
                             onToggleTemplate = { viewModel.toggleTemplate(2, it) },
-                            isRestricted = isRestricted,
                             onAddCustomSenderClick = { slot ->
                                 viewModel.onAddCustomSenderClick(slot) { allowedSlot ->
                                     activeSimSlotForCustomSender = allowedSlot
@@ -654,6 +600,22 @@ fun DeviceScreen(
 
                     HorizontalDivider(color = TextMuted.copy(0.15f))
 
+                    if (state.isRemoteGatewayLoading) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                color = AccentCyan,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text("গেটওয়ে লোড হচ্ছে...", color = TextMuted, fontSize = 12.sp)
+                        }
+                    }
+
                     // SIM 1 Config row
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("📱 ১ নম্বর সিম স্লট", color = TextWhite, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -663,8 +625,8 @@ fun DeviceScreen(
                         ) {
                             OutlinedTextField(
                                 value = state.remoteDeviceEditSim1Number,
-                                onValueChange = viewModel::onRemoteDeviceEditSim1NumberChanged,
-                                placeholder = { Text("SIM 1 Number", color = TextMuted.copy(0.4f)) },
+                                onValueChange = { viewModel.remoteUpdateSimNumber(1, it) },
+                                placeholder = { Text("01XXXXXXXXX", color = TextMuted.copy(0.4f)) },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                                 colors = OutlinedTextFieldDefaults.colors(
@@ -680,7 +642,7 @@ fun DeviceScreen(
                             )
                             Switch(
                                 checked = state.remoteDeviceEditSim1Active,
-                                onCheckedChange = viewModel::onRemoteDeviceEditSim1ActiveChanged,
+                                onCheckedChange = { viewModel.remoteToggleSim(1, it) },
                                 colors = SwitchDefaults.colors(
                                     checkedTrackColor = AccentGreen,
                                     uncheckedTrackColor = ToggleOff,
@@ -688,6 +650,21 @@ fun DeviceScreen(
                                 )
                             )
                         }
+                        RemoteSimTemplateSection(
+                            simSlot = 1,
+                            simActive = state.remoteDeviceEditSim1Active,
+                            templates = state.remoteTemplates,
+                            methods = state.remoteGatewayMethods,
+                            onToggleTemplate = { viewModel.remoteToggleTemplate(1, it) },
+                            onToggleMethod = { viewModel.remoteToggleMethod(it) },
+                            onDeleteCustomSender = { remoteMethodToDelete = it },
+                            onAddCustomSenderClick = {
+                                viewModel.onAddCustomSenderClick(1) { allowedSlot ->
+                                    remoteActiveSimSlotForCustomSender = allowedSlot
+                                    showRemoteAddSenderDialog = true
+                                }
+                            }
+                        )
                     }
 
                     // SIM 2 Config row
@@ -699,8 +676,8 @@ fun DeviceScreen(
                         ) {
                             OutlinedTextField(
                                 value = state.remoteDeviceEditSim2Number,
-                                onValueChange = viewModel::onRemoteDeviceEditSim2NumberChanged,
-                                placeholder = { Text("SIM 2 Number", color = TextMuted.copy(0.4f)) },
+                                onValueChange = { viewModel.remoteUpdateSimNumber(2, it) },
+                                placeholder = { Text("01XXXXXXXXX", color = TextMuted.copy(0.4f)) },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                                 colors = OutlinedTextFieldDefaults.colors(
@@ -716,7 +693,7 @@ fun DeviceScreen(
                             )
                             Switch(
                                 checked = state.remoteDeviceEditSim2Active,
-                                onCheckedChange = viewModel::onRemoteDeviceEditSim2ActiveChanged,
+                                onCheckedChange = { viewModel.remoteToggleSim(2, it) },
                                 colors = SwitchDefaults.colors(
                                     checkedTrackColor = AccentGreen,
                                     uncheckedTrackColor = ToggleOff,
@@ -724,6 +701,21 @@ fun DeviceScreen(
                                 )
                             )
                         }
+                        RemoteSimTemplateSection(
+                            simSlot = 2,
+                            simActive = state.remoteDeviceEditSim2Active,
+                            templates = state.remoteTemplates,
+                            methods = state.remoteGatewayMethods,
+                            onToggleTemplate = { viewModel.remoteToggleTemplate(2, it) },
+                            onToggleMethod = { viewModel.remoteToggleMethod(it) },
+                            onDeleteCustomSender = { remoteMethodToDelete = it },
+                            onAddCustomSenderClick = {
+                                viewModel.onAddCustomSenderClick(2) { allowedSlot ->
+                                    remoteActiveSimSlotForCustomSender = allowedSlot
+                                    showRemoteAddSenderDialog = true
+                                }
+                            }
+                        )
                     }
 
                     HorizontalDivider(color = TextMuted.copy(0.15f))
@@ -891,6 +883,8 @@ fun DeviceScreen(
                 onDismissRequest = {
                     showAddSenderDialog = false
                     customSenderInput = ""
+                    selectedOfficialTemplateId = null
+                    forcePersonalSender = false
                     viewModel.clearDialogErrorMessage()
                 },
                 properties = DialogProperties(usePlatformDefaultWidth = true)
@@ -942,7 +936,11 @@ fun DeviceScreen(
 
                         OutlinedTextField(
                             value = customSenderInput,
-                            onValueChange = { customSenderInput = it },
+                            onValueChange = {
+                                customSenderInput = it
+                                selectedOfficialTemplateId = null
+                                forcePersonalSender = false
+                            },
                             label = { Text("সেন্ডার আইডি (যেমন: GP-ALERT)", color = TextMuted) },
                             singleLine = true,
                             enabled = !state.isSaving,
@@ -954,6 +952,90 @@ fun DeviceScreen(
                             ),
                             modifier = Modifier.fillMaxWidth()
                         )
+
+                        val archiveSuggestions = remember(customSenderInput, state.templates) {
+                            val q = customSenderInput.trim()
+                            if (q.length < 2) emptyList()
+                            else state.templates.filter {
+                                it.isOfficial == 1 && it.isParseable == 0 &&
+                                    (it.senderId.contains(q, ignoreCase = true) ||
+                                        it.templateName.contains(q, ignoreCase = true))
+                            }.take(5)
+                        }
+
+                        if (archiveSuggestions.isNotEmpty()) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "এডমিন আর্কাইভ সাজেশন",
+                                    color = TextMuted,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                archiveSuggestions.forEach { suggestion ->
+                                    val selected = selectedOfficialTemplateId == suggestion.id
+                                    Surface(
+                                        onClick = {
+                                            selectedOfficialTemplateId = suggestion.id
+                                            customSenderInput = suggestion.senderId
+                                            forcePersonalSender = false
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (selected) AccentCyan.copy(alpha = 0.15f) else GwBg,
+                                        border = BorderStroke(
+                                            1.dp,
+                                            if (selected) AccentCyan else TextMuted.copy(alpha = 0.25f)
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            if (selected) {
+                                                Icon(
+                                                    Icons.Default.Check,
+                                                    contentDescription = null,
+                                                    tint = AccentCyan,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                            Column {
+                                                Text(
+                                                    text = suggestion.senderId,
+                                                    color = TextWhite,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                                Text(
+                                                    text = suggestion.templateName,
+                                                    color = TextMuted,
+                                                    fontSize = 10.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                if (archiveSuggestions.any { it.senderId.equals(customSenderInput.trim(), ignoreCase = true) }) {
+                                    TextButton(
+                                        onClick = {
+                                            selectedOfficialTemplateId = null
+                                            forcePersonalSender = true
+                                        },
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text(
+                                            text = "নিজের নামে আলাদা যোগ করুন",
+                                            color = AccentCyan,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
 
                         state.dialogErrorMessage?.let { errMsg ->
                             Text(
@@ -974,6 +1056,7 @@ fun DeviceScreen(
                                 onClick = {
                                     showAddSenderDialog = false
                                     customSenderInput = ""
+                                    selectedOfficialTemplateId = null
                                     viewModel.clearDialogErrorMessage()
                                 },
                                 enabled = !state.isSaving,
@@ -987,9 +1070,17 @@ fun DeviceScreen(
                             Button(
                                 onClick = {
                                     if (customSenderInput.trim().isNotEmpty()) {
-                                        viewModel.addCustomSender(activeSimSlotForCustomSender, customSenderInput.trim()) {
+                                        val createPersonal = forcePersonalSender
+                                        viewModel.addCustomSender(
+                                            simSlot = activeSimSlotForCustomSender,
+                                            senderId = customSenderInput.trim(),
+                                            officialTemplateId = selectedOfficialTemplateId,
+                                            createPersonal = createPersonal
+                                        ) {
                                             showAddSenderDialog = false
                                             customSenderInput = ""
+                                            selectedOfficialTemplateId = null
+                                            forcePersonalSender = false
                                         }
                                     }
                                 },
@@ -1009,6 +1100,147 @@ fun DeviceScreen(
                                     Text("যুক্ত করুন", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold)
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Remote Add Custom Sender Dialog
+        if (showRemoteAddSenderDialog) {
+            Dialog(
+                onDismissRequest = {
+                    showRemoteAddSenderDialog = false
+                    customSenderInput = ""
+                    selectedOfficialTemplateId = null
+                    forcePersonalSender = false
+                    viewModel.clearDialogErrorMessage()
+                },
+                properties = DialogProperties(usePlatformDefaultWidth = true)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = GwCard,
+                    border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
+                    tonalElevation = 8.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .wrapContentHeight()
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text(
+                            text = "রিমোট কাস্টম সেন্ডার যোগ",
+                            fontWeight = FontWeight.Bold,
+                            color = TextWhite,
+                            fontSize = 18.sp
+                        )
+                        Text(
+                            text = "SIM $remoteActiveSimSlotForCustomSender — টার্গেট ডিভাইসে সেন্ডার যোগ হবে",
+                            color = TextMuted,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        OutlinedTextField(
+                            value = customSenderInput,
+                            onValueChange = {
+                                customSenderInput = it
+                                selectedOfficialTemplateId = null
+                                forcePersonalSender = false
+                            },
+                            label = { Text("সেন্ডার আইডি", color = TextMuted) },
+                            singleLine = true,
+                            enabled = !state.isSaving,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = AccentCyan,
+                                unfocusedBorderColor = ToggleOff,
+                                focusedTextColor = TextWhite,
+                                unfocusedTextColor = TextWhite
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        state.dialogErrorMessage?.let { errMsg ->
+                            Text(errMsg, color = Color(0xFFEF4444), fontSize = 12.sp)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    showRemoteAddSenderDialog = false
+                                    customSenderInput = ""
+                                    viewModel.clearDialogErrorMessage()
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) { Text("বাতিল") }
+                            Button(
+                                onClick = {
+                                    if (customSenderInput.trim().isNotEmpty()) {
+                                        viewModel.remoteAddCustomSender(
+                                            simSlot = remoteActiveSimSlotForCustomSender,
+                                            senderId = customSenderInput.trim(),
+                                            officialTemplateId = selectedOfficialTemplateId,
+                                            createPersonal = forcePersonalSender
+                                        ) {
+                                            showRemoteAddSenderDialog = false
+                                            customSenderInput = ""
+                                            selectedOfficialTemplateId = null
+                                            forcePersonalSender = false
+                                        }
+                                    }
+                                },
+                                enabled = !state.isSaving && customSenderInput.trim().isNotEmpty(),
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) { Text("যুক্ত করুন", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold) }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Remote Delete Custom Sender Confirmation
+        if (remoteMethodToDelete != null) {
+            val method = remoteMethodToDelete!!
+            Dialog(
+                onDismissRequest = { remoteMethodToDelete = null },
+                properties = DialogProperties(usePlatformDefaultWidth = true)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = GwCard,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text("সেন্ডার মুছবেন?", fontWeight = FontWeight.Bold, color = TextWhite, fontSize = 18.sp)
+                        Text(method.senderId ?: method.provider, color = TextMuted, fontSize = 14.sp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { remoteMethodToDelete = null },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("বাতিল") }
+                            Button(
+                                onClick = {
+                                    viewModel.remoteDeleteCustomSender(method.id)
+                                    remoteMethodToDelete = null
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                                modifier = Modifier.weight(1f)
+                            ) { Text("মুছুন", color = Color.White) }
                         }
                     }
                 }
@@ -1341,7 +1573,6 @@ private fun GatewayMethodCard(
     onToggle:   () -> Unit,
     onEdit:     () -> Unit,
     dragHandle: @Composable () -> Unit,
-    isRestricted: Boolean = false,
     modifier:   Modifier = Modifier
 ) {
     val isActive   = simEnabled && method.isEnabled == 1
@@ -1421,7 +1652,7 @@ private fun GatewayMethodCard(
                 Switch(
                     checked         = method.isEnabled == 1,
                     onCheckedChange = { onToggle() },
-                    enabled         = simEnabled && !isRestricted,
+                    enabled         = simEnabled,
                     colors          = SwitchDefaults.colors(
                         checkedTrackColor   = AccentGreen,
                         uncheckedTrackColor = ToggleOff,
@@ -1429,20 +1660,16 @@ private fun GatewayMethodCard(
                     ),
                     modifier = Modifier.height(28.dp)
                 )
-                if (!isRestricted) {
-                    IconButton(
-                        onClick  = onEdit,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector     = Icons.Default.Settings,
-                            contentDescription = "সম্পাদনা",
-                            tint            = TextMuted,
-                            modifier        = Modifier.size(18.dp)
-                        )
-                    }
-                } else {
-                    Spacer(modifier = Modifier.width(32.dp))
+                IconButton(
+                    onClick  = onEdit,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector     = Icons.Default.Settings,
+                        contentDescription = "সম্পাদনা",
+                        tint            = TextMuted,
+                        modifier        = Modifier.size(18.dp)
+                    )
                 }
             }
         }
@@ -1732,7 +1959,6 @@ private fun SimCard(
     templates: List<SmsTemplateDto>,
     methods: List<GatewayMethod>,
     onToggleTemplate: (SmsTemplateDto) -> Unit,
-    isRestricted: Boolean,
     onAddCustomSenderClick: (Int) -> Unit,
     onDeleteCustomSenderClick: (GatewayMethod) -> Unit,
     onToggleMethod: (GatewayMethod) -> Unit,
@@ -1741,7 +1967,7 @@ private fun SimCard(
     val hasActiveMethod = methods.any { it.simSlot == simSlot && it.isEnabled == 1 }
     val isConditionMet = simNumber.length == 11 && hasActiveMethod
     
-    val switchEnabled = isConditionMet && !isRestricted
+    val switchEnabled = isConditionMet
     val displayEnabled = if (isConditionMet) simEnabled else false
 
     val dotColor by animateColorAsState(
@@ -1825,7 +2051,6 @@ private fun SimCard(
             OutlinedTextField(
                 value = simNumber,
                 onValueChange = onSimNumberChange,
-                enabled = !isRestricted,
                 placeholder = { Text("মোবাইল নম্বর দিন", color = TextMuted.copy(0.4f)) },
                 leadingIcon = {
                     Icon(
@@ -1862,8 +2087,8 @@ private fun SimCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Render all templates dynamically from the database live list (only official templates here)
-                templates.filter { it.isOfficial == 1 }.forEach { template ->
+                // Render official payment templates (is_parseable = 1)
+                templates.filter { it.isOfficial == 1 && it.isParseable == 1 }.forEach { template ->
                     val method = methods.find { it.simSlot == simSlot && it.templateId == template.id }
                     val isSelected = method != null && method.isEnabled == 1
                     
@@ -1871,16 +2096,12 @@ private fun SimCard(
                         name = template.templateName,
                         dotColor = getDotColor(template.templateName),
                         isSelected = isSelected,
-                        onClick = {
-                            if (!isRestricted) {
-                                onToggleTemplate(template)
-                            }
-                        }
+                        onClick = { onToggleTemplate(template) }
                     )
                 }
 
-                // Render custom user chips on this device
-                methods.filter { it.simSlot == simSlot && it.isOfficial == 0 }.forEach { method ->
+                // Render archive/custom senders on this device (is_parseable = 0)
+                methods.filter { it.simSlot == simSlot && (it.isParseable ?: 1) == 0 }.forEach { method ->
                     val isSelected = method.isEnabled == 1
                     val displayName = method.senderId ?: method.provider.removePrefix("Custom-")
 
@@ -1888,29 +2109,21 @@ private fun SimCard(
                         name = displayName,
                         dotColor = Color(0xFF94A3B8),
                         isSelected = isSelected,
-                        onClick = {
-                            if (!isRestricted) {
-                                onToggleMethod(method)
-                            }
-                        },
-                        onLongClick = {
-                            if (!isRestricted) {
-                                onDeleteCustomSenderClick(method)
-                            }
-                        }
+                        onClick = { onToggleMethod(method) },
+                        onLongClick = { onDeleteCustomSenderClick(method) }
                     )
                 }
 
                 // Other devices' custom senders — visible but inactive on this device
-                val localCustomSenderIds = methods
-                    .filter { it.simSlot == simSlot && it.isOfficial == 0 }
+                val localArchiveSenderIds = methods
+                    .filter { it.simSlot == simSlot && (it.isParseable ?: 1) == 0 }
                     .mapNotNull { it.senderId?.lowercase() }
                     .toSet()
                 templates
                     .filter {
                         it.isOfficial == 0 &&
                             it.isOtherDevice == true &&
-                            !localCustomSenderIds.contains(it.senderId?.lowercase())
+                            !localArchiveSenderIds.contains(it.senderId?.lowercase())
                     }
                     .forEach { template ->
                         TemplateChip(
@@ -1923,8 +2136,7 @@ private fun SimCard(
                     }
 
                 // Render Add Custom Sender Plus Chip
-                if (!isRestricted) {
-                    Row(
+                Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .background(Color.Transparent)
@@ -1947,7 +2159,6 @@ private fun SimCard(
                             fontWeight = FontWeight.Bold
                         )
                     }
-                }
             }
         }
     }
@@ -2016,8 +2227,100 @@ private fun TemplateChip(
     }
 }
 
-
-
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RemoteSimTemplateSection(
+    simSlot: Int,
+    simActive: Boolean,
+    templates: List<SmsTemplateDto>,
+    methods: List<GatewayMethod>,
+    onToggleTemplate: (SmsTemplateDto) -> Unit,
+    onToggleMethod: (GatewayMethod) -> Unit,
+    onDeleteCustomSender: (GatewayMethod) -> Unit,
+    onAddCustomSenderClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "পেমেন্ট পদ্ধতিসমূহ:",
+            color = TextWhite,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            templates.filter { it.isOfficial == 1 && it.isParseable == 1 }.forEach { template ->
+                val method = methods.find { it.simSlot == simSlot && it.templateId == template.id }
+                val isSelected = method != null && method.isEnabled == 1
+                TemplateChip(
+                    name = template.templateName,
+                    dotColor = getDotColor(template.templateName),
+                    isSelected = isSelected,
+                    enabled = simActive,
+                    onClick = { if (simActive) onToggleTemplate(template) }
+                )
+            }
+            methods.filter { it.simSlot == simSlot && (it.isParseable ?: 1) == 0 }.forEach { method ->
+                val isSelected = method.isEnabled == 1
+                val displayName = method.senderId ?: method.provider.removePrefix("Custom-")
+                TemplateChip(
+                    name = displayName,
+                    dotColor = Color(0xFF94A3B8),
+                    isSelected = isSelected,
+                    enabled = simActive,
+                    onClick = { if (simActive) onToggleMethod(method) },
+                    onLongClick = { if (simActive) onDeleteCustomSender(method) }
+                )
+            }
+            val localArchiveSenderIds = methods
+                .filter { it.simSlot == simSlot && (it.isParseable ?: 1) == 0 }
+                .mapNotNull { it.senderId?.lowercase() }
+                .toSet()
+            templates
+                .filter {
+                    it.isOfficial == 0 &&
+                        it.isOtherDevice == true &&
+                        !localArchiveSenderIds.contains(it.senderId?.lowercase())
+                }
+                .forEach { template ->
+                    TemplateChip(
+                        name = template.senderId ?: template.templateName,
+                        dotColor = Color(0xFF64748B),
+                        isSelected = false,
+                        enabled = false,
+                        onClick = {}
+                    )
+                }
+            if (simActive) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .border(BorderStroke(1.dp, AccentCyan.copy(alpha = 0.5f)), RoundedCornerShape(16.dp))
+                        .clickable { onAddCustomSenderClick() }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(Icons.Default.Add, null, tint = AccentCyan, modifier = Modifier.size(14.dp))
+                    Text("যোগ করুন", color = AccentCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        if (!simActive) {
+            Text(
+                "সিম চালু করলে টেমপ্লেট সিলেক্ট/এডিট করা যাবে",
+                color = TextMuted.copy(alpha = 0.7f),
+                fontSize = 10.sp
+            )
+        }
+    }
+}
 
 private fun getDotColor(providerName: String): Color {
     return when (providerName.lowercase()) {

@@ -46,15 +46,26 @@ class CredentialViewModel(private val repository: CredentialRepository) : ViewMo
 
     // ওটিপি পাঠানোর আগে ফ্রন্টএন্ড গেট চেক
     fun sendOtpForNewCredential(value: String, type: String) {
+        val formatted = if (type == "phone") {
+            CredentialInputUtils.formatPhoneInput(value)
+        } else {
+            CredentialInputUtils.formatEmailInput(value)
+        }
+
+        CredentialInputUtils.validateCredential(formatted, type)?.let { msg ->
+            errorMessage = msg
+            return
+        }
+
         val currentCount = if (type == "phone") linkedPhones.size else linkedEmails.size
-        
+
         if (currentCount >= MAX_PER_TYPE) {
             errorMessage = "দুঃখিত ভাই! সর্বোচ্চ ৫টি ${if (type == "phone") "মোবাইল নম্বর" else "জিমেইল"} লিঙ্ক করা সম্ভব।"
             return
         }
-        
+
         viewModelScope.launch {
-            val response = repository.sendLinkOtp(LinkCredentialOtpRequest(value, type))
+            val response = repository.sendLinkOtp(LinkCredentialOtpRequest(formatted, type))
             if (response.isSuccessful) {
                 isOtpSentForLinking = true
                 errorMessage = null
@@ -65,10 +76,23 @@ class CredentialViewModel(private val repository: CredentialRepository) : ViewMo
         }
     }
 
-    // ওটিপি ভেরিফাই ও ফাইনাল লিংক রিকোয়েস্ট
     fun verifyAndLinkCredential(value: String, type: String, otp: String, onSuccess: () -> Unit) {
+        val cleanOtp = CredentialInputUtils.cleanOtp(otp)
+        if (cleanOtp.length != 6) {
+            errorMessage = "৬-সংখ্যার OTP দিন"
+            return
+        }
+
+        val formatted = if (type == "phone") {
+            CredentialInputUtils.formatPhoneInput(value)
+        } else {
+            CredentialInputUtils.formatEmailInput(value)
+        }
+
         viewModelScope.launch {
-            val response = repository.verifyLinkCredential(VerifyLinkCredentialRequest(value, type, otp))
+            val response = repository.verifyLinkCredential(
+                VerifyLinkCredentialRequest(formatted, type, cleanOtp)
+            )
             if (response.isSuccessful) {
                 isOtpSentForLinking = false
                 errorMessage = null

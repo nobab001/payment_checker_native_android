@@ -9,6 +9,7 @@ const KEYS = {
   OFFICIAL_TEMPLATES_ALL: 'paychek:cache:official_templates_all',
   deviceSync: (userId, deviceId) => `paychek:sync:device:${userId}:${deviceId}`,
   userCustomVersion: (userId) => `paychek:sync:user_custom:${userId}`,
+  userHistoryVersion: (userId) => `paychek:sync:history:${userId}`,
 };
 
 let broadcastTimer = null;
@@ -91,6 +92,50 @@ async function bumpUserCustomTemplateVersion(userId) {
   const version = Date.now();
   await safeRedisSet(KEYS.userCustomVersion(String(userId)), String(version), 0);
   await invalidateTemplateListCaches();
+  return version;
+}
+
+async function bumpUserHistoryVersion(userId) {
+  if (!userId) return Date.now();
+  const version = Date.now();
+  await safeRedisSet(KEYS.userHistoryVersion(String(userId)), String(version), 0);
+  return version;
+}
+
+async function getUserHistoryVersion(userId) {
+  if (!userId) return 0;
+
+  const cached = await safeRedisGet(KEYS.userHistoryVersion(String(userId)));
+  if (cached) {
+    return parseInt(cached, 10) || 0;
+  }
+
+  const latestCreated = await prisma.sms_history.findFirst({
+    where: { user_id: Number(userId) },
+    orderBy: { created_at: 'desc' },
+    select: { created_at: true },
+  });
+  const latestUsed = await prisma.sms_history.findFirst({
+    where: { user_id: Number(userId), used_at: { not: null } },
+    orderBy: { used_at: 'desc' },
+    select: { used_at: true },
+  });
+
+  const createdMs = latestCreated ? new Date(latestCreated.created_at).getTime() : 0;
+  const usedMs = latestUsed?.used_at ? new Date(latestUsed.used_at).getTime() : 0;
+  let version = Math.max(createdMs, usedMs);
+
+  if (version === 0) {
+    const userRow = await prisma.users.findUnique({
+      where: { id: Number(userId) },
+      select: { created_at: true },
+    });
+    version = userRow?.created_at ? new Date(userRow.created_at).getTime() : Date.now();
+  }
+
+  if (version > 0) {
+    await safeRedisSet(KEYS.userHistoryVersion(String(userId)), String(version), TTL_SECONDS);
+  }
   return version;
 }
 
@@ -181,8 +226,10 @@ module.exports = {
   bumpGlobalTemplateVersion,
   bumpDeviceSyncVersion,
   bumpUserCustomTemplateVersion,
+  bumpUserHistoryVersion,
   getGlobalTemplateVersion,
   getDeviceSyncVersion,
+  getUserHistoryVersion,
   getActiveTemplatesForDashboard,
   getActiveTemplatesForParsing,
   getOfficialTemplatesForAdmin,

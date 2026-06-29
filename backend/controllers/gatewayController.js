@@ -20,6 +20,19 @@ async function ensureSimBindingsTable() {
       INDEX idx_user_number_active (user_id, phone_number, is_active)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS sim_number_profiles (
+      id INT NOT NULL AUTO_INCREMENT,
+      user_id VARCHAR(255) NOT NULL,
+      device_id VARCHAR(255) NOT NULL DEFAULT '',
+      sim_slot TINYINT NOT NULL DEFAULT 1,
+      phone_number VARCHAR(20) NOT NULL DEFAULT '',
+      profile_json TEXT NOT NULL,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uniq_user_device_slot_number (user_id, device_id, sim_slot, phone_number)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
   simBindingsTableReady = true;
 }
 
@@ -38,61 +51,204 @@ async function getDeviceDisplayName(userId, deviceId) {
 }
 
 async function fetchMethodsProfileForNumber(userId, phoneNumber) {
-  const rows = await prisma.gateway_methods.findMany({
-    where: { user_id: String(userId), number: phoneNumber },
-    orderBy: [{ updated_at: 'desc' }, { priority: 'asc' }],
-  });
+  await ensureSimBindingsTable();
 
-  const seenTemplates = new Set();
-  const profile = [];
-  for (const row of rows) {
-    const key = row.template_id || row.provider;
-    if (seenTemplates.has(key)) continue;
-    seenTemplates.add(key);
-    profile.push(row);
+  const activeOwner = await prisma.$queryRaw`
+    SELECT device_id, sim_slot
+    FROM sim_slot_bindings
+    WHERE user_id = ${String(userId)}
+      AND phone_number = ${phoneNumber}
+      AND is_active = 1
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `;
+
+  if (activeOwner[0]) {
+    const owner = activeOwner[0];
+    return prisma.gateway_methods.findMany({
+      where: {
+        user_id: String(userId),
+        device_id: String(owner.device_id),
+        sim_slot: Number(owner.sim_slot),
+        number: phoneNumber,
+      },
+      orderBy: [{ priority: 'asc' }],
+    });
   }
-  return profile;
+
+  const anchor = await prisma.gateway_methods.findFirst({
+    where: { user_id: String(userId), number: phoneNumber },
+    orderBy: { updated_at: 'desc' },
+  });
+  if (!anchor) return [];
+
+  return prisma.gateway_methods.findMany({
+    where: {
+      user_id: String(userId),
+      device_id: anchor.device_id,
+      sim_slot: anchor.sim_slot,
+      number: phoneNumber,
+    },
+    orderBy: [{ priority: 'asc' }],
+  });
 }
 
-async function upsertSlotBinding(userId, deviceId, simSlot, phoneNumber, isActive) {
+async function fetchDeviceSlotProfile(userId, deviceId, simSlot, phoneNumber) {
   await ensureSimBindingsTable();
-  const existing = await prisma.sim_slot_bindings.findFirst({
+  const rows = await prisma.$queryRaw`
+    SELECT profile_json
+    FROM sim_number_profiles
+    WHERE user_id = ${String(userId)}
+      AND device_id = ${String(deviceId)}
+      AND sim_slot = ${simSlot}
+      AND phone_number = ${phoneNumber}
+    LIMIT 1
+  `;
+  if (!rows[0]?.profile_json) return null;
+  try {
+    const parsed = JSON.parse(rows[0].profile_json);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function fetchGlobalProfileForNumber(userId, phoneNumber) {
+  await ensureSimBindingsTable();
+  const rows = await prisma.$queryRaw`
+    SELECT profile_json
+    FROM sim_number_profiles
+    WHERE user_id = ${String(userId)}
+      AND phone_number = ${phoneNumber}
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `;
+  if (!rows[0]?.profile_json) return null;
+  try {
+    const parsed = JSON.parse(rows[0].profile_json);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function saveDeviceSlotProfile(userId, deviceId, simSlot, phoneNumber) {
+  if (!phoneNumber || phoneNumber.length !== 11) return;
+  await ensureSimBindingsTable();
+  const methods = await prisma.gateway_methods.findMany({
     where: {
       user_id: String(userId),
       device_id: String(deviceId),
       sim_slot: simSlot,
+      number: phoneNumber,
     },
+    orderBy: [{ priority: 'asc' }],
   });
+  const profile = methods.map((m) => ({
+    template_id: m.template_id,
+    provider: m.provider,
+    is_enabled: m.is_enabled,
+    display_name: m.display_name || null,
+  }));
+  const json = JSON.stringify(profile);
+  await prisma.$executeRaw`
+    INSERT INTO sim_number_profiles (user_id, device_id, sim_slot, phone_number, profile_json)
+    VALUES (${String(userId)}, ${String(deviceId)}, ${simSlot}, ${phoneNumber}, ${json})
+    ON DUPLICATE KEY UPDATE profile_json = VALUES(profile_json), updated_at = CURRENT_TIMESTAMP
+  `;
+}
 
-  if (existing) {
-    await prisma.sim_slot_bindings.update({
-      where: { id: existing.id },
-      data: {
-        phone_number: phoneNumber,
-        is_active: isActive ? 1 : 0,
-      },
-    });
-    return existing;
-  }
+async function findActiveConflictOnOtherDevice(userId, deviceId, phoneNumber) {
+  const bindingConflict = await findActiveConflictBinding(userId, deviceId, phoneNumber);
+  if (bindingConflict) return bindingConflict;
 
-  return prisma.sim_slot_bindings.create({
-    data: {
+  const otherEnabled = await prisma.gateway_methods.findFirst({
+    where: {
       user_id: String(userId),
-      device_id: String(deviceId),
-      sim_slot: simSlot,
-      phone_number: phoneNumber,
-      is_active: isActive ? 1 : 0,
+      number: phoneNumber,
+      is_enabled: 1,
+      device_id: { not: String(deviceId) },
     },
+    orderBy: { updated_at: 'desc' },
   });
+  if (!otherEnabled) return null;
+
+  return {
+    device_id: otherEnabled.device_id,
+    sim_slot: otherEnabled.sim_slot,
+    phone_number: phoneNumber,
+    is_active: 1,
+    source: 'gateway_methods',
+  };
+}
+
+async function findActiveConflictBinding(userId, deviceId, phoneNumber) {
+  await ensureSimBindingsTable();
+  const rows = await prisma.$queryRaw`
+    SELECT id, user_id, device_id, sim_slot, phone_number, is_active
+    FROM sim_slot_bindings
+    WHERE user_id = ${String(userId)}
+      AND phone_number = ${phoneNumber}
+      AND is_active = 1
+      AND device_id <> ${String(deviceId)}
+    LIMIT 1
+  `;
+  return rows[0] || null;
+}
+
+async function findSlotBinding(userId, deviceId, simSlot) {
+  await ensureSimBindingsTable();
+  const rows = await prisma.$queryRaw`
+    SELECT id, user_id, device_id, sim_slot, phone_number, is_active
+    FROM sim_slot_bindings
+    WHERE user_id = ${String(userId)}
+      AND device_id = ${String(deviceId)}
+      AND sim_slot = ${simSlot}
+    LIMIT 1
+  `;
+  return rows[0] || null;
+}
+
+async function findBindingsForPhoneOnOtherDevices(userId, deviceId, phoneNumber) {
+  await ensureSimBindingsTable();
+  return prisma.$queryRaw`
+    SELECT id, user_id, device_id, sim_slot, phone_number, is_active
+    FROM sim_slot_bindings
+    WHERE user_id = ${String(userId)}
+      AND phone_number = ${phoneNumber}
+      AND device_id <> ${String(deviceId)}
+  `;
+}
+
+async function upsertSlotBinding(userId, deviceId, simSlot, phoneNumber, isActive) {
+  await ensureSimBindingsTable();
+  const activeVal = isActive ? 1 : 0;
+  await prisma.$executeRaw`
+    INSERT INTO sim_slot_bindings (user_id, device_id, sim_slot, phone_number, is_active)
+    VALUES (${String(userId)}, ${String(deviceId)}, ${simSlot}, ${phoneNumber}, ${activeVal})
+    ON DUPLICATE KEY UPDATE
+      phone_number = VALUES(phone_number),
+      is_active = VALUES(is_active),
+      updated_at = CURRENT_TIMESTAMP
+  `;
 }
 
 async function deactivatePhoneGlobally(userId, phoneNumber) {
   if (!phoneNumber) return;
   await ensureSimBindingsTable();
-  await prisma.sim_slot_bindings.updateMany({
-    where: { user_id: String(userId), phone_number: phoneNumber },
-    data: { is_active: 0 },
-  });
+  await prisma.$executeRaw`
+    UPDATE sim_slot_bindings
+    SET is_active = 0, updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = ${String(userId)} AND phone_number = ${phoneNumber}
+  `;
+}
+
+async function deactivateBindingById(bindingId) {
+  await prisma.$executeRaw`
+    UPDATE sim_slot_bindings
+    SET is_active = 0, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ${bindingId}
+  `;
 }
 
 async function applyProfileToSlot(userId, deviceId, simSlot, phoneNumber, profileMethods, enabledDefault = 1) {
@@ -300,6 +456,13 @@ async function toggleMethod(req, res) {
 
     await touchDeviceSync(userId, deviceId);
 
+    const toggledMethod = await prisma.gateway_methods.findFirst({
+      where: { id: methodId, user_id: String(userId), device_id: String(deviceId) },
+    });
+    if (toggledMethod?.number) {
+      await saveDeviceSlotProfile(userId, deviceId, toggledMethod.sim_slot, toggledMethod.number);
+    }
+
     return res.json({ success: true, message: `মেথড ${status} করা হয়েছে।`, data });
 
   } catch (error) {
@@ -366,6 +529,13 @@ async function getTemplates(req, res) {
   try {
     const userId = req.user.userId;
     const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+
+    // Repair legacy custom templates that were incorrectly marked parseable
+    await prisma.sms_templates.updateMany({
+      where: { user_id: userId, is_official: 0, is_parseable: 1 },
+      data: { is_parseable: 0 },
+    });
+
     const lastSync = parseInt(req.headers['x-gateway-last-sync'] || '0', 10);
     const serverVersion = await dataSyncCache.getDeviceSyncVersion(userId, deviceId);
 
@@ -390,7 +560,8 @@ async function getTemplates(req, res) {
         regex_pattern: true,
         is_official: true,
         is_active: true,
-        device_id: true
+        device_id: true,
+        is_parseable: true,
       }
     });
 
@@ -407,7 +578,9 @@ async function getTemplates(req, res) {
         regex_pattern: r.regex_pattern || '',
         is_official: r.is_official,
         is_active: isOther ? 0 : r.is_active,
-        is_other_device: isOther
+        is_parseable: r.is_parseable ?? 1,
+        is_other_device: isOther,
+        is_admin_archive: r.is_official === 1 && (r.is_parseable ?? 1) === 0,
       };
     });
 
@@ -462,6 +635,10 @@ async function addGatewayMethod(req, res) {
     }
 
     await touchDeviceSync(userId, deviceId);
+
+    if (number) {
+      await saveDeviceSlotProfile(userId, deviceId, sim_slot, normalizePhoneNumber(number));
+    }
 
     return res.json({ success: true, id: result.id, message: 'মেথড সফলভাবে যোগ করা হয়েছে।', data });
   } catch (error) {
@@ -551,13 +728,89 @@ async function addCustomTemplate(req, res) {
   }
 }
 
+async function findOfficialArchiveBySender(senderId) {
+  const rows = await prisma.$queryRaw`
+    SELECT id, template_name, sender_id, sender_number, matching_keyword, regex_pattern,
+           is_official, is_active, is_parseable, user_id, device_id
+    FROM sms_templates
+    WHERE is_official = 1 AND is_parseable = 0 AND LOWER(sender_id) = LOWER(${senderId})
+    LIMIT 1
+  `;
+  return rows[0] || null;
+}
+
+async function findUserPersonalBySender(userId, senderId) {
+  const rows = await prisma.$queryRaw`
+    SELECT id, template_name, sender_id, sender_number, matching_keyword, regex_pattern,
+           is_official, is_active, is_parseable, user_id, device_id
+    FROM sms_templates
+    WHERE user_id = ${userId} AND is_official = 0 AND LOWER(sender_id) = LOWER(${senderId})
+    ORDER BY id ASC
+    LIMIT 1
+  `;
+  return rows[0] || null;
+}
+
+async function gatewayMethodExistsForSender(userId, deviceId, simSlot, senderId) {
+  const rows = await prisma.$queryRaw`
+    SELECT gm.id
+    FROM gateway_methods gm
+    INNER JOIN sms_templates t ON gm.template_id = t.id
+    WHERE gm.user_id = ${String(userId)}
+      AND gm.device_id = ${String(deviceId)}
+      AND gm.sim_slot = ${simSlot}
+      AND LOWER(t.sender_id) = LOWER(${senderId})
+    LIMIT 1
+  `;
+  return rows[0] ? Number(rows[0].id) : null;
+}
+
+/**
+ * GET /api/gateway/custom-sender/suggestions?q=gp
+ * Admin archive templates (is_parseable=0) visible to all users.
+ */
+async function getCustomSenderSuggestions(req, res) {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (!q) {
+      return res.json({ success: true, suggestions: [] });
+    }
+    const like = `%${q.toLowerCase()}%`;
+    const rows = await prisma.$queryRaw`
+      SELECT id, template_name, sender_id, sender_number, is_parseable, is_official
+      FROM sms_templates
+      WHERE is_official = 1 AND is_parseable = 0
+        AND (LOWER(sender_id) LIKE ${like} OR LOWER(template_name) LIKE ${like})
+      ORDER BY template_name ASC
+      LIMIT 8
+    `;
+    return res.json({
+      success: true,
+      suggestions: rows.map((r) => ({
+        id: Number(r.id),
+        template_name: r.template_name,
+        sender_id: r.sender_id,
+        sender_number: r.sender_number || '',
+        is_parseable: Number(r.is_parseable ?? 0),
+        is_official: 1,
+        is_admin_archive: true,
+      })),
+    });
+  } catch (error) {
+    console.error('[GATEWAY] getCustomSenderSuggestions error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
 async function addCustomSender(req, res) {
   try {
     const userId = req.user.userId;
     const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
-    const { sim_slot, sender_id } = req.body;
+    const { sim_slot, sender_id, official_template_id, create_personal } = req.body;
     const cleanSenderId = typeof sender_id === 'string' ? sender_id.trim() : '';
     const simSlotNum = parseInt(sim_slot, 10);
+    const officialTemplateId = official_template_id ? parseInt(official_template_id, 10) : null;
+    const forcePersonal = create_personal === true || create_personal === 1 || create_personal === '1';
 
     if (!Number.isInteger(simSlotNum) || simSlotNum < 1 || simSlotNum > 2) {
       return res.status(400).json({ error: 'sim_slot ১ বা ২ হতে হবে' });
@@ -585,27 +838,9 @@ async function addCustomSender(req, res) {
         const endsAt = new Date(user.custom_sender_ends_at);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        if (endsAt >= today) {
-          isAllowed = true;
-        }
+        isAllowed = endsAt >= today;
       } else {
         isAllowed = true;
-      }
-    } else if (user.is_paid && user.active_plan_name) {
-      if (user.active_plan_name === 'Trial Package') {
-        const configVal = await prisma.global_config.findUnique({
-          where: { config_key: 'trial_allow_custom_sender' }
-        });
-        if (configVal && parseInt(configVal.config_value, 10) === 1) {
-          isAllowed = true;
-        }
-      } else {
-        const plan = await prisma.subscription_plans.findFirst({
-          where: { plan_name: user.active_plan_name }
-        });
-        if (plan && plan.is_custom_sender_allowed === 1) {
-          isAllowed = true;
-        }
       }
     }
 
@@ -617,40 +852,74 @@ async function addCustomSender(req, res) {
       });
     }
 
-    // Find or create user custom template
-    let template = await prisma.sms_templates.findFirst({
-      where: {
-        user_id: userId,
-        sender_id: cleanSenderId,
-        device_id: deviceId
-      }
-    });
-
-    if (!template) {
-      template = await prisma.sms_templates.create({
-        data: {
-          user_id: userId,
-          device_id: deviceId, // Bound strictly to this device
-          template_name: `Custom-${cleanSenderId}`,
-          sender_id: cleanSenderId,
-          sender_number: cleanSenderId,
-          regex_pattern: '^(.*)$',
-          matching_keyword: '',
-          is_official: 0,
-          is_active: 0, // Set to 0 (Value 0 - Hidden from Homepage suggestions)
-          is_parseable: 1
-        }
+    const duplicateMethodId = await gatewayMethodExistsForSender(userId, deviceId, simSlotNum, cleanSenderId);
+    if (duplicateMethodId) {
+      return res.status(400).json({
+        success: false,
+        error: 'SENDER_ALREADY_ON_SLOT',
+        message: 'এই সেন্ডার আইডি ইতিমধ্যেই এই সিম স্লটে যুক্ত আছে।',
       });
     }
 
-    // Check if gateway method already exists for this slot
+    let template = null;
+    let templateSource = 'personal';
+
+    if (officialTemplateId) {
+      template = await prisma.sms_templates.findFirst({
+        where: { id: officialTemplateId, is_official: 1, is_parseable: 0 },
+      });
+      if (!template) {
+        return res.status(404).json({
+          success: false,
+          error: 'OFFICIAL_TEMPLATE_NOT_FOUND',
+          message: 'এডমিন আর্কাইভ টেমপ্লেট খুঁজে পাওয়া যায়নি।',
+        });
+      }
+      templateSource = 'official';
+    } else {
+      const personalExisting = await findUserPersonalBySender(userId, cleanSenderId);
+      const officialExisting = await findOfficialArchiveBySender(cleanSenderId);
+
+      if (personalExisting) {
+        template = personalExisting;
+        templateSource = 'personal';
+      } else if (officialExisting && !forcePersonal) {
+        template = officialExisting;
+        templateSource = 'official';
+      } else if (forcePersonal || !officialExisting) {
+        template = await prisma.sms_templates.create({
+          data: {
+            user_id: userId,
+            device_id: deviceId,
+            template_name: `Custom-${cleanSenderId}`,
+            sender_id: cleanSenderId,
+            sender_number: cleanSenderId,
+            regex_pattern: '^(.*)$',
+            matching_keyword: '',
+            is_official: 0,
+            is_active: 0,
+            is_parseable: 0,
+          },
+        });
+        templateSource = 'personal';
+      } else {
+        template = officialExisting;
+        templateSource = 'official';
+      }
+    }
+
+    const providerLabel = templateSource === 'official'
+      ? (template.template_name || `Custom-${cleanSenderId}`)
+      : `Custom-${cleanSenderId}`;
+
+    // Check if gateway method already exists for this template on slot
     const existingMethod = await prisma.gateway_methods.findFirst({
       where: {
         user_id: String(userId),
         device_id: String(deviceId),
         template_id: template.id,
-        sim_slot: simSlotNum
-      }
+        sim_slot: simSlotNum,
+      },
     });
 
     if (existingMethod) {
@@ -682,15 +951,15 @@ async function addCustomSender(req, res) {
         device_id: String(deviceId),
         template_id: template.id,
         sim_slot: simSlotNum,
-        provider: `Custom-${cleanSenderId}`,
+        provider: providerLabel,
         number: '',
         is_enabled: 1,
-        priority: nextPriority
-      }
+        priority: nextPriority,
+      },
     });
 
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
-    console.log(`[GATEWAY] Custom sender ${cleanSenderId} added for user ${userId} on slot ${sim_slot}`);
+    console.log(`[GATEWAY] Custom sender ${cleanSenderId} added for user ${userId} on slot ${sim_slot} (source=${templateSource}, template=${template.id})`);
 
     const io = req.app.get('io');
     if (io && deviceId) {
@@ -699,7 +968,14 @@ async function addCustomSender(req, res) {
 
     await touchDeviceSync(userId, deviceId, { userCustomChanged: true });
 
-    return res.json({ success: true, message: 'কাস্টম সেন্ডার সফলভাবে যুক্ত করা হয়েছে।', data });
+    return res.json({
+      success: true,
+      message: templateSource === 'official'
+        ? 'এডমিন আর্কাইভ সেন্ডার সফলভাবে যুক্ত করা হয়েছে।'
+        : 'কাস্টম সেন্ডার সফলভাবে যুক্ত করা হয়েছে।',
+      template_source: templateSource,
+      data,
+    });
   } catch (error) {
     console.error('[GATEWAY] addCustomSender error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
@@ -785,14 +1061,7 @@ async function lookupSlotNumber(req, res) {
 
     await ensureSimBindingsTable();
 
-    const conflictBinding = await prisma.sim_slot_bindings.findFirst({
-      where: {
-        user_id: String(userId),
-        phone_number: cleanNum,
-        is_active: 1,
-        device_id: { not: String(deviceId) },
-      },
-    });
+    const conflictBinding = await findActiveConflictOnOtherDevice(userId, deviceId, cleanNum);
 
     if (conflictBinding) {
       const runningDeviceName = await getDeviceDisplayName(userId, conflictBinding.device_id);
@@ -803,30 +1072,60 @@ async function lookupSlotNumber(req, res) {
       });
     }
 
-    const profileMethods = await fetchMethodsProfileForNumber(userId, cleanNum);
-    const enrichedProfile = await enrichMethodsWithTemplateMeta(profileMethods);
+    const currentBinding = await findSlotBinding(userId, deviceId, simSlot);
+    const oldNum = currentBinding?.phone_number
+      || (await prisma.gateway_methods.findFirst({
+        where: { user_id: String(userId), device_id: String(deviceId), sim_slot: simSlot },
+        orderBy: { updated_at: 'desc' },
+      }))?.number
+      || '';
 
-    await upsertSlotBinding(userId, deviceId, simSlot, cleanNum, false);
+    if (oldNum && oldNum.length === 11 && oldNum !== cleanNum) {
+      await saveDeviceSlotProfile(userId, deviceId, simSlot, oldNum);
+    }
 
-    if (profileMethods.length > 0) {
-      await applyProfileToSlot(userId, deviceId, simSlot, cleanNum, profileMethods, 0);
-    } else {
-      await prisma.gateway_methods.updateMany({
+    const savedProfile = await fetchDeviceSlotProfile(userId, deviceId, simSlot, cleanNum);
+    let profileSource = savedProfile;
+    if (!profileSource?.length) {
+      const localMethods = await prisma.gateway_methods.findMany({
         where: {
           user_id: String(userId),
           device_id: String(deviceId),
           sim_slot: simSlot,
+          number: cleanNum,
         },
-        data: { number: cleanNum },
+        orderBy: [{ priority: 'asc' }],
       });
+      if (localMethods.length) {
+        profileSource = localMethods;
+      } else {
+        const globalProfile = await fetchGlobalProfileForNumber(userId, cleanNum);
+        profileSource = globalProfile?.length
+          ? globalProfile
+          : await fetchMethodsProfileForNumber(userId, cleanNum);
+      }
     }
 
+    const numberFilter = oldNum && oldNum.length === 11 ? { number: oldNum } : {};
+    await prisma.gateway_methods.updateMany({
+      where: {
+        user_id: String(userId),
+        device_id: String(deviceId),
+        sim_slot: simSlot,
+        ...numberFilter,
+      },
+      data: { number: cleanNum },
+    });
+
+    await upsertSlotBinding(userId, deviceId, simSlot, cleanNum, false);
+
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
-    await touchDeviceSync(userId, deviceId);
+    const enrichedProfile = await enrichProfileEntries(profileSource);
 
     return res.json({
       success: true,
       has_conflict: false,
+      apply_profile: enrichedProfile.length > 0,
       cached_methods: enrichedProfile,
       data,
     });
@@ -834,6 +1133,29 @@ async function lookupSlotNumber(req, res) {
     console.error('[GATEWAY] lookupSlotNumber error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
+}
+
+async function enrichProfileEntries(profileEntries) {
+  if (!profileEntries?.length) return [];
+
+  const templateIds = [...new Set(profileEntries.map((m) => m.template_id).filter(Boolean))];
+  const templates = templateIds.length
+    ? await prisma.sms_templates.findMany({ where: { id: { in: templateIds } } })
+    : [];
+  const templateMap = new Map(templates.map((t) => [t.id, t]));
+
+  return profileEntries.map((m) => {
+    const t = m.template_id ? templateMap.get(m.template_id) : null;
+    return {
+      template_id: m.template_id || null,
+      provider: m.provider,
+      is_enabled: m.is_enabled ?? 0,
+      sender_id: t?.sender_id || null,
+      sender_number: t?.sender_number || null,
+      matching_keyword: t?.matching_keyword || null,
+      regex_pattern: t?.regex_pattern || null,
+    };
+  });
 }
 
 async function enrichMethodsWithTemplateMeta(methodRows) {
@@ -889,13 +1211,7 @@ async function forceShiftSlot(req, res) {
 
     await ensureSimBindingsTable();
 
-    const currentSlotBinding = await prisma.sim_slot_bindings.findFirst({
-      where: {
-        user_id: String(userId),
-        device_id: String(deviceId),
-        sim_slot: simSlot,
-      },
-    });
+    const currentSlotBinding = await findSlotBinding(userId, deviceId, simSlot);
 
     if (currentSlotBinding?.phone_number && currentSlotBinding.phone_number !== cleanNum) {
       await deactivatePhoneGlobally(userId, currentSlotBinding.phone_number);
@@ -903,13 +1219,7 @@ async function forceShiftSlot(req, res) {
 
     await deactivatePhoneGlobally(userId, cleanNum);
 
-    const otherDeviceBindings = await prisma.sim_slot_bindings.findMany({
-      where: {
-        user_id: String(userId),
-        phone_number: cleanNum,
-        device_id: { not: String(deviceId) },
-      },
-    });
+    const otherDeviceBindings = await findBindingsForPhoneOnOtherDevices(userId, deviceId, cleanNum);
 
     for (const binding of otherDeviceBindings) {
       await prisma.gateway_methods.updateMany({
@@ -920,16 +1230,18 @@ async function forceShiftSlot(req, res) {
         },
         data: { is_enabled: 0 },
       });
-      await prisma.sim_slot_bindings.update({
-        where: { id: binding.id },
-        data: { is_active: 0 },
-      });
+      await deactivateBindingById(Number(binding.id));
       await touchDeviceSync(userId, binding.device_id);
     }
 
-    const profileMethods = await fetchMethodsProfileForNumber(userId, cleanNum);
+    let profileMethods = await fetchMethodsProfileForNumber(userId, cleanNum);
+    if (!profileMethods.length) {
+      const globalProfile = await fetchGlobalProfileForNumber(userId, cleanNum);
+      if (globalProfile?.length) profileMethods = globalProfile;
+    }
     await applyProfileToSlot(userId, deviceId, simSlot, cleanNum, profileMethods, 1);
     await upsertSlotBinding(userId, deviceId, simSlot, cleanNum, true);
+    await saveDeviceSlotProfile(userId, deviceId, simSlot, cleanNum);
 
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
     console.log(`[GATEWAY] Force shift: ${cleanNum} → Device ${deviceId} slot ${simSlot} | User: ${userId}`);
@@ -977,14 +1289,7 @@ async function setSlotActive(req, res) {
     await ensureSimBindingsTable();
 
     if (isActive) {
-      const conflictBinding = await prisma.sim_slot_bindings.findFirst({
-        where: {
-          user_id: String(userId),
-          phone_number: cleanNum,
-          is_active: 1,
-          device_id: { not: String(deviceId) },
-        },
-      });
+      const conflictBinding = await findActiveConflictOnOtherDevice(userId, deviceId, cleanNum);
 
       if (conflictBinding) {
         const runningDeviceName = await getDeviceDisplayName(userId, conflictBinding.device_id);
@@ -999,15 +1304,6 @@ async function setSlotActive(req, res) {
     }
 
     await upsertSlotBinding(userId, deviceId, simSlot, cleanNum, isActive);
-
-    await prisma.gateway_methods.updateMany({
-      where: {
-        user_id: String(userId),
-        device_id: String(deviceId),
-        sim_slot: simSlot,
-      },
-      data: { is_enabled: isActive ? 1 : 0 },
-    });
 
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
     await emitGatewaySync(req, userId, deviceId, data);
@@ -1037,12 +1333,54 @@ async function bulkSyncSlotMethods(req, res) {
     const simSlot = parseInt(req.body.sim_slot, 10);
     const cleanNum = normalizePhoneNumber(req.body.phone_number);
     const items = Array.isArray(req.body.methods) ? req.body.methods : [];
+    const replaceSlot = !!req.body.replace_slot;
+    const activateBinding = req.body.activate_binding !== false;
 
     if (!Number.isInteger(simSlot) || simSlot < 1 || simSlot > 2) {
       return res.status(400).json({ error: 'sim_slot ১ বা ২ হতে হবে' });
     }
     if (cleanNum.length !== 11) {
       return res.status(400).json({ error: '১১ ডিজিটের বৈধ মোবাইল নম্বর দিন' });
+    }
+
+    await ensureSimBindingsTable();
+
+    if (activateBinding) {
+      const conflictBinding = await findActiveConflictOnOtherDevice(userId, deviceId, cleanNum);
+      if (conflictBinding) {
+        const runningDeviceName = await getDeviceDisplayName(userId, conflictBinding.device_id);
+        return res.json({
+          success: false,
+          has_conflict: true,
+          running_device_name: runningDeviceName,
+        });
+      }
+      await deactivatePhoneGlobally(userId, cleanNum);
+    }
+
+    if (replaceSlot) {
+      const keepTemplateIds = items.map((i) => i.template_id).filter((id) => id != null);
+      if (keepTemplateIds.length > 0) {
+        await prisma.gateway_methods.deleteMany({
+          where: {
+            user_id: String(userId),
+            device_id: String(deviceId),
+            sim_slot: simSlot,
+            OR: [
+              { template_id: { notIn: keepTemplateIds } },
+              { template_id: null },
+            ],
+          },
+        });
+      } else {
+        await prisma.gateway_methods.deleteMany({
+          where: {
+            user_id: String(userId),
+            device_id: String(deviceId),
+            sim_slot: simSlot,
+          },
+        });
+      }
     }
 
     const maxPriorityRow = await prisma.gateway_methods.aggregate({
@@ -1090,7 +1428,8 @@ async function bulkSyncSlotMethods(req, res) {
       }
     }
 
-    await upsertSlotBinding(userId, deviceId, simSlot, cleanNum, true);
+    await upsertSlotBinding(userId, deviceId, simSlot, cleanNum, activateBinding);
+    await saveDeviceSlotProfile(userId, deviceId, simSlot, cleanNum);
 
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
     await emitGatewaySync(req, userId, deviceId, data);
@@ -1133,6 +1472,7 @@ module.exports = {
   addGatewayMethod,
   addCustomTemplate,
   addCustomSender,
+  getCustomSenderSuggestions,
   deleteGatewayMethod,
   syncAndValidateSimSwap,
   lookupSlotNumber,

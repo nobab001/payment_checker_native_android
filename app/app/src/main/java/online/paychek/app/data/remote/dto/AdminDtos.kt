@@ -4,7 +4,8 @@ import com.google.gson.annotations.SerializedName
 
 data class AdminGenericResponse(
     @SerializedName("success") val success: Boolean,
-    @SerializedName("message") val message: String?
+    @SerializedName("message") val message: String?,
+    @SerializedName("error") val error: String? = null
 )
 
 data class ConfigResponse(
@@ -27,7 +28,8 @@ data class SmsTemplateDto(
     @SerializedName("is_official") val isOfficial: Int?,
     @SerializedName("is_active") val isActive: Int,
     @SerializedName("is_parseable") val isParseable: Int = 1,
-    @SerializedName("is_other_device") val isOtherDevice: Boolean? = false
+    @SerializedName("is_other_device") val isOtherDevice: Boolean? = false,
+    @SerializedName("is_admin_archive") val isAdminArchive: Boolean? = false
 )
 
 data class SmsTemplatesResponse(
@@ -165,10 +167,30 @@ data class SubscriptionPlanDto(
     @SerializedName("max_sites") val maxSites: Int,
     @SerializedName("max_devices") val maxDevices: Int,
     @SerializedName("is_custom_sender_allowed") val isCustomSenderAllowed: Int = 0,
-    @SerializedName("duration_days") val durationDays: Int = 365
+    @SerializedName("duration_days") val durationDays: Int = 365,
+    @SerializedName("features") val features: List<PlanFeatureDto>? = null
 )
 
 data class SubscriptionPlansResponse(
     @SerializedName("success") val success: Boolean,
     @SerializedName("plans") val plans: List<SubscriptionPlanDto>
+)
+
+data class AddonPlanDto(
+    @SerializedName("id") val id: Int? = null,
+    @SerializedName("plan_name") val planName: String,
+    @SerializedName("price") val price: Double,
+    @SerializedName("duration_days") val durationDays: Int = 30,
+    @SerializedName("description") val description: String? = null,
+    @SerializedName("is_active") val isActive: Int = 1,
+    @SerializedName("features") val features: List<PlanFeatureDto>? = null
+)
+
+data class AddonPlansResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("plans") val plans: List<AddonPlanDto>
+)
+
+data class PurchaseAddonRequest(
+    @SerializedName("plan_id") val planId: Int
 )

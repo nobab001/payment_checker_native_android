@@ -65,7 +65,9 @@ data class GatewayListResponse(
     val message: String? = null,
     val data: List<GatewayMethod>? = null,
     @SerializedName("data_version") val dataVersion: Long? = null,
-    val unchanged: Boolean? = false
+    val unchanged: Boolean? = false,
+    @SerializedName("has_conflict") val hasConflict: Boolean? = null,
+    @SerializedName("running_device_name") val runningDeviceName: String? = null
 )
 
 // =============================================================================
@@ -199,7 +201,21 @@ data class ApprovalStatusResponse(
 data class AddCustomSenderRequest(
     @SerializedName("sim_slot") val simSlot: Int,
     @SerializedName("sender_id") val senderId: String,
-    @SerializedName("deviceId") val deviceId: String? = null
+    @SerializedName("deviceId") val deviceId: String? = null,
+    @SerializedName("official_template_id") val officialTemplateId: Int? = null,
+    @SerializedName("create_personal") val createPersonal: Boolean? = null
+)
+
+data class CustomSenderSuggestionDto(
+    @SerializedName("id") val id: Int,
+    @SerializedName("template_name") val templateName: String,
+    @SerializedName("sender_id") val senderId: String,
+    @SerializedName("is_admin_archive") val isAdminArchive: Boolean? = true
+)
+
+data class CustomSenderSuggestionsResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("suggestions") val suggestions: List<CustomSenderSuggestionDto>? = null
 )
 
 data class SimSwapRequest(
@@ -244,7 +260,9 @@ data class BulkSyncMethodItem(
 data class BulkSyncRequest(
     @SerializedName("sim_slot") val simSlot: Int,
     @SerializedName("phone_number") val phoneNumber: String,
-    @SerializedName("methods") val methods: List<BulkSyncMethodItem>
+    @SerializedName("methods") val methods: List<BulkSyncMethodItem>,
+    @SerializedName("replace_slot") val replaceSlot: Boolean = false,
+    @SerializedName("activate_binding") val activateBinding: Boolean = true
 )
 
 data class SlotActiveResponse(
@@ -259,6 +277,7 @@ data class SlotLookupResponse(
     @SerializedName("success") val success: Boolean,
     @SerializedName("has_conflict") val hasConflict: Boolean? = null,
     @SerializedName("running_device_name") val runningDeviceName: String? = null,
+    @SerializedName("apply_profile") val applyProfile: Boolean? = null,
     @SerializedName("cached_methods") val cachedMethods: List<GatewayMethod>? = null,
     @SerializedName("data") val data: List<GatewayMethod>? = null,
     @SerializedName("message") val message: String? = null

@@ -32,6 +32,13 @@ const { encryptOtp, decryptOtp } = require('../utils/otpCrypto');
 const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_987654321';
 const TRIAL_DEFAULT_DAYS = parseInt(process.env.TRIAL_DEFAULT_DAYS || '7', 10);
 
+async function isTrialCustomSenderEnabled() {
+  const rows = await query(
+    "SELECT config_value FROM global_config WHERE config_key = 'trial_allow_custom_sender' LIMIT 1"
+  );
+  return rows.length > 0 && parseInt(rows[0].config_value, 10) === 1;
+}
+
 /**
  * Helper: findUserByContact
  * Queries unified user_credentials table for any phone or email contact.
@@ -882,6 +889,7 @@ async function completeProfile(req, res) {
     // Fetch Trial days config from global_config
     const trialDaysConfig = await query("SELECT config_value FROM global_config WHERE config_key = 'trial_days' LIMIT 1");
     const trialDays = trialDaysConfig.length > 0 ? parseInt(trialDaysConfig[0].config_value, 10) : 7;
+    const trialAllowCustomSender = await isTrialCustomSenderEnabled();
 
     // Hash the 6-digit PIN
     const hashedPin = await bcrypt.hash(pin, 10);
@@ -890,13 +898,24 @@ async function completeProfile(req, res) {
     if (trialDays === 0) {
       await query(
         `UPDATE users SET name = ?, pin = ?, phone = ?, email = ?, profile_complete = 1, 
-         is_paid = 0, active_plan_name = 'Trial Package', expiry_date = NOW() WHERE id = ?`,
+         is_paid = 0, active_plan_name = 'Trial Package', expiry_date = NOW(),
+         has_custom_sender_addon = 0, custom_sender_ends_at = NULL WHERE id = ?`,
         [name.trim(), hashedPin, finalPhone, finalEmail, userId]
+      );
+    } else if (trialAllowCustomSender) {
+      await query(
+        `UPDATE users SET name = ?, pin = ?, phone = ?, email = ?, profile_complete = 1, 
+         is_paid = 1, active_plan_name = 'Trial Package',
+         expiry_date = DATE_ADD(NOW(), INTERVAL ? DAY),
+         has_custom_sender_addon = 1,
+         custom_sender_ends_at = DATE_ADD(CURDATE(), INTERVAL ? DAY) WHERE id = ?`,
+        [name.trim(), hashedPin, finalPhone, finalEmail, trialDays, trialDays, userId]
       );
     } else {
       await query(
         `UPDATE users SET name = ?, pin = ?, phone = ?, email = ?, profile_complete = 1, 
-         is_paid = 1, active_plan_name = 'Trial Package', expiry_date = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE id = ?`,
+         is_paid = 1, active_plan_name = 'Trial Package', expiry_date = DATE_ADD(NOW(), INTERVAL ? DAY),
+         has_custom_sender_addon = 0, custom_sender_ends_at = NULL WHERE id = ?`,
         [name.trim(), hashedPin, finalPhone, finalEmail, trialDays, userId]
       );
     }
@@ -1006,7 +1025,8 @@ async function completeProfile(req, res) {
         blocked: !!updatedUser.blocked,
         profileComplete: !!updatedUser.profile_complete,
         smsEnabled: !!updatedUser.sms_enabled,
-        gmailEnabled: !!updatedUser.gmail_enabled
+        gmailEnabled: !!updatedUser.gmail_enabled,
+        hasCustomSenderAddon: updatedUser.has_custom_sender_addon === 1 ? 1 : 0
       }
     });
   } catch (error) {
@@ -1800,7 +1820,8 @@ async function getChildDevices(req, res) {
     const currentDeviceId = req.user.deviceId || '';
     const devices = await query(
       `SELECT id, device_id, custom_device_name, is_parent, is_approved, device_role,
-              sim_one_number, sim_one_active, sim_two_number, sim_two_active, is_app_active 
+              sim_one_number, sim_one_active, sim_two_number, sim_two_active, is_app_active,
+              device_specific_pin
        FROM registered_devices 
        WHERE user_id = ? AND device_id != ?`,
       [userId, currentDeviceId]
@@ -1839,7 +1860,7 @@ async function remoteUpdateDevice(req, res) {
            sim_two_number = ?, 
            sim_two_active = ?, 
            is_app_active = ?,
-           is_owner = COALESCE(?, is_owner),
+           is_owner_device = COALESCE(?, is_owner_device),
            device_specific_pin = COALESCE(?, device_specific_pin)
        WHERE user_id = ? AND device_id = ?`,
       [
@@ -1849,7 +1870,7 @@ async function remoteUpdateDevice(req, res) {
         sim_two_number || null,
         sim_two_active !== undefined ? sim_two_active : 1,
         is_app_active !== undefined ? is_app_active : 1,
-        is_owner !== undefined ? is_owner : null,
+        is_owner !== undefined ? (is_owner ? 1 : 0) : null,
         device_specific_pin !== undefined ? device_specific_pin : null,
         userId,
         deviceId
@@ -1858,6 +1879,30 @@ async function remoteUpdateDevice(req, res) {
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ success: false, error: 'Device not found or unauthorized' });
+    }
+
+    const updatedRows = await query(
+      `SELECT device_id, custom_device_name, device_role, is_app_active, device_specific_pin,
+              sim_one_number, sim_one_active, sim_two_number, sim_two_active
+       FROM registered_devices
+       WHERE user_id = ? AND device_id = ? LIMIT 1`,
+      [userId, deviceId]
+    );
+    const updated = updatedRows[0];
+
+    const io = req.app.get('io');
+    if (io && updated) {
+      io.to(`${userId}:${deviceId}`).emit('sync_device_config', {
+        device_id: updated.device_id,
+        custom_device_name: updated.custom_device_name,
+        device_role: updated.device_role,
+        is_app_active: updated.is_app_active,
+        device_specific_pin: updated.device_specific_pin,
+        sim_one_number: updated.sim_one_number,
+        sim_one_active: updated.sim_one_active,
+        sim_two_number: updated.sim_two_number,
+        sim_two_active: updated.sim_two_active
+      });
     }
 
     return res.json({ success: true, message: 'Device configuration updated successfully' });
@@ -1899,7 +1944,7 @@ async function getProfile(req, res) {
   try {
     const userId = req.user.userId;
     const users = await query(
-      'SELECT id, name, phone, email, role, is_paid, active_plan_name, expiry_date, avatar, has_custom_sender_addon FROM users WHERE id = ? LIMIT 1',
+      'SELECT id, name, phone, email, role, is_paid, active_plan_name, expiry_date, avatar, has_custom_sender_addon, custom_sender_ends_at FROM users WHERE id = ? LIMIT 1',
       [userId]
     );
 
@@ -1909,29 +1954,39 @@ async function getProfile(req, res) {
 
     const dbUser = users[0];
     if (dbUser.active_plan_name && dbUser.has_custom_sender_addon === 0) {
-      const plans = await query(
-        'SELECT is_custom_sender_allowed FROM subscription_plans WHERE plan_name = ? LIMIT 1',
-        [dbUser.active_plan_name]
-      );
-      if (plans.length > 0 && plans[0].is_custom_sender_allowed === 1) {
-        await query('UPDATE users SET has_custom_sender_addon = 1 WHERE id = ?', [userId]);
-        dbUser.has_custom_sender_addon = 1;
-      }
-    }
+      let shouldGrant = false;
 
-    if (dbUser.has_custom_sender_addon === 1) {
-      // 1. Ensure all custom templates of this user are parseable
-      await query(
-        'UPDATE sms_templates SET is_parseable = 1 WHERE user_id = ? AND is_official = 0',
-        [userId]
-      );
-      // 2. Ensure all custom gateway methods of this user on the current device are enabled
-      const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
-      if (deviceId) {
-        await query(
-          "UPDATE gateway_methods SET is_enabled = 1 WHERE user_id = ? AND device_id = ? AND provider LIKE 'Custom-%' AND is_enabled = 0",
-          [String(userId), String(deviceId)]
+      if (dbUser.active_plan_name === 'Trial Package') {
+        shouldGrant = await isTrialCustomSenderEnabled();
+      } else {
+        const plans = await query(
+          'SELECT is_custom_sender_allowed FROM subscription_plans WHERE plan_name = ? LIMIT 1',
+          [dbUser.active_plan_name]
         );
+        shouldGrant = plans.length > 0 && plans[0].is_custom_sender_allowed === 1;
+      }
+
+      if (shouldGrant) {
+        if (dbUser.active_plan_name === 'Trial Package' && dbUser.expiry_date) {
+          await query(
+            'UPDATE users SET has_custom_sender_addon = 1, custom_sender_ends_at = DATE(expiry_date) WHERE id = ?',
+            [userId]
+          );
+        } else if (dbUser.active_plan_name === 'Trial Package') {
+          const trialDaysConfig = await query(
+            "SELECT config_value FROM global_config WHERE config_key = 'trial_days' LIMIT 1"
+          );
+          const trialDays = trialDaysConfig.length > 0
+            ? parseInt(trialDaysConfig[0].config_value, 10)
+            : TRIAL_DEFAULT_DAYS;
+          await query(
+            'UPDATE users SET has_custom_sender_addon = 1, custom_sender_ends_at = DATE_ADD(CURDATE(), INTERVAL ? DAY) WHERE id = ?',
+            [trialDays, userId]
+          );
+        } else {
+          await query('UPDATE users SET has_custom_sender_addon = 1 WHERE id = ?', [userId]);
+        }
+        dbUser.has_custom_sender_addon = 1;
       }
     }
 
@@ -1947,7 +2002,8 @@ async function getProfile(req, res) {
         activePlanName: dbUser.active_plan_name,
         expiryDate: dbUser.expiry_date,
         avatar: dbUser.avatar,
-        hasCustomSenderAddon: dbUser.has_custom_sender_addon === 1 ? 1 : 0
+        hasCustomSenderAddon: dbUser.has_custom_sender_addon === 1 ? 1 : 0,
+        customSenderEndsAt: dbUser.custom_sender_ends_at || null
       }
     });
   } catch (err) {

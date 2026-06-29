@@ -102,6 +102,13 @@ fun TransactionSearchScreen(
         if (shouldLoadMore.value) viewModel.loadNextPage()
     }
 
+    LaunchedEffect(state.refreshSkipped) {
+        if (state.refreshSkipped) {
+            Toast.makeText(context, "নতুন আপডেট নেই — ডেটা আপ টু ডেট", Toast.LENGTH_SHORT).show()
+            viewModel.clearRefreshSkipped()
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -156,15 +163,28 @@ fun TransactionSearchScreen(
                                 viewModel.onDateRangeChanged(range.first, range.second, days)
                             }
                         }
-                        .padding(vertical = 6.dp),
+                        .padding(horizontal = 6.dp, vertical = 6.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "$days দিন",
-                        color = chipTextColor,
-                        fontSize = 11.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = AccentCyan,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                        Text(
+                            text = "$days দিন",
+                            color = chipTextColor,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
                 }
             }
         }
@@ -179,7 +199,7 @@ fun TransactionSearchScreen(
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        if (!state.isInitialLoading && state.errorMessage == null) {
+        if ((!state.isInitialLoading || state.lastUpdatedAtMs != null) && state.errorMessage == null) {
             LastUpdateRow(
                 lastUpdatedAtMs = state.lastUpdatedAtMs,
                 isRefreshing = state.isRefreshing,

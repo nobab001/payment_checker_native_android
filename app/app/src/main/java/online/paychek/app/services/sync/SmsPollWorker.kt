@@ -176,10 +176,9 @@ class SmsPollWorker(
                 // Step 3: Sender Number — separate sender_number field match
                 // Step 4: SMS Body — matching keywords from template conditions
                 val matchingMethod = cachedMethods.firstOrNull { method ->
-                    // Step 1: Method must be enabled and SIM slot must match
+                    val isArchiveMode = (method.isParseable ?: 1) == 0
                     method.isEnabled == 1 &&
                     (simSlot == null || method.simSlot == simSlot) &&
-                    // Step 2: Sender ID match
                     (
                         if (method.templateId == null) {
                             cleanSender == method.provider.trim().lowercase(Locale.US)
@@ -189,16 +188,16 @@ class SmsPollWorker(
                             cleanSender.contains(targetSender)
                         }
                     ) &&
-                    // Step 3: Sender Number match (if configured)
                     (
+                        isArchiveMode ||
                         method.senderNumber.isNullOrBlank() ||
                         run {
                             val targetSenderNumber = method.senderNumber.trim().lowercase(Locale.US)
                             cleanSender.contains(targetSenderNumber)
                         }
                     ) &&
-                    // Step 4: SMS Body keyword conditions (any one keyword match)
                     (
+                        isArchiveMode ||
                         method.matchingKeyword.isNullOrBlank() ||
                         method.matchingKeyword.split(",")
                             .map { it.trim() }.filter { it.isNotEmpty() }
@@ -211,6 +210,8 @@ class SmsPollWorker(
                     continue
                 }
 
+                val isArchiveMode = (matchingMethod.isParseable ?: 1) == 0
+
                 val createdAtStr = matchingMethod.createdAt
                 if (!createdAtStr.isNullOrBlank()) {
                     val createdTimeMs = parseIsoDateToMillis(createdAtStr)
@@ -220,33 +221,50 @@ class SmsPollWorker(
                     }
                 }
 
-                // Forward RAW SMS payload directly with parsed amount and trxId
-                val payment = SmsParser.parseWithDynamicRegex(
-                    body = candidate.body,
-                    regexPattern = matchingMethod.regexPattern,
-                    providerTag = matchingMethod.provider,
-                    senderNumber = candidate.sender,
-                    timestamp = candidate.timestamp,
-                    simSlot = simSlot,
-                    simNumber = simNumber ?: matchingMethod.number,
-                    isCustomSender = matchingMethod.templateId == null
-                ) ?: SmsParser.parseSms(candidate.sender, candidate.body, candidate.timestamp)?.copy(
-                    simSlot = simSlot,
-                    simNumber = simNumber ?: matchingMethod.number,
-                    isCustomSender = matchingMethod.templateId == null,
-                    providerTag = matchingMethod.provider
-                ) ?: SmsParser.ParsedPayment(
-                    amount         = 0.0,
-                    trxId          = "",
-                    providerTag    = matchingMethod.provider,
-                    senderNumber   = candidate.sender,
-                    rawBody        = candidate.body,
-                    smsTimestamp   = candidate.timestamp,
-                    simSlot        = simSlot,
-                    simNumber      = simNumber ?: matchingMethod.number,
-                    isCustomSender = matchingMethod.templateId == null,
-                    fullSms        = candidate.body
-                )
+                // Forward RAW SMS payload — archive senders skip parsing
+                val payment = if (isArchiveMode) {
+                    SmsParser.ParsedPayment(
+                        amount         = 0.0,
+                        trxId          = "",
+                        providerTag    = matchingMethod.provider,
+                        senderNumber   = candidate.sender,
+                        rawBody        = candidate.body,
+                        smsTimestamp   = candidate.timestamp,
+                        simSlot        = simSlot,
+                        simNumber      = simNumber ?: matchingMethod.number,
+                        isCustomSender = true,
+                        fullSms        = candidate.body,
+                        isParseable    = 0
+                    )
+                } else {
+                    SmsParser.parseWithDynamicRegex(
+                        body = candidate.body,
+                        regexPattern = matchingMethod.regexPattern,
+                        providerTag = matchingMethod.provider,
+                        senderNumber = candidate.sender,
+                        timestamp = candidate.timestamp,
+                        simSlot = simSlot,
+                        simNumber = simNumber ?: matchingMethod.number,
+                        isCustomSender = false
+                    ) ?: SmsParser.parseSms(candidate.sender, candidate.body, candidate.timestamp)?.copy(
+                        simSlot = simSlot,
+                        simNumber = simNumber ?: matchingMethod.number,
+                        isCustomSender = false,
+                        providerTag = matchingMethod.provider
+                    ) ?: SmsParser.ParsedPayment(
+                        amount         = 0.0,
+                        trxId          = "",
+                        providerTag    = matchingMethod.provider,
+                        senderNumber   = candidate.sender,
+                        rawBody        = candidate.body,
+                        smsTimestamp   = candidate.timestamp,
+                        simSlot        = simSlot,
+                        simNumber      = simNumber ?: matchingMethod.number,
+                        isCustomSender = false,
+                        fullSms        = candidate.body,
+                        isParseable    = matchingMethod.isParseable ?: 1
+                    )
+                }
 
                 Log.i(TAG, "[Guard-2] 4 Conditions Met. Forwarding RAW payload to queue. Provider: ${matchingMethod.provider} | SIM: $simSlot | Processing via use case")
 

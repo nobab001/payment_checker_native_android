@@ -258,6 +258,7 @@ class SmsReceiver(
             // Step 3: Sender Number — separate sender_number field match
             // Step 4: SMS Body   — matching keywords from template conditions
             val matchingMethod = cachedMethods.firstOrNull { method ->
+                val isArchiveMode = (method.isParseable ?: 1) == 0
                 // Step 1: Method must be enabled and SIM slot must match
                 method.isEnabled == 1 &&
                 (simSlot == null || method.simSlot == simSlot) &&
@@ -272,14 +273,16 @@ class SmsReceiver(
                 ) &&
                 // Step 3: Sender Number match (if configured)
                 (
+                    isArchiveMode ||
                     method.senderNumber.isNullOrBlank() ||
                     run {
                         val targetSenderNumber = method.senderNumber.trim().lowercase(Locale.US)
                         cleanSender.contains(targetSenderNumber)
                     }
                 ) &&
-                // Step 4: SMS Body keyword conditions (any one keyword match)
+                // Step 4: SMS Body keyword conditions (skip for custom/archive senders)
                 (
+                    isArchiveMode ||
                     method.matchingKeyword.isNullOrBlank() ||
                     method.matchingKeyword.split(",").map { it.trim() }.filter { it.isNotEmpty() }.any { keyword ->
                         body.contains(keyword, ignoreCase = true)
@@ -292,10 +295,10 @@ class SmsReceiver(
                 return
             }
 
+            val isArchiveMode = (matchingMethod.isParseable ?: 1) == 0
+
                 // ── Body Pattern Match Verification ───────────────────────────
-                // App only VERIFIES that the SMS body matches one of the template
-                // patterns. It does NOT extract amount/trxId/sender from body.
-                // Server will do its own parsing via parseRawSms().
+                if (!isArchiveMode) {
                 val patternsToTry = mutableListOf<String>()
                 matchingMethod.customPatterns?.let { patternsToTry.addAll(it) }
                 if (!matchingMethod.regexPattern.isNullOrBlank()) {
@@ -323,20 +326,21 @@ class SmsReceiver(
                     Log.d(TAG, "Payment SMS ignored: Regex patterns did not match the full body structure.")
                     return
                 }
+                }
 
-                // Build minimal payload — server will parse amount/trxId from rawBody
+                // Build minimal payload — archive SMS goes to custom_sms_archives on server
                 val parsedPayment = online.paychek.app.utils.SmsParser.ParsedPayment(
-                    amount       = 0.0,      // Server parses
-                    trxId        = "",        // Server parses
+                    amount       = 0.0,
+                    trxId        = "",
                     providerTag  = matchingMethod.provider,
                     senderNumber = sender,
                     rawBody      = body,
                     smsTimestamp  = timestamp,
                     simSlot      = simSlot,
                     simNumber    = simNumber ?: matchingMethod.number,
-                    isCustomSender = matchingMethod.templateId == null,
+                    isCustomSender = isArchiveMode,
                     fullSms      = body,
-                    isParseable  = matchingMethod.isParseable ?: 1
+                    isParseable  = if (isArchiveMode) 0 else (matchingMethod.isParseable ?: 1)
                 )
 
                 Log.i(TAG, "4 Conditions Met. Forwarding RAW SMS payload to queue. Provider: ${matchingMethod.provider}")

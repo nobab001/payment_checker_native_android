@@ -104,7 +104,9 @@ data class UserDto(
     @SerializedName(value = "expiryDate", alternate = ["expiry_date"]) val expiryDate: String? = null,
     @SerializedName("avatar") val avatar: String? = null,
     @SerializedName(value = "hasCustomSenderAddon", alternate = ["has_custom_sender_addon"])
-    val hasCustomSenderAddon: Int = 0
+    val hasCustomSenderAddon: Int = 0,
+    @SerializedName(value = "customSenderEndsAt", alternate = ["custom_sender_ends_at"])
+    val customSenderEndsAt: String? = null
 )
 
 data class DeviceDto(

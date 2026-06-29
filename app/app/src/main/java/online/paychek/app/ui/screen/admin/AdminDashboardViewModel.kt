@@ -23,6 +23,7 @@ data class AdminUiState(
     val users: List<AdminUserDto> = emptyList(),
     val otpFormatTemplate: String = "",
     val plans: List<SubscriptionPlanDto> = emptyList(),
+    val addonPlans: List<AddonPlanDto> = emptyList(),
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
@@ -146,7 +147,19 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 }
             }
 
-            kotlinx.coroutines.joinAll(jobConfigs, jobTemplates, jobCheckouts, jobEmails, jobSmsSettings, jobUsers, jobOtpFormat, jobPlans)
+            val jobAddonPlans = launch {
+                try {
+                    val res = api.getAddonPlans(token)
+                    if (res.isSuccessful) {
+                        val addonPlans = res.body()?.plans ?: emptyList()
+                        _state.update { it.copy(addonPlans = addonPlans) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            kotlinx.coroutines.joinAll(jobConfigs, jobTemplates, jobCheckouts, jobEmails, jobSmsSettings, jobUsers, jobOtpFormat, jobPlans, jobAddonPlans)
             _state.update { it.copy(isLoading = false) }
         }
     }
@@ -463,7 +476,18 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    fun savePlan(plan: SubscriptionPlanDto) {
+    private fun parseApiErrorMessage(errorBody: String?): String? {
+        if (errorBody.isNullOrBlank()) return null
+        return try {
+            val map = online.paychek.app.utils.GsonUtils.gson.fromJson(errorBody, Map::class.java)
+            (map["message"] as? String)?.takeIf { it.isNotBlank() }
+                ?: (map["error"] as? String)?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun savePlan(plan: SubscriptionPlanDto, onComplete: ((Boolean) -> Unit)? = null) {
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true) }
             try {
@@ -472,11 +496,15 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 if (response.isSuccessful && response.body()?.success == true) {
                     _state.update { it.copy(successMessage = "প্ল্যান সফলভাবে সংরক্ষিত হয়েছে।") }
                     refreshPlans()
+                    onComplete?.invoke(true)
                 } else {
-                    _state.update { it.copy(isSaving = false, errorMessage = "প্ল্যান সেভ ব্যর্থ হয়েছে।") }
+                    val msg = parseApiErrorMessage(response.errorBody()?.string()) ?: "প্ল্যান সেভ ব্যর্থ হয়েছে।"
+                    _state.update { it.copy(isSaving = false, errorMessage = msg) }
+                    onComplete?.invoke(false)
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }
+                onComplete?.invoke(false)
             }
         }
     }
@@ -533,6 +561,65 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 }
             } catch (e: Exception) {
                 onError("নেটওয়ার্ক ত্রুটি: ${e.localizedMessage}")
+            }
+        }
+    }
+
+    fun saveAddonPlan(plan: AddonPlanDto, onComplete: ((Boolean) -> Unit)? = null) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val response = api.saveAddonPlan(token, plan)
+                if (response.isSuccessful && response.body()?.success == true) {
+                    _state.update { it.copy(successMessage = "অ্যাড-অন প্যাকেজ সংরক্ষিত হয়েছে।") }
+                    refreshAddonPlans()
+                    onComplete?.invoke(true)
+                } else {
+                    val msg = parseApiErrorMessage(response.errorBody()?.string()) ?: "অ্যাড-অন সেভ ব্যর্থ হয়েছে।"
+                    _state.update { it.copy(isSaving = false, errorMessage = msg) }
+                    onComplete?.invoke(false)
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }
+                onComplete?.invoke(false)
+            }
+        }
+    }
+
+    private suspend fun refreshAddonPlans() {
+        try {
+            val token = "Bearer ${getToken()}"
+            val res = api.getAddonPlans(token)
+            if (res.isSuccessful) {
+                _state.update { it.copy(addonPlans = res.body()?.plans ?: emptyList(), isSaving = false) }
+            } else {
+                _state.update { it.copy(isSaving = false) }
+            }
+        } catch (e: Exception) {
+            _state.update { it.copy(isSaving = false) }
+        }
+    }
+
+    fun verifyAdminPinAndDeleteAddonPlan(pin: String, planId: Int, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val token = "Bearer ${getToken()}"
+                val response = RetrofitClient.authApiService.verifyPin(token, VerifyPinRequest(pin))
+                if (response.isSuccessful && response.body()?.success == true) {
+                    val deleteRes = api.deleteAddonPlan(token, planId)
+                    if (deleteRes.isSuccessful && deleteRes.body()?.success == true) {
+                        _state.update { it.copy(successMessage = "অ্যাড-অন প্যাকেজ মুছে ফেলা হয়েছে।") }
+                        refreshAddonPlans()
+                        onSuccess()
+                    } else {
+                        onError(deleteRes.body()?.message ?: "মুছে ফেলা ব্যর্থ হয়েছে।")
+                    }
+                } else {
+                    onError("ভুল পিন নম্বর। অনুগ্রহ করে সঠিক পিন দিন।")
+                }
+            } catch (e: Exception) {
+                onError("নেটওয়ার্ক ত্রুটি: ${e.localizedMessage}")
             }
         }
     }

@@ -138,4 +138,21 @@ interface AdminApiService {
         @Header("Authorization") token: String,
         @Path("id") id: Int
     ): Response<AdminGenericResponse>
+
+    @GET("admin/addon-plans")
+    suspend fun getAddonPlans(
+        @Header("Authorization") token: String
+    ): Response<AddonPlansResponse>
+
+    @POST("admin/addon-plans")
+    suspend fun saveAddonPlan(
+        @Header("Authorization") token: String,
+        @Body request: AddonPlanDto
+    ): Response<AdminGenericResponse>
+
+    @DELETE("admin/addon-plans/{id}")
+    suspend fun deleteAddonPlan(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int
+    ): Response<AdminGenericResponse>
 }

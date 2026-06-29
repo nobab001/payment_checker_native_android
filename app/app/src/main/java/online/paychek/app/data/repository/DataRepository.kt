@@ -57,11 +57,14 @@ class PaymentRepository {
         limit: Int   = 20,
         provider: String = "all",
         startDate: String? = null,
-        endDate: String? = null
-    ): Result<List<TransactionItem>> {
+        endDate: String? = null,
+        historyLastSync: Long? = null
+    ): Result<TransactionHistoryResult> {
         return try {
+            val syncHeader = if (page == 1 && (historyLastSync ?: 0L) > 0L) historyLastSync else null
             val response = api.getTransactionHistory(
                 token    = "Bearer $token",
+                historyLastSync = syncHeader,
                 page     = page,
                 limit    = limit,
                 provider = provider,
@@ -71,7 +74,14 @@ class PaymentRepository {
             if (response.isSuccessful) {
                 val body = response.body()
                 if (body?.success == true) {
-                    Result.success(body.data)
+                    Result.success(
+                        TransactionHistoryResult(
+                            items = body.data,
+                            cacheHit = body.cacheHit == true,
+                            historyVersion = body.historyVersion,
+                            hasMore = body.hasMore
+                        )
+                    )
                 } else {
                     Result.failure(Exception("Transaction লোড ব্যর্থ"))
                 }
@@ -174,15 +184,33 @@ class PaymentRepository {
         }
     }
 
-    suspend fun purchaseSubscriptionAddon(token: String): Result<PurchaseAddonResponse> {
+    suspend fun getAddonPlans(token: String): Result<List<AddonPlanDto>> {
         return try {
-            val response = api.purchaseSubscriptionAddon("Bearer $token")
+            val response = api.getAddonPlans("Bearer $token")
             if (response.isSuccessful) {
                 val body = response.body()
                 if (body?.success == true) {
-                    Result.success(body!!)
+                    Result.success(body.plans)
                 } else {
-                    Result.failure(Exception(body?.message ?: "অ্যাড-অন ক্রয় ব্যর্থ হয়েছে"))
+                    Result.failure(Exception("অ্যাড-অন প্যাকেজ লোড ব্যর্থ হয়েছে"))
+                }
+            } else {
+                Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
+        }
+    }
+
+    suspend fun purchaseSubscriptionAddon(token: String, planId: Int): Result<PurchaseAddonResponse> {
+        return try {
+            val response = api.purchaseSubscriptionAddon("Bearer $token", PurchaseAddonRequest(planId))
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body?.success == true) {
+                    Result.success(body)
+                } else {
+                    Result.failure(Exception(body?.message ?: "অ্যাড-অন ক্রয় ব্যর্থ হয়েছে"))
                 }
             } else {
                 Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))

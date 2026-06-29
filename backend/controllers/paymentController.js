@@ -111,6 +111,36 @@ async function getSmsHistory(req, res) {
     const limit    = Math.min(50, parseInt(req.query.limit) || 20);
     const provider = req.query.provider || 'all';
     const offset   = (page - 1) * limit;
+    const lastSync = req.headers['x-history-last-sync'] ? parseInt(req.headers['x-history-last-sync'], 10) : 0;
+    const historyVersion = await dataSyncCache.getUserHistoryVersion(userId);
+    const cacheHit = page === 1 && lastSync > 0 && dataSyncCache.isClientSyncCurrent(lastSync, historyVersion);
+
+    if (page > 1 && lastSync > 0 && dataSyncCache.isClientSyncCurrent(lastSync, historyVersion)) {
+      return res.json({
+        success: true,
+        cache_hit: true,
+        history_version: historyVersion,
+        data: [],
+        page,
+        limit,
+        total_count: 0,
+        has_more: false,
+      });
+    }
+
+    if (cacheHit) {
+      console.log(`[HISTORY] User ${userId} | cache HIT | client=${lastSync} server=${historyVersion} | provider=${provider}`);
+      return res.json({
+        success: true,
+        cache_hit: true,
+        history_version: historyVersion,
+        data: [],
+        page,
+        limit,
+        total_count: 0,
+        has_more: false,
+      });
+    }
 
     const allowedProviders = ['bKash', 'Nagad', 'Rocket', 'Upay'];
     const useFilter = allowedProviders.includes(provider);
@@ -164,10 +194,12 @@ async function getSmsHistory(req, res) {
       device_name: deviceMap[row.device_id] || 'Unknown Device'
     }));
 
-    console.log(`[HISTORY] User ${userId} | Page ${page} | Provider: ${provider} | Found: ${rows.length}`);
+    console.log(`[HISTORY] User ${userId} | cache MISS | client=${lastSync} server=${historyVersion} | Page ${page} | Provider: ${provider} | Found: ${rows.length}`);
 
     return res.json({
       success:     true,
+      cache_hit:   false,
+      history_version: historyVersion,
       data:        mappedRows,
       page:        page,
       limit:       limit,
@@ -319,6 +351,8 @@ async function markTransactionSoldOut(req, res) {
     if (result.count === 0) {
       return res.status(404).json({ success: false, error: 'Transaction not found or not owned by user' });
     }
+
+    await dataSyncCache.bumpUserHistoryVersion(userId);
 
     return res.json({ success: true, message: 'Transaction marked as sold out successfully.' });
   } catch (error) {

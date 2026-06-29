@@ -1,6 +1,7 @@
 const { Worker } = require('bullmq');
 const { getRedisClient } = require('../services/redisClient');
 const prisma = require('../db/prisma');
+const dataSyncCache = require('../services/dataSyncCache');
 const crypto = require('crypto');
 const { verifyHmac } = require('../utils/verifyHmac');
 const { parseRawSms } = require('../utils/parseRawSms');
@@ -46,6 +47,7 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
           full_sms: rawBody
         }
       });
+      await dataSyncCache.bumpUserHistoryVersion(userId);
       console.log(`[WORKER] Custom archive SMS saved in 1ms for user ${userId}`);
       return { success: true, isArchive: true };
     } catch (archiveErr) {
@@ -110,6 +112,8 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
     }
     throw dbErr;
   }
+
+  await dataSyncCache.bumpUserHistoryVersion(userId);
 
   return { success: true, isDuplicate: false };
 

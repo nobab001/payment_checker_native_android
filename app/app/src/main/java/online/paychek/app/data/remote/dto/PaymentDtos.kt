@@ -94,7 +94,20 @@ data class TransactionListResponse(
     val totalCount: Int,
 
     @SerializedName("has_more")
-    val hasMore: Boolean
+    val hasMore: Boolean,
+
+    @SerializedName("cache_hit")
+    val cacheHit: Boolean? = false,
+
+    @SerializedName("history_version")
+    val historyVersion: Long? = null
+)
+
+data class TransactionHistoryResult(
+    val items: List<TransactionItem>,
+    val cacheHit: Boolean = false,
+    val historyVersion: Long? = null,
+    val hasMore: Boolean = true
 )
 
 // =============================================================================
@@ -206,5 +219,6 @@ data class CustomArchiveListResponse(
 data class PurchaseAddonResponse(
     val success: Boolean,
     val message: String?,
-    @SerializedName("has_custom_sender_addon") val hasCustomSenderAddon: Int
+    @SerializedName("has_custom_sender_addon") val hasCustomSenderAddon: Int,
+    @SerializedName("custom_sender_ends_at") val customSenderEndsAt: String? = null
 )

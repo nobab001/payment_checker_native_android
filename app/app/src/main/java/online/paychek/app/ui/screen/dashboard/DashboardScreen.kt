@@ -1935,10 +1935,11 @@ private fun CustomArchiveRow(
                 )
             }
 
-            // Raw SMS Text Box
+            // Raw SMS Text Box — long-press to select/copy
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(max = 220.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(DashCardAlt)
                     .padding(12.dp)
@@ -1949,7 +1950,9 @@ private fun CustomArchiveRow(
                         color = TextWhite,
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
                     )
                 }
             }

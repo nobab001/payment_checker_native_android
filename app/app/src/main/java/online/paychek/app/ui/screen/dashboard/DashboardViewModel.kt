@@ -383,12 +383,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     endDate = endDate
                 )
                 result.fold(
-                    onSuccess = { items ->
+                    onSuccess = { pageResult ->
                         _state.update {
                             it.copy(
-                                dateFilteredTransactions = items,
+                                dateFilteredTransactions = pageResult.items,
                                 isFilterLoading = false,
-                                lastUpdatedAtMs = BangladeshTimeUtil.latestTransactionEpochMs(items)
+                                lastUpdatedAtMs = BangladeshTimeUtil.latestTransactionEpochMs(pageResult.items)
                                     ?: it.lastUpdatedAtMs
                             )
                         }

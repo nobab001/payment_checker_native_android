@@ -48,6 +48,9 @@ data class DeviceUiState(
     val remoteDeviceEditSim2Active: Boolean   = true,
     val remoteDeviceEditAppActive: Boolean    = true,
     val remoteDeviceEditPin: String           = "",
+    val remoteGatewayMethods: List<GatewayMethod> = emptyList(),
+    val remoteTemplates: List<SmsTemplateDto> = emptyList(),
+    val isRemoteGatewayLoading: Boolean       = false,
     
     // New Role Toggle States
     val showRolePinDialog: Boolean            = false,
@@ -93,6 +96,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     val state: StateFlow<DeviceUiState> = _state.asStateFlow()
 
     private var saveJob: Job? = null
+    private val lastConfirmedLookupNumber = mutableMapOf(1 to "", 2 to "")
 
     init {
         val sim1 = prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, true)
@@ -137,6 +141,8 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 hasCustomSenderPermission = cachedCustomSenderPermission
             ) 
         }
+        lastConfirmedLookupNumber[1] = cachedSim1Num
+        lastConfirmedLookupNumber[2] = cachedSim2Num
 
         loadCustomSenderPermission()
 
@@ -186,7 +192,9 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                         val sorted = body.data.sortedBy { it.priority }
                         val sim1Num = sorted.find { it.simSlot == 1 && !it.number.isNullOrEmpty() }?.number ?: _state.value.sim1Number
                         val sim2Num = sorted.find { it.simSlot == 2 && !it.number.isNullOrEmpty() }?.number ?: _state.value.sim2Number
-                        _state.update { 
+                        lastConfirmedLookupNumber[1] = sim1Num
+                        lastConfirmedLookupNumber[2] = sim2Num
+                        _state.update {
                             it.copy(
                                 methods = sorted, 
                                 sim1Number = sim1Num,
@@ -265,6 +273,8 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         }
         validateAndSyncSimToggles()
 
+        if (!isSimSlotActive(method.simSlot)) return
+
         viewModelScope.launch {
             val token = getToken() ?: return@launch
             runCatching {
@@ -311,7 +321,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val token = getToken() ?: return@launch
             if (newValue) {
-                val slotMethods = _state.value.methods.filter { it.simSlot == simSlot }
+                val slotMethods = _state.value.methods.filter { it.simSlot == simSlot && it.isEnabled == 1 }
                 val bulkItems = slotMethods.map { method ->
                     BulkSyncMethodItem(
                         templateId = method.templateId,
@@ -319,40 +329,28 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                         isEnabled = method.isEnabled
                     )
                 }
-                if (bulkItems.isNotEmpty()) {
-                    runCatching {
-                        api.bulkSyncSlotMethods(
-                            "Bearer $token",
-                            BulkSyncRequest(simSlot = simSlot, phoneNumber = phoneNumber, methods = bulkItems)
+                runCatching {
+                    api.bulkSyncSlotMethods(
+                        "Bearer $token",
+                        BulkSyncRequest(
+                            simSlot = simSlot,
+                            phoneNumber = phoneNumber,
+                            methods = bulkItems,
+                            replaceSlot = true,
+                            activateBinding = true
                         )
-                    }.onSuccess { res ->
-                        if (res.isSuccessful && res.body()?.success == true) {
-                            res.body()?.data?.let { newData ->
-                                saveMethodsToCache(newData)
-                                _state.update { it.copy(methods = newData) }
-                            }
-                        }
-                    }
-                }
-            }
-
-            runCatching {
-                api.setSlotActive(
-                    "Bearer $token",
-                    SlotActiveRequest(
-                        simSlot = simSlot,
-                        phoneNumber = phoneNumber,
-                        isActive = if (newValue) 1 else 0
                     )
-                )
-            }.onSuccess { res ->
-                if (res.isSuccessful) {
+                }.onSuccess { res ->
+                    if (!res.isSuccessful) {
+                        revertSimToggle(simSlot)
+                        setError("সিম সক্রিয় করতে ব্যর্থ হয়েছে (${res.code()})")
+                        return@onSuccess
+                    }
                     val body = res.body()
                     if (body?.hasConflict == true) {
+                        revertSimToggle(simSlot)
                         _state.update {
                             it.copy(
-                                sim1Enabled = if (simSlot == 1) false else it.sim1Enabled,
-                                sim2Enabled = if (simSlot == 2) false else it.sim2Enabled,
                                 pendingSimConflict = SimConflictUi(
                                     simSlot = simSlot,
                                     phoneNumber = phoneNumber,
@@ -360,16 +358,37 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                                 )
                             )
                         }
-                        prefs.edit().apply {
-                            if (simSlot == 1) putBoolean(AppConfig.KEY_SIM1_ENABLED, false)
-                            else putBoolean(AppConfig.KEY_SIM2_ENABLED, false)
-                            apply()
-                        }
                         return@onSuccess
                     }
-                    body?.data?.let { newData ->
-                        saveMethodsToCache(newData)
-                        _state.update { it.copy(methods = newData) }
+                    if (body?.success == true) {
+                        body.data?.let { newData ->
+                            saveMethodsToCache(newData)
+                            _state.update { it.copy(methods = newData) }
+                        }
+                    } else {
+                        revertSimToggle(simSlot)
+                        setError("সিম সক্রিয় করতে ব্যর্থ হয়েছে")
+                    }
+                }.onFailure {
+                    revertSimToggle(simSlot)
+                    setError("নেটওয়ার্ক সমস্যা: ${it.message}")
+                }
+            } else {
+                runCatching {
+                    api.setSlotActive(
+                        "Bearer $token",
+                        SlotActiveRequest(
+                            simSlot = simSlot,
+                            phoneNumber = phoneNumber,
+                            isActive = 0
+                        )
+                    )
+                }.onSuccess { res ->
+                    if (res.isSuccessful) {
+                        res.body()?.data?.let { newData ->
+                            saveMethodsToCache(newData)
+                            _state.update { it.copy(methods = newData) }
+                        }
                     }
                 }
             }
@@ -487,13 +506,23 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 remoteDeviceEditSim2Number = device.simTwoNumber ?: "",
                 remoteDeviceEditSim2Active = device.simTwoActive == 1,
                 remoteDeviceEditAppActive = device.isAppActive == 1,
-                remoteDeviceEditPin = device.deviceSpecificPin ?: ""
+                remoteDeviceEditPin = device.deviceSpecificPin ?: "",
+                remoteGatewayMethods = emptyList(),
+                remoteTemplates = emptyList()
             )
         }
+        loadRemoteGatewayData()
     }
 
     fun closeRemoteDeviceSettings() {
-        _state.update { it.copy(activeRemoteDevice = null) }
+        _state.update {
+            it.copy(
+                activeRemoteDevice = null,
+                remoteGatewayMethods = emptyList(),
+                remoteTemplates = emptyList(),
+                isRemoteGatewayLoading = false
+            )
+        }
     }
 
     fun onRemoteDeviceEditNameChanged(name: String) {
@@ -557,11 +586,20 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                         _state.update {
                             it.copy(
                                 isSaving = false,
-                                activeRemoteDevice = null,
-                                successMessage = "চাইল্ড ডিভাইস আপডেট সফল হয়েছে ✓"
+                                successMessage = "চাইল্ড ডিভাইস আপডেট সফল হয়েছে ✓",
+                                activeRemoteDevice = device.copy(
+                                    customDeviceName = name,
+                                    simOneNumber = sim1Num.ifEmpty { null },
+                                    simOneActive = sim1Active,
+                                    simTwoNumber = sim2Num.ifEmpty { null },
+                                    simTwoActive = sim2Active,
+                                    isAppActive = appActive,
+                                    deviceSpecificPin = pin.ifEmpty { null }
+                                )
                             )
                         }
                         loadChildDevices()
+                        loadRemoteGatewayData()
                         viewModelScope.launch {
                             delay(2000)
                             _state.update { it.copy(successMessage = null) }
@@ -579,6 +617,291 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     private fun getToken(): String? {
         val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
         return token.ifEmpty { null }
+    }
+
+    private fun activeRemoteDeviceId(): String? = _state.value.activeRemoteDevice?.deviceId
+
+    private fun remoteSimNumber(simSlot: Int): String {
+        val s = _state.value
+        return (if (simSlot == 1) s.remoteDeviceEditSim1Number else s.remoteDeviceEditSim2Number)
+            .trim().filter { it.isDigit() }.take(11)
+    }
+
+    private fun isRemoteSimActive(simSlot: Int): Boolean {
+        val s = _state.value
+        return if (simSlot == 1) s.remoteDeviceEditSim1Active else s.remoteDeviceEditSim2Active
+    }
+
+    fun loadRemoteGatewayData() {
+        val deviceId = activeRemoteDeviceId() ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(isRemoteGatewayLoading = true, errorMessage = null) }
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+            runCatching {
+                val methodsRes = api.getGatewayMethods("Bearer $token", 0L, deviceId)
+                val templatesRes = api.getTemplates("Bearer $token", 0L, deviceId)
+                Pair(methodsRes, templatesRes)
+            }.onSuccess { (methodsRes, templatesRes) ->
+                val methods = if (methodsRes.isSuccessful && methodsRes.body()?.success == true) {
+                    methodsRes.body()?.data ?: emptyList()
+                } else emptyList()
+                val templates = if (templatesRes.isSuccessful && templatesRes.body()?.success == true) {
+                    templatesRes.body()?.templates ?: emptyList()
+                } else emptyList()
+                _state.update {
+                    it.copy(
+                        remoteGatewayMethods = methods,
+                        remoteTemplates = templates,
+                        isRemoteGatewayLoading = false
+                    )
+                }
+            }.onFailure { e ->
+                _state.update {
+                    it.copy(
+                        isRemoteGatewayLoading = false,
+                        errorMessage = "রিমোট গেটওয়ে লোড ব্যর্থ: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun remoteToggleTemplate(simSlot: Int, template: SmsTemplateDto) {
+        val deviceId = activeRemoteDeviceId() ?: return
+        val existing = _state.value.remoteGatewayMethods.find {
+            it.simSlot == simSlot && it.templateId == template.id
+        }
+        if (existing != null) {
+            remoteToggleMethod(existing)
+            return
+        }
+        if (!isRemoteSimActive(simSlot)) {
+            setError("সিম স্লট চালু করুন, তারপর টেমপ্লেট সিলেক্ট করুন")
+            return
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+            val num = remoteSimNumber(simSlot)
+            val request = AddGatewayMethodRequest(
+                simSlot = simSlot,
+                provider = template.templateName,
+                templateId = template.id,
+                number = num.ifEmpty { null }
+            )
+            runCatching { api.addGatewayMethod("Bearer $token", request, deviceId) }
+                .onSuccess { res ->
+                    _state.update { it.copy(isSaving = false) }
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        res.body()?.data?.let { newData ->
+                            _state.update { it.copy(remoteGatewayMethods = newData) }
+                        } ?: loadRemoteGatewayData()
+                    } else {
+                        setError("রিমোট টেমপ্লেট যোগ ব্যর্থ (${res.code()})")
+                    }
+                }
+                .onFailure { setError("নেটওয়ার্ক সমস্যা: ${it.message}") }
+        }
+    }
+
+    fun remoteToggleMethod(method: GatewayMethod) {
+        val deviceId = activeRemoteDeviceId() ?: return
+        val newEnabled = if (method.isEnabled == 1) 0 else 1
+        _state.update { current ->
+            val updated = current.remoteGatewayMethods.map {
+                if (it.id == method.id) it.copy(isEnabled = newEnabled) else it
+            }
+            current.copy(remoteGatewayMethods = updated)
+        }
+        viewModelScope.launch {
+            val token = getToken() ?: return@launch
+            runCatching { api.toggleMethod("Bearer $token", method.id, ToggleRequest(newEnabled), deviceId) }
+                .onSuccess { res ->
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        res.body()?.data?.let { newData ->
+                            _state.update { it.copy(remoteGatewayMethods = newData) }
+                        }
+                    } else {
+                        loadRemoteGatewayData()
+                        setError("রিমোট টগল ব্যর্থ (${res.code()})")
+                    }
+                }
+                .onFailure {
+                    loadRemoteGatewayData()
+                    setError("নেটওয়ার্ক সমস্যা: ${it.message}")
+                }
+        }
+    }
+
+    fun remoteToggleSim(simSlot: Int, active: Boolean) {
+        val deviceId = activeRemoteDeviceId() ?: return
+        _state.update {
+            if (simSlot == 1) it.copy(remoteDeviceEditSim1Active = active)
+            else it.copy(remoteDeviceEditSim2Active = active)
+        }
+        val phoneNumber = remoteSimNumber(simSlot)
+        if (phoneNumber.length != 11) return
+
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+            if (active) {
+                val slotMethods = _state.value.remoteGatewayMethods.filter {
+                    it.simSlot == simSlot && it.isEnabled == 1
+                }
+                val bulkItems = slotMethods.map { method ->
+                    BulkSyncMethodItem(
+                        templateId = method.templateId,
+                        provider = method.provider,
+                        isEnabled = method.isEnabled
+                    )
+                }
+                runCatching {
+                    api.bulkSyncSlotMethods(
+                        "Bearer $token",
+                        BulkSyncRequest(
+                            simSlot = simSlot,
+                            phoneNumber = phoneNumber,
+                            methods = bulkItems,
+                            replaceSlot = true,
+                            activateBinding = true
+                        ),
+                        deviceId
+                    )
+                }.onSuccess { res ->
+                    _state.update { it.copy(isSaving = false) }
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        res.body()?.data?.let { newData ->
+                            _state.update { it.copy(remoteGatewayMethods = newData) }
+                        }
+                    } else {
+                        _state.update {
+                            if (simSlot == 1) it.copy(remoteDeviceEditSim1Active = false)
+                            else it.copy(remoteDeviceEditSim2Active = false)
+                        }
+                        setError("রিমোট সিম সক্রিয় ব্যর্থ")
+                    }
+                }.onFailure { e ->
+                    _state.update {
+                        if (simSlot == 1) it.copy(remoteDeviceEditSim1Active = false)
+                        else it.copy(remoteDeviceEditSim2Active = false)
+                    }
+                    setError("নেটওয়ার্ক সমস্যা: ${e.message}")
+                }
+            } else {
+                runCatching {
+                    api.setSlotActive(
+                        "Bearer $token",
+                        SlotActiveRequest(simSlot = simSlot, phoneNumber = phoneNumber, isActive = 0),
+                        deviceId
+                    )
+                }.onSuccess { res ->
+                    _state.update { it.copy(isSaving = false) }
+                    if (res.isSuccessful) {
+                        res.body()?.data?.let { newData ->
+                            _state.update { it.copy(remoteGatewayMethods = newData) }
+                        }
+                    }
+                }.onFailure { e ->
+                    _state.update { it.copy(isSaving = false) }
+                    setError("নেটওয়ার্ক সমস্যা: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun remoteAddCustomSender(
+        simSlot: Int,
+        senderId: String,
+        officialTemplateId: Int? = null,
+        createPersonal: Boolean = false,
+        onSuccess: () -> Unit = {}
+    ) {
+        val deviceId = activeRemoteDeviceId() ?: return
+        if (!_state.value.hasCustomSenderPermission) {
+            _state.update { it.copy(showPremiumUpgradeDialog = true) }
+            return
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, dialogErrorMessage = null) }
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+            val request = AddCustomSenderRequest(
+                simSlot = simSlot,
+                senderId = senderId.trim(),
+                deviceId = deviceId,
+                officialTemplateId = officialTemplateId,
+                createPersonal = if (createPersonal) true else null
+            )
+            runCatching { api.addCustomSender("Bearer $token", request, deviceId) }
+                .onSuccess { res ->
+                    _state.update { it.copy(isSaving = false) }
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        res.body()?.data?.let { newData ->
+                            _state.update { it.copy(remoteGatewayMethods = newData) }
+                        } ?: loadRemoteGatewayData()
+                        onSuccess()
+                    } else if (res.code() == 403) {
+                        _state.update { it.copy(showPremiumUpgradeDialog = true) }
+                    } else {
+                        val msg = online.paychek.app.utils.ApiErrorParser.parse(res.errorBody()?.string())
+                            ?: "রিমোট কাস্টম সেন্ডার যোগ ব্যর্থ (${res.code()})"
+                        _state.update { it.copy(dialogErrorMessage = msg) }
+                    }
+                }
+                .onFailure { e ->
+                    _state.update { it.copy(isSaving = false, dialogErrorMessage = "নেটওয়ার্ক সমস্যা: ${e.message}") }
+                }
+        }
+    }
+
+    fun remoteDeleteCustomSender(methodId: Int) {
+        val deviceId = activeRemoteDeviceId() ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+            runCatching { api.deleteGatewayMethod("Bearer $token", methodId, deviceId) }
+                .onSuccess { res ->
+                    _state.update { it.copy(isSaving = false) }
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        res.body()?.data?.let { newData ->
+                            _state.update { it.copy(remoteGatewayMethods = newData) }
+                        } ?: loadRemoteGatewayData()
+                    } else {
+                        setError("রিমোট সেন্ডার মুছতে ব্যর্থ (${res.code()})")
+                    }
+                }
+                .onFailure {
+                    _state.update { it.copy(isSaving = false) }
+                    setError("নেটওয়ার্ক সমস্যা: ${it.message}")
+                }
+        }
+    }
+
+    fun remoteUpdateSimNumber(simSlot: Int, rawNumber: String) {
+        val digits = rawNumber.filter { it.isDigit() }.take(11)
+        _state.update {
+            if (simSlot == 1) it.copy(remoteDeviceEditSim1Number = digits)
+            else it.copy(remoteDeviceEditSim2Number = digits)
+        }
+        if (digits.length != 11) return
+        val deviceId = activeRemoteDeviceId() ?: return
+        viewModelScope.launch {
+            val token = getToken() ?: return@launch
+            runCatching {
+                api.lookupSlotNumber(
+                    "Bearer $token",
+                    SlotLookupRequest(simSlot = simSlot, phoneNumber = digits),
+                    deviceId
+                )
+            }.onSuccess { res ->
+                if (res.isSuccessful && res.body()?.success == true) {
+                    val methods = res.body()?.cachedMethods ?: res.body()?.data
+                    methods?.let { list ->
+                        _state.update { it.copy(remoteGatewayMethods = list) }
+                    } ?: loadRemoteGatewayData()
+                }
+            }
+        }
     }
 
     fun initiateRoleToggle(device: ChildDeviceDto, targetRole: String) {
@@ -681,6 +1004,75 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
     private var sim1NumberDebounceJob: Job? = null
     private var sim2NumberDebounceJob: Job? = null
+    private var isApplyingProfile = false
+
+    private fun isSimSlotActive(simSlot: Int): Boolean {
+        return if (simSlot == 1) _state.value.sim1Enabled else _state.value.sim2Enabled
+    }
+
+    private fun revertSimToggle(simSlot: Int) {
+        prefs.edit().apply {
+            if (simSlot == 1) putBoolean(AppConfig.KEY_SIM1_ENABLED, false)
+            else putBoolean(AppConfig.KEY_SIM2_ENABLED, false)
+            apply()
+        }
+        _state.update {
+            if (simSlot == 1) it.copy(sim1Enabled = false) else it.copy(sim2Enabled = false)
+        }
+    }
+
+    private fun resolvePhysicalNumber(simSlot: Int, typed: String): String {
+        val context = getApplication<Application>().applicationContext
+        val hasPhoneState = android.content.pm.PackageManager.PERMISSION_GRANTED ==
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.READ_PHONE_STATE
+            )
+        if (!hasPhoneState) return typed
+
+        val (sim1, sim2) = DeviceIdHelper.getSimNumbers(context)
+        val physical = (if (simSlot == 1) sim1 else sim2)
+            ?.filter { it.isDigit() }
+            ?.take(11)
+            .orEmpty()
+        return if (physical.length == 11) physical else typed
+    }
+
+    private fun nextLocalMethodId(): Int {
+        val minId = _state.value.methods.minOfOrNull { it.id } ?: 0
+        return if (minId > 0) -1 else minId - 1
+    }
+
+    private fun addLocalTemplateMethod(simSlot: Int, template: SmsTemplateDto) {
+        val num = if (simSlot == 1) _state.value.sim1Number else _state.value.sim2Number
+        val maxPriority = _state.value.methods.maxOfOrNull { it.priority } ?: 0
+        val newMethod = GatewayMethod(
+            id = nextLocalMethodId(),
+            simSlot = simSlot,
+            provider = template.templateName,
+            number = num.ifEmpty { null },
+            displayName = null,
+            isEnabled = 1,
+            priority = maxPriority + 1,
+            templateId = template.id,
+            senderId = template.senderId,
+            senderNumber = template.senderNumber,
+            matchingKeyword = template.matchingKeyword,
+            regexPattern = template.regexPattern,
+            customPatterns = null,
+            isOfficial = template.isOfficial,
+            isParseable = template.isParseable,
+            singleNumberInstruction = null,
+            multipleNumberInstruction = null,
+            createdAt = null
+        )
+        _state.update { current ->
+            val updated = current.methods + newMethod
+            saveMethodsToCache(updated)
+            current.copy(methods = updated)
+        }
+        validateAndSyncSimToggles()
+    }
 
     fun onSimNumberChanged(simSlot: Int, num: String) {
         val cleanNum = num.take(11).filter { it.isDigit() }
@@ -691,23 +1083,63 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
         if (cleanNum.length != 11) return
 
+        if (cleanNum == lastConfirmedLookupNumber[simSlot]) return
+
         if (simSlot == 1) {
             sim1NumberDebounceJob?.cancel()
             sim1NumberDebounceJob = viewModelScope.launch {
                 delay(1500)
-                lookupSlotNumber(simSlot, cleanNum)
+                val resolved = resolvePhysicalNumber(simSlot, cleanNum)
+                if (resolved != cleanNum) {
+                    _state.update {
+                        if (simSlot == 1) it.copy(sim1Number = resolved) else it.copy(sim2Number = resolved)
+                    }
+                    _state.update {
+                        it.copy(successMessage = "স্লট $simSlot-এ থাকা সিমের নম্বর ($resolved) অনুযায়ী আপডেট করা হয়েছে")
+                    }
+                    viewModelScope.launch {
+                        delay(3000)
+                        _state.update { it.copy(successMessage = null) }
+                    }
+                }
+                if (resolved != lastConfirmedLookupNumber[simSlot]) {
+                    lookupSlotNumber(simSlot, resolved)
+                }
             }
         } else {
             sim2NumberDebounceJob?.cancel()
             sim2NumberDebounceJob = viewModelScope.launch {
                 delay(1500)
-                lookupSlotNumber(simSlot, cleanNum)
+                val resolved = resolvePhysicalNumber(simSlot, cleanNum)
+                if (resolved != cleanNum) {
+                    _state.update {
+                        if (simSlot == 1) it.copy(sim1Number = resolved) else it.copy(sim2Number = resolved)
+                    }
+                    _state.update {
+                        it.copy(successMessage = "স্লট $simSlot-এ থাকা সিমের নম্বর ($resolved) অনুযায়ী আপডেট করা হয়েছে")
+                    }
+                    viewModelScope.launch {
+                        delay(3000)
+                        _state.update { it.copy(successMessage = null) }
+                    }
+                }
+                if (resolved != lastConfirmedLookupNumber[simSlot]) {
+                    lookupSlotNumber(simSlot, resolved)
+                }
             }
         }
     }
 
     fun dismissSimConflict() {
-        _state.update { it.copy(pendingSimConflict = null) }
+        val conflict = _state.value.pendingSimConflict ?: return
+        val revertNum = lastConfirmedLookupNumber[conflict.simSlot].orEmpty()
+        _state.update {
+            if (conflict.simSlot == 1) {
+                it.copy(sim1Number = revertNum, pendingSimConflict = null)
+            } else {
+                it.copy(sim2Number = revertNum, pendingSimConflict = null)
+            }
+        }
     }
 
     fun confirmForceShift() {
@@ -740,6 +1172,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                                 successMessage = body.message ?: "সিম সফলভাবে স্থানান্তরিত হয়েছে।"
                             )
                         }
+                        lastConfirmedLookupNumber[conflict.simSlot] = conflict.phoneNumber
                     }
                     validateAndSyncSimToggles()
                     viewModelScope.launch {
@@ -757,6 +1190,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private suspend fun lookupSlotNumber(simSlot: Int, cleanNum: String) {
+        if (isApplyingProfile) return
         val token = getToken() ?: return
         runCatching {
             api.lookupSlotNumber(
@@ -781,22 +1215,65 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 return@onSuccess
             }
-            body.data?.let { newData ->
-                saveMethodsToCache(newData)
-                val sim1Num = newData.find { it.simSlot == 1 && !it.number.isNullOrEmpty() }?.number ?: _state.value.sim1Number
-                val sim2Num = newData.find { it.simSlot == 2 && !it.number.isNullOrEmpty() }?.number ?: _state.value.sim2Number
-                _state.update {
-                    it.copy(
-                        methods = newData,
-                        sim1Number = sim1Num,
-                        sim2Number = sim2Num
-                    )
-                }
+
+            mergeSlotNumbersFromServer(body.data)
+
+            if (body.applyProfile == true && !body.cachedMethods.isNullOrEmpty()) {
+                applyProfileFromLookup(simSlot, cleanNum, body.cachedMethods)
+            } else {
+                lastConfirmedLookupNumber[simSlot] = cleanNum
             }
+
             validateAndSyncSimToggles()
         }.onFailure { exception ->
             setError("নেটওয়ার্ক সমস্যা: ${exception.message}")
         }
+    }
+
+    private fun mergeSlotNumbersFromServer(serverData: List<GatewayMethod>?) {
+        if (serverData.isNullOrEmpty()) return
+        val sim1Num = serverData.find { it.simSlot == 1 && !it.number.isNullOrEmpty() }?.number
+            ?: _state.value.sim1Number
+        val sim2Num = serverData.find { it.simSlot == 2 && !it.number.isNullOrEmpty() }?.number
+            ?: _state.value.sim2Number
+        _state.update { it.copy(sim1Number = sim1Num, sim2Number = sim2Num) }
+    }
+
+    private suspend fun applyProfileFromLookup(
+        simSlot: Int,
+        phoneNumber: String,
+        cachedMethods: List<GatewayMethod>
+    ) {
+        val token = getToken() ?: return
+        isApplyingProfile = true
+        val items = cachedMethods.map { method ->
+            BulkSyncMethodItem(
+                templateId = method.templateId,
+                provider = method.provider,
+                isEnabled = method.isEnabled
+            )
+        }
+        runCatching {
+            api.bulkSyncSlotMethods(
+                "Bearer $token",
+                BulkSyncRequest(
+                    simSlot = simSlot,
+                    phoneNumber = phoneNumber,
+                    methods = items,
+                    replaceSlot = true,
+                    activateBinding = false
+                )
+            )
+        }.onSuccess { res ->
+            if (res.isSuccessful && res.body()?.success == true) {
+                res.body()?.data?.let { newData ->
+                    saveMethodsToCache(newData)
+                    _state.update { it.copy(methods = newData) }
+                }
+                lastConfirmedLookupNumber[simSlot] = phoneNumber
+            }
+        }
+        isApplyingProfile = false
     }
 
     fun validateAndSyncSimToggles() {
@@ -872,36 +1349,41 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         val existingMethod = _state.value.methods.find { it.simSlot == simSlot && it.templateId == template.id }
         if (existingMethod != null) {
             toggleMethod(existingMethod)
-        } else {
-            viewModelScope.launch {
-                _state.update { it.copy(isSaving = true) }
-                val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
-                val num = if (simSlot == 1) _state.value.sim1Number else _state.value.sim2Number
-                val request = AddGatewayMethodRequest(
-                    simSlot = simSlot,
-                    provider = template.templateName,
-                    templateId = template.id,
-                    number = num.ifEmpty { null }
-                )
+            return
+        }
 
-                runCatching { api.addGatewayMethod("Bearer $token", request) }
-                    .onSuccess { res ->
-                        _state.update { it.copy(isSaving = false) }
-                        if (res.isSuccessful && res.body()?.success == true) {
-                            res.body()?.data?.let { newData ->
-                                saveMethodsToCache(newData)
-                                _state.update { it.copy(methods = newData) }
-                            }
-                            loadGatewayMethods()
-                        } else {
-                            setError("মেথড যোগ করতে ব্যর্থ হয়েছে (${res.code()})")
+        if (!isSimSlotActive(simSlot)) {
+            addLocalTemplateMethod(simSlot, template)
+            return
+        }
+
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+            val num = if (simSlot == 1) _state.value.sim1Number else _state.value.sim2Number
+            val request = AddGatewayMethodRequest(
+                simSlot = simSlot,
+                provider = template.templateName,
+                templateId = template.id,
+                number = num.ifEmpty { null }
+            )
+
+            runCatching { api.addGatewayMethod("Bearer $token", request) }
+                .onSuccess { res ->
+                    _state.update { it.copy(isSaving = false) }
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        res.body()?.data?.let { newData ->
+                            saveMethodsToCache(newData)
+                            _state.update { it.copy(methods = newData) }
                         }
+                    } else {
+                        setError("মেথড যোগ করতে ব্যর্থ হয়েছে (${res.code()})")
                     }
-                    .onFailure {
-                        _state.update { it.copy(isSaving = false) }
-                        setError("নেটওয়ার্ক সমস্যা: ${it.message}")
-                    }
-            }
+                }
+                .onFailure {
+                    _state.update { it.copy(isSaving = false) }
+                    setError("নেটওয়ার্ক সমস্যা: ${it.message}")
+                }
         }
     }
 
@@ -927,7 +1409,9 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         val activeTemplateIds = currentTemplates.mapNotNull { it.id }.toSet()
         
         val methodsToDrop = currentMethods.filter { method ->
-            method.templateId != null && !activeTemplateIds.contains(method.templateId)
+            (method.isOfficial ?: 1) != 0 &&
+                method.templateId != null &&
+                !activeTemplateIds.contains(method.templateId)
         }
         
         if (methodsToDrop.isNotEmpty()) {
@@ -972,7 +1456,11 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 .onSuccess { res ->
                     if (res.isSuccessful && res.body()?.success == true) {
                         val user = res.body()!!.user
-                        val allowed = user.hasCustomSenderAddon == 1 || user.role == "admin"
+                        val allowed = isCustomSenderPermissionActive(
+                            hasAddon = user.hasCustomSenderAddon,
+                            endsAt = user.customSenderEndsAt,
+                            role = user.role
+                        )
                         prefs.edit().putBoolean(AppConfig.KEY_HAS_CUSTOM_SENDER_ADDON, allowed).apply()
                         _state.update { it.copy(hasCustomSenderPermission = allowed) }
                     }
@@ -980,7 +1468,13 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun addCustomSender(simSlot: Int, senderId: String, onSuccess: () -> Unit) {
+    fun addCustomSender(
+        simSlot: Int,
+        senderId: String,
+        officialTemplateId: Int? = null,
+        createPersonal: Boolean = false,
+        onSuccess: () -> Unit
+    ) {
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, errorMessage = null, dialogErrorMessage = null) }
             val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
@@ -988,7 +1482,9 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
             val request = AddCustomSenderRequest(
                 simSlot = simSlot,
                 senderId = senderId.trim(),
-                deviceId = deviceId
+                deviceId = deviceId,
+                officialTemplateId = officialTemplateId,
+                createPersonal = if (createPersonal) true else null
             )
 
             runCatching { api.addCustomSender("Bearer $token", request) }
@@ -999,8 +1495,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                             saveMethodsToCache(newData)
                             _state.update { it.copy(methods = newData) }
                         }
-                        loadGatewayMethods()
-                        loadTemplates()
+                        loadTemplates(force = true)
                         onSuccess()
                     } else if (res.code() == 403) {
                         _state.update { it.copy(showPremiumUpgradeDialog = true) }
@@ -1044,6 +1539,23 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     fun syncAndValidateSimSwap(simSlot: Int, phoneNumber: String) {
         viewModelScope.launch {
             lookupSlotNumber(simSlot, phoneNumber.trim().filter { it.isDigit() }.take(11))
+        }
+    }
+
+    private fun isCustomSenderPermissionActive(hasAddon: Int, endsAt: String?, role: String): Boolean {
+        if (role == "admin") return true
+        if (hasAddon != 1) return false
+        if (endsAt.isNullOrBlank()) return true
+        return try {
+            val parts = endsAt.take(10).split("-")
+            if (parts.size != 3) return true
+            val endCal = java.util.Calendar.getInstance().apply {
+                set(parts[0].toInt(), parts[1].toInt() - 1, parts[2].toInt(), 23, 59, 59)
+                set(java.util.Calendar.MILLISECOND, 999)
+            }
+            endCal.timeInMillis >= System.currentTimeMillis()
+        } catch (_: Exception) {
+            true
         }
     }
 }

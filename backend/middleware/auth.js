@@ -20,6 +20,8 @@ function authenticateToken(req, res, next) {
   });
 }
 
+// device_role=restricted marks a staff physical device (owner PIN at login).
+// In-app API access is not gated here; staff devices have full owner-equivalent access after login.
 async function restrictDevice(req, res, next) {
   try {
     const userId = req.user.userId;

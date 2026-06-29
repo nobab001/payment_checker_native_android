@@ -20,15 +20,14 @@ import online.paychek.app.data.local.prefs.PrefsHelper
 import online.paychek.app.utils.GsonUtils
 import com.google.gson.reflect.TypeToken
 
-// =============================================================================
-// Provider Filter Options
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
+
 // =============================================================================
 // Provider Filter Options are now dynamic strings.
 // "all" is used as the default value to show all transactions.
 
-// =============================================================================
-// UI State
-// =============================================================================
 data class TransactionSearchState(
     val rawList:     List<TransactionItem> = emptyList(),
     val displayList: List<TransactionItem> = emptyList(),
@@ -44,8 +43,13 @@ data class TransactionSearchState(
     val startDate: String? = null,
     val endDate: String? = null,
     val errorMessage: String? = null,
-    val selectedQuickDays: Int? = null
-)
+    val selectedQuickDays: Int? = DEFAULT_QUICK_DAYS,
+    val refreshSkipped: Boolean = false
+) {
+    companion object {
+        const val DEFAULT_QUICK_DAYS = 2
+    }
+}
 
 // =============================================================================
 // ViewModel
@@ -73,7 +77,23 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
 
     private val _searchQuery = MutableStateFlow("")
 
+    private data class HistoryCacheBundle(
+        val provider: String,
+        val startDate: String?,
+        val endDate: String?,
+        val items: List<TransactionItem>
+    )
+
     init {
+        val defaultRange = quickDateRange(TransactionSearchState.DEFAULT_QUICK_DAYS)
+        _state.update {
+            it.copy(
+                selectedQuickDays = TransactionSearchState.DEFAULT_QUICK_DAYS,
+                startDate = defaultRange.first,
+                endDate = defaultRange.second
+            )
+        }
+
         val cached = PrefsHelper.getSmsTemplatesCache(application)
         var initialTemplates = emptyList<SmsTemplateDto>()
         if (cached.isNotEmpty()) {
@@ -84,6 +104,8 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
             } catch (_: Exception) {}
         }
         _state.update { it.copy(templates = initialTemplates) }
+
+        restoreHistoryFromLocalCache()
 
         _searchQuery
             .debounce(300)
@@ -97,6 +119,48 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                 }
             }
         }
+    }
+
+    private fun historyFilterKey(): Triple<String, String?, String?> {
+        val s = _state.value
+        return Triple(s.selectedProvider, s.startDate, s.endDate)
+    }
+
+    private fun restoreHistoryFromLocalCache(): Boolean {
+        val bundleJson = PrefsHelper.getTransactionHistoryBundle(getApplication())
+        if (bundleJson.isBlank()) return false
+        return try {
+            val type = object : TypeToken<HistoryCacheBundle>() {}.type
+            val bundle = GsonUtils.gson.fromJson<HistoryCacheBundle>(bundleJson, type) ?: return false
+            val (provider, start, end) = historyFilterKey()
+            if (bundle.provider != provider || bundle.startDate != start || bundle.endDate != end) {
+                return false
+            }
+            if (bundle.items.isEmpty()) return false
+            _state.update { current ->
+                current.copy(
+                    rawList = bundle.items,
+                    isInitialLoading = false,
+                    lastUpdatedAtMs = BangladeshTimeUtil.latestTransactionEpochMs(bundle.items)
+                        ?: current.lastUpdatedAtMs
+                )
+            }
+            applyLocalFilter()
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun saveHistoryToLocalCache(items: List<TransactionItem>) {
+        if (items.isEmpty()) return
+        val (provider, start, end) = historyFilterKey()
+        try {
+            val json = GsonUtils.gson.toJson(
+                HistoryCacheBundle(provider = provider, startDate = start, endDate = end, items = items)
+            )
+            PrefsHelper.setTransactionHistoryBundle(getApplication(), json)
+        } catch (_: Exception) {}
     }
 
     private fun fetchTemplates() {
@@ -164,12 +228,14 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
     }
 
     private fun loadFirstPage() {
+        if (_state.value.rawList.isEmpty()) {
+            restoreHistoryFromLocalCache()
+        }
         _state.update {
             it.copy(
-                rawList          = emptyList(),
                 currentPage      = 1,
                 hasMore          = true,
-                isInitialLoading = true,
+                isInitialLoading = it.rawList.isEmpty(),
                 errorMessage     = null
             )
         }
@@ -179,7 +245,7 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
 
     fun loadNextPage() {
         val current = _state.value
-        if (current.isLoadingMore || !current.hasMore) return
+        if (current.isLoadingMore || !current.hasMore || current.isInitialLoading || current.isRefreshing || current.rawList.isEmpty()) return
 
         _state.update { it.copy(isLoadingMore = true) }
         fetchPage(page = current.currentPage + 1)
@@ -187,12 +253,27 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
 
     fun onRefresh(): Boolean {
         return RefreshCooldown.tryRefresh {
-            _state.update { it.copy(isRefreshing = true) }
-            loadFirstPage()
+            _state.update {
+                it.copy(isRefreshing = true, refreshSkipped = false)
+            }
+            fetchTemplates()
+            fetchPage(page = 1, isManualRefresh = true)
         }
     }
 
-    private fun fetchPage(page: Int) {
+    fun clearRefreshSkipped() {
+        _state.update { it.copy(refreshSkipped = false) }
+    }
+
+    private fun quickDateRange(days: Int): Pair<String, String> {
+        val cal = Calendar.getInstance()
+        val endStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time)
+        cal.add(Calendar.DAY_OF_YEAR, -(days - 1))
+        val startStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time)
+        return Pair(startStr, endStr)
+    }
+
+    private fun fetchPage(page: Int, isManualRefresh: Boolean = false) {
         viewModelScope.launch {
             val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
             if (token.isEmpty()) {
@@ -207,35 +288,87 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
             }
 
             val provider = _state.value.selectedProvider
+            val historyLastSync = if (page == 1) {
+                PrefsHelper.getHistoryLastSync(getApplication()).takeIf { it > 0L }
+            } else {
+                null
+            }
+            if (page == 1 && historyLastSync != null) {
+                android.util.Log.i(
+                    "TransactionSearchVM",
+                    "Sending X-History-Last-Sync=$historyLastSync (manual=$isManualRefresh)"
+                )
+            }
             val result   = repository.fetchTransactionHistory(
                 token    = token,
                 page     = page,
                 limit    = PAGE_SIZE,
                 provider = provider,
                 startDate = _state.value.startDate,
-                endDate = _state.value.endDate
+                endDate = _state.value.endDate,
+                historyLastSync = historyLastSync
             )
 
             result.fold(
-                onSuccess = { newItems ->
+                onSuccess = { pageResult ->
+                    if (pageResult.cacheHit && page == 1) {
+                        android.util.Log.i(
+                            "TransactionSearchVM",
+                            "History cache hit — skipped payload (version=${pageResult.historyVersion})"
+                        )
+                        if (_state.value.rawList.isEmpty()) {
+                            restoreHistoryFromLocalCache()
+                        }
+                        applyLocalFilter()
+                        _state.update { current ->
+                            current.copy(
+                                isInitialLoading = false,
+                                isLoadingMore    = false,
+                                isRefreshing     = false,
+                                refreshSkipped   = isManualRefresh,
+                                errorMessage     = null
+                            )
+                        }
+                        pageResult.historyVersion?.let {
+                            PrefsHelper.setHistoryLastSync(getApplication(), it)
+                        }
+                        return@launch
+                    }
+
+                    val newItems = pageResult.items
+                    pageResult.historyVersion?.let {
+                        PrefsHelper.setHistoryLastSync(getApplication(), it)
+                    }
+
                     _state.update { current ->
                         val merged = if (page == 1) newItems else current.rawList + newItems
-                        val dbLatest = BangladeshTimeUtil.latestTransactionEpochMs(merged)
-                        val updatedAt = if (page == 1 && current.isRefreshing) {
-                            System.currentTimeMillis()
+                        val refreshed = isManualRefresh || current.isRefreshing
+                        val updatedAt = if (page == 1 && refreshed) {
+                            BangladeshTimeUtil.latestTransactionEpochMs(merged)
+                                ?: System.currentTimeMillis()
                         } else {
-                            dbLatest ?: current.lastUpdatedAtMs ?: System.currentTimeMillis()
+                            BangladeshTimeUtil.latestTransactionEpochMs(merged)
+                                ?: current.lastUpdatedAtMs
+                                ?: System.currentTimeMillis()
                         }
                         current.copy(
                             rawList          = merged,
                             currentPage      = page,
-                            hasMore          = if (current.startDate != null && current.endDate != null) false else (newItems.size >= PAGE_SIZE),
+                            hasMore          = if (current.startDate != null && current.endDate != null) {
+                                false
+                            } else {
+                                pageResult.hasMore && newItems.size >= PAGE_SIZE
+                            },
                             isInitialLoading = false,
                             isLoadingMore    = false,
                             isRefreshing     = false,
+                            refreshSkipped   = false,
                             lastUpdatedAtMs  = updatedAt,
                             errorMessage     = null
                         )
+                    }
+                    if (page == 1) {
+                        saveHistoryToLocalCache(_state.value.rawList)
                     }
                     applyLocalFilter()
                 },
@@ -282,6 +415,7 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                     }
                     current.copy(rawList = updatedRaw, displayList = updatedDisplay)
                 }
+                saveHistoryToLocalCache(_state.value.rawList)
             }
         }
     }

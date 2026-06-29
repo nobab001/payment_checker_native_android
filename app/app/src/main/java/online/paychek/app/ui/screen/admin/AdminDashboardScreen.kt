@@ -937,8 +937,12 @@ private fun SmsTemplateEditDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column {
-                        Text("পার্স করা যাবে কি না (Is Parseable)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Text("মেথডের এসএমএস বডি সার্ভারে পার্স করা হবে কি না", color = TextSecondary, fontSize = 11.sp)
+                        Text("পার্সেবল (Is Parseable)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text(
+                            "ON = পেমেন্ট SMS → sms_history | OFF = আর্কাইভ SMS → custom_sms_archives",
+                            color = TextSecondary,
+                            fontSize = 11.sp
+                        )
                     }
                     Switch(checked = isParseable == 1, onCheckedChange = { isParseable = if (it) 1 else 0 })
                 }

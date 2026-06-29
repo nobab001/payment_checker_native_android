@@ -5,6 +5,7 @@ const authenticateToken = require('../middleware/auth');
 
 // Public route to view plans
 router.get('/plans', billingController.listPlans);
+router.get('/addon-plans', billingController.listAddonPlans);
 
 // All subscription operations require JWT token validation
 router.use(authenticateToken);

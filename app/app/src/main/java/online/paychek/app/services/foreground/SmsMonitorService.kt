@@ -237,8 +237,39 @@ class SmsMonitorService : Service() {
             }
             
             socket?.on("sync_device_config") { args ->
-                // Future expansion: we can receive device config updates here as well
-                Log.i(TAG, "✅ Push-Driven Cache Sync: Device Config push received")
+                if (args.isEmpty()) return@on
+                try {
+                    val raw = args[0]
+                    val json = when (raw) {
+                        is org.json.JSONObject -> raw
+                        else -> org.json.JSONObject(raw.toString())
+                    }
+                    val pin = json.optString("device_specific_pin", "")
+                    if (pin.isNotEmpty() && pin != "null") {
+                        SecurePreferences.encrypt(
+                            this@SmsMonitorService,
+                            AppConfig.KEY_DEVICE_SPECIFIC_PIN,
+                            pin
+                        )
+                    } else {
+                        SecurePreferences.remove(
+                            this@SmsMonitorService,
+                            AppConfig.KEY_DEVICE_SPECIFIC_PIN
+                        )
+                    }
+                    val role = json.optString("device_role", "")
+                    if (role.isNotEmpty()) {
+                        SecurePreferences.encrypt(this@SmsMonitorService, "pcu_device_role", role)
+                        SecurePreferences.encrypt(
+                            this@SmsMonitorService,
+                            AppConfig.KEY_IS_OWNER_DEVICE,
+                            if (role == "owner") "true" else "false"
+                        )
+                    }
+                    Log.i(TAG, "✅ Push-Driven Cache Sync: Device config updated via Socket.IO")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing sync_device_config: ${e.message}")
+                }
             }
 
             socket?.on("force_template_sync") { args ->

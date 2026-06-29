@@ -84,6 +84,21 @@ object PrefsHelper {
         prefs(context).edit().putLong("gateway_methods_last_sync_v2", timestamp).apply()
     }
 
+    fun getHistoryLastSync(context: Context): Long {
+        return prefs(context).getLong("sms_history_last_sync_v1", 0L)
+    }
+
+    fun setHistoryLastSync(context: Context, timestamp: Long) {
+        prefs(context).edit().putLong("sms_history_last_sync_v1", timestamp).apply()
+    }
+
+    fun getTransactionHistoryBundle(context: Context): String =
+        prefs(context).getString("txn_history_bundle_v1", "").orEmpty()
+
+    fun setTransactionHistoryBundle(context: Context, json: String) {
+        prefs(context).edit().putString("txn_history_bundle_v1", json).apply()
+    }
+
     // -------------------------------------------------------------------------
     // Session PIN flag
     // -------------------------------------------------------------------------
@@ -131,6 +146,8 @@ object PrefsHelper {
             .remove(AppConfig.KEY_GATEWAY_METHODS_CACHE)
             .remove(AppConfig.KEY_SMS_TEMPLATES_CACHE)
             .remove(KEY_LAST_WORKER_SYNC_MS)
+            .remove("sms_history_last_sync_v1")
+            .remove("txn_history_bundle_v1")
             .apply()
     }
 }

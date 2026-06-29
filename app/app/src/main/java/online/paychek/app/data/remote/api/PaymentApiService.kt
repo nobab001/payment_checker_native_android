@@ -41,6 +41,7 @@ interface PaymentApiService {
     @GET("sms-history")
     suspend fun getTransactionHistory(
         @Header("Authorization") token: String,
+        @Header("X-History-Last-Sync") historyLastSync: Long? = null,
         @Query("page")     page: Int     = 1,
         @Query("limit")    limit: Int    = 20,
         @Query("provider") provider: String = "all",
@@ -83,9 +84,15 @@ interface PaymentApiService {
         @Body request: PurchaseSubscriptionRequest
     ): Response<PurchaseSubscriptionResponse>
 
+    @GET("v1/addon-plans")
+    suspend fun getAddonPlans(
+        @Header("Authorization") token: String
+    ): Response<AddonPlansResponse>
+
     @POST("v1/subscription/purchase-addon")
     suspend fun purchaseSubscriptionAddon(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
+        @Body request: PurchaseAddonRequest
     ): Response<PurchaseAddonResponse>
 
     @GET("custom-archives")
