@@ -87,10 +87,7 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
 
         _searchQuery
             .debounce(300)
-            .onEach { query ->
-                _state.update { it.copy(searchQuery = query) }
-                applyLocalFilter()
-            }
+            .onEach { applyLocalFilter() }
             .launchIn(viewModelScope)
 
         viewModelScope.launch {
@@ -128,6 +125,7 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
     }
 
     fun onSearchQueryChanged(query: String) {
+        _state.update { it.copy(searchQuery = query) }
         _searchQuery.value = query
     }
 
@@ -223,6 +221,11 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                     _state.update { current ->
                         val merged = if (page == 1) newItems else current.rawList + newItems
                         val dbLatest = BangladeshTimeUtil.latestTransactionEpochMs(merged)
+                        val updatedAt = if (page == 1 && current.isRefreshing) {
+                            System.currentTimeMillis()
+                        } else {
+                            dbLatest ?: current.lastUpdatedAtMs ?: System.currentTimeMillis()
+                        }
                         current.copy(
                             rawList          = merged,
                             currentPage      = page,
@@ -230,7 +233,7 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                             isInitialLoading = false,
                             isLoadingMore    = false,
                             isRefreshing     = false,
-                            lastUpdatedAtMs  = dbLatest ?: System.currentTimeMillis(),
+                            lastUpdatedAtMs  = updatedAt,
                             errorMessage     = null
                         )
                     }

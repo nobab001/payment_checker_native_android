@@ -451,7 +451,9 @@ private fun SearchBox(
             unfocusedContainerColor = HistCard
         ),
         shape    = RoundedCornerShape(12.dp),
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
     )
 }
 

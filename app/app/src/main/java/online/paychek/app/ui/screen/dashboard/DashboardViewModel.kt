@@ -195,8 +195,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                             uiState         = DashboardUiState.Success(stats),
                             isRefreshing    = false,
                             globalTemplates = templatesForUi,
-                            lastUpdatedAtMs = BangladeshTimeUtil.latestTransactionEpochMs(stats.recentTransactions)
-                                ?: System.currentTimeMillis()
+                            lastUpdatedAtMs = if (it.isRefreshing) {
+                                System.currentTimeMillis()
+                            } else {
+                                BangladeshTimeUtil.latestTransactionEpochMs(stats.recentTransactions)
+                                    ?: it.lastUpdatedAtMs
+                                    ?: System.currentTimeMillis()
+                            }
                         )
                     }
                 },
@@ -219,7 +224,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             if (_state.value.selectedTab == 1) {
                 viewModelScope.launch {
                     loadCustomArchives()
-                    _state.update { it.copy(isRefreshing = false) }
+                    _state.update {
+                        it.copy(
+                            isRefreshing = false,
+                            lastUpdatedAtMs = System.currentTimeMillis()
+                        )
+                    }
                 }
             } else {
                 loadDashboardStats()
