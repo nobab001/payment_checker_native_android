@@ -63,7 +63,14 @@ data class DeviceUiState(
     val isTemplatesLoading: Boolean           = false,
     val showPremiumUpgradeDialog: Boolean     = false,
     val dialogErrorMessage: String?           = null,
-    val hasCustomSenderPermission: Boolean    = false
+    val hasCustomSenderPermission: Boolean    = false,
+    val pendingSimConflict: SimConflictUi?      = null
+)
+
+data class SimConflictUi(
+    val simSlot: Int,
+    val phoneNumber: String,
+    val runningDeviceName: String
 )
 
 // =============================================================================
@@ -284,9 +291,10 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun toggleSim(simSlot: Int) {
-        val isCurrentlyEnabled = if (simSlot == 1) _state.value.sim1Enabled
-                                 else               _state.value.sim2Enabled
+        val stateVal = _state.value
+        val isCurrentlyEnabled = if (simSlot == 1) stateVal.sim1Enabled else stateVal.sim2Enabled
         val newValue = !isCurrentlyEnabled
+        val phoneNumber = if (simSlot == 1) stateVal.sim1Number else stateVal.sim2Number
 
         _state.update {
             if (simSlot == 1) {
@@ -296,6 +304,76 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 prefs.edit().putBoolean(AppConfig.KEY_SIM2_ENABLED, newValue).apply()
                 it.copy(sim2Enabled = newValue)
             }
+        }
+
+        if (phoneNumber.length != 11) return
+
+        viewModelScope.launch {
+            val token = getToken() ?: return@launch
+            if (newValue) {
+                val slotMethods = _state.value.methods.filter { it.simSlot == simSlot }
+                val bulkItems = slotMethods.map { method ->
+                    BulkSyncMethodItem(
+                        templateId = method.templateId,
+                        provider = method.provider,
+                        isEnabled = method.isEnabled
+                    )
+                }
+                if (bulkItems.isNotEmpty()) {
+                    runCatching {
+                        api.bulkSyncSlotMethods(
+                            "Bearer $token",
+                            BulkSyncRequest(simSlot = simSlot, phoneNumber = phoneNumber, methods = bulkItems)
+                        )
+                    }.onSuccess { res ->
+                        if (res.isSuccessful && res.body()?.success == true) {
+                            res.body()?.data?.let { newData ->
+                                saveMethodsToCache(newData)
+                                _state.update { it.copy(methods = newData) }
+                            }
+                        }
+                    }
+                }
+            }
+
+            runCatching {
+                api.setSlotActive(
+                    "Bearer $token",
+                    SlotActiveRequest(
+                        simSlot = simSlot,
+                        phoneNumber = phoneNumber,
+                        isActive = if (newValue) 1 else 0
+                    )
+                )
+            }.onSuccess { res ->
+                if (res.isSuccessful) {
+                    val body = res.body()
+                    if (body?.hasConflict == true) {
+                        _state.update {
+                            it.copy(
+                                sim1Enabled = if (simSlot == 1) false else it.sim1Enabled,
+                                sim2Enabled = if (simSlot == 2) false else it.sim2Enabled,
+                                pendingSimConflict = SimConflictUi(
+                                    simSlot = simSlot,
+                                    phoneNumber = phoneNumber,
+                                    runningDeviceName = body.runningDeviceName ?: "অন্য ডিভাইস"
+                                )
+                            )
+                        }
+                        prefs.edit().apply {
+                            if (simSlot == 1) putBoolean(AppConfig.KEY_SIM1_ENABLED, false)
+                            else putBoolean(AppConfig.KEY_SIM2_ENABLED, false)
+                            apply()
+                        }
+                        return@onSuccess
+                    }
+                    body?.data?.let { newData ->
+                        saveMethodsToCache(newData)
+                        _state.update { it.copy(methods = newData) }
+                    }
+                }
+            }
+            validateAndSyncSimToggles()
         }
     }
 
@@ -607,54 +685,118 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     fun onSimNumberChanged(simSlot: Int, num: String) {
         val cleanNum = num.take(11).filter { it.isDigit() }
         _state.update {
-            if (simSlot == 1) it.copy(sim1Number = cleanNum)
-            else it.copy(sim2Number = cleanNum)
+            if (simSlot == 1) it.copy(sim1Number = cleanNum, pendingSimConflict = null)
+            else it.copy(sim2Number = cleanNum, pendingSimConflict = null)
         }
+
+        if (cleanNum.length != 11) return
 
         if (simSlot == 1) {
             sim1NumberDebounceJob?.cancel()
             sim1NumberDebounceJob = viewModelScope.launch {
                 delay(1500)
-                saveSimNumberToServer(1, cleanNum)
+                lookupSlotNumber(simSlot, cleanNum)
             }
         } else {
             sim2NumberDebounceJob?.cancel()
             sim2NumberDebounceJob = viewModelScope.launch {
                 delay(1500)
-                saveSimNumberToServer(2, cleanNum)
+                lookupSlotNumber(simSlot, cleanNum)
             }
         }
     }
 
-    private suspend fun saveSimNumberToServer(simSlot: Int, number: String) {
-        val token = getToken() ?: return
-        val methodsToUpdate = _state.value.methods.filter { it.simSlot == simSlot }
-        
-        methodsToUpdate.forEach { method ->
+    fun dismissSimConflict() {
+        _state.update { it.copy(pendingSimConflict = null) }
+    }
+
+    fun confirmForceShift() {
+        val conflict = _state.value.pendingSimConflict ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, pendingSimConflict = null) }
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+
             runCatching {
-                api.updateMethod(
+                api.forceShiftSlot(
                     "Bearer $token",
-                    method.id,
-                    UpdateMethodRequest(number = number, displayName = method.displayName)
+                    SlotForceShiftRequest(
+                        simSlot = conflict.simSlot,
+                        phoneNumber = conflict.phoneNumber
+                    )
                 )
             }.onSuccess { res ->
+                _state.update { it.copy(isSaving = false) }
                 if (res.isSuccessful && res.body()?.success == true) {
-                    res.body()?.data?.let { newData ->
+                    val body = res.body()!!
+                    body.data?.let { newData ->
                         saveMethodsToCache(newData)
-                        _state.update { it.copy(methods = newData) }
-                    } ?: run {
-                        _state.update { current ->
-                            val updated = current.methods.map {
-                                if (it.id == method.id) it.copy(number = number) else it
-                            }
-                            saveMethodsToCache(updated)
-                            current.copy(methods = updated)
+                        val sim1Num = newData.find { it.simSlot == 1 && !it.number.isNullOrEmpty() }?.number ?: _state.value.sim1Number
+                        val sim2Num = newData.find { it.simSlot == 2 && !it.number.isNullOrEmpty() }?.number ?: _state.value.sim2Number
+                        _state.update {
+                            it.copy(
+                                methods = newData,
+                                sim1Number = sim1Num,
+                                sim2Number = sim2Num,
+                                successMessage = body.message ?: "সিম সফলভাবে স্থানান্তরিত হয়েছে।"
+                            )
                         }
                     }
+                    validateAndSyncSimToggles()
+                    viewModelScope.launch {
+                        delay(2500)
+                        _state.update { it.copy(successMessage = null) }
+                    }
+                } else {
+                    setError("সিম স্থানান্তর ব্যর্থ হয়েছে (${res.code()})")
                 }
+            }.onFailure { exception ->
+                _state.update { it.copy(isSaving = false) }
+                setError("নেটওয়ার্ক সমস্যা: ${exception.message}")
             }
         }
-        validateAndSyncSimToggles()
+    }
+
+    private suspend fun lookupSlotNumber(simSlot: Int, cleanNum: String) {
+        val token = getToken() ?: return
+        runCatching {
+            api.lookupSlotNumber(
+                "Bearer $token",
+                SlotLookupRequest(simSlot = simSlot, phoneNumber = cleanNum)
+            )
+        }.onSuccess { res ->
+            if (!res.isSuccessful) {
+                setError("নম্বর যাচাই ব্যর্থ হয়েছে (${res.code()})")
+                return@onSuccess
+            }
+            val body = res.body() ?: return@onSuccess
+            if (body.hasConflict == true) {
+                _state.update {
+                    it.copy(
+                        pendingSimConflict = SimConflictUi(
+                            simSlot = simSlot,
+                            phoneNumber = cleanNum,
+                            runningDeviceName = body.runningDeviceName ?: "অন্য ডিভাইস"
+                        )
+                    )
+                }
+                return@onSuccess
+            }
+            body.data?.let { newData ->
+                saveMethodsToCache(newData)
+                val sim1Num = newData.find { it.simSlot == 1 && !it.number.isNullOrEmpty() }?.number ?: _state.value.sim1Number
+                val sim2Num = newData.find { it.simSlot == 2 && !it.number.isNullOrEmpty() }?.number ?: _state.value.sim2Number
+                _state.update {
+                    it.copy(
+                        methods = newData,
+                        sim1Number = sim1Num,
+                        sim2Number = sim2Num
+                    )
+                }
+            }
+            validateAndSyncSimToggles()
+        }.onFailure { exception ->
+            setError("নেটওয়ার্ক সমস্যা: ${exception.message}")
+        }
     }
 
     fun validateAndSyncSimToggles() {
@@ -901,42 +1043,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
     fun syncAndValidateSimSwap(simSlot: Int, phoneNumber: String) {
         viewModelScope.launch {
-            _state.update { it.copy(isSaving = true, errorMessage = null) }
-            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
-            val request = SimSwapRequest(phoneNumber = phoneNumber.trim(), slotIndex = simSlot)
-
-            runCatching { api.syncAndValidateSimSwap("Bearer $token", request) }
-                .onSuccess { res ->
-                    _state.update { it.copy(isSaving = false) }
-                    if (res.isSuccessful && res.body()?.success == true) {
-                        val body = res.body()!!
-                        if (body.isKnownSim && body.data != null) {
-                            saveMethodsToCache(body.data)
-                            _state.update {
-                                it.copy(
-                                    methods = body.data,
-                                    successMessage = body.message ?: "SIM কার্ড সফলভাবে সিঙ্ক করা হয়েছে।"
-                                )
-                            }
-                        } else {
-                            val updatedMethods = _state.value.methods.filterNot { it.simSlot == simSlot }
-                            saveMethodsToCache(updatedMethods)
-                            _state.update {
-                                it.copy(
-                                    methods = updatedMethods,
-                                    successMessage = "নতুন SIM কার্ড সনাক্ত করা হয়েছে। গেটওয়ে কনফিগার করুন।"
-                                )
-                            }
-                        }
-                        loadGatewayMethods()
-                    } else {
-                        setError("সিম সিঙ্ক ব্যর্থ হয়েছে (${res.code()})")
-                    }
-                }
-                .onFailure { exception ->
-                    _state.update { it.copy(isSaving = false) }
-                    setError("নেটওয়ার্ক সমস্যা: ${exception.message}")
-                }
+            lookupSlotNumber(simSlot, phoneNumber.trim().filter { it.isDigit() }.take(11))
         }
     }
 }

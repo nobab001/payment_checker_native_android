@@ -31,7 +31,19 @@ router.post('/gateway/custom-sender', auth, auth.restrictDevice, billing, gw.add
 // DELETE /api/gateway/methods/:id → কাস্টম সেন্ডার আইডি ডিলিট করা
 router.delete('/gateway/methods/:id', auth, auth.restrictDevice, billing, gw.deleteGatewayMethod);
 
-// POST /api/gateway/sim-swap → সিম সোয়াপ / সিম ট্র্যাকিং সিঙ্ক
+// POST /api/gateway/sim-swap → সিম সোয়াপ / conflict lookup (legacy alias)
 router.post('/gateway/sim-swap', auth, billing, gw.syncAndValidateSimSwap);
+
+// POST /api/gateway/slot/lookup → নম্বর ইনপুটে conflict + cached profile
+router.post('/gateway/slot/lookup', auth, billing, gw.lookupSlotNumber);
+
+// POST /api/gateway/slot/force-shift → conflict approve — shift SIM to this device
+router.post('/gateway/slot/force-shift', auth, auth.restrictDevice, billing, gw.forceShiftSlot);
+
+// POST /api/gateway/slot/active → manual SIM toggle is_active state
+router.post('/gateway/slot/active', auth, auth.restrictDevice, billing, gw.setSlotActive);
+
+// POST /api/gateway/methods/bulk-sync → slot methods batch sync on SIM enable
+router.post('/gateway/methods/bulk-sync', auth, auth.restrictDevice, billing, gw.bulkSyncSlotMethods);
 
 module.exports = router;

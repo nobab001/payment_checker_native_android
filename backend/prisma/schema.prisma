@@ -75,6 +75,20 @@ model gateway_methods {
   @@index([user_id, device_id], map: "idx_user_device")
 }
 
+model sim_slot_bindings {
+  id           Int      @id @default(autoincrement())
+  user_id      String   @db.VarChar(255)
+  device_id    String   @default("") @db.VarChar(255)
+  sim_slot     Int      @default(1) @db.TinyInt
+  phone_number String   @default("") @db.VarChar(20)
+  is_active    Int      @default(0) @db.TinyInt
+  created_at   DateTime @default(now()) @db.Timestamp(0)
+  updated_at   DateTime @default(now()) @db.Timestamp(0)
+
+  @@unique([user_id, device_id, sim_slot], map: "uniq_user_device_slot")
+  @@index([user_id, phone_number, is_active], map: "idx_user_number_active")
+}
+
 model global_config {
   config_key   String   @id @db.VarChar(128)
   config_value String   @db.Text

@@ -215,6 +215,37 @@ fun DeviceScreen(
     val isRestricted = !isOwner
     val currentSubTab = if (isOwner) state.selectedSubTab else 0
 
+    if (state.pendingSimConflict != null) {
+        val conflict = state.pendingSimConflict!!
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissSimConflict() },
+            title = {
+                Text(
+                    text = "সিম অন্য ডিভাইসে সক্রিয়",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 16.sp
+                )
+            },
+            text = {
+                Text(
+                    text = "নম্বর ${conflict.phoneNumber} বর্তমানে \"${conflict.runningDeviceName}\" ডিভাইসে সক্রিয় আছে।\n\nঠিক চাপলে এই নম্বরটি বর্তমান ডিভাইসের স্লট ${conflict.simSlot}-এ স্থানান্তর হবে এবং পূর্বের ডিভাইসে নিষ্ক্রিয় হয়ে যাবে।",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.confirmForceShift() },
+                    colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo)
+                ) {
+                    Text("ঠিক আছে", color = Color.White)
+                }
+            },
+            containerColor = GwCard
+        )
+    }
+
     if (showSimSwapDialogForSlot != null) {
         val slot = showSimSwapDialogForSlot!!
         AlertDialog(
@@ -237,10 +268,6 @@ fun DeviceScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val currentEnabled = if (slot == 1) state.sim1Enabled else state.sim2Enabled
-                        if (currentEnabled) {
-                            viewModel.toggleSim(slot)
-                        }
                         viewModel.onSimNumberChanged(slot, detectedNewSimNumber)
                         viewModel.syncAndValidateSimSwap(slot, detectedNewSimNumber)
                         showSimSwapDialogForSlot = null

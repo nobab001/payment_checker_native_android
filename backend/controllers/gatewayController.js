@@ -1,6 +1,142 @@
 const prisma = require('../db/prisma');
 const dataSyncCache = require('../services/dataSyncCache');
 
+let simBindingsTableReady = false;
+
+async function ensureSimBindingsTable() {
+  if (simBindingsTableReady) return;
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS sim_slot_bindings (
+      id INT NOT NULL AUTO_INCREMENT,
+      user_id VARCHAR(255) NOT NULL,
+      device_id VARCHAR(255) NOT NULL DEFAULT '',
+      sim_slot TINYINT NOT NULL DEFAULT 1,
+      phone_number VARCHAR(20) NOT NULL DEFAULT '',
+      is_active TINYINT NOT NULL DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uniq_user_device_slot (user_id, device_id, sim_slot),
+      INDEX idx_user_number_active (user_id, phone_number, is_active)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  simBindingsTableReady = true;
+}
+
+function normalizePhoneNumber(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  return raw.replace(/\D/g, '').slice(-11);
+}
+
+async function getDeviceDisplayName(userId, deviceId) {
+  const row = await prisma.registered_devices.findFirst({
+    where: { user_id: Number(userId), device_id: String(deviceId) },
+    select: { custom_device_name: true, device_model: true },
+  });
+  if (!row) return 'অন্য ডিভাইস';
+  return row.custom_device_name || row.device_model || 'অন্য ডিভাইস';
+}
+
+async function fetchMethodsProfileForNumber(userId, phoneNumber) {
+  const rows = await prisma.gateway_methods.findMany({
+    where: { user_id: String(userId), number: phoneNumber },
+    orderBy: [{ updated_at: 'desc' }, { priority: 'asc' }],
+  });
+
+  const seenTemplates = new Set();
+  const profile = [];
+  for (const row of rows) {
+    const key = row.template_id || row.provider;
+    if (seenTemplates.has(key)) continue;
+    seenTemplates.add(key);
+    profile.push(row);
+  }
+  return profile;
+}
+
+async function upsertSlotBinding(userId, deviceId, simSlot, phoneNumber, isActive) {
+  await ensureSimBindingsTable();
+  const existing = await prisma.sim_slot_bindings.findFirst({
+    where: {
+      user_id: String(userId),
+      device_id: String(deviceId),
+      sim_slot: simSlot,
+    },
+  });
+
+  if (existing) {
+    await prisma.sim_slot_bindings.update({
+      where: { id: existing.id },
+      data: {
+        phone_number: phoneNumber,
+        is_active: isActive ? 1 : 0,
+      },
+    });
+    return existing;
+  }
+
+  return prisma.sim_slot_bindings.create({
+    data: {
+      user_id: String(userId),
+      device_id: String(deviceId),
+      sim_slot: simSlot,
+      phone_number: phoneNumber,
+      is_active: isActive ? 1 : 0,
+    },
+  });
+}
+
+async function deactivatePhoneGlobally(userId, phoneNumber) {
+  if (!phoneNumber) return;
+  await ensureSimBindingsTable();
+  await prisma.sim_slot_bindings.updateMany({
+    where: { user_id: String(userId), phone_number: phoneNumber },
+    data: { is_active: 0 },
+  });
+}
+
+async function applyProfileToSlot(userId, deviceId, simSlot, phoneNumber, profileMethods, enabledDefault = 1) {
+  await prisma.gateway_methods.deleteMany({
+    where: {
+      user_id: String(userId),
+      device_id: String(deviceId),
+      sim_slot: simSlot,
+    },
+  });
+
+  if (!profileMethods.length) return;
+
+  const maxPriorityRow = await prisma.gateway_methods.aggregate({
+    where: { user_id: String(userId), device_id: String(deviceId) },
+    _max: { priority: true },
+  });
+  let nextPriority = (maxPriorityRow._max.priority || 0) + 1;
+
+  for (const src of profileMethods) {
+    await prisma.gateway_methods.create({
+      data: {
+        user_id: String(userId),
+        device_id: String(deviceId),
+        template_id: src.template_id || null,
+        sim_slot: simSlot,
+        provider: src.provider,
+        number: phoneNumber,
+        display_name: src.display_name || null,
+        is_enabled: src.is_enabled !== undefined && src.is_enabled !== null ? src.is_enabled : enabledDefault,
+        priority: nextPriority++,
+        custom_patterns: src.custom_patterns || null,
+      },
+    });
+  }
+}
+
+async function emitGatewaySync(req, userId, deviceId, data) {
+  const io = req.app.get('io');
+  if (io && deviceId) {
+    io.to(`${userId}:${deviceId}`).emit('sync_gateway_methods', data);
+  }
+}
+
 async function touchDeviceSync(userId, deviceId, opts = {}) {
   await dataSyncCache.bumpDeviceSyncVersion(userId, deviceId);
   if (opts.userCustomChanged) {
@@ -626,112 +762,361 @@ async function deleteGatewayMethod(req, res) {
 }
 
 // =============================================================================
-// POST /api/gateway/sim-swap
-// সিম সোয়াপ / সিম ট্র্যাকিং সিঙ্ক ও রোমিং হ্যান্ডলার
+// POST /api/gateway/slot/lookup
+// Phone number input → conflict check + cached template profile
+// Body: { sim_slot, phone_number }
 // =============================================================================
-async function syncAndValidateSimSwap(req, res) {
+async function lookupSlotNumber(req, res) {
   try {
+    req.body.sim_slot = req.body.sim_slot ?? req.body.slotIndex;
+    req.body.phone_number = req.body.phone_number ?? req.body.phoneNumber;
+
     const userId = req.user.userId;
     const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
-    const { phoneNumber, slotIndex } = req.body;
+    const simSlot = parseInt(req.body.sim_slot, 10);
+    const cleanNum = normalizePhoneNumber(req.body.phone_number);
 
-    if (!phoneNumber || slotIndex === undefined) {
-      return res.status(400).json({ error: 'phoneNumber and slotIndex are required' });
+    if (!Number.isInteger(simSlot) || simSlot < 1 || simSlot > 2) {
+      return res.status(400).json({ error: 'sim_slot ১ বা ২ হতে হবে' });
+    }
+    if (cleanNum.length !== 11) {
+      return res.status(400).json({ error: '১১ ডিজিটের বৈধ মোবাইল নম্বর দিন' });
     }
 
-    const cleanNum = phoneNumber.trim();
-    const slot = parseInt(slotIndex, 10);
+    await ensureSimBindingsTable();
 
-    // 1. Find if this number exists in gateway_methods for this user
-    const existingMethods = await prisma.gateway_methods.findMany({
+    const conflictBinding = await prisma.sim_slot_bindings.findFirst({
       where: {
         user_id: String(userId),
-        number: cleanNum
-      }
+        phone_number: cleanNum,
+        is_active: 1,
+        device_id: { not: String(deviceId) },
+      },
     });
 
-    if (existingMethods.length === 0) {
-      // Case 1: Brand new SIM. Clear existing templates for this slot on this device
-      await prisma.gateway_methods.deleteMany({
-        where: {
-          user_id: String(userId),
-          device_id: String(deviceId),
-          sim_slot: slot
-        }
-      });
+    if (conflictBinding) {
+      const runningDeviceName = await getDeviceDisplayName(userId, conflictBinding.device_id);
       return res.json({
         success: true,
-        is_known_sim: false,
-        message: 'Brand new SIM card detected.'
+        has_conflict: true,
+        running_device_name: runningDeviceName,
       });
     }
 
-    // Check if the number is already bound to this device/slot
-    const currentDeviceMatch = existingMethods.filter(m => m.device_id === String(deviceId));
+    const profileMethods = await fetchMethodsProfileForNumber(userId, cleanNum);
+    const enrichedProfile = await enrichMethodsWithTemplateMeta(profileMethods);
 
-    if (currentDeviceMatch.length > 0) {
-      // Case 2: SIM Memory Hit under same device. Retain/update to the current slot index
-      // Overwrite the slot index if it was different
+    await upsertSlotBinding(userId, deviceId, simSlot, cleanNum, false);
+
+    if (profileMethods.length > 0) {
+      await applyProfileToSlot(userId, deviceId, simSlot, cleanNum, profileMethods, 0);
+    } else {
       await prisma.gateway_methods.updateMany({
         where: {
           user_id: String(userId),
-          number: cleanNum
+          device_id: String(deviceId),
+          sim_slot: simSlot,
         },
-        data: {
-          sim_slot: slot,
-          is_enabled: 1
-        }
-      });
-      const updatedData = await fetchGatewayMethodsForUser(userId, deviceId);
-      return res.json({
-        success: true,
-        is_known_sim: true,
-        message: 'SIM card recognized from memory.',
-        data: updatedData
+        data: { number: cleanNum },
       });
     }
 
-    // Case 3: SIM Roaming (Moved to another Device)
-    // First, delete any existing methods for the target slot on the current device to make room
-    await prisma.gateway_methods.deleteMany({
-      where: {
-        user_id: String(userId),
-        device_id: String(deviceId),
-        sim_slot: slot
-      }
-    });
-
-    // Update the roaming SIM's device_id and sim_slot to the new device & slot
-    await prisma.gateway_methods.updateMany({
-      where: {
-        user_id: String(userId),
-        number: cleanNum
-      },
-      data: {
-        device_id: String(deviceId),
-        sim_slot: slot,
-        is_enabled: 1
-      }
-    });
-
-    const updatedData = await fetchGatewayMethodsForUser(userId, deviceId);
-    console.log(`[GATEWAY] SIM Roamed: ${cleanNum} moved to Device: ${deviceId}, Slot: ${slot}`);
-
-    // Trigger real-time update
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`${userId}:${deviceId}`).emit("sync_gateway_methods", updatedData);
-    }
-
+    const data = await fetchGatewayMethodsForUser(userId, deviceId);
     await touchDeviceSync(userId, deviceId);
 
     return res.json({
       success: true,
-      is_known_sim: true,
-      message: 'SIM card roamed successfully from another device.',
-      data: updatedData
+      has_conflict: false,
+      cached_methods: enrichedProfile,
+      data,
+    });
+  } catch (error) {
+    console.error('[GATEWAY] lookupSlotNumber error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+async function enrichMethodsWithTemplateMeta(methodRows) {
+  if (!methodRows.length) return [];
+
+  const templateIds = [...new Set(methodRows.map((m) => m.template_id).filter(Boolean))];
+  const templates = templateIds.length
+    ? await prisma.sms_templates.findMany({ where: { id: { in: templateIds } } })
+    : [];
+  const templateMap = new Map(templates.map((t) => [t.id, t]));
+
+  return methodRows.map((m) => {
+    const t = m.template_id ? templateMap.get(m.template_id) : null;
+    return {
+      id: m.id,
+      sim_slot: m.sim_slot,
+      provider: m.provider,
+      number: m.number,
+      template_id: m.template_id,
+      is_enabled: m.is_enabled,
+      sender_id: t?.sender_id || null,
+      sender_number: t?.sender_number || null,
+      matching_keyword: t?.matching_keyword || null,
+      regex_pattern: t?.regex_pattern || null,
+    };
+  });
+}
+
+// =============================================================================
+// POST /api/gateway/slot/force-shift
+// User approved conflict shift — bind number to current slot as active
+// Body: { sim_slot, phone_number, force_shift: true }
+// =============================================================================
+async function forceShiftSlot(req, res) {
+  try {
+    req.body.sim_slot = req.body.sim_slot ?? req.body.slotIndex;
+    req.body.phone_number = req.body.phone_number ?? req.body.phoneNumber;
+
+    const userId = req.user.userId;
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+    const simSlot = parseInt(req.body.sim_slot, 10);
+    const cleanNum = normalizePhoneNumber(req.body.phone_number);
+
+    if (!req.body.force_shift) {
+      return res.status(400).json({ error: 'force_shift approval required' });
+    }
+    if (!Number.isInteger(simSlot) || simSlot < 1 || simSlot > 2) {
+      return res.status(400).json({ error: 'sim_slot ১ বা ২ হতে হবে' });
+    }
+    if (cleanNum.length !== 11) {
+      return res.status(400).json({ error: '১১ ডিজিটের বৈধ মোবাইল নম্বর দিন' });
+    }
+
+    await ensureSimBindingsTable();
+
+    const currentSlotBinding = await prisma.sim_slot_bindings.findFirst({
+      where: {
+        user_id: String(userId),
+        device_id: String(deviceId),
+        sim_slot: simSlot,
+      },
     });
 
+    if (currentSlotBinding?.phone_number && currentSlotBinding.phone_number !== cleanNum) {
+      await deactivatePhoneGlobally(userId, currentSlotBinding.phone_number);
+    }
+
+    await deactivatePhoneGlobally(userId, cleanNum);
+
+    const otherDeviceBindings = await prisma.sim_slot_bindings.findMany({
+      where: {
+        user_id: String(userId),
+        phone_number: cleanNum,
+        device_id: { not: String(deviceId) },
+      },
+    });
+
+    for (const binding of otherDeviceBindings) {
+      await prisma.gateway_methods.updateMany({
+        where: {
+          user_id: String(userId),
+          device_id: binding.device_id,
+          sim_slot: binding.sim_slot,
+        },
+        data: { is_enabled: 0 },
+      });
+      await prisma.sim_slot_bindings.update({
+        where: { id: binding.id },
+        data: { is_active: 0 },
+      });
+      await touchDeviceSync(userId, binding.device_id);
+    }
+
+    const profileMethods = await fetchMethodsProfileForNumber(userId, cleanNum);
+    await applyProfileToSlot(userId, deviceId, simSlot, cleanNum, profileMethods, 1);
+    await upsertSlotBinding(userId, deviceId, simSlot, cleanNum, true);
+
+    const data = await fetchGatewayMethodsForUser(userId, deviceId);
+    console.log(`[GATEWAY] Force shift: ${cleanNum} → Device ${deviceId} slot ${simSlot} | User: ${userId}`);
+
+    await emitGatewaySync(req, userId, deviceId, data);
+    await touchDeviceSync(userId, deviceId);
+
+    for (const binding of otherDeviceBindings) {
+      const oldData = await fetchGatewayMethodsForUser(userId, binding.device_id);
+      await emitGatewaySync(req, userId, binding.device_id, oldData);
+    }
+
+    return res.json({
+      success: true,
+      has_conflict: false,
+      message: 'সিম সফলভাবে এই ডিভাইসে স্থানান্তরিত হয়েছে।',
+      data,
+    });
+  } catch (error) {
+    console.error('[GATEWAY] forceShiftSlot error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+// =============================================================================
+// POST /api/gateway/slot/active
+// Manual SIM toggle — sets is_active on slot binding (no heartbeat)
+// Body: { sim_slot, phone_number, is_active: 0|1 }
+// =============================================================================
+async function setSlotActive(req, res) {
+  try {
+    const userId = req.user.userId;
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+    const simSlot = parseInt(req.body.sim_slot, 10);
+    const cleanNum = normalizePhoneNumber(req.body.phone_number);
+    const isActive = !!req.body.is_active;
+
+    if (!Number.isInteger(simSlot) || simSlot < 1 || simSlot > 2) {
+      return res.status(400).json({ error: 'sim_slot ১ বা ২ হতে হবে' });
+    }
+    if (cleanNum.length !== 11) {
+      return res.status(400).json({ error: '১১ ডিজিটের বৈধ মোবাইল নম্বর দিন' });
+    }
+
+    await ensureSimBindingsTable();
+
+    if (isActive) {
+      const conflictBinding = await prisma.sim_slot_bindings.findFirst({
+        where: {
+          user_id: String(userId),
+          phone_number: cleanNum,
+          is_active: 1,
+          device_id: { not: String(deviceId) },
+        },
+      });
+
+      if (conflictBinding) {
+        const runningDeviceName = await getDeviceDisplayName(userId, conflictBinding.device_id);
+        return res.json({
+          success: false,
+          has_conflict: true,
+          running_device_name: runningDeviceName,
+        });
+      }
+
+      await deactivatePhoneGlobally(userId, cleanNum);
+    }
+
+    await upsertSlotBinding(userId, deviceId, simSlot, cleanNum, isActive);
+
+    await prisma.gateway_methods.updateMany({
+      where: {
+        user_id: String(userId),
+        device_id: String(deviceId),
+        sim_slot: simSlot,
+      },
+      data: { is_enabled: isActive ? 1 : 0 },
+    });
+
+    const data = await fetchGatewayMethodsForUser(userId, deviceId);
+    await emitGatewaySync(req, userId, deviceId, data);
+    await touchDeviceSync(userId, deviceId);
+
+    return res.json({
+      success: true,
+      has_conflict: false,
+      is_active: isActive,
+      data,
+    });
+  } catch (error) {
+    console.error('[GATEWAY] setSlotActive error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+// =============================================================================
+// POST /api/gateway/methods/bulk-sync
+// Batch upsert methods for a slot (called when SIM toggle turns ON)
+// Body: { sim_slot, phone_number, methods: [{ template_id, provider, is_enabled }] }
+// =============================================================================
+async function bulkSyncSlotMethods(req, res) {
+  try {
+    const userId = req.user.userId;
+    const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
+    const simSlot = parseInt(req.body.sim_slot, 10);
+    const cleanNum = normalizePhoneNumber(req.body.phone_number);
+    const items = Array.isArray(req.body.methods) ? req.body.methods : [];
+
+    if (!Number.isInteger(simSlot) || simSlot < 1 || simSlot > 2) {
+      return res.status(400).json({ error: 'sim_slot ১ বা ২ হতে হবে' });
+    }
+    if (cleanNum.length !== 11) {
+      return res.status(400).json({ error: '১১ ডিজিটের বৈধ মোবাইল নম্বর দিন' });
+    }
+
+    const maxPriorityRow = await prisma.gateway_methods.aggregate({
+      where: { user_id: String(userId), device_id: String(deviceId) },
+      _max: { priority: true },
+    });
+    let nextPriority = (maxPriorityRow._max.priority || 0) + 1;
+
+    for (const item of items) {
+      if (!item.provider) continue;
+      const templateId = item.template_id || null;
+      const enabled = item.is_enabled === undefined ? 1 : (item.is_enabled ? 1 : 0);
+
+      const existing = await prisma.gateway_methods.findFirst({
+        where: {
+          user_id: String(userId),
+          device_id: String(deviceId),
+          sim_slot: simSlot,
+          template_id: templateId,
+        },
+      });
+
+      if (existing) {
+        await prisma.gateway_methods.update({
+          where: { id: existing.id },
+          data: {
+            number: cleanNum,
+            provider: item.provider,
+            is_enabled: enabled,
+          },
+        });
+      } else {
+        await prisma.gateway_methods.create({
+          data: {
+            user_id: String(userId),
+            device_id: String(deviceId),
+            template_id: templateId,
+            sim_slot: simSlot,
+            provider: item.provider,
+            number: cleanNum,
+            is_enabled: enabled,
+            priority: nextPriority++,
+          },
+        });
+      }
+    }
+
+    await upsertSlotBinding(userId, deviceId, simSlot, cleanNum, true);
+
+    const data = await fetchGatewayMethodsForUser(userId, deviceId);
+    await emitGatewaySync(req, userId, deviceId, data);
+    await touchDeviceSync(userId, deviceId);
+
+    return res.json({
+      success: true,
+      message: 'স্লট কনফিগারেশন সিঙ্ক হয়েছে।',
+      data,
+    });
+  } catch (error) {
+    console.error('[GATEWAY] bulkSyncSlotMethods error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+// =============================================================================
+// POST /api/gateway/sim-swap  (legacy — delegates to lookup / force-shift)
+// =============================================================================
+async function syncAndValidateSimSwap(req, res) {
+  try {
+    const forceShift = !!req.body.force_shift;
+    if (forceShift) {
+      return forceShiftSlot(req, res);
+    }
+    return lookupSlotNumber(req, res);
   } catch (error) {
     console.error('[GATEWAY] syncAndValidateSimSwap error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
@@ -749,5 +1134,9 @@ module.exports = {
   addCustomTemplate,
   addCustomSender,
   deleteGatewayMethod,
-  syncAndValidateSimSwap
+  syncAndValidateSimSwap,
+  lookupSlotNumber,
+  forceShiftSlot,
+  setSlotActive,
+  bulkSyncSlotMethods,
 };

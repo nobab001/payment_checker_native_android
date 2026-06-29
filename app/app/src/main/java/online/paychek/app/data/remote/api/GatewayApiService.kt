@@ -115,4 +115,28 @@ interface GatewayApiService {
         @Header("Authorization") token: String,
         @Body request: SimSwapRequest
     ): Response<SimSwapResponse>
+
+    @POST("gateway/slot/lookup")
+    suspend fun lookupSlotNumber(
+        @Header("Authorization") token: String,
+        @Body request: SlotLookupRequest
+    ): Response<SlotLookupResponse>
+
+    @POST("gateway/slot/force-shift")
+    suspend fun forceShiftSlot(
+        @Header("Authorization") token: String,
+        @Body request: SlotForceShiftRequest
+    ): Response<SlotLookupResponse>
+
+    @POST("gateway/slot/active")
+    suspend fun setSlotActive(
+        @Header("Authorization") token: String,
+        @Body request: SlotActiveRequest
+    ): Response<SlotActiveResponse>
+
+    @POST("gateway/methods/bulk-sync")
+    suspend fun bulkSyncSlotMethods(
+        @Header("Authorization") token: String,
+        @Body request: BulkSyncRequest
+    ): Response<GatewayListResponse>
 }
