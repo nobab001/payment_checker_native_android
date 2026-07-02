@@ -78,4 +78,13 @@ object RetrofitClient {
             .build()
             .create(ProfileApiService::class.java)
     }
+
+    val websiteApiService: WebsiteApiService by lazy {
+        Retrofit.Builder()
+            .baseUrl(AppConfig.API_BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create(customGson))
+            .build()
+            .create(WebsiteApiService::class.java)
+    }
 }

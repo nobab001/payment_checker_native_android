@@ -7,10 +7,11 @@ import android.telephony.SubscriptionManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.work.BackoffPolicy
-import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -57,20 +58,17 @@ class SmsPollWorker(
     companion object {
         private const val TAG       = "SmsPollWorker"
         private const val WORK_NAME = "paychek_sms_inbox_poll_guard2"
+        private const val WORK_NAME_IMMEDIATE = "paychek_sms_inbox_poll_immediate"
 
         /**
          * Guard-2 WorkManager job schedule করা।
          * Safe to call multiple times — KEEP policy prevents duplicates।
+         * Inbox scan-এ নেটওয়ার্ক লাগে না — শুধু Room queue-তে লেখা হয়।
          */
         fun schedule(context: Context) {
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build()
-
             val workRequest = PeriodicWorkRequestBuilder<SmsPollWorker>(
                 AppConfig.SMS_POLL_WORKER_INTERVAL_MIN, TimeUnit.MINUTES
             )
-                .setConstraints(constraints)
                 .setBackoffCriteria(
                     BackoffPolicy.EXPONENTIAL,
                     30L, TimeUnit.SECONDS
@@ -84,6 +82,22 @@ class SmsPollWorker(
             )
 
             Log.i(TAG, "[Guard-2] SmsPollWorker scheduled — interval: ${AppConfig.SMS_POLL_WORKER_INTERVAL_MIN}min, policy: KEEP")
+        }
+
+        /**
+         * স্ক্রিন বন্ধ/লক হলে বা broadcast miss হলে তৎক্ষণাৎ inbox স্ক্যান।
+         */
+        fun scheduleImmediate(context: Context) {
+            val workRequest = OneTimeWorkRequestBuilder<SmsPollWorker>()
+                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+                .build()
+
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                WORK_NAME_IMMEDIATE,
+                ExistingWorkPolicy.REPLACE,
+                workRequest
+            )
+            Log.d(TAG, "[Guard-2] Immediate inbox poll enqueued")
         }
 
         /**

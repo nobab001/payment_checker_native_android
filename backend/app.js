@@ -85,6 +85,7 @@ app.use('/api', credentialRoutes);
 app.use('/api', pinRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/v1', billingRoutes);
+app.use('/api/v1/websites', require('./routes/websiteRoutes'));
 
 // General 404 Route handler
 app.use((req, res) => {

@@ -664,8 +664,73 @@ async function manualGrace(req, res) {
   }
 }
 
+/**
+ * Admin: control merchant callback/commission permissions for a website.
+ * GET  /api/admin/websites            → list all websites (any user) with flags
+ * POST /api/admin/websites/:id/permissions → set permission flags
+ *
+ * Permission flags are ONLY writable here (never by the merchant), satisfying
+ * "Admin decides whether merchant can receive Payment Type / Commission".
+ */
+async function listAllWebsites(req, res) {
+  try {
+    const rows = await prisma.gateway_layouts.findMany({
+      orderBy: { created_at: 'desc' },
+      select: {
+        id: true, user_id: true, site_name: true, site_url: true, merchant_id: true,
+        api_key: true, is_active: true,
+        allow_payment_type_callback: true, allow_commission_callback: true,
+        commission_enabled: true, created_at: true,
+      },
+    });
+    return res.json({ success: true, websites: rows });
+  } catch (err) {
+    console.error('listAllWebsites error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function setWebsitePermissions(req, res) {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ success: false, error: 'INVALID_WEBSITE_ID' });
+    }
+    const existing = await prisma.gateway_layouts.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
+    }
+
+    const b = req.body || {};
+    const data = { updated_at: new Date() };
+    if (b.allow_payment_type_callback !== undefined) data.allow_payment_type_callback = b.allow_payment_type_callback ? 1 : 0;
+    if (b.allow_commission_callback !== undefined) data.allow_commission_callback = b.allow_commission_callback ? 1 : 0;
+    if (b.commission_enabled !== undefined) data.commission_enabled = b.commission_enabled ? 1 : 0;
+
+    if (Object.keys(data).length === 1) {
+      return res.status(400).json({ success: false, error: 'NO_PERMISSION_FIELDS' });
+    }
+
+    const updated = await prisma.gateway_layouts.update({ where: { id }, data });
+    return res.json({
+      success: true,
+      website: {
+        id: updated.id,
+        allowPaymentTypeCallback: !!updated.allow_payment_type_callback,
+        allowCommissionCallback: !!updated.allow_commission_callback,
+        commissionEnabled: !!updated.commission_enabled,
+      },
+    });
+  } catch (err) {
+    console.error('setWebsitePermissions error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   verifyAdmin,
+  listAllWebsites,
+  setWebsitePermissions,
   getConfigs,
   updateConfig,
   getSmsTemplates,

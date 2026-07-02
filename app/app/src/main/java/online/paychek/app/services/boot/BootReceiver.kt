@@ -7,6 +7,7 @@ import android.os.Build
 import android.util.Log
 import online.paychek.app.config.AppConfig
 import online.paychek.app.services.foreground.SmsMonitorService
+import online.paychek.app.services.sync.SmsPollWorker
 import online.paychek.app.utils.SecurePreferences
 
 /**
@@ -65,6 +66,7 @@ class BootReceiver : BroadcastReceiver() {
             }
 
             Log.i(TAG, "✅ Boot-এ SMS Monitor Service চালু করা হয়েছে")
+            SmsPollWorker.schedule(context.applicationContext)
 
         } catch (e: Exception) {
             Log.e(TAG, "Boot-এ Service চালু করতে ব্যর্থ: ${e.message}")

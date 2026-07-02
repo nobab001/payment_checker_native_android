@@ -63,6 +63,7 @@ import online.paychek.app.data.remote.dto.DashboardStats
 import online.paychek.app.data.remote.dto.TransactionItem
 import online.paychek.app.ui.components.ConnectivityBanner
 import online.paychek.app.ui.components.LastUpdateRow
+import online.paychek.app.utils.BatteryOptimizationHelper
 import online.paychek.app.utils.adaptivePadding
 import online.paychek.app.utils.adaptiveTextSize
 import online.paychek.app.utils.screenWidth
@@ -106,6 +107,18 @@ fun DashboardScreen(
     val screenState by viewModel.state.collectAsStateWithLifecycle()
     val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    fun ensureBackgroundSmsReady() {
+        if (!BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)) {
+            BatteryOptimizationHelper.requestExemptionIfNeeded(context)
+            android.widget.Toast.makeText(
+                context,
+                "স্ক্রিন বন্ধ থাকলে SMS ধরতে ব্যাটারি অপটিমাইজেশন বন্ধ করুন",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     var isAccessibilityEnabled by remember { mutableStateOf(true) }
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
@@ -131,6 +144,7 @@ fun DashboardScreen(
                       permissions[Manifest.permission.READ_SMS] == true
         if (granted) {
             viewModel.toggleSmsService(true)
+            ensureBackgroundSmsReady()
         } else {
             showSmsPermissionRationaleDialog = true
         }
@@ -389,6 +403,7 @@ fun DashboardScreen(
 
                                 if (hasReceiveSms && hasReadSms) {
                                     viewModel.toggleSmsService(true)
+                                    ensureBackgroundSmsReady()
                                 } else {
                                     online.paychek.app.MainActivity.isRequestingPermission = true
                                     smsPermissionsLauncher.launch(

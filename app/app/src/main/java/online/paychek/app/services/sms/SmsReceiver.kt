@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Telephony
 import android.telephony.SubscriptionManager
 import android.util.Log
@@ -202,6 +203,30 @@ class SmsReceiver(
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
 
+        // স্ক্রিন বন্ধ/লক থাকলে process kill হওয়া রোধ — goAsync + WakeLock
+        val pendingResult = goAsync()
+        val wakeLock = (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Paychek::SmsReceiveWakeLock")
+            .apply {
+                setReferenceCounted(false)
+                acquire(60_000L)
+            }
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                handleIncomingSms(context, intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Async SMS processing error: ${e.message}", e)
+            } finally {
+                try {
+                    if (wakeLock.isHeld) wakeLock.release()
+                } catch (_: Exception) { }
+                pendingResult.finish()
+            }
+        }
+    }
+
+    private suspend fun handleIncomingSms(context: Context, intent: Intent) {
         try {
             val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
             if (messages.isNullOrEmpty()) return
@@ -353,16 +378,11 @@ class SmsReceiver(
         }
     }
 
-    private fun saveToOfflineQueueAndForward(context: Context, payment: SmsParser.ParsedPayment) {
-        // Invoke existing callback first — foreground service UI won't break
+    private suspend fun saveToOfflineQueueAndForward(context: Context, payment: SmsParser.ParsedPayment) {
         onPaymentSmsReceived?.invoke(payment)
-
-        // Delegate the entire queue pipeline to the domain use case
-        CoroutineScope(Dispatchers.IO).launch {
-            val result = ProcessIncomingSmsUseCase(context).execute(payment)
-            result.onFailure { e ->
-                Log.e(TAG, "[Queue] Pipeline failed for TrxID ${payment.trxId}: ${e.message}")
-            }
+        val result = ProcessIncomingSmsUseCase(context).execute(payment)
+        result.onFailure { e ->
+            Log.e(TAG, "[Queue] Pipeline failed for TrxID ${payment.trxId}: ${e.message}")
         }
     }
 

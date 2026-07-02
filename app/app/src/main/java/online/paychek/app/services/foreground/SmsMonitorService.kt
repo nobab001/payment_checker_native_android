@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -50,7 +51,9 @@ class SmsMonitorService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wakeLockRenewJob: Job? = null
     private var smsReceiver: SmsReceiver? = null
+    private var screenReceiver: BroadcastReceiver? = null
     private var socket: Socket? = null
     private var connectivityJob: Job? = null
 
@@ -101,11 +104,13 @@ class SmsMonitorService : Service() {
             startForeground(NOTIFICATION_ID, buildNotification())
         }
 
-        // CPU Wakelock নেওয়া
+        // CPU Wakelock নেওয়া (পুনরায় নবায়ন সহ)
         acquireWakeLock()
+        startWakeLockRenewal()
 
         // SMS BroadcastReceiver রেজিস্টার করা
         registerSmsReceiver()
+        registerScreenReceiver()
 
         // ── Offline recovery: WorkManager + network observer + startup flush ──
         startOfflineRecovery()
@@ -139,6 +144,59 @@ class SmsMonitorService : Service() {
             registerReceiver(smsReceiver, filter)
         }
         Log.d(TAG, "SmsReceiver dynamically registered ✅")
+    }
+
+    /**
+     * স্ক্রিন বন্ধ/লক হলে Guard-2 inbox poll তৎক্ষণাৎ চালায় —
+     * OEM/Doze broadcast throttle-এ miss হওয়া SMS catch করে।
+     */
+    private fun registerScreenReceiver() {
+        if (screenReceiver != null) return
+
+        screenReceiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: Intent) {
+                when (intent.action) {
+                    Intent.ACTION_SCREEN_OFF, Intent.ACTION_USER_PRESENT -> {
+                        Log.i(TAG, "Screen event (${intent.action}) — triggering immediate inbox poll")
+                        SmsPollWorker.scheduleImmediate(ctx)
+                        acquireWakeLock()
+                    }
+                }
+            }
+        }
+
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(screenReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(screenReceiver, filter)
+        }
+        Log.d(TAG, "Screen receiver registered ✅")
+    }
+
+    private fun unregisterScreenReceiver() {
+        screenReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (e: Exception) {
+                Log.w(TAG, "Screen receiver unregister failed: ${e.message}")
+            }
+        }
+        screenReceiver = null
+    }
+
+    private fun startWakeLockRenewal() {
+        wakeLockRenewJob?.cancel()
+        wakeLockRenewJob = serviceScope.launch {
+            while (isActive) {
+                delay(8 * 60 * 1000L)
+                acquireWakeLock()
+            }
+        }
     }
 
     private fun startOfflineRecovery() {
@@ -380,16 +438,20 @@ class SmsMonitorService : Service() {
     // WakeLock helpers
     // ─────────────────────────────────────────────────────────────────────────
     private fun acquireWakeLock() {
-        if (wakeLock?.isHeld == true) return
         try {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-            wakeLock = pm.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "Paychek::SmsMonitorWakeLock"
-            ).also {
-                it.acquire(10 * 60 * 1000L) // ১০ মিনিট bounded, সার্ভিস রি-একোয়্যার করে
+            if (wakeLock == null) {
+                wakeLock = pm.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "Paychek::SmsMonitorWakeLock"
+                ).apply { setReferenceCounted(false) }
             }
-            Log.d(TAG, "WakeLock acquired ✅")
+            if (wakeLock?.isHeld == true) {
+                @Suppress("DEPRECATION")
+                wakeLock?.release()
+            }
+            wakeLock?.acquire(10 * 60 * 1000L)
+            Log.d(TAG, "WakeLock acquired/renewed ✅")
         } catch (e: Exception) {
             Log.e(TAG, "WakeLock acquire failed: ${e.message}")
         }
@@ -420,8 +482,11 @@ class SmsMonitorService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.i(TAG, "Foreground service onDestroy")
+        wakeLockRenewJob?.cancel()
+        wakeLockRenewJob = null
         releaseWakeLock()
         unregisterSmsReceiver()
+        unregisterScreenReceiver()
         connectivityJob?.cancel()
         connectivityJob = null
         socket?.disconnect()

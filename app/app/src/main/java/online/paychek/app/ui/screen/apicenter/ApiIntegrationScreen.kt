@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -59,6 +60,8 @@ private val GradientBtn  = Brush.horizontalGradient(
 @Composable
 fun ApiIntegrationScreen(
     onNavigateToCheckout: () -> Unit,
+    onNavigateToWebsites: () -> Unit = {},
+    onNavigateToDocs: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -88,6 +91,9 @@ fun ApiIntegrationScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = ApiCard),
                 actions = {
+                    IconButton(onClick = onNavigateToDocs, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Documentation", tint = AccentCyan, modifier = Modifier.size(20.dp))
+                    }
                     IconButton(onClick = {
                         if (RefreshCooldown.tryRefresh {
                             Toast.makeText(context, "ড্যাশবোর্ড রিফ্রেশ করা হয়েছে।", Toast.LENGTH_SHORT).show()
@@ -170,8 +176,39 @@ fun ApiIntegrationScreen(
                                 )
                             }
                         }
-                        Icon(Icons.Default.ChevronRight, null, tint = Color.White)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = onNavigateToDocs, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Documentation", tint = Color.White, modifier = Modifier.size(20.dp))
+                            }
+                            Icon(Icons.Default.ChevronRight, null, tint = Color.White)
+                        }
                     }
+                }
+            }
+
+            // ─── ১খ. Websites / Merchant Management ────────────────────────────
+            Card(
+                colors = CardDefaults.cardColors(containerColor = ApiCard),
+                shape = RoundedCornerShape(16.dp),
+                border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
+                modifier = Modifier.fillMaxWidth().clickable { onNavigateToWebsites() }
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = adaptivePadding(14.dp, 18.dp), vertical = adaptivePadding(12.dp, 14.dp)),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(
+                            modifier = Modifier.size(36.dp).clip(CircleShape).background(AccentCyan.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) { Icon(Icons.Default.Storefront, null, tint = AccentCyan) }
+                        Column {
+                            Text("ওয়েবসাইট / মার্চেন্ট", color = TextWhite, fontSize = adaptiveTextSize(13.sp, 15.sp), fontWeight = FontWeight.Bold)
+                            Text("ওয়েবসাইট যোগ করুন, API Key ও Secret ম্যানেজ করুন", color = TextMuted, fontSize = 11.sp)
+                        }
+                    }
+                    Icon(Icons.Default.ChevronRight, null, tint = TextMuted)
                 }
             }
 

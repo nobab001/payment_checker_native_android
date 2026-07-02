@@ -49,10 +49,67 @@ model gateway_layouts {
   is_active     Int       @default(1) @db.TinyInt
   created_at    DateTime @default(now()) @db.Timestamp(0)
   updated_at    DateTime @default(now()) @db.Timestamp(0)
-  users         users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_gateway_user")
+
+  // ── API Integration v2 (additive, backward-compatible) ─────────────
+  merchant_id                 String?  @unique(map: "uniq_merchant_id") @db.VarChar(64)
+  company_name                String?  @db.VarChar(255)
+  logo_url                    String?  @db.VarChar(512)
+  checkout_theme              String?  @default("default") @db.VarChar(50)
+  success_url                 String?  @db.VarChar(512)
+  cancel_url                  String?  @db.VarChar(512)
+  webhook_url                 String?  @db.VarChar(512)
+  checkout_mode               String?  @default("transaction") @db.VarChar(30) // transaction | merchant_vibe
+  api_secret_hash             String?  @db.VarChar(128)
+  api_secret_last4            String?  @db.VarChar(8)
+  api_secret_version          Int      @default(1)
+  number_order_json           String?  @db.LongText // checkout-only ordering + enable/disable overrides
+  receive_payment_type        Int      @default(0) @db.TinyInt // merchant preference
+  receive_commission          Int      @default(0) @db.TinyInt // merchant preference
+  allow_payment_type_callback Int      @default(0) @db.TinyInt // admin permission
+  allow_commission_callback   Int      @default(0) @db.TinyInt // admin permission
+  commission_enabled          Int      @default(0) @db.TinyInt // admin unlock for commission menu
+
+  users               users                   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_gateway_user")
+  merchant_commissions merchant_commissions[]
+  checkout_vibe_requests checkout_vibe_requests[]
 
   @@index([user_id, is_active], map: "idx_gateway_active")
   @@index([user_id], map: "idx_gateway_user")
+}
+
+model merchant_commissions {
+  id              Int      @id @default(autoincrement())
+  website_id      Int
+  payment_type    String   @db.VarChar(50) // bkash_personal, nagad_merchant, card, bank, etc.
+  commission_type String   @default("percentage") @db.VarChar(20) // percentage | flat
+  commission_value Decimal @default(0.00) @db.Decimal(12, 2)
+  charge_type     String   @default("flat") @db.VarChar(20) // percentage | flat
+  charge_value    Decimal  @default(0.00) @db.Decimal(12, 2)
+  is_active       Int      @default(1) @db.TinyInt
+  created_at      DateTime @default(now()) @db.Timestamp(0)
+  updated_at      DateTime @default(now()) @db.Timestamp(0)
+  gateway_layouts gateway_layouts @relation(fields: [website_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_commission_website")
+
+  @@unique([website_id, payment_type], map: "uniq_website_payment_type")
+  @@index([website_id], map: "idx_commission_website")
+}
+
+model checkout_vibe_requests {
+  id             Int      @id @default(autoincrement())
+  website_id     Int
+  customer_number String  @db.VarChar(20)
+  amount         Decimal  @db.Decimal(12, 2)
+  status         String   @default("waiting") @db.VarChar(20) // waiting | matched | expired | cancelled
+  matched_trx_id String?  @db.VarChar(191)
+  matched_history_id Int?
+  expires_at     DateTime @db.DateTime(0)
+  matched_at     DateTime? @db.DateTime(0)
+  created_at     DateTime @default(now()) @db.Timestamp(0)
+  gateway_layouts gateway_layouts @relation(fields: [website_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_vibe_website")
+
+  @@index([website_id, status], map: "idx_vibe_website_status")
+  @@index([customer_number, amount, status], map: "idx_vibe_match")
+  @@index([expires_at], map: "idx_vibe_expiry")
 }
 
 model gateway_methods {

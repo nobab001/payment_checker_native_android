@@ -52,6 +52,10 @@ router.post('/email-accounts/reset-all', admin.resetAllEmailCounters);   // ← 
 router.get('/otp-format', admin.getOtpFormat);
 router.post('/otp-format/update', admin.updateOtpFormat);
 
+// 5d. Website merchant permission control (payment-type / commission callbacks)
+router.get('/websites', admin.listAllWebsites);
+router.post('/websites/:id/permissions', admin.setWebsitePermissions);
+
 // 6. User and Device management list and toggle endpoints
 router.get('/users', admin.listUsers);
 router.post('/users/:id/block', admin.toggleUserBlock);

@@ -99,6 +99,29 @@ fun MainNavigation() {
                 )
             }
 
+            entry<NavKey.WebsiteManagement> {
+                online.paychek.app.ui.screen.apicenter.website.WebsiteManagementScreen(
+                    onNavigateBack = { backStack.removeLastOrNull() },
+                    onOpenWebsite = { id -> backStack.add(NavKey.WebsiteSettings(id)) },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            entry<NavKey.WebsiteSettings> { key ->
+                online.paychek.app.ui.screen.apicenter.website.WebsiteSettingsScreen(
+                    websiteId = key.websiteId,
+                    onNavigateBack = { backStack.removeLastOrNull() },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            entry<NavKey.ApiDocs> {
+                online.paychek.app.ui.screen.apicenter.docs.ApiDocsScreen(
+                    onNavigateBack = { backStack.removeLastOrNull() },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
             entry<NavKey.Profile> {
                 ProfileSettingsScreen(
                     onNavigateBack = { backStack.removeLastOrNull() },

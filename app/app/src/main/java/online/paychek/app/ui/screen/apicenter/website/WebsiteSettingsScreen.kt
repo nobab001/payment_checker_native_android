@@ -1,0 +1,373 @@
+package online.paychek.app.ui.screen.apicenter.website
+
+import android.content.ClipData
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.toClipEntry
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
+import online.paychek.app.data.remote.dto.UpdateWebsiteRequest
+
+private val AccentCyan = Color(0xFF22D3EE)
+private val AccentGreen = Color(0xFF10B981)
+private val AccentAmber = Color(0xFFF59E0B)
+
+private val CHECKOUT_THEMES = listOf("default", "light", "dark", "minimal", "brand")
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WebsiteSettingsScreen(
+    websiteId: Int,
+    onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: WebsiteViewModel = viewModel()
+) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val site = state.selected
+
+    LaunchedEffect(websiteId) { viewModel.loadWebsiteDetail(websiteId) }
+    LaunchedEffect(state.error, state.infoMessage) {
+        state.error?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show(); viewModel.clearMessages() }
+        state.infoMessage?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show(); viewModel.clearMessages() }
+    }
+
+    val bg = MaterialTheme.colorScheme.background
+    val card = MaterialTheme.colorScheme.surface
+    val isDark = bg == Color(0xFF0B0E14)
+
+    // Editable fields
+    var companyName by remember(site?.id) { mutableStateOf(site?.companyName ?: "") }
+    var logoUrl by remember(site?.id) { mutableStateOf(site?.logoUrl ?: "") }
+    var theme by remember(site?.id) { mutableStateOf(site?.checkoutTheme ?: "default") }
+    var checkoutMode by remember(site?.id) { mutableStateOf(site?.checkoutMode ?: "transaction") }
+    var successUrl by remember(site?.id) { mutableStateOf(site?.successUrl ?: "") }
+    var cancelUrl by remember(site?.id) { mutableStateOf(site?.cancelUrl ?: "") }
+    var callbackUrl by remember(site?.id) { mutableStateOf(site?.callbackUrl ?: "") }
+    var webhookUrl by remember(site?.id) { mutableStateOf(site?.webhookUrl ?: "") }
+    var receivePaymentType by remember(site?.id) { mutableStateOf(site?.receivePaymentType ?: false) }
+    var receiveCommission by remember(site?.id) { mutableStateOf(site?.receiveCommission ?: false) }
+
+    Scaffold(
+        containerColor = bg,
+        topBar = {
+            TopAppBar(
+                title = { Text(site?.siteName?.ifBlank { "ওয়েবসাইট সেটিংস" } ?: "ওয়েবসাইট সেটিংস", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onBackground)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = card)
+            )
+        },
+        modifier = modifier
+    ) { padding ->
+        if (site == null) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = AccentCyan)
+            }
+            return@Scaffold
+        }
+
+        Column(
+            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            // Identity card (read-only)
+            SettingsCard(card, isDark, "মার্চেন্ট পরিচিতি", Icons.Default.Badge) {
+                ReadOnlyRow("Merchant ID", site.merchantId ?: "-")
+                ReadOnlyRow("API Key", site.apiKey)
+                ReadOnlyRow("Secret", "•••• ${site.secretLast4 ?: "----"}  (v${site.secretVersion})")
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { viewModel.regenerateSecret(site.id) },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentAmber),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentAmber)
+                ) {
+                    Icon(Icons.Default.Autorenew, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Secret Key রিজেনারেট করুন")
+                }
+            }
+
+            // Branding
+            SettingsCard(card, isDark, "ব্র্যান্ডিং", Icons.Default.Palette) {
+                EditField("Company Name", companyName) { companyName = it }
+                EditField("Logo URL", logoUrl) { logoUrl = it }
+                Spacer(Modifier.height(6.dp))
+                Text("Checkout Theme", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(6.dp))
+                ChipRow(CHECKOUT_THEMES, theme) { theme = it }
+            }
+
+            // Checkout mode
+            SettingsCard(card, isDark, "চেকআউট মোড", Icons.Default.Tune) {
+                ModeOption("Transaction Mode", "গ্রাহক নাম্বার কপি করে TrxID দিয়ে ভেরিফাই করবে", checkoutMode == "transaction") { checkoutMode = "transaction" }
+                Spacer(Modifier.height(8.dp))
+                ModeOption("Merchant Vibe Mode", "গ্রাহক আগে নিজের নাম্বার দেবে, টাকা এলে অটো ম্যাচ", checkoutMode == "merchant_vibe") { checkoutMode = "merchant_vibe" }
+            }
+
+            // URLs
+            SettingsCard(card, isDark, "রিডাইরেক্ট ও কলব্যাক URL", Icons.Default.Link) {
+                EditField("Success URL", successUrl) { successUrl = it }
+                EditField("Cancel URL", cancelUrl) { cancelUrl = it }
+                EditField("Callback URL", callbackUrl) { callbackUrl = it }
+                EditField("Webhook URL", webhookUrl) { webhookUrl = it }
+            }
+
+            // Callback preferences (gated by admin permission)
+            SettingsCard(card, isDark, "কলব্যাক অপশন", Icons.Default.CallReceived) {
+                PermToggle(
+                    "Payment Type গ্রহণ", "receive_payment_type",
+                    enabled = site.allowPaymentTypeCallback,
+                    checked = receivePaymentType && site.allowPaymentTypeCallback
+                ) { receivePaymentType = it }
+                Spacer(Modifier.height(8.dp))
+                PermToggle(
+                    "Commission গ্রহণ", "receive_commission",
+                    enabled = site.allowCommissionCallback,
+                    checked = receiveCommission && site.allowCommissionCallback
+                ) { receiveCommission = it }
+            }
+
+            // Commission menu (locked until admin permission)
+            CommissionSection(
+                enabled = site.commissionEnabled,
+                card = card, isDark = isDark
+            )
+
+            // Save
+            Button(
+                onClick = {
+                    viewModel.updateSettings(
+                        site.id,
+                        UpdateWebsiteRequest(
+                            companyName = companyName,
+                            logoUrl = logoUrl,
+                            checkoutTheme = theme,
+                            checkoutMode = checkoutMode,
+                            successUrl = successUrl,
+                            cancelUrl = cancelUrl,
+                            callbackUrl = callbackUrl,
+                            webhookUrl = webhookUrl,
+                            receivePaymentType = receivePaymentType,
+                            receiveCommission = receiveCommission
+                        )
+                    )
+                },
+                enabled = !state.isSaving,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
+            ) {
+                if (state.isSaving) CircularProgressIndicator(Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                else Text("সেটিংস সংরক্ষণ করুন", fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(20.dp))
+        }
+    }
+
+    // Regenerated secret reveal
+    val secret = state.revealedSecret
+    if (secret != null && state.createdWebsite == null) {
+        SecretRevealDialog(secret) { viewModel.dismissSecretReveal() }
+    }
+}
+
+@Composable
+private fun SettingsCard(card: Color, isDark: Boolean, title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = card),
+        shape = RoundedCornerShape(16.dp),
+        border = if (isDark) null else androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE3E5E8)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, null, tint = AccentCyan, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(title, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
+            Spacer(Modifier.height(12.dp))
+            content()
+        }
+    }
+}
+
+@Composable
+private fun EditField(label: String, value: String, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value, onValueChange = onChange,
+        label = { Text(label) }, singleLine = true,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+    )
+}
+
+@Composable
+private fun ReadOnlyRow(label: String, value: String) {
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            Text(value, color = MaterialTheme.colorScheme.onBackground, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+        }
+        IconButton(onClick = {
+            scope.launch {
+                clipboard.setClipEntry(ClipData.newPlainText(label, value).toClipEntry())
+                Toast.makeText(context, "$label কপি হয়েছে", Toast.LENGTH_SHORT).show()
+            }
+        }, modifier = Modifier.size(28.dp)) {
+            Icon(Icons.Default.ContentCopy, "Copy", tint = AccentCyan, modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun ChipRow(options: List<String>, selected: String, onSelect: (String) -> Unit) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEach { opt ->
+            val sel = opt == selected
+            Box(
+                Modifier.clip(RoundedCornerShape(20.dp))
+                    .background(if (sel) AccentCyan.copy(alpha = 0.2f) else Color.Transparent)
+                    .border(1.dp, if (sel) AccentCyan else Color(0xFF3A3F4A), RoundedCornerShape(20.dp))
+                    .clickable { onSelect(opt) }
+                    .padding(horizontal = 14.dp, vertical = 7.dp)
+            ) { Text(opt, color = if (sel) AccentCyan else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
+        }
+    }
+}
+
+@Composable
+private fun ModeOption(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+            .border(1.dp, if (selected) AccentCyan else Color(0xFF3A3F4A), RoundedCornerShape(12.dp))
+            .clickable { onClick() }.padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected, onClick = onClick, colors = RadioButtonDefaults.colors(selectedColor = AccentCyan))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+        }
+    }
+}
+
+@Composable
+private fun PermToggle(title: String, apiField: String, enabled: Boolean, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = MaterialTheme.colorScheme.onBackground, fontSize = 13.sp)
+            Text(
+                if (enabled) apiField else "Admin অনুমতি প্রয়োজন",
+                color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else AccentAmber,
+                fontSize = 10.sp, fontFamily = if (enabled) FontFamily.Monospace else FontFamily.Default
+            )
+        }
+        Switch(
+            checked = checked, onCheckedChange = onChange, enabled = enabled,
+            colors = SwitchDefaults.colors(checkedTrackColor = AccentGreen)
+        )
+    }
+}
+
+@Composable
+private fun CommissionSection(enabled: Boolean, card: Color, isDark: Boolean) {
+    val context = LocalContext.current
+    Box {
+        SettingsCard(card, isDark, "Commission", Icons.Default.Percent) {
+            if (enabled) {
+                Text("Commission ফিচার আনলক করা হয়েছে। Type অনুযায়ী কমিশন/চার্জ যোগ করুন।", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                // Full commission editor UI is delivered in a later phase; the
+                // menu is now unlocked and API-ready.
+            } else {
+                Column(Modifier.blur(6.dp)) {
+                    Text("bKash Personal — 1.5% commission", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    Text("Nagad Merchant — flat 5৳ charge", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    Text("Card — 2.5% commission", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+            }
+        }
+        if (!enabled) {
+            Box(
+                Modifier.matchParentSize().clip(RoundedCornerShape(16.dp))
+                    .background(Color.Black.copy(alpha = 0.35f))
+                    .clickable {
+                        Toast.makeText(context, "🔒 Commission ফিচার Admin অনুমতি ছাড়া চালু হবে না।", Toast.LENGTH_LONG).show()
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Lock, null, tint = Color.White)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Locked — Admin অনুমতি প্রয়োজন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SecretRevealDialog(secret: String, onDismiss: () -> Unit) {
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    Dialog(onDismissRequest = { }) {
+        Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.padding(22.dp)) {
+                Text("নতুন Secret Key", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.onBackground)
+                Spacer(Modifier.height(6.dp))
+                Text("⚠ এখনই সংরক্ষণ করুন — পরে আর দেখা যাবে না।", color = AccentAmber, fontSize = 12.sp)
+                Spacer(Modifier.height(14.dp))
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.background)
+                        .border(1.dp, Color(0xFF2A2F3A), RoundedCornerShape(8.dp)).padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(secret, color = MaterialTheme.colorScheme.onBackground, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    IconButton(onClick = {
+                        scope.launch {
+                            clipboard.setClipEntry(ClipData.newPlainText("Secret Key", secret).toClipEntry())
+                            Toast.makeText(context, "Secret Key কপি হয়েছে", Toast.LENGTH_SHORT).show()
+                        }
+                    }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.ContentCopy, "Copy", tint = AccentCyan, modifier = Modifier.size(16.dp))
+                    }
+                }
+                Spacer(Modifier.height(18.dp))
+                Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)) {
+                    Text("সংরক্ষণ করেছি", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
