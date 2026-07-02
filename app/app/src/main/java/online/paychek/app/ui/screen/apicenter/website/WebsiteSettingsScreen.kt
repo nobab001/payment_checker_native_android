@@ -31,6 +31,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import online.paychek.app.data.remote.dto.OfficialGatewayDto
 import online.paychek.app.data.remote.dto.UpdateWebsiteRequest
 
 private val AccentCyan = Color(0xFF22D3EE)
@@ -44,6 +45,7 @@ private val CHECKOUT_THEMES = listOf("default", "light", "dark", "minimal", "bra
 fun WebsiteSettingsScreen(
     websiteId: Int,
     onNavigateBack: () -> Unit,
+    onOpenCheckoutNumbers: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: WebsiteViewModel = viewModel()
 ) {
@@ -127,6 +129,24 @@ fun WebsiteSettingsScreen(
                 ChipRow(CHECKOUT_THEMES, theme) { theme = it }
             }
 
+            // Checkout numbers (auto-synced from devices)
+            Card(
+                colors = CardDefaults.cardColors(containerColor = card),
+                shape = RoundedCornerShape(16.dp),
+                border = if (isDark) null else androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE3E5E8)),
+                modifier = Modifier.fillMaxWidth().clickable { onOpenCheckoutNumbers() }
+            ) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.SimCard, null, tint = AccentCyan, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("চেকআউট নাম্বার", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("ডিভাইসের SIM নাম্বার সাজান / চালু-বন্ধ করুন", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    }
+                    Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
             // Checkout mode
             SettingsCard(card, isDark, "চেকআউট মোড", Icons.Default.Tune) {
                 ModeOption("Transaction Mode", "গ্রাহক নাম্বার কপি করে TrxID দিয়ে ভেরিফাই করবে", checkoutMode == "transaction") { checkoutMode = "transaction" }
@@ -141,6 +161,14 @@ fun WebsiteSettingsScreen(
                 EditField("Callback URL", callbackUrl) { callbackUrl = it }
                 EditField("Webhook URL", webhookUrl) { webhookUrl = it }
             }
+
+            // Official (redirect-based) payment gateways
+            OfficialGatewaysSection(
+                card = card, isDark = isDark,
+                gateways = state.officialGateways,
+                onAdd = { provider, url, name -> viewModel.upsertOfficialGateway(site.id, provider, url, name) },
+                onDelete = { gwId -> viewModel.deleteOfficialGateway(site.id, gwId) }
+            )
 
             // Callback preferences (gated by admin permission)
             SettingsCard(card, isDark, "কলব্যাক অপশন", Icons.Default.CallReceived) {
@@ -160,7 +188,10 @@ fun WebsiteSettingsScreen(
             // Commission menu (locked until admin permission)
             CommissionSection(
                 enabled = site.commissionEnabled,
-                card = card, isDark = isDark
+                card = card, isDark = isDark,
+                commissions = state.commissions,
+                onSave = { req -> viewModel.upsertCommission(site.id, req) },
+                onDelete = { cid -> viewModel.deleteCommission(site.id, cid) }
             )
 
             // Save
@@ -300,15 +331,65 @@ private fun PermToggle(title: String, apiField: String, enabled: Boolean, checke
     }
 }
 
+private val COMMISSION_PAYMENT_TYPES = listOf(
+    "bkash_personal" to "bKash Personal",
+    "nagad_personal" to "Nagad Personal",
+    "rocket_personal" to "Rocket Personal",
+    "upay_personal" to "Upay Personal",
+    "bkash_agent" to "bKash Agent",
+    "nagad_agent" to "Nagad Agent",
+    "bkash_merchant" to "bKash Merchant",
+    "nagad_merchant" to "Nagad Merchant",
+    "card" to "Card",
+    "bank" to "Bank"
+)
+
 @Composable
-private fun CommissionSection(enabled: Boolean, card: Color, isDark: Boolean) {
+private fun CommissionSection(
+    enabled: Boolean,
+    card: Color,
+    isDark: Boolean,
+    commissions: List<online.paychek.app.data.remote.dto.CommissionDto>,
+    onSave: (online.paychek.app.data.remote.dto.UpsertCommissionRequest) -> Unit,
+    onDelete: (Int) -> Unit
+) {
     val context = LocalContext.current
+    var showDialog by remember { mutableStateOf(false) }
     Box {
         SettingsCard(card, isDark, "Commission", Icons.Default.Percent) {
             if (enabled) {
-                Text("Commission ফিচার আনলক করা হয়েছে। Type অনুযায়ী কমিশন/চার্জ যোগ করুন।", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                // Full commission editor UI is delivered in a later phase; the
-                // menu is now unlocked and API-ready.
+                Text("Type অনুযায়ী কমিশন/চার্জ যোগ করুন (Percentage বা Flat)।", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Spacer(Modifier.height(10.dp))
+                if (commissions.isEmpty()) {
+                    Text("কোনো কমিশন সেট করা হয়নি।", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                } else {
+                    commissions.forEach { c ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    COMMISSION_PAYMENT_TYPES.firstOrNull { it.first == c.paymentType }?.second ?: c.paymentType,
+                                    color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 13.sp
+                                )
+                                val comm = if (c.commissionType == "percentage") "${c.commissionValue}%" else "৳${c.commissionValue}"
+                                val chg = if (c.chargeType == "percentage") "${c.chargeValue}%" else "৳${c.chargeValue}"
+                                Text("Commission: $comm · Charge: $chg", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+                            }
+                            IconButton(onClick = { onDelete(c.id) }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Default.Delete, "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { showDialog = true },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentCyan),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentCyan)
+                ) {
+                    Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("কমিশন যোগ করুন")
+                }
             } else {
                 Column(Modifier.blur(6.dp)) {
                     Text("bKash Personal — 1.5% commission", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
@@ -330,6 +411,186 @@ private fun CommissionSection(enabled: Boolean, card: Color, isDark: Boolean) {
                     Icon(Icons.Default.Lock, null, tint = Color.White)
                     Spacer(Modifier.width(8.dp))
                     Text("Locked — Admin অনুমতি প্রয়োজন", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+
+    if (showDialog) {
+        CommissionEditorDialog(onDismiss = { showDialog = false }, onSave = { onSave(it); showDialog = false })
+    }
+}
+
+@Composable
+private fun CommissionEditorDialog(
+    onDismiss: () -> Unit,
+    onSave: (online.paychek.app.data.remote.dto.UpsertCommissionRequest) -> Unit
+) {
+    var paymentType by remember { mutableStateOf(COMMISSION_PAYMENT_TYPES.first().first) }
+    var commissionType by remember { mutableStateOf("percentage") }
+    var commissionValue by remember { mutableStateOf("") }
+    var chargeType by remember { mutableStateOf("flat") }
+    var chargeValue by remember { mutableStateOf("") }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState())) {
+                Text("কমিশন / চার্জ", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
+                Spacer(Modifier.height(12.dp))
+                Text("Payment Type", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    COMMISSION_PAYMENT_TYPES.forEach { (id, label) ->
+                        val sel = id == paymentType
+                        Box(
+                            Modifier.clip(RoundedCornerShape(20.dp))
+                                .background(if (sel) AccentCyan.copy(alpha = 0.2f) else Color.Transparent)
+                                .border(1.dp, if (sel) AccentCyan else Color(0xFF3A3F4A), RoundedCornerShape(20.dp))
+                                .clickable { paymentType = id }
+                                .padding(horizontal = 12.dp, vertical = 7.dp)
+                        ) { Text(label, color = if (sel) AccentCyan else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp) }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Commission", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                ChipRow(listOf("percentage", "flat"), commissionType) { commissionType = it }
+                EditField(if (commissionType == "percentage") "Commission (%)" else "Commission (৳)", commissionValue) { commissionValue = it }
+                Spacer(Modifier.height(8.dp))
+                Text("Charge", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                ChipRow(listOf("percentage", "flat"), chargeType) { chargeType = it }
+                EditField(if (chargeType == "percentage") "Charge (%)" else "Charge (৳)", chargeValue) { chargeValue = it }
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("বাতিল") }
+                    Button(
+                        onClick = {
+                            onSave(
+                                online.paychek.app.data.remote.dto.UpsertCommissionRequest(
+                                    paymentType = paymentType,
+                                    commissionType = commissionType,
+                                    commissionValue = commissionValue.toDoubleOrNull() ?: 0.0,
+                                    chargeType = chargeType,
+                                    chargeValue = chargeValue.toDoubleOrNull() ?: 0.0,
+                                    isActive = true
+                                )
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
+                    ) { Text("সংরক্ষণ") }
+                }
+            }
+        }
+    }
+}
+
+private val OFFICIAL_PROVIDERS = listOf(
+    "bkash_merchant" to "bKash Merchant",
+    "nagad_merchant" to "Nagad Merchant",
+    "rocket_merchant" to "Rocket Merchant",
+    "sslcommerz" to "SSLCommerz",
+    "card" to "Card",
+    "bank" to "Bank"
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OfficialGatewaysSection(
+    card: Color,
+    isDark: Boolean,
+    gateways: List<OfficialGatewayDto>,
+    onAdd: (provider: String, redirectUrl: String, displayName: String?) -> Unit,
+    onDelete: (Int) -> Unit
+) {
+    var showDialog by remember { mutableStateOf(false) }
+
+    SettingsCard(card, isDark, "অফিসিয়াল পেমেন্ট (রিডাইরেক্ট)", Icons.Default.OpenInNew) {
+        Text(
+            "bKash/Nagad/Rocket Merchant, SSLCommerz, Card, Bank — এইসব চ্যানেলে PayCheck নিজে পেমেন্ট নেয় না, গ্রাহককে সরাসরি অফিসিয়াল গেটওয়ে পেজে রিডাইরেক্ট করে।",
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp
+        )
+        Spacer(Modifier.height(10.dp))
+
+        if (gateways.isEmpty()) {
+            Text("কোনো অফিসিয়াল গেটওয়ে যুক্ত করা হয়নি।", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        } else {
+            gateways.forEach { gw ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            OFFICIAL_PROVIDERS.firstOrNull { it.first == gw.provider }?.second ?: gw.provider,
+                            color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 13.sp
+                        )
+                        Text(gw.redirectUrlTemplate, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, maxLines = 1)
+                    }
+                    if (gw.isActive) {
+                        Text("Active", color = AccentGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                    IconButton(onClick = { onDelete(gw.id) }, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Delete, "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = { showDialog = true },
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentCyan),
+            border = androidx.compose.foundation.BorderStroke(1.dp, AccentCyan)
+        ) {
+            Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("গেটওয়ে যোগ করুন")
+        }
+    }
+
+    if (showDialog) {
+        var selectedProvider by remember { mutableStateOf(OFFICIAL_PROVIDERS.first().first) }
+        var redirectUrl by remember { mutableStateOf("") }
+        var displayName by remember { mutableStateOf("") }
+
+        Dialog(onDismissRequest = { showDialog = false }) {
+            Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
+                Column(Modifier.padding(20.dp)) {
+                    Text("অফিসিয়াল গেটওয়ে", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
+                    Spacer(Modifier.height(12.dp))
+                    Text("Provider", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OFFICIAL_PROVIDERS.forEach { (id, label) ->
+                            val sel = id == selectedProvider
+                            Box(
+                                Modifier.clip(RoundedCornerShape(20.dp))
+                                    .background(if (sel) AccentCyan.copy(alpha = 0.2f) else Color.Transparent)
+                                    .border(1.dp, if (sel) AccentCyan else Color(0xFF3A3F4A), RoundedCornerShape(20.dp))
+                                    .clickable { selectedProvider = id }
+                                    .padding(horizontal = 14.dp, vertical = 7.dp)
+                            ) { Text(label, color = if (sel) AccentCyan else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    EditField("Display Name (optional)", displayName) { displayName = it }
+                    EditField("Redirect URL Template", redirectUrl) { redirectUrl = it }
+                    Text(
+                        "Placeholder: {amount} {order_id} {token} {callback_url} {currency}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(onClick = { showDialog = false }, modifier = Modifier.weight(1f)) { Text("বাতিল") }
+                        Button(
+                            onClick = {
+                                onAdd(selectedProvider, redirectUrl, displayName)
+                                showDialog = false
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
+                        ) { Text("সংরক্ষণ") }
+                    }
                 }
             }
         }

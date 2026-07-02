@@ -15,6 +15,7 @@
 
 const crypto = require('crypto');
 const prisma = require('../db/prisma');
+const merchantCache = require('../services/merchantCache');
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -159,7 +160,9 @@ async function createWebsite(req, res) {
             site_name: websiteName || domain,
             site_url: domainRaw.trim(),
             api_key: apiKey,
-            api_secret: '', // v2 does not store plaintext
+            // Stored server-side for webhook HMAC signing/verification. NEVER
+            // exposed by any GET endpoint (toWebsiteDto returns only last4).
+            api_secret: plaintextSecret,
             api_secret_hash: sha256(plaintextSecret),
             api_secret_last4: plaintextSecret.slice(-4),
             api_secret_version: 1,
@@ -225,9 +228,40 @@ async function getWebsite(req, res) {
       try { numberOrder = JSON.parse(row.number_order_json); } catch (_) { numberOrder = []; }
     }
 
+    // Auto-synced active SIM numbers for this account (across all devices).
+    // Source of truth = gateway_methods (same data the SMS reader uses). We only
+    // READ it here; checkout enable/disable is stored separately in numberOrder.
+    const methods = await prisma.gateway_methods.findMany({
+      where: { user_id: String(row.user_id), is_enabled: 1, NOT: { number: '' } },
+      orderBy: [{ priority: 'asc' }, { sim_slot: 'asc' }],
+      select: { id: true, provider: true, number: true, sim_slot: true, device_id: true, display_name: true },
+    });
+    const orderLookup = new Map();
+    numberOrder.forEach((o, idx) => {
+      const key = o.methodId != null ? `id:${o.methodId}` : `num:${o.provider}|${o.number}`;
+      orderLookup.set(key, { position: o.position != null ? o.position : idx, enabled: o.enabled !== false });
+    });
+    const activeNumbers = methods
+      .filter((m) => m.number && m.number.trim() !== '')
+      .map((m) => {
+        const ov = orderLookup.get(`id:${m.id}`) || orderLookup.get(`num:${m.provider}|${m.number}`);
+        return {
+          methodId: m.id,
+          provider: m.provider,
+          number: m.number,
+          simSlot: m.sim_slot,
+          deviceId: m.device_id,
+          displayName: m.display_name || m.provider,
+          enabled: ov ? ov.enabled : true,
+          position: ov ? ov.position : Number.MAX_SAFE_INTEGER,
+        };
+      })
+      .sort((a, b) => a.position - b.position);
+
     return res.json({
       success: true,
       website: toWebsiteDto(row),
+      activeNumbers,
       commissions: commissions.map((c) => ({
         id: c.id,
         paymentType: c.payment_type,
@@ -296,6 +330,7 @@ async function updateWebsiteSettings(req, res) {
     data.updated_at = new Date();
 
     const updated = await prisma.gateway_layouts.update({ where: { id: row.id }, data });
+    merchantCache.invalidate(row.api_key);
     return res.json({ success: true, website: toWebsiteDto(updated) });
   } catch (error) {
     console.error('[Website] updateWebsiteSettings error:', error);
@@ -314,13 +349,14 @@ async function regenerateSecret(req, res) {
     const updated = await prisma.gateway_layouts.update({
       where: { id: row.id },
       data: {
-        api_secret: '',
+        api_secret: plaintextSecret,
         api_secret_hash: sha256(plaintextSecret),
         api_secret_last4: plaintextSecret.slice(-4),
         api_secret_version: (row.api_secret_version || 1) + 1,
         updated_at: new Date(),
       },
     });
+    merchantCache.invalidate(row.api_key);
 
     return res.json({
       success: true,
@@ -506,6 +542,111 @@ async function deleteCommission(req, res) {
   }
 }
 
+// ── Official payment gateway configuration (Phase 6) ─────────────────────────
+// Per-website redirect config for official channels (bKash/Nagad/Rocket Merchant,
+// SSLCommerz, Card, Bank). PayCheck never processes these payments itself — it
+// only redirects the customer to the original gateway page and receives a callback.
+
+const OFFICIAL_PROVIDER_SET = new Set([
+  'bkash_merchant', 'nagad_merchant', 'rocket_merchant', 'sslcommerz', 'card', 'bank',
+]);
+
+function toOfficialGatewayDto(row) {
+  return {
+    id: row.id,
+    provider: row.provider,
+    displayName: row.display_name || row.provider,
+    redirectUrlTemplate: row.redirect_url_template,
+    isActive: !!row.is_active,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** GET /api/v1/websites/:id/official-gateways */
+async function listOfficialGateways(req, res) {
+  try {
+    const userId = req.user.userId;
+    const row = await findOwnedWebsite(req.params.id, userId);
+    if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
+
+    const gateways = await prisma.website_official_gateways.findMany({
+      where: { website_id: row.id },
+      orderBy: { provider: 'asc' },
+    });
+    return res.json({ success: true, officialGateways: gateways.map(toOfficialGatewayDto) });
+  } catch (error) {
+    console.error('[Website] listOfficialGateways error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/** POST /api/v1/websites/:id/official-gateways — upsert one provider config. */
+async function upsertOfficialGateway(req, res) {
+  try {
+    const userId = req.user.userId;
+    const row = await findOwnedWebsite(req.params.id, userId);
+    if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
+
+    const b = req.body || {};
+    const provider = (b.provider || '').trim().toLowerCase();
+    if (!OFFICIAL_PROVIDER_SET.has(provider)) {
+      return res.status(400).json({ success: false, error: 'INVALID_PROVIDER' });
+    }
+    const redirectUrlTemplate = (b.redirect_url_template || b.redirectUrlTemplate || '').trim();
+    if (!redirectUrlTemplate || !/^https?:\/\//i.test(redirectUrlTemplate)) {
+      return res.status(400).json({ success: false, error: 'INVALID_REDIRECT_URL' });
+    }
+
+    const saved = await prisma.website_official_gateways.upsert({
+      where: { website_id_provider: { website_id: row.id, provider } },
+      update: {
+        display_name: b.display_name || b.displayName || null,
+        redirect_url_template: redirectUrlTemplate,
+        is_active: b.is_active === undefined ? 1 : (b.is_active ? 1 : 0),
+        config_json: b.config ? JSON.stringify(b.config) : null,
+        updated_at: new Date(),
+      },
+      create: {
+        website_id: row.id,
+        provider,
+        display_name: b.display_name || b.displayName || null,
+        redirect_url_template: redirectUrlTemplate,
+        is_active: b.is_active === undefined ? 1 : (b.is_active ? 1 : 0),
+        config_json: b.config ? JSON.stringify(b.config) : null,
+      },
+    });
+
+    return res.json({ success: true, officialGateway: toOfficialGatewayDto(saved) });
+  } catch (error) {
+    console.error('[Website] upsertOfficialGateway error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/** DELETE /api/v1/websites/:id/official-gateways/:gatewayId */
+async function deleteOfficialGateway(req, res) {
+  try {
+    const userId = req.user.userId;
+    const row = await findOwnedWebsite(req.params.id, userId);
+    if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
+
+    const gatewayId = parseInt(req.params.gatewayId, 10);
+    if (!Number.isFinite(gatewayId)) {
+      return res.status(400).json({ success: false, error: 'INVALID_GATEWAY_ID' });
+    }
+    const gw = await prisma.website_official_gateways.findUnique({ where: { id: gatewayId } });
+    if (!gw || gw.website_id !== row.id) {
+      return res.status(404).json({ success: false, error: 'GATEWAY_NOT_FOUND' });
+    }
+    await prisma.website_official_gateways.delete({ where: { id: gatewayId } });
+    return res.json({ success: true, message: 'Official gateway মুছে ফেলা হয়েছে।' });
+  } catch (error) {
+    console.error('[Website] deleteOfficialGateway error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   createWebsite,
   listWebsites,
@@ -517,6 +658,9 @@ module.exports = {
   listCommissions,
   upsertCommission,
   deleteCommission,
+  listOfficialGateways,
+  upsertOfficialGateway,
+  deleteOfficialGateway,
   // exported for reuse in admin permission controller / callback dispatcher
   _helpers: { sha256, toWebsiteDto },
 };

@@ -51,6 +51,27 @@ data class NumberOrderItem(
     @SerializedName("position") val position: Int = 0
 )
 
+/** Auto-synced active SIM number available for checkout (read from gateway_methods). */
+data class ActiveNumberDto(
+    @SerializedName("methodId") val methodId: Int,
+    @SerializedName("provider") val provider: String,
+    @SerializedName("number") val number: String,
+    @SerializedName("simSlot") val simSlot: Int = 1,
+    @SerializedName("deviceId") val deviceId: String? = null,
+    @SerializedName("displayName") val displayName: String? = null,
+    @SerializedName("enabled") val enabled: Boolean = true,
+    @SerializedName("position") val position: Long = Long.MAX_VALUE
+)
+
+/** Official (redirect-based) payment channel configured for a website (Phase 6). */
+data class OfficialGatewayDto(
+    @SerializedName("id") val id: Int = 0,
+    @SerializedName("provider") val provider: String,
+    @SerializedName("displayName") val displayName: String? = null,
+    @SerializedName("redirectUrlTemplate") val redirectUrlTemplate: String = "",
+    @SerializedName("isActive") val isActive: Boolean = true
+)
+
 // ── Requests ─────────────────────────────────────────────────────────────────
 
 data class CreateWebsiteRequest(
@@ -75,6 +96,13 @@ data class UpdateWebsiteRequest(
 
 data class NumberOrderRequest(
     @SerializedName("order") val order: List<NumberOrderItem>
+)
+
+data class UpsertOfficialGatewayRequest(
+    @SerializedName("provider") val provider: String,
+    @SerializedName("display_name") val displayName: String? = null,
+    @SerializedName("redirect_url_template") val redirectUrlTemplate: String,
+    @SerializedName("is_active") val isActive: Boolean = true
 )
 
 data class UpsertCommissionRequest(
@@ -105,7 +133,8 @@ data class WebsiteDetailResponse(
     @SerializedName("success") val success: Boolean = false,
     @SerializedName("website") val website: WebsiteDto? = null,
     @SerializedName("commissions") val commissions: List<CommissionDto> = emptyList(),
-    @SerializedName("numberOrder") val numberOrder: List<NumberOrderItem> = emptyList()
+    @SerializedName("numberOrder") val numberOrder: List<NumberOrderItem> = emptyList(),
+    @SerializedName("activeNumbers") val activeNumbers: List<ActiveNumberDto> = emptyList()
 )
 
 data class WebsiteUpdateResponse(
@@ -141,5 +170,16 @@ data class CommissionUpsertResponse(
 data class SimpleWebsiteActionResponse(
     @SerializedName("success") val success: Boolean = false,
     @SerializedName("message") val message: String? = null,
+    @SerializedName("error") val error: String? = null
+)
+
+data class OfficialGatewayListResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("officialGateways") val officialGateways: List<OfficialGatewayDto> = emptyList()
+)
+
+data class OfficialGatewayUpsertResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("officialGateway") val officialGateway: OfficialGatewayDto? = null,
     @SerializedName("error") val error: String? = null
 )

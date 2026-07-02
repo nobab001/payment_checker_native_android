@@ -84,6 +84,18 @@ app.use('/api', gatewayRoutes);
 app.use('/api', credentialRoutes);
 app.use('/api', pinRoutes);
 app.use('/api/admin', adminRoutes);
+// ── Phase 6: Payment Flow routing ──────────────────────────────────────────
+// IMPORTANT: mount the payment-flow API BEFORE billingRoutes. billingRoutes is
+// mounted at /api/v1 and applies a router-level JWT guard to every /api/v1/*
+// path; the merchant payment APIs authenticate via X-API-Key (not JWT), so they
+// must be matched first.
+const paymentFlowController = require('./controllers/paymentFlowController');
+app.use('/api/v1/pay', require('./routes/paymentFlowRoutes'));           // merchant S2S: init + status
+// Public, browser-facing checkout entry (routes to PayCheck checkout or official gateway)
+app.get('/pay/:token', paymentFlowController.redirectPayment);
+// Official gateway completion callback (accepts GET or POST from the gateway)
+app.all('/api/pay/:token/gateway-callback', paymentFlowController.officialGatewayCallback);
+
 app.use('/api/v1', billingRoutes);
 app.use('/api/v1/websites', require('./routes/websiteRoutes'));
 

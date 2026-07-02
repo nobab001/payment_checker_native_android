@@ -111,6 +111,15 @@ fun MainNavigation() {
                 online.paychek.app.ui.screen.apicenter.website.WebsiteSettingsScreen(
                     websiteId = key.websiteId,
                     onNavigateBack = { backStack.removeLastOrNull() },
+                    onOpenCheckoutNumbers = { backStack.add(NavKey.CheckoutNumbers(key.websiteId)) },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            entry<NavKey.CheckoutNumbers> { key ->
+                online.paychek.app.ui.screen.apicenter.website.CheckoutNumbersScreen(
+                    websiteId = key.websiteId,
+                    onNavigateBack = { backStack.removeLastOrNull() },
                     modifier = Modifier.fillMaxSize()
                 )
             }

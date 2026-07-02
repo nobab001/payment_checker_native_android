@@ -4,9 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Paychek Gateway — পেমেন্ট চেকআউট</title>
-    <!-- Modern Outfits & Inter typography -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Hind+Siliguri:wght@400;600;700&display=swap" rel="stylesheet">
-    
+
     <style>
         :root {
             --royal-indigo: #1A237E;
@@ -21,11 +20,7 @@
             --text-secondary: #64748b;
         }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
             font-family: 'Hind Siliguri', 'Outfit', sans-serif;
@@ -56,25 +51,10 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
-        /* Header styling */
-        .gateway-header {
-            text-align: center;
-            margin-bottom: 24px;
-        }
+        .gateway-header { text-align: center; margin-bottom: 24px; }
+        .gateway-header h1 { font-size: 24px; font-weight: 800; color: var(--royal-indigo); margin-bottom: 4px; }
+        .gateway-header p { font-size: 13px; color: var(--text-secondary); }
 
-        .gateway-header h1 {
-            font-size: 24px;
-            font-weight: 800;
-            color: var(--royal-indigo);
-            margin-bottom: 4px;
-        }
-
-        .gateway-header p {
-            font-size: 13px;
-            color: var(--text-secondary);
-        }
-
-        /* Order Amount Info Card */
         .order-card {
             background: rgba(26, 35, 126, 0.05);
             border-radius: 16px;
@@ -83,23 +63,9 @@
             margin-bottom: 24px;
             border: 1px dashed rgba(26, 35, 126, 0.15);
         }
+        .order-card span { font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+        .order-card .amount { font-size: 32px; font-weight: 800; color: var(--royal-indigo); margin-top: 4px; }
 
-        .order-card span {
-            font-size: 13px;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            font-weight: 600;
-        }
-
-        .order-card .amount {
-            font-size: 32px;
-            font-weight: 800;
-            color: var(--royal-indigo);
-            margin-top: 4px;
-        }
-
-        /* Verification Form Card */
         .verify-card {
             background: white;
             border-radius: 18px;
@@ -109,18 +75,8 @@
             margin-bottom: 24px;
         }
 
-        .input-group {
-            margin-bottom: 16px;
-        }
-
-        .input-group label {
-            display: block;
-            font-size: 13px;
-            font-weight: 700;
-            color: var(--text-secondary);
-            margin-bottom: 6px;
-        }
-
+        .input-group { margin-bottom: 16px; }
+        .input-group label { display: block; font-size: 13px; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px; }
         .input-group input {
             width: 100%;
             height: 48px;
@@ -132,11 +88,7 @@
             outline: none;
             transition: all 0.3s;
         }
-
-        .input-group input:focus {
-            border-color: var(--royal-indigo);
-            box-shadow: 0 0 0 4px rgba(26, 35, 126, 0.1);
-        }
+        .input-group input:focus { border-color: var(--royal-indigo); box-shadow: 0 0 0 4px rgba(26, 35, 126, 0.1); }
 
         .btn-verify {
             width: 100%;
@@ -154,17 +106,10 @@
             justify-content: center;
             gap: 8px;
         }
+        .btn-verify:hover { opacity: 0.95; transform: translateY(-1px); }
+        .btn-verify:active { transform: translateY(0); }
+        .btn-verify:disabled { opacity: 0.6; cursor: not-allowed; }
 
-        .btn-verify:hover {
-            opacity: 0.95;
-            transform: translateY(-1px);
-        }
-
-        .btn-verify:active {
-            transform: translateY(0);
-        }
-
-        /* Status notification panels */
         .status-box {
             display: none;
             padding: 14px;
@@ -175,48 +120,16 @@
             text-align: center;
             animation: slideDown 0.3s ease-out;
         }
-
         @keyframes slideDown {
             from { opacity: 0; transform: translateY(-10px); }
             to { opacity: 1; transform: translateY(0); }
         }
+        .status-box.success { display: block; background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
+        .status-box.error { display: block; background: #ffebee; color: #c62828; border: 1px solid #ffcdd2; }
+        .status-box.loading { display: block; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
 
-        .status-box.success {
-            display: block;
-            background: #e8f5e9;
-            color: #2e7d32;
-            border: 1px solid #c8e6c9;
-        }
-
-        .status-box.error {
-            display: block;
-            background: #ffebee;
-            color: #c62828;
-            border: 1px solid #ffcdd2;
-        }
-
-        .status-box.loading {
-            display: block;
-            background: #f1f5f9;
-            color: #475569;
-            border: 1px solid #cbd5e1;
-        }
-
-        /* Operator Instructions */
-        .instructions-title {
-            font-size: 14px;
-            font-weight: 700;
-            color: var(--text-secondary);
-            margin-bottom: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .instructions-list {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
+        .instructions-title { font-size: 14px; font-weight: 700; color: var(--text-secondary); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .instructions-list { display: flex; flex-direction: column; gap: 12px; }
 
         .operator-card {
             border-radius: 16px;
@@ -229,34 +142,11 @@
             gap: 8px;
             transition: all 0.3s;
         }
-
-        .operator-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.03);
-        }
-
-        .operator-header {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .operator-badge {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-        }
-
-        .operator-name {
-            font-size: 16px;
-            font-weight: 700;
-        }
-
-        .operator-details {
-            font-size: 13px;
-            color: var(--text-secondary);
-            line-height: 1.5;
-        }
+        .operator-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.03); }
+        .operator-header { display: flex; align-items: center; gap: 10px; }
+        .operator-badge { width: 12px; height: 12px; border-radius: 50%; }
+        .operator-name { font-size: 16px; font-weight: 700; }
+        .operator-details { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
 
         .phone-highlight {
             font-size: 16px;
@@ -266,9 +156,31 @@
             padding: 4px 8px;
             border-radius: 6px;
             display: inline-block;
-            margin-top: 4px;
             border: 1px solid #e2e8f0;
         }
+
+        .copy-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+        .btn-copy {
+            border: 1px solid #e2e8f0; background: #fff; border-radius: 8px;
+            padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer;
+            color: var(--royal-indigo); transition: all .2s;
+        }
+        .btn-copy:hover { background: #f1f5f9; }
+        .merchant-logo { max-height: 40px; margin-bottom: 8px; }
+
+        .vibe-step { text-align: center; }
+        .hint { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
+        .hidden { display: none !important; }
+        .vibe-waiting {
+            display:flex; align-items:center; justify-content:center; gap:10px;
+            background:#f1f5f9; border:1px solid #cbd5e1; border-radius:12px;
+            padding:14px; margin-top:14px; color:#475569; font-weight:600; font-size:14px;
+        }
+        .spinner {
+            width:18px; height:18px; border:3px solid #cbd5e1; border-top-color: var(--royal-indigo);
+            border-radius:50%; animation: spin 0.8s linear infinite; flex: 0 0 auto;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -276,8 +188,9 @@
     <div class="checkout-container">
         <!-- Header -->
         <div class="gateway-header">
+            <img id="merchant-logo" class="merchant-logo hidden" alt="logo">
             <h1 id="merchant-name">পেমেন্ট গেটওয়ে</h1>
-            <p>নিরাপদে ট্রানজেকশন আইডি ভেরিফাই করুন</p>
+            <p id="merchant-tagline">নিরাপদে পেমেন্ট সম্পন্ন করুন</p>
         </div>
 
         <!-- Amount Display -->
@@ -286,172 +199,230 @@
             <div class="amount">৳ <span id="payment-amount">0.00</span></div>
         </div>
 
-        <!-- Input Verification Panel -->
-        <div class="verify-card">
+        <!-- Merchant Vibe Mode: customer number pre-step -->
+        <div id="vibe-step" class="verify-card vibe-step hidden">
             <div class="input-group">
-                <label for="trx-input">ট্রানজেকশন আইডি (TrxID) দিন</label>
-                <input type="text" id="trx-input" placeholder="যেমন: 8A47K89J2B" autocomplete="off">
+                <label for="vibe-number">আপনি যে নাম্বার থেকে টাকা পাঠাবেন সেই নাম্বারটি লিখুন</label>
+                <input type="tel" id="vibe-number" placeholder="01XXXXXXXXX" maxlength="11" autocomplete="off">
             </div>
-            
-            <button class="btn-verify" id="verify-btn" onclick="triggerVerification()">
-                ভেরিফাই পেমেন্ট
-            </button>
-
-            <!-- Loading/Success/Error Panel -->
-            <div id="status-panel" class="status-box"></div>
+            <button class="btn-verify" id="vibe-start-btn" onclick="startVibe()">চেকআউটে যান</button>
+            <div class="hint">আপনি এই নাম্বার থেকে পেমেন্ট করলে স্বয়ংক্রিয়ভাবে ম্যাচ হয়ে যাবে।</div>
+            <div id="vibe-step-status" class="status-box"></div>
         </div>
 
-        <!-- Dynamic Payment Instructions -->
-        <div class="instructions-title">নিচের যেকোনো একটি মেথডে পে করুন</div>
-        <div class="instructions-list" id="instructions-container">
-            <!-- Loaded dynamically in sequence -->
-            <div style="text-align: center; color: var(--text-secondary); font-size: 13px; padding: 20px;">
-                পেমেন্ট মেথডগুলো লোড হচ্ছে...
+        <!-- Main checkout -->
+        <div id="checkout-main" class="hidden">
+            <div class="verify-card">
+                <div class="input-group">
+                    <label for="trx-input" id="trx-label">ট্রানজেকশন আইডি (TrxID) দিন</label>
+                    <input type="text" id="trx-input" placeholder="যেমন: 8A47K89J2B" autocomplete="off">
+                </div>
+
+                <button class="btn-verify" id="verify-btn" onclick="triggerVerification()">
+                    ভেরিফাই পেমেন্ট
+                </button>
+
+                <div id="vibe-waiting" class="vibe-waiting hidden">
+                    <div class="spinner"></div>
+                    <span>পেমেন্টের জন্য অপেক্ষা করা হচ্ছে... টাকা এলে স্বয়ংক্রিয়ভাবে নিশ্চিত হবে।</span>
+                </div>
+
+                <div id="status-panel" class="status-box"></div>
+            </div>
+
+            <div class="instructions-title">নিচের যেকোনো একটি মেথডে পে করুন</div>
+            <div class="instructions-list" id="instructions-container">
+                <div style="text-align: center; color: var(--text-secondary); font-size: 13px; padding: 20px;">
+                    পেমেন্ট মেথডগুলো লোড হচ্ছে...
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        // Parse URL search queries
         const urlParams = new URLSearchParams(window.location.search);
         const apiKey = urlParams.get('apiKey');
         const amount = urlParams.get('amount') || '0.00';
+        const sessionToken = urlParams.get('session') || null;
+
+        let checkoutMode = 'transaction';
+        let vibeRequestId = null;
+        let vibePollTimer = null;
+        let successUrl = null;
+        let cancelUrl = null;
 
         document.getElementById('payment-amount').textContent = parseFloat(amount).toFixed(2);
 
-        // Fetch Layout Config on boot
+        const PROVIDER_COLORS = {
+            bkash: 'var(--bkash-pink)', nagad: 'var(--nagad-orange)',
+            rocket: 'var(--rocket-purple)', upay: 'var(--upay-teal)'
+        };
+
         async function fetchLayout() {
             if (!apiKey) {
-                showStatus('ভুল এপিআই কী (API Key)! চেকআউট লোড করা সম্ভব নয়।', 'error');
+                showStatus('ভুল এপিআই কী (API Key)! চেকআউট লোড করা সম্ভব নয়।', 'error');
+                document.getElementById('checkout-main').classList.remove('hidden');
                 return;
             }
-
             try {
                 const response = await fetch(`/api/checkout/${apiKey}`);
-                if (!response.ok) {
-                    throw new Error('মার্চেন্ট তথ্য লোড ব্যর্থ হয়েছে।');
+                if (!response.ok) throw new Error('মার্চেন্ট তথ্য লোড ব্যর্থ হয়েছে।');
+                const data = await response.json();
+
+                checkoutMode = data.checkoutMode || 'transaction';
+                successUrl = data.successUrl || data.redirectUrl || null;
+                cancelUrl = data.cancelUrl || null;
+
+                document.getElementById('merchant-name').textContent =
+                    data.companyName || data.siteName || 'পেমেন্ট গেটওয়ে';
+                if (data.logoUrl) {
+                    const logo = document.getElementById('merchant-logo');
+                    logo.src = data.logoUrl;
+                    logo.classList.remove('hidden');
                 }
 
-                const data = await response.json();
-                
-                // Update Merchant site Name
-                document.getElementById('merchant-name').textContent = data.siteName || 'পেমেন্ট গেটওয়ে';
+                renderPaymentBlocks(data.activeGateways || []);
 
-                // Draw Layout blocks in exact order
-                renderPaymentBlocks(data.layoutConfig, data.simConfig);
-
+                if (checkoutMode === 'merchant_vibe') {
+                    document.getElementById('vibe-step').classList.remove('hidden');
+                    document.getElementById('merchant-tagline').textContent =
+                        'পেমেন্ট নাম্বার দিন — টাকা এলে স্বয়ংক্রিয়ভাবে নিশ্চিত হবে';
+                } else {
+                    document.getElementById('checkout-main').classList.remove('hidden');
+                }
             } catch (err) {
                 console.error(err);
-                showStatus('মার্চেন্ট গেটওয়ে লেআউট লোড করতে ব্যর্থ হয়েছে।', 'error');
-                document.getElementById('instructions-container').innerHTML = 
-                    `<div style="text-align:center;color:#c62828;font-size:13px;padding:20px;">মার্চেন্ট সেটিংস ইনঅ্যাক্টিভ বা নেটওয়ার্ক সংযোগ ব্যর্থ।</div>`;
+                document.getElementById('checkout-main').classList.remove('hidden');
+                showStatus('মার্চেন্ট গেটওয়ে লেআউট লোড করতে ব্যর্থ হয়েছে।', 'error');
+                document.getElementById('instructions-container').innerHTML =
+                    `<div style="text-align:center;color:#c62828;font-size:13px;padding:20px;">মার্চেন্ট সেটিংস ইনঅ্যাক্টিভ বা নেটওয়ার্ক সংযোগ ব্যর্থ।</div>`;
             }
         }
 
-        function renderPaymentBlocks(blocks, simConfig) {
+        function renderPaymentBlocks(gateways) {
             const container = document.getElementById('instructions-container');
             container.innerHTML = '';
-
-            // Filter only enabled blocks
-            const activeBlocks = blocks.filter(b => b.isEnabled);
-
-            if (activeBlocks.length === 0) {
-                container.innerHTML = `<div style="text-align:center;color:var(--text-secondary);font-size:13px;padding:20px;">কোনো পেমেন্ট মেথড সক্রিয় নেই।</div>`;
+            if (!gateways || gateways.length === 0) {
+                container.innerHTML = `<div style="text-align:center;color:var(--text-secondary);font-size:13px;padding:20px;">কোনো পেমেন্ট মেথড সক্রিয় নেই।</div>`;
                 return;
             }
-
-            activeBlocks.forEach(block => {
+            gateways.forEach(g => {
+                const tag = (g.provider || '').toLowerCase();
+                const badgeColor = PROVIDER_COLORS[tag] || '#cbd5e1';
+                const instruction = g.instruction ||
+                    'উপরের নাম্বারে <strong>Send Money</strong> করুন। এরপর ফিরতি এসএমএস থেকে TrxID কপি করে ভেরিফাই করুন।';
                 const card = document.createElement('div');
                 card.className = 'operator-card';
-
-                // Color mapping
-                let badgeColor = '#cbd5e1';
-                let instructions = '';
-                let number = '';
-
-                const tag = block.providerTag.toLowerCase();
-                if (tag === 'bkash') {
-                    badgeColor = 'var(--bkash-pink)';
-                    number = (simConfig && simConfig.sim1Operator === 'bKash') ? simConfig.sim1Number : 
-                             (simConfig && simConfig.sim2Operator === 'bKash') ? simConfig.sim2Number : '017XXXXXXXX';
-                    instructions = 'বিকাশ অ্যাপ বা USSD (*247#) দিয়ে <strong>Send Money</strong> করুন। পেমেন্ট সম্পন্ন হলে ফিরতি এসএমএস থেকে TrxID কপি করে উপরে ভেরিফাই করুন।';
-                } else if (tag === 'nagad') {
-                    badgeColor = 'var(--nagad-orange)';
-                    number = (simConfig && simConfig.sim1Operator === 'Nagad') ? simConfig.sim1Number : 
-                             (simConfig && simConfig.sim2Operator === 'Nagad') ? simConfig.sim2Number : '018XXXXXXXX';
-                    instructions = 'নগদ অ্যাপ বা USSD (*167#) দিয়ে <strong>Send Money</strong> করুন। পেমেন্ট সম্পন্ন হলে ফিরতি এসএমএস থেকে TrxID কপি করে উপরে ভেরিফাই করুন।';
-                } else if (tag === 'rocket') {
-                    badgeColor = 'var(--rocket-purple)';
-                    number = (simConfig && simConfig.sim1Operator === 'Rocket') ? simConfig.sim1Number : 
-                             (simConfig && simConfig.sim2Operator === 'Rocket') ? simConfig.sim2Number : '019XXXXXXXX';
-                    instructions = 'রকেট অ্যাপ বা USSD (*322#) দিয়ে <strong>Send Money</strong> করুন। পেমেন্ট সম্পন্ন হলে ফিরতি এসএমএস থেকে TrxID কপি করে উপরে ভেরিফাই করুন।';
-                } else if (tag === 'upay') {
-                    badgeColor = 'var(--upay-teal)';
-                    number = (simConfig && simConfig.sim1Operator === 'Upay') ? simConfig.sim1Number : 
-                             (simConfig && simConfig.sim2Operator === 'Upay') ? simConfig.sim2Number : '016XXXXXXXX';
-                    instructions = 'উপায় অ্যাপ বা USSD (*268#) দিয়ে <strong>Send Money</strong> করুন। পেমেন্ট সম্পন্ন হলে ফিরতি এসএমএস থেকে TrxID কপি করে উপরে ভেরিফাই করুন।';
-                } else {
-                    instructions = 'নির্ধারিত অপারেটরে সেন্ড মানি করুন।';
-                }
-
                 card.innerHTML = `
                     <div class="operator-header">
                         <span class="operator-badge" style="background:${badgeColor}"></span>
-                        <span class="operator-name" style="color:${badgeColor}">${block.name}</span>
+                        <span class="operator-name" style="color:${badgeColor}">${g.displayName || g.provider}</span>
                     </div>
-                    <div class="operator-details">
-                        ${instructions}<br>
-                        <span class="phone-highlight">নম্বর: ${number} (Personal)</span>
+                    <div class="operator-details">${instruction}</div>
+                    <div class="copy-row">
+                        <span class="phone-highlight">${g.number}</span>
+                        <button class="btn-copy" onclick="copyNumber('${g.number}', this)">কপি</button>
                     </div>
                 `;
                 container.appendChild(card);
             });
         }
 
-        // Trigger payment verification
+        function copyNumber(number, btn) {
+            navigator.clipboard.writeText(number).then(() => {
+                const old = btn.textContent;
+                btn.textContent = 'কপি হয়েছে ✓';
+                setTimeout(() => { btn.textContent = old; }, 1500);
+            }).catch(() => {});
+        }
+
+        // ── Merchant Vibe Mode ──────────────────────────────────────────────
+        async function startVibe() {
+            const numberInput = document.getElementById('vibe-number').value.trim();
+            const startBtn = document.getElementById('vibe-start-btn');
+            const norm = numberInput.replace(/\D/g, '').replace(/^880/, '').slice(-11);
+            if (norm.length !== 11) {
+                showVibeStepStatus('সঠিক ১১-সংখ্যার নাম্বার দিন।', 'error');
+                return;
+            }
+            startBtn.disabled = true;
+            showVibeStepStatus('চেকআউট প্রস্তুত করা হচ্ছে...', 'loading');
+            try {
+                const r = await fetch(`/api/checkout/${apiKey}/vibe-init`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ customerNumber: norm, amount: parseFloat(amount) })
+                });
+                const res = await r.json();
+                if (!res.success) {
+                    showVibeStepStatus(res.error || 'চেকআউট শুরু করা যায়নি।', 'error');
+                    startBtn.disabled = false;
+                    return;
+                }
+                vibeRequestId = res.requestId;
+                document.getElementById('vibe-step').classList.add('hidden');
+                document.getElementById('checkout-main').classList.remove('hidden');
+                document.getElementById('vibe-waiting').classList.remove('hidden');
+                document.getElementById('trx-label').textContent = 'ম্যাচ না হলে TrxID দিয়ে ভেরিফাই করুন (ঐচ্ছিক)';
+                startVibePolling();
+            } catch (err) {
+                showVibeStepStatus('সার্ভার সংযোগ ত্রুটি।', 'error');
+                startBtn.disabled = false;
+            }
+        }
+
+        function startVibePolling() {
+            if (vibePollTimer) clearInterval(vibePollTimer);
+            vibePollTimer = setInterval(async () => {
+                if (!vibeRequestId) return;
+                try {
+                    const r = await fetch(`/api/checkout/vibe-status/${vibeRequestId}`);
+                    const res = await r.json();
+                    if (res.status === 'matched') {
+                        stopVibePolling();
+                        document.getElementById('vibe-waiting').classList.add('hidden');
+                        showStatus('পেমেন্ট স্বয়ংক্রিয়ভাবে নিশ্চিত হয়েছে! ✓', 'success');
+                        redirectSuccess(res.trxId);
+                    } else if (res.status === 'expired') {
+                        stopVibePolling();
+                        document.getElementById('vibe-waiting').classList.add('hidden');
+                        showStatus('সময় শেষ। অনুগ্রহ করে TrxID দিয়ে ভেরিফাই করুন।', 'error');
+                    }
+                } catch (e) { /* transient — keep polling */ }
+            }, 4000);
+        }
+        function stopVibePolling() { if (vibePollTimer) { clearInterval(vibePollTimer); vibePollTimer = null; } }
+
+        function redirectSuccess(trxId) {
+            if (!successUrl) return;
+            const sep = successUrl.includes('?') ? '&' : '?';
+            const url = `${successUrl}${sep}trxId=${encodeURIComponent(trxId || '')}&amount=${encodeURIComponent(amount)}&status=success`;
+            setTimeout(() => { window.location.href = url; }, 2000);
+        }
+
+        // ── Transaction Mode / Vibe fallback: TrxID verify ──────────────────
         async function triggerVerification() {
             const trxInput = document.getElementById('trx-input').value.trim();
             const verifyBtn = document.getElementById('verify-btn');
+            if (!trxInput) { showStatus('অনুগ্রহ করে ট্রানজেকশন আইডি (TrxID) লিখুন।', 'error'); return; }
+            if (!apiKey) { showStatus('মার্চেন্ট কী অনুপস্থিত!', 'error'); return; }
 
-            if (!trxInput) {
-                showStatus('অনুগ্রহ করে ট্রানজেকশন আইডি (TrxID) লিখুন।', 'error');
-                return;
-            }
-
-            if (!apiKey) {
-                showStatus('মার্চেন্ট কী অনুপস্থিত!', 'error');
-                return;
-            }
-
-            // Lock UI
             verifyBtn.disabled = true;
             showStatus('পেমেন্ট যাচাই করা হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন...', 'loading');
-
             try {
                 const response = await fetch('/api/checkout/verify', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        apiKey: apiKey,
-                        trxId: trxInput,
-                        amount: parseFloat(amount)
-                    })
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ apiKey, trxId: trxInput, amount: parseFloat(amount), session: sessionToken })
                 });
-
                 const res = await response.json();
-                
                 if (res.success) {
+                    stopVibePolling();
+                    document.getElementById('vibe-waiting').classList.add('hidden');
                     showStatus(res.message, 'success');
-                    if (res.redirectUrl) {
-                        setTimeout(() => {
-                            window.location.href = res.redirectUrl;
-                        }, 2000);
-                    }
+                    if (res.redirectUrl) setTimeout(() => { window.location.href = res.redirectUrl; }, 2000);
                 } else {
-                    showStatus(res.message || 'ভেরিফিকেশন ব্যর্থ হয়েছে। ট্রানজেকশন আইডি সঠিক দিন।', 'error');
+                    showStatus(res.message || 'ভেরিফিকেশন ব্যর্থ হয়েছে। ট্রানজেকশন আইডি সঠিক দিন।', 'error');
                     verifyBtn.disabled = false;
                 }
-
             } catch (err) {
                 console.error(err);
                 showStatus('সার্ভার সংযোগ ত্রুটি। আবার চেষ্টা করুন।', 'error');
@@ -464,8 +435,12 @@
             panel.className = `status-box ${type}`;
             panel.textContent = text;
         }
+        function showVibeStepStatus(text, type) {
+            const panel = document.getElementById('vibe-step-status');
+            panel.className = `status-box ${type}`;
+            panel.textContent = text;
+        }
 
-        // Run fetch on load
         window.onload = fetchLayout;
     </script>
 </body>

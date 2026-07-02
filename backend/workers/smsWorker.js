@@ -5,6 +5,7 @@ const dataSyncCache = require('../services/dataSyncCache');
 const crypto = require('crypto');
 const { verifyHmac } = require('../utils/verifyHmac');
 const { parseRawSms } = require('../utils/parseRawSms');
+const checkoutController = require('../controllers/checkoutController');
 
 function sha256(data) {
   return crypto.createHash('sha256').update(data, 'utf8').digest('hex');
@@ -84,8 +85,9 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
   const finalTrxId = parsed.trxId || `RAW_${rawBodyHash.substring(0, 20)}`;
   const dedupeKey = `${smsTimestamp}|${parsed.senderNumber || ''}|${rawBodyHash}`;
 
+  let savedHistory;
   try {
-    await prisma.sms_history.create({
+    savedHistory = await prisma.sms_history.create({
       data: {
         user_id: userId,
         device_id: deviceId,
@@ -103,7 +105,8 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
         raw_sms_sha256: rawBodyHash,
         is_synced: 1,
         is_used: 0
-      }
+      },
+      select: { id: true, amount: true, trx_id: true, provider_tag: true, sender_number: true, sms_timestamp: true }
     });
   } catch (dbErr) {
     if (dbErr.code === 'P2002') {
@@ -114,6 +117,14 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
   }
 
   await dataSyncCache.bumpUserHistoryVersion(userId);
+
+  // Merchant Vibe Mode: try to auto-match a waiting checkout request. Never
+  // let a callback failure fail the ingest job.
+  try {
+    await checkoutController.matchVibeForHistory(userId, savedHistory);
+  } catch (vibeErr) {
+    console.error('[WORKER] Vibe match error:', vibeErr.message);
+  }
 
   return { success: true, isDuplicate: false };
 

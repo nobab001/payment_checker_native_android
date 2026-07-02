@@ -194,28 +194,381 @@ if not hmac.compare_digest(expected, signature):
         )
     )
 
-    // ── Remaining languages: structured skeletons completed in Phase 3 ────────
-    private fun genericSkeleton(id: String, name: String, installNote: String) = DocLanguage(
-        id = id, name = name,
+    private fun laravel() = DocLanguage(
+        id = "laravel", name = "Laravel",
         sections = listOf(
-            DocSection("1. Installation", installNote),
-            DocSection("2. Sample Code", "গ্রাহককে $BASE/checkout.html?apiKey=pk_xxxx&amount=... এ রিডাইরেক্ট করুন।"),
-            DocSection("3. API Example", "POST $BASE/api/transactions/claim-check — body: { apiKey, trxId, amount }"),
-            DocSection("4. Callback Example", "Success URL query params: trxId, amount, status।"),
-            DocSection("5. Webhook Example", "PayCheck আপনার webhook_url-এ JSON POST করবে: { trxId, amount, provider, status, payment_type?, commission? }"),
-            DocSection("6. Security Example", "X-Paychek-Signature হেডারের HMAC-SHA256 আপনার Secret Key দিয়ে যাচাই করুন।"),
-            DocSection("7. Error Handling Example", "HTTP 404 = not found, 429 = rate limited (retry), 401 = signature mismatch।")
+            DocSection("1. Installation", "Guzzle HTTP client ইনস্টল করুন (Laravel HTTP facade-এও ব্যবহার করা যায়)।", "composer require guzzlehttp/guzzle"),
+            DocSection(
+                "2. Sample Code", "Controller থেকে checkout-এ রিডাইরেক্ট।",
+                """// routes/web.php
+Route::post('/pay', [PaymentController::class, 'start']);
+
+// PaymentController.php
+public function start(Request ${'$'}request) {
+    ${'$'}url = "$BASE/checkout.html?apiKey=".config('paychek.api_key')
+          ."&amount=".${'$'}request->amount;
+    return redirect()->away(${'$'}url);
+}"""
+            ),
+            DocSection(
+                "3. API Example", "Laravel HTTP client দিয়ে claim-check।",
+                """use Illuminate\Support\Facades\Http;
+
+${'$'}res = Http::post('$BASE/api/transactions/claim-check', [
+    'apiKey' => config('paychek.api_key'),
+    'trxId'  => ${'$'}trxId,
+    'amount' => ${'$'}amount,
+])->json();"""
+            ),
+            DocSection(
+                "4. Callback Example", "Success রিডাইরেক্ট route।",
+                """Route::get('/payment/success', function (Request ${'$'}r) {
+    ${'$'}order->update(['status' => 'paid', 'trx_id' => ${'$'}r->query('trxId')]);
+    return view('thankyou');
+});"""
+            ),
+            DocSection(
+                "5. Webhook Example", "Webhook controller (CSRF ছাড় দিন VerifyCsrfToken-এ)।",
+                """Route::post('/paychek/webhook', function (Request ${'$'}r) {
+    ${'$'}data = ${'$'}r->all(); // trxId, amount, provider, payment_type?, commission?
+    // process...
+    return response()->json(['ok' => true], 200);
+});"""
+            ),
+            DocSection(
+                "6. Security Example", "HMAC signature middleware।",
+                """${'$'}raw = ${'$'}request->getContent();
+${'$'}expected = hash_hmac('sha256', ${'$'}raw, config('paychek.secret'));
+abort_unless(hash_equals(${'$'}expected, ${'$'}request->header('X-Paychek-Signature')), 401);"""
+            ),
+            DocSection(
+                "7. Error Handling Example", "Http client exception হ্যান্ডলিং।",
+                """${'$'}response = Http::retry(3, 200)->post(${'$'}url, ${'$'}payload);
+if (${'$'}response->status() === 429) { /* backoff */ }
+if (${'$'}response->failed()) { Log::error(${'$'}response->body()); }"""
+            )
         )
     )
 
-    private fun laravel() = genericSkeleton("laravel", "Laravel", "composer require guzzlehttp/guzzle")
-    private fun django() = genericSkeleton("django", "Django", "pip install django requests")
-    private fun java() = genericSkeleton("java", "Java", "implementation 'com.squareup.okhttp3:okhttp:4.12.0'")
-    private fun kotlin() = genericSkeleton("kotlin", "Kotlin", "implementation 'com.squareup.retrofit2:retrofit:2.11.0'")
-    private fun aspNet() = genericSkeleton("aspnet", "ASP.NET", "dotnet add package Newtonsoft.Json")
-    private fun go() = genericSkeleton("go", "Go", "go get github.com/go-resty/resty/v2")
-    private fun react() = genericSkeleton("react", "React", "npm install axios")
-    private fun vue() = genericSkeleton("vue", "Vue", "npm install axios")
-    private fun nextJs() = genericSkeleton("nextjs", "Next.js", "npm install axios")
-    private fun flutter() = genericSkeleton("flutter", "Flutter", "dart pub add http")
+    private fun django() = DocLanguage(
+        id = "django", name = "Django",
+        sections = listOf(
+            DocSection("1. Installation", "requests ইনস্টল করুন।", "pip install django requests"),
+            DocSection(
+                "2. Sample Code", "checkout-এ রিডাইরেক্ট।",
+                """from django.shortcuts import redirect
+def pay(request):
+    amount = request.POST['amount']
+    return redirect(f"$BASE/checkout.html?apiKey={settings.PAYCHEK_KEY}&amount={amount}")"""
+            ),
+            DocSection(
+                "3. API Example", "claim-check।",
+                """import requests
+r = requests.post("$BASE/api/transactions/claim-check", json={
+    "apiKey": settings.PAYCHEK_KEY, "trxId": trx_id, "amount": amount
+})
+data = r.json()"""
+            ),
+            DocSection(
+                "4. Callback Example", "success view।",
+                """def success(request):
+    trx = request.GET.get('trxId')
+    Order.objects.filter(trx_id=trx).update(status='paid')
+    return render(request, 'thankyou.html')"""
+            ),
+            DocSection(
+                "5. Webhook Example", "csrf_exempt webhook।",
+                """@csrf_exempt
+def webhook(request):
+    payload = json.loads(request.body)
+    # payload['trxId'], payload['amount'], payload['payment_type']
+    return JsonResponse({'ok': True})"""
+            ),
+            DocSection(
+                "6. Security Example", "HMAC যাচাই।",
+                """import hmac, hashlib
+expected = hmac.new(settings.PAYCHEK_SECRET.encode(), request.body, hashlib.sha256).hexdigest()
+if not hmac.compare_digest(expected, request.headers.get('X-Paychek-Signature','')):
+    return HttpResponse(status=401)"""
+            ),
+            DocSection("7. Error Handling Example", "timeout ও status হ্যান্ডলিং।", "try:\n    r = requests.post(url, json=payload, timeout=10)\nexcept requests.Timeout:\n    schedule_retry()")
+        )
+    )
+
+    private fun java() = DocLanguage(
+        id = "java", name = "Java",
+        sections = listOf(
+            DocSection("1. Installation", "OkHttp dependency যোগ করুন।", "// build.gradle\nimplementation 'com.squareup.okhttp3:okhttp:4.12.0'"),
+            DocSection(
+                "2. Sample Code", "checkout URL তৈরি।",
+                """String url = "$BASE/checkout.html?apiKey=" + apiKey + "&amount=" + amount;
+response.sendRedirect(url);"""
+            ),
+            DocSection(
+                "3. API Example", "OkHttp দিয়ে claim-check।",
+                """OkHttpClient client = new OkHttpClient();
+String json = "{\"apiKey\":\"pk_xxxx\",\"trxId\":\"" + trxId + "\",\"amount\":" + amount + "}";
+Request req = new Request.Builder()
+    .url("$BASE/api/transactions/claim-check")
+    .post(RequestBody.create(json, MediaType.parse("application/json")))
+    .build();
+try (Response res = client.newCall(req).execute()) {
+    String body = res.body().string();
+}"""
+            ),
+            DocSection("4. Callback Example", "Servlet success handler।", "String trxId = request.getParameter(\"trxId\");\n// mark order paid"),
+            DocSection(
+                "5. Webhook Example", "webhook servlet।",
+                """@WebServlet("/paychek/webhook")
+public class Hook extends HttpServlet {
+  protected void doPost(HttpServletRequest req, HttpServletResponse res) throws IOException {
+    String body = req.getReader().lines().collect(Collectors.joining());
+    // parse trxId, amount, payment_type
+    res.setStatus(200);
+  }
+}"""
+            ),
+            DocSection(
+                "6. Security Example", "HMAC-SHA256 যাচাই।",
+                """Mac mac = Mac.getInstance("HmacSHA256");
+mac.init(new SecretKeySpec(secret.getBytes(), "HmacSHA256"));
+String expected = Hex.encodeHexString(mac.doFinal(rawBody.getBytes()));
+if (!MessageDigest.isEqual(expected.getBytes(), signature.getBytes())) throw new SecurityException();"""
+            ),
+            DocSection("7. Error Handling Example", "status code হ্যান্ডলিং।", "if (res.code() == 429) { Thread.sleep(500); retry(); }\nelse if (!res.isSuccessful()) { log.error(res.body().string()); }")
+        )
+    )
+
+    private fun kotlin() = DocLanguage(
+        id = "kotlin", name = "Kotlin",
+        sections = listOf(
+            DocSection("1. Installation", "Retrofit + Gson।", "implementation 'com.squareup.retrofit2:retrofit:2.11.0'\nimplementation 'com.squareup.retrofit2:converter-gson:2.11.0'"),
+            DocSection(
+                "2. Sample Code", "checkout URL।",
+                """val url = "$BASE/checkout.html?apiKey=${'$'}apiKey&amount=${'$'}amount"
+// open in browser / WebView"""
+            ),
+            DocSection(
+                "3. API Example", "Retrofit interface + call।",
+                """interface PaychekApi {
+  @POST("api/transactions/claim-check")
+  suspend fun claim(@Body body: ClaimRequest): ClaimResponse
+}
+data class ClaimRequest(val apiKey: String, val trxId: String, val amount: Double)"""
+            ),
+            DocSection("4. Callback Example", "deep link / redirect পড়া।", "val trxId = uri.getQueryParameter(\"trxId\")\nval status = uri.getQueryParameter(\"status\")"),
+            DocSection(
+                "5. Webhook Example", "Ktor webhook route (সার্ভার সাইড)।",
+                """post("/paychek/webhook") {
+    val payload = call.receive<Map<String, Any>>()
+    // payload["trxId"], payload["amount"], payload["payment_type"]
+    call.respond(HttpStatusCode.OK)
+}"""
+            ),
+            DocSection(
+                "6. Security Example", "HMAC যাচাই।",
+                """val mac = Mac.getInstance("HmacSHA256")
+mac.init(SecretKeySpec(secret.toByteArray(), "HmacSHA256"))
+val expected = mac.doFinal(rawBody.toByteArray()).joinToString("") { "%02x".format(it) }
+require(MessageDigest.isEqual(expected.toByteArray(), signature.toByteArray()))"""
+            ),
+            DocSection("7. Error Handling Example", "coroutine try/catch।", "try { api.claim(req) }\ncatch (e: HttpException) { if (e.code() == 429) retry() }")
+        )
+    )
+
+    private fun aspNet() = DocLanguage(
+        id = "aspnet", name = "ASP.NET",
+        sections = listOf(
+            DocSection("1. Installation", "HttpClient বিল্ট-ইন; JSON-এর জন্য।", "dotnet add package Newtonsoft.Json"),
+            DocSection(
+                "2. Sample Code", "checkout redirect (MVC)।",
+                """public IActionResult Pay(decimal amount) {
+    var url = ${'$'}"$BASE/checkout.html?apiKey={_cfg["Paychek:Key"]}&amount={amount}";
+    return Redirect(url);
+}"""
+            ),
+            DocSection(
+                "3. API Example", "HttpClient দিয়ে claim-check।",
+                """using var http = new HttpClient();
+var body = new { apiKey = "pk_xxxx", trxId, amount };
+var res = await http.PostAsJsonAsync("$BASE/api/transactions/claim-check", body);
+var data = await res.Content.ReadFromJsonAsync<ClaimResult>();"""
+            ),
+            DocSection("4. Callback Example", "success action।", "public IActionResult Success(string trxId, string status) {\n    // mark paid\n    return View();\n}"),
+            DocSection(
+                "5. Webhook Example", "webhook endpoint (minimal API)।",
+                """app.MapPost("/paychek/webhook", async (HttpRequest req) => {
+    var payload = await req.ReadFromJsonAsync<WebhookDto>();
+    // payload.TrxId, payload.Amount, payload.PaymentType
+    return Results.Ok();
+});"""
+            ),
+            DocSection(
+                "6. Security Example", "HMAC যাচাই।",
+                """using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
+var expected = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(rawBody))).ToLower();
+if (!CryptographicOperations.FixedTimeEquals(
+        Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(signature)))
+    return Results.Unauthorized();"""
+            ),
+            DocSection("7. Error Handling Example", "status হ্যান্ডলিং।", "if ((int)res.StatusCode == 429) await Task.Delay(500);\nres.EnsureSuccessStatusCode();")
+        )
+    )
+
+    private fun go() = DocLanguage(
+        id = "go", name = "Go",
+        sections = listOf(
+            DocSection("1. Installation", "স্ট্যান্ডার্ড net/http যথেষ্ট।", "go get github.com/go-resty/resty/v2 // ঐচ্ছিক"),
+            DocSection(
+                "2. Sample Code", "checkout redirect।",
+                """url := fmt.Sprintf("$BASE/checkout.html?apiKey=%s&amount=%.2f", apiKey, amount)
+http.Redirect(w, r, url, http.StatusFound)"""
+            ),
+            DocSection(
+                "3. API Example", "net/http দিয়ে claim-check।",
+                """body, _ := json.Marshal(map[string]any{"apiKey": apiKey, "trxId": trxId, "amount": amount})
+resp, err := http.Post("$BASE/api/transactions/claim-check",
+    "application/json", bytes.NewReader(body))
+defer resp.Body.Close()"""
+            ),
+            DocSection("4. Callback Example", "success handler।", "func success(w http.ResponseWriter, r *http.Request) {\n    trxId := r.URL.Query().Get(\"trxId\")\n    _ = trxId // mark paid\n}"),
+            DocSection(
+                "5. Webhook Example", "webhook handler।",
+                """func webhook(w http.ResponseWriter, r *http.Request) {
+    var p map[string]any
+    json.NewDecoder(r.Body).Decode(&p)
+    // p["trxId"], p["amount"], p["payment_type"]
+    w.WriteHeader(http.StatusOK)
+}"""
+            ),
+            DocSection(
+                "6. Security Example", "HMAC যাচাই।",
+                """mac := hmac.New(sha256.New, []byte(secret))
+mac.Write(rawBody)
+expected := hex.EncodeToString(mac.Sum(nil))
+if !hmac.Equal([]byte(expected), []byte(signature)) {
+    http.Error(w, "unauthorized", 401); return
+}"""
+            ),
+            DocSection("7. Error Handling Example", "status চেক ও retry।", "if resp.StatusCode == 429 {\n    time.Sleep(500 * time.Millisecond); /* retry */\n}")
+        )
+    )
+
+    private fun react() = DocLanguage(
+        id = "react", name = "React",
+        sections = listOf(
+            DocSection("1. Installation", "axios (বা fetch)।", "npm install axios"),
+            DocSection(
+                "2. Sample Code", "checkout-এ রিডাইরেক্ট (সার্ভার থেকে URL নিন)।",
+                """async function pay(amount) {
+  const { data } = await axios.post('/api/create-order', { amount });
+  window.location.href = data.checkoutUrl; // "$BASE/checkout.html?apiKey=..."
+}"""
+            ),
+            DocSection(
+                "3. API Example", "⚠ claim-check সবসময় ব্যাকএন্ডে করুন — Secret ফ্রন্টএন্ডে রাখবেন না।",
+                """// frontend শুধু নিজের ব্যাকএন্ডে কথা বলবে
+const res = await axios.post('/api/verify', { trxId, amount });"""
+            ),
+            DocSection("4. Callback Example", "success পেজে query param পড়া।", "const params = new URLSearchParams(window.location.search);\nconst trxId = params.get('trxId');"),
+            DocSection("5. Webhook Example", "Webhook সবসময় সার্ভার-সাইড (React SPA-তে webhook receive হয় না)। আপনার Node/Express ব্যাকএন্ডে receive করুন।"),
+            DocSection("6. Security Example", "API Key public হতে পারে; Secret কখনো ব্রাউজারে নয়। সব verify/HMAC ব্যাকএন্ডে।"),
+            DocSection("7. Error Handling Example", "UI error state।", "try { await pay(amount) }\ncatch (e) { setError(e.response?.data?.message ?? 'Payment failed') }")
+        )
+    )
+
+    private fun vue() = DocLanguage(
+        id = "vue", name = "Vue",
+        sections = listOf(
+            DocSection("1. Installation", "axios।", "npm install axios"),
+            DocSection(
+                "2. Sample Code", "checkout redirect।",
+                """async function pay(amount) {
+  const { data } = await axios.post('/api/create-order', { amount });
+  window.location.href = data.checkoutUrl;
+}"""
+            ),
+            DocSection("3. API Example", "⚠ verify সবসময় ব্যাকএন্ডে।", "const res = await axios.post('/api/verify', { trxId, amount });"),
+            DocSection("4. Callback Example", "success route param।", "const trxId = new URLSearchParams(location.search).get('trxId')"),
+            DocSection("5. Webhook Example", "Webhook সার্ভার-সাইডে। Vue SPA থেকে নয়।"),
+            DocSection("6. Security Example", "Secret Key কখনো client bundle-এ রাখবেন না।"),
+            DocSection("7. Error Handling Example", "ref error দেখান।", "try { await pay(a) } catch (e) { error.value = e.message }")
+        )
+    )
+
+    private fun nextJs() = DocLanguage(
+        id = "nextjs", name = "Next.js",
+        sections = listOf(
+            DocSection("1. Installation", "axios (server actions/route handlers-এ)।", "npm install axios"),
+            DocSection(
+                "2. Sample Code", "Route handler থেকে checkout URL।",
+                """// app/api/create-order/route.ts
+export async function POST(req: Request) {
+  const { amount } = await req.json();
+  const url = `$BASE/checkout.html?apiKey=${'$'}{process.env.PAYCHEK_KEY}&amount=${'$'}{amount}`;
+  return Response.json({ checkoutUrl: url });
+}"""
+            ),
+            DocSection(
+                "3. API Example", "server-side claim-check (Secret env-এ)।",
+                """// app/api/verify/route.ts
+const r = await fetch('$BASE/api/transactions/claim-check', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ apiKey: process.env.PAYCHEK_KEY, trxId, amount })
+});"""
+            ),
+            DocSection("4. Callback Example", "success page searchParams।", "export default function Success({ searchParams }) {\n  return <p>Paid: {searchParams.trxId}</p>;\n}"),
+            DocSection(
+                "5. Webhook Example", "webhook route handler।",
+                """// app/api/paychek/webhook/route.ts
+export async function POST(req: Request) {
+  const raw = await req.text();
+  const payload = JSON.parse(raw); // trxId, amount, payment_type
+  return new Response('ok', { status: 200 });
+}"""
+            ),
+            DocSection(
+                "6. Security Example", "HMAC যাচাই (Node crypto)।",
+                """import crypto from 'crypto';
+const expected = crypto.createHmac('sha256', process.env.PAYCHEK_SECRET!)
+  .update(raw).digest('hex');
+const sig = req.headers.get('x-paychek-signature') || '';
+if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig)))
+  return new Response('unauthorized', { status: 401 });"""
+            ),
+            DocSection("7. Error Handling Example", "route handler try/catch।", "try { /* verify */ }\ncatch (e) { return Response.json({ error: 'failed' }, { status: 500 }) }")
+        )
+    )
+
+    private fun flutter() = DocLanguage(
+        id = "flutter", name = "Flutter",
+        sections = listOf(
+            DocSection("1. Installation", "http + url_launcher (Backend example অংশে সার্ভার সাইড দেখুন)।", "dart pub add http url_launcher"),
+            DocSection(
+                "2. Sample Code", "checkout WebView/browser খুলুন।",
+                """final url = Uri.parse('$BASE/checkout.html?apiKey=${'$'}apiKey&amount=${'$'}amount');
+await launchUrl(url, mode: LaunchMode.externalApplication);"""
+            ),
+            DocSection(
+                "3. API Example", "⚠ claim-check আপনার Backend-এ করুন। Flutter শুধু নিজের backend কল করবে।",
+                """final res = await http.post(
+  Uri.parse('https://your-backend.com/verify'),
+  headers: {'Content-Type': 'application/json'},
+  body: jsonEncode({'trxId': trxId, 'amount': amount}),
+);"""
+            ),
+            DocSection("4. Callback Example", "deep link দিয়ে success ধরুন।", "// app_links / uni_links প্যাকেজ দিয়ে trxId, status পড়ুন"),
+            DocSection(
+                "5. Webhook Example (Backend)", "Node backend যেটি Flutter অ্যাপকে সার্ভ করে।",
+                """// server.js (Flutter backend)
+app.post('/paychek/webhook', (req, res) => {
+  const { trxId, amount, payment_type } = req.body;
+  notifyDevice(trxId); // FCM push to Flutter app
+  res.sendStatus(200);
+});"""
+            ),
+            DocSection("6. Security Example", "Secret শুধু Backend-এ; HMAC backend-এ যাচাই। Flutter অ্যাপে Secret embed করবেন না।"),
+            DocSection("7. Error Handling Example", "status হ্যান্ডলিং।", "if (res.statusCode == 429) { await retryLater(); }\nelse if (res.statusCode != 200) { showError(res.body); }")
+        )
+    )
 }

@@ -73,4 +73,25 @@ interface WebsiteApiService {
         @Path("id") id: Int,
         @Path("commissionId") commissionId: Int
     ): Response<SimpleWebsiteActionResponse>
+
+    // ── Official (redirect-based) payment gateways (Phase 6) ──────────────────
+    @GET("v1/websites/{id}/official-gateways")
+    suspend fun listOfficialGateways(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int
+    ): Response<OfficialGatewayListResponse>
+
+    @POST("v1/websites/{id}/official-gateways")
+    suspend fun upsertOfficialGateway(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Body request: UpsertOfficialGatewayRequest
+    ): Response<OfficialGatewayUpsertResponse>
+
+    @DELETE("v1/websites/{id}/official-gateways/{gatewayId}")
+    suspend fun deleteOfficialGateway(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Path("gatewayId") gatewayId: Int
+    ): Response<SimpleWebsiteActionResponse>
 }

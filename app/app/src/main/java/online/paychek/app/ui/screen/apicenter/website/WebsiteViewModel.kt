@@ -8,10 +8,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import online.paychek.app.data.remote.dto.ActiveNumberDto
 import online.paychek.app.data.remote.dto.CommissionDto
 import online.paychek.app.data.remote.dto.NumberOrderItem
+import online.paychek.app.data.remote.dto.OfficialGatewayDto
 import online.paychek.app.data.remote.dto.UpdateWebsiteRequest
 import online.paychek.app.data.remote.dto.UpsertCommissionRequest
+import online.paychek.app.data.remote.dto.UpsertOfficialGatewayRequest
 import online.paychek.app.data.remote.dto.WebsiteDto
 import online.paychek.app.data.repository.WebsiteRepository
 
@@ -37,6 +40,10 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
         val commissions: List<CommissionDto> = emptyList(),
         val commissionEnabled: Boolean = false,
         val numberOrder: List<NumberOrderItem> = emptyList(),
+        // Auto-synced active SIM numbers merged with checkout order/enable state
+        val checkoutNumbers: List<ActiveNumberDto> = emptyList(),
+        // Official (redirect-based) payment gateways configured for this website
+        val officialGateways: List<OfficialGatewayDto> = emptyList(),
         val isSaving: Boolean = false
     )
 
@@ -90,12 +97,16 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
                             isLoading = false,
                             selected = detail.website,
                             commissions = detail.commissions,
-                            numberOrder = detail.numberOrder
+                            numberOrder = detail.numberOrder,
+                            checkoutNumbers = detail.activeNumbers
                         )
                     }
                     // Commission menu lock state comes from the commissions endpoint too
                     repo.listCommissions(id).onSuccess { cl ->
                         _state.update { it.copy(commissionEnabled = cl.commissionEnabled, commissions = cl.commissions) }
+                    }
+                    repo.listOfficialGateways(id).onSuccess { gws ->
+                        _state.update { it.copy(officialGateways = gws) }
                     }
                 }
                 .onFailure { e -> _state.update { it.copy(isLoading = false, error = e.message) } }
@@ -144,11 +155,37 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun saveNumberOrder(id: Int, order: List<NumberOrderItem>) {
+    /** Local reorder for the checkout numbers list (drag/drop or move buttons). */
+    fun moveCheckoutNumber(from: Int, to: Int) {
+        _state.update { s ->
+            val list = s.checkoutNumbers.toMutableList()
+            if (from in list.indices && to in list.indices) {
+                val item = list.removeAt(from)
+                list.add(to, item)
+            }
+            s.copy(checkoutNumbers = list)
+        }
+    }
+
+    /** Toggle checkout-only visibility for a number (does NOT affect SMS reader). */
+    fun toggleCheckoutNumber(methodId: Int, enabled: Boolean) {
+        _state.update { s ->
+            s.copy(checkoutNumbers = s.checkoutNumbers.map {
+                if (it.methodId == methodId) it.copy(enabled = enabled) else it
+            })
+        }
+    }
+
+    /** Persist the current checkout number order + enable/disable state. */
+    fun saveCheckoutNumbers(id: Int) {
+        val order = _state.value.checkoutNumbers.mapIndexed { idx, n ->
+            NumberOrderItem(methodId = n.methodId, provider = n.provider, number = n.number, enabled = n.enabled, position = idx)
+        }
+        _state.update { it.copy(isSaving = true) }
         viewModelScope.launch {
             repo.updateNumberOrder(id, order)
-                .onSuccess { saved -> _state.update { it.copy(numberOrder = saved) } }
-                .onFailure { e -> _state.update { it.copy(error = e.message) } }
+                .onSuccess { _state.update { it.copy(isSaving = false, infoMessage = "চেকআউট নাম্বার সংরক্ষণ হয়েছে।") } }
+                .onFailure { e -> _state.update { it.copy(isSaving = false, error = e.message) } }
         }
     }
 
@@ -173,6 +210,41 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
                     repo.listCommissions(id).onSuccess { cl ->
                         _state.update { s -> s.copy(commissionEnabled = cl.commissionEnabled, commissions = cl.commissions) }
                     }
+                }
+                .onFailure { e -> _state.update { it.copy(error = e.message) } }
+        }
+    }
+
+    // ── Official (redirect-based) payment gateways (Phase 6) ──────────────────
+    fun upsertOfficialGateway(id: Int, provider: String, redirectUrl: String, displayName: String?) {
+        if (redirectUrl.isBlank()) {
+            _state.update { it.copy(error = "Redirect URL লিখুন।") }
+            return
+        }
+        _state.update { it.copy(isSaving = true) }
+        viewModelScope.launch {
+            repo.upsertOfficialGateway(
+                id,
+                UpsertOfficialGatewayRequest(
+                    provider = provider,
+                    displayName = displayName?.ifBlank { null },
+                    redirectUrlTemplate = redirectUrl.trim(),
+                    isActive = true
+                )
+            )
+                .onSuccess {
+                    _state.update { it.copy(isSaving = false, infoMessage = "Official gateway সংরক্ষণ হয়েছে।") }
+                    repo.listOfficialGateways(id).onSuccess { gws -> _state.update { s -> s.copy(officialGateways = gws) } }
+                }
+                .onFailure { e -> _state.update { it.copy(isSaving = false, error = e.message) } }
+        }
+    }
+
+    fun deleteOfficialGateway(id: Int, gatewayId: Int) {
+        viewModelScope.launch {
+            repo.deleteOfficialGateway(id, gatewayId)
+                .onSuccess {
+                    repo.listOfficialGateways(id).onSuccess { gws -> _state.update { s -> s.copy(officialGateways = gws) } }
                 }
                 .onFailure { e -> _state.update { it.copy(error = e.message) } }
         }

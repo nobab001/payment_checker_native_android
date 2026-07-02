@@ -32,4 +32,9 @@ router.get('/:id/commissions', websiteController.listCommissions);
 router.post('/:id/commissions', websiteController.upsertCommission);
 router.delete('/:id/commissions/:commissionId', websiteController.deleteCommission);
 
+// Official payment gateway configuration (Phase 6 — redirect-based channels)
+router.get('/:id/official-gateways', websiteController.listOfficialGateways);
+router.post('/:id/official-gateways', websiteController.upsertOfficialGateway);
+router.delete('/:id/official-gateways/:gatewayId', websiteController.deleteOfficialGateway);
+
 module.exports = router;

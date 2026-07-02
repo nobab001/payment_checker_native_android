@@ -7,4 +7,8 @@ router.get('/checkout/:apiKey', checkoutController.getCheckoutLayout);
 router.post('/checkout/verify', checkoutController.verifyCheckoutPayment);
 router.post('/transactions/claim-check', checkoutController.claimCheckTransaction);
 
+// Merchant Vibe Mode (public — customer-facing)
+router.post('/checkout/:apiKey/vibe-init', checkoutController.vibeInit);
+router.get('/checkout/vibe-status/:id', checkoutController.vibeStatus);
+
 module.exports = router;

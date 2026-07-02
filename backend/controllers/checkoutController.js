@@ -1,5 +1,21 @@
 const prisma = require('../db/prisma');
 const axios = require('axios');
+const merchantCallback = require('../services/merchantCallback');
+const paymentFlow = require('./paymentFlowController');
+
+// Full column set needed to build an enriched, signed merchant callback.
+const MERCHANT_CALLBACK_SELECT = {
+  id: true, user_id: true, merchant_id: true, redirect_url: true, success_url: true,
+  callback_url: true, webhook_url: true, api_secret: true,
+  allow_payment_type_callback: true, allow_commission_callback: true,
+  receive_payment_type: true, receive_commission: true,
+};
+
+const HISTORY_CALLBACK_SELECT = {
+  id: true, amount: true, trx_id: true, provider_tag: true, sender_number: true, sms_timestamp: true,
+};
+
+const normalizeBdNumber = (n) => (n || '').replace(/\D/g, '').replace(/^880/, '').slice(-11);
 
 /**
  * GET /api/checkout/:apiKey
@@ -14,7 +30,13 @@ async function getCheckoutLayout(req, res) {
 
     const layout = await prisma.gateway_layouts.findFirst({
       where: { api_key: apiKey, is_active: 1 },
-      select: { id: true, user_id: true, site_name: true, site_url: true, layout_config: true, redirect_url: true, callback_url: true }
+      select: {
+        id: true, user_id: true, site_name: true, site_url: true, layout_config: true,
+        redirect_url: true, callback_url: true,
+        // API Integration v2 additions
+        company_name: true, logo_url: true, checkout_theme: true, checkout_mode: true,
+        success_url: true, cancel_url: true, number_order_json: true, merchant_id: true
+      }
     });
 
     if (!layout) {
@@ -54,7 +76,7 @@ async function getCheckoutLayout(req, res) {
     });
 
     // Format active gateways with dynamic instruction texts
-    const formattedGateways = activeGatewaysRows.map(g => {
+    let formattedGateways = activeGatewaysRows.map(g => {
       const count = providerCounts[g.provider] || 1;
       const instruction = count > 1 ? g.multiple_number_instruction : g.single_number_instruction;
       return {
@@ -69,12 +91,45 @@ async function getCheckoutLayout(req, res) {
       };
     });
 
+    // Apply merchant's checkout-only ordering + enable/disable overrides.
+    // IMPORTANT: this affects ONLY what the checkout page renders. It never
+    // touches gateway_methods.is_enabled, so the SMS reader keeps running.
+    if (layout.number_order_json) {
+      try {
+        const overrides = JSON.parse(layout.number_order_json);
+        const orderMap = new Map(); // key -> { position, enabled }
+        overrides.forEach((o, idx) => {
+          const key = o.methodId != null ? `id:${o.methodId}` : `num:${o.provider}|${o.number}`;
+          orderMap.set(key, { position: o.position != null ? o.position : idx, enabled: o.enabled !== false });
+        });
+        const lookup = (g) => orderMap.get(`id:${g.id}`) || orderMap.get(`num:${g.provider}|${g.number}`);
+        // Drop numbers the merchant explicitly disabled for checkout
+        formattedGateways = formattedGateways.filter(g => {
+          const ov = lookup(g);
+          return !ov || ov.enabled;
+        });
+        // Sort by merchant position; unknown (newly-synced) numbers go to the end
+        formattedGateways.sort((a, b) => {
+          const pa = lookup(a)?.position ?? Number.MAX_SAFE_INTEGER;
+          const pb = lookup(b)?.position ?? Number.MAX_SAFE_INTEGER;
+          return pa - pb;
+        });
+      } catch (_) { /* malformed override JSON — fall back to default order */ }
+    }
+
     return res.json({
       siteName: layout.site_name,
       siteUrl: layout.site_url,
+      companyName: layout.company_name,
+      logoUrl: layout.logo_url,
+      checkoutTheme: layout.checkout_theme || 'default',
+      checkoutMode: layout.checkout_mode || 'transaction',
+      merchantId: layout.merchant_id,
       layoutConfig,
       activeGateways: formattedGateways,
-      redirectUrl: layout.redirect_url
+      redirectUrl: layout.redirect_url,
+      successUrl: layout.success_url || layout.redirect_url,
+      cancelUrl: layout.cancel_url
     });
 
   } catch (error) {
@@ -90,7 +145,7 @@ async function getCheckoutLayout(req, res) {
  */
 async function verifyCheckoutPayment(req, res) {
   try {
-    const { apiKey, trxId, amount } = req.body;
+    const { apiKey, trxId, amount, session } = req.body;
 
     if (!apiKey || !trxId || !amount) {
       return res.status(400).json({ error: 'Missing required parameters: apiKey, trxId, amount' });
@@ -102,7 +157,7 @@ async function verifyCheckoutPayment(req, res) {
     // 1. Fetch merchant details
     const merchant = await prisma.gateway_layouts.findFirst({
       where: { api_key: apiKey, is_active: 1 },
-      select: { id: true, user_id: true, redirect_url: true, callback_url: true }
+      select: MERCHANT_CALLBACK_SELECT
     });
 
     if (!merchant) {
@@ -145,16 +200,19 @@ async function verifyCheckoutPayment(req, res) {
         }
       });
       console.log(`[VERIFICATION] Trx ${cleanTrx} (৳${cleanAmount}) marked SOLDOUT for merchant ID ${merchant.id}`);
-      
-      // OPTIONAL: Trigger background Webhook callback
-      if (merchant.callback_url) {
-        triggerWebhook(merchant.callback_url, {
-          trxId: cleanTrx,
-          amount: cleanAmount,
-          merchantId: merchant.id,
-          status: 'verified',
-          timestamp: new Date()
-        });
+
+      // Enriched + signed merchant callback (payment_type / commission gated
+      // by admin permission + merchant preference inside the dispatcher).
+      const history = await prisma.sms_history.findUnique({ where: { id: payment.id }, select: HISTORY_CALLBACK_SELECT });
+      if (history) {
+        merchantCallback.sendMerchantCallback(merchant, history, 'verified')
+          .catch((e) => console.error('[VERIFICATION] callback error:', e.message));
+      }
+
+      // Phase 6: complete the linked payment session (if this checkout came from /pay/:token).
+      if (session) {
+        paymentFlow.completeSessionByToken(session, { trxId: cleanTrx, historyId: payment.id })
+          .catch((e) => console.error('[VERIFICATION] session complete error:', e.message));
       }
     } else {
       console.log(`[VERIFICATION] Trx ${cleanTrx} was already locked for this merchant. Skipping update.`);
@@ -194,7 +252,7 @@ async function claimCheckTransaction(req, res) {
     // 1. Fetch merchant details
     const merchant = await prisma.gateway_layouts.findFirst({
       where: { api_key: apiKey, is_active: 1 },
-      select: { id: true, user_id: true, callback_url: true }
+      select: MERCHANT_CALLBACK_SELECT
     });
 
     if (!merchant) {
@@ -240,27 +298,15 @@ async function claimCheckTransaction(req, res) {
 
     console.log(`[B2B CLAIM] Trx ${payment.trx_id} (৳${payment.amount}) marked SOLDOUT for merchant ID ${merchant.id}`);
 
-    // 4. Trigger Webhook callback to merchant's callback_url
-    const webhookPayload = {
-      trxId: payment.trx_id,
-      amount: Number(payment.amount),
-      provider: payment.provider_tag,
-      sender: payment.sender_number,
-      smsTimestamp: payment.sms_timestamp,
-      merchantId: merchant.id,
-      status: 'verified',
-      timestamp: new Date()
-    };
-
-    if (merchant.callback_url) {
-      axios.post(merchant.callback_url, webhookPayload)
-        .then(response => {
-          console.log(`[B2B WEBHOOK] Webhook sent successfully to ${merchant.callback_url}, response status: ${response.status}`);
-        })
-        .catch(err => {
-          console.error(`[B2B WEBHOOK] Webhook failed for ${merchant.callback_url}:`, err.message);
-        });
-    }
+    // 4. Enriched + signed webhook callback (payment_type / commission gated inside).
+    merchantCallback.sendMerchantCallback(merchant, {
+      id: payment.id,
+      amount: payment.amount,
+      trx_id: payment.trx_id,
+      provider_tag: payment.provider_tag,
+      sender_number: payment.sender_number,
+      sms_timestamp: payment.sms_timestamp,
+    }, 'verified').catch((e) => console.error('[B2B WEBHOOK] callback error:', e.message));
 
     // 5. Return success telemetry response
     return res.json({
@@ -282,6 +328,139 @@ async function claimCheckTransaction(req, res) {
   }
 }
 
+/**
+ * POST /api/checkout/:apiKey/vibe-init
+ * Merchant Vibe Mode — customer enters the number they will pay FROM, before
+ * checkout. Creates a waiting request bound to (number, amount, expiry).
+ * Body: { customerNumber, amount, expiresInSec? }
+ */
+async function vibeInit(req, res) {
+  try {
+    const { apiKey } = req.params;
+    const { customerNumber, amount } = req.body;
+    const expiresInSec = Math.min(Math.max(parseInt(req.body.expiresInSec, 10) || 900, 120), 3600); // 2min–1h, default 15min
+
+    if (!apiKey || !customerNumber || !amount) {
+      return res.status(400).json({ success: false, error: 'apiKey, customerNumber এবং amount আবশ্যক।' });
+    }
+
+    const merchant = await prisma.gateway_layouts.findFirst({
+      where: { api_key: apiKey, is_active: 1 },
+      select: { id: true, checkout_mode: true },
+    });
+    if (!merchant) return res.status(404).json({ success: false, error: 'Invalid API Key or Merchant inactive' });
+
+    const normNumber = normalizeBdNumber(customerNumber);
+    if (normNumber.length !== 11) {
+      return res.status(400).json({ success: false, error: 'সঠিক ১১-সংখ্যার নাম্বার দিন।' });
+    }
+    const cleanAmount = parseFloat(amount);
+    if (!(cleanAmount > 0)) return res.status(400).json({ success: false, error: 'সঠিক amount দিন।' });
+
+    const expiresAt = new Date(Date.now() + expiresInSec * 1000);
+    const created = await prisma.checkout_vibe_requests.create({
+      data: {
+        website_id: merchant.id,
+        customer_number: normNumber,
+        amount: cleanAmount,
+        status: 'waiting',
+        expires_at: expiresAt,
+      },
+    });
+
+    return res.status(201).json({
+      success: true,
+      requestId: created.id,
+      customerNumber: normNumber,
+      amount: cleanAmount,
+      expiresAt,
+      expiresInSec,
+    });
+  } catch (error) {
+    console.error('Error in vibeInit:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/**
+ * GET /api/checkout/vibe-status/:id
+ * Poll a Vibe request. Lazily expires stale waiting requests.
+ */
+async function vibeStatus(req, res) {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ success: false, error: 'INVALID_ID' });
+
+    const request = await prisma.checkout_vibe_requests.findUnique({ where: { id } });
+    if (!request) return res.status(404).json({ success: false, error: 'REQUEST_NOT_FOUND' });
+
+    let status = request.status;
+    if (status === 'waiting' && request.expires_at < new Date()) {
+      status = 'expired';
+      await prisma.checkout_vibe_requests.update({ where: { id }, data: { status } });
+    }
+
+    return res.json({
+      success: true,
+      status, // waiting | matched | expired | cancelled
+      matched: status === 'matched',
+      trxId: request.matched_trx_id || null,
+      amount: Number(request.amount),
+      expiresAt: request.expires_at,
+    });
+  } catch (error) {
+    console.error('Error in vibeStatus:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/**
+ * matchVibeForHistory — called by the SMS worker after a transaction is saved.
+ * Finds any waiting Vibe request for this user matching (number, amount, time),
+ * claims the transaction and fires the merchant callback. Never throws.
+ */
+async function matchVibeForHistory(userId, history) {
+  try {
+    if (!history || !history.sender_number || history.amount == null) return;
+    const senderNorm = normalizeBdNumber(history.sender_number);
+    if (!senderNorm) return;
+
+    const candidates = await prisma.checkout_vibe_requests.findMany({
+      where: {
+        status: 'waiting',
+        amount: history.amount,
+        expires_at: { gt: new Date() },
+        gateway_layouts: { user_id: userId },
+      },
+      include: { gateway_layouts: { select: MERCHANT_CALLBACK_SELECT } },
+      orderBy: { created_at: 'asc' },
+    });
+
+    for (const c of candidates) {
+      if (normalizeBdNumber(c.customer_number) !== senderNorm) continue;
+
+      // Claim the transaction for this merchant (only if still unused).
+      const claimed = await prisma.sms_history.updateMany({
+        where: { id: history.id, is_used: 0 },
+        data: { is_used: 1, used_at: new Date(), used_by_merchant_id: c.gateway_layouts.id },
+      });
+      if (claimed.count === 0) continue; // already used by someone else
+
+      await prisma.checkout_vibe_requests.update({
+        where: { id: c.id },
+        data: { status: 'matched', matched_trx_id: history.trx_id, matched_history_id: history.id, matched_at: new Date() },
+      });
+
+      console.log(`[VIBE MATCH] Request ${c.id} matched Trx ${history.trx_id} (৳${history.amount})`);
+      await merchantCallback.sendMerchantCallback(c.gateway_layouts, history, 'verified')
+        .catch((e) => console.error('[VIBE MATCH] callback error:', e.message));
+      return; // one transaction satisfies exactly one waiting request
+    }
+  } catch (e) {
+    console.error('[VIBE MATCH] error:', e.message);
+  }
+}
+
 // Background utility to trigger webhooks using axios
 function triggerWebhook(url, payload) {
   console.log(`[WEBHOOK] Posting verified payment telemetry to ${url}`);
@@ -297,5 +476,8 @@ function triggerWebhook(url, payload) {
 module.exports = {
   getCheckoutLayout,
   verifyCheckoutPayment,
-  claimCheckTransaction
+  claimCheckTransaction,
+  vibeInit,
+  vibeStatus,
+  matchVibeForHistory
 };

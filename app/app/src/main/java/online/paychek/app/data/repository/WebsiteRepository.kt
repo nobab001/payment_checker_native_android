@@ -84,6 +84,26 @@ class WebsiteRepository(private val context: Context) {
         else Result.failure(Exception(parseError(r)))
     }
 
+    // ── Official (redirect-based) payment gateways (Phase 6) ──────────────────
+    suspend fun listOfficialGateways(id: Int): Result<List<OfficialGatewayDto>> = safeCall {
+        val r = api.listOfficialGateways(bearer(), id)
+        if (r.isSuccessful && r.body()?.success == true) Result.success(r.body()?.officialGateways ?: emptyList())
+        else Result.failure(Exception(parseError(r)))
+    }
+
+    suspend fun upsertOfficialGateway(id: Int, request: UpsertOfficialGatewayRequest): Result<OfficialGatewayDto> = safeCall {
+        val r = api.upsertOfficialGateway(bearer(), id, request)
+        val body = r.body()
+        if (r.isSuccessful && body?.success == true && body.officialGateway != null) Result.success(body.officialGateway)
+        else Result.failure(Exception(body?.error ?: parseError(r)))
+    }
+
+    suspend fun deleteOfficialGateway(id: Int, gatewayId: Int): Result<Unit> = safeCall {
+        val r = api.deleteOfficialGateway(bearer(), id, gatewayId)
+        if (r.isSuccessful && r.body()?.success == true) Result.success(Unit)
+        else Result.failure(Exception(parseError(r)))
+    }
+
     private inline fun <T> safeCall(block: () -> Result<T>): Result<T> =
         try { block() } catch (e: Exception) { Result.failure(e) }
 
