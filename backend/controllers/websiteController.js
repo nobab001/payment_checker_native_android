@@ -16,6 +16,7 @@
 const crypto = require('crypto');
 const prisma = require('../db/prisma');
 const merchantCache = require('../services/merchantCache');
+const layoutHelper = require('../services/checkoutLayoutHelper');
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -168,9 +169,9 @@ async function createWebsite(req, res) {
             api_secret_version: 1,
             merchant_id: merchantId,
             company_name: websiteName || null,
-            checkout_theme: 'default',
+            checkout_theme: 'design-1',
             checkout_mode: 'transaction',
-            layout_config: JSON.stringify({}),
+            layout_config: JSON.stringify({ tabs: layoutHelper.DEFAULT_TABS }),
           },
         });
       } catch (e) {
@@ -262,6 +263,7 @@ async function getWebsite(req, res) {
       success: true,
       website: toWebsiteDto(row),
       activeNumbers,
+      checkoutTabs: layoutHelper.parseTabs(row.layout_config),
       commissions: commissions.map((c) => ({
         id: c.id,
         paymentType: c.payment_type,
@@ -307,6 +309,20 @@ async function updateWebsiteSettings(req, res) {
     };
     for (const [inKey, col] of Object.entries(strFields)) {
       if (b[inKey] !== undefined) data[col] = b[inKey] === null ? null : String(b[inKey]).trim();
+    }
+
+    if (b.checkout_theme !== undefined) {
+      const theme = String(b.checkout_theme);
+      if (!layoutHelper.VALID_DESIGNS.has(theme) && !['default', 'light', 'dark', 'minimal', 'brand'].includes(theme)) {
+        return res.status(400).json({ success: false, error: 'INVALID_CHECKOUT_THEME' });
+      }
+      data.checkout_theme = theme;
+    }
+
+    // Tab customization (Send Money, Cash Out, Payment, Bank, Card)
+    if (b.checkout_tabs && typeof b.checkout_tabs === 'object') {
+      const existing = row.layout_config;
+      data.layout_config = JSON.stringify(layoutHelper.mergeTabsIntoLayout(existing, b.checkout_tabs));
     }
 
     if (b.checkout_mode !== undefined) {

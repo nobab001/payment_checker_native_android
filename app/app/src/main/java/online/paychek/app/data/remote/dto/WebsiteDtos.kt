@@ -91,7 +91,13 @@ data class UpdateWebsiteRequest(
     @SerializedName("webhook_url") val webhookUrl: String? = null,
     @SerializedName("receive_payment_type") val receivePaymentType: Boolean? = null,
     @SerializedName("receive_commission") val receiveCommission: Boolean? = null,
-    @SerializedName("is_active") val isActive: Boolean? = null
+    @SerializedName("is_active") val isActive: Boolean? = null,
+    @SerializedName("checkout_tabs") val checkoutTabs: Map<String, CheckoutTabToggle>? = null
+)
+
+/** Tab enable/disable payload for PATCH /websites/:id */
+data class CheckoutTabToggle(
+    @SerializedName("enabled") val enabled: Boolean = true
 )
 
 data class NumberOrderRequest(
@@ -134,7 +140,14 @@ data class WebsiteDetailResponse(
     @SerializedName("website") val website: WebsiteDto? = null,
     @SerializedName("commissions") val commissions: List<CommissionDto> = emptyList(),
     @SerializedName("numberOrder") val numberOrder: List<NumberOrderItem> = emptyList(),
-    @SerializedName("activeNumbers") val activeNumbers: List<ActiveNumberDto> = emptyList()
+    @SerializedName("activeNumbers") val activeNumbers: List<ActiveNumberDto> = emptyList(),
+    @SerializedName("checkoutTabs") val checkoutTabs: Map<String, CheckoutTabDto>? = null
+)
+
+data class CheckoutTabDto(
+    @SerializedName("id") val id: String = "",
+    @SerializedName("label") val label: String = "",
+    @SerializedName("enabled") val enabled: Boolean = true
 )
 
 data class WebsiteUpdateResponse(

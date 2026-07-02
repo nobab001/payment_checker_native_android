@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import online.paychek.app.data.remote.dto.ActiveNumberDto
+import online.paychek.app.data.remote.dto.CheckoutTabDto
 import online.paychek.app.data.remote.dto.CommissionDto
 import online.paychek.app.data.remote.dto.NumberOrderItem
 import online.paychek.app.data.remote.dto.OfficialGatewayDto
@@ -44,6 +45,7 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
         val checkoutNumbers: List<ActiveNumberDto> = emptyList(),
         // Official (redirect-based) payment gateways configured for this website
         val officialGateways: List<OfficialGatewayDto> = emptyList(),
+        val checkoutTabs: Map<String, CheckoutTabDto> = emptyMap(),
         val isSaving: Boolean = false
     )
 
@@ -98,7 +100,8 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
                             selected = detail.website,
                             commissions = detail.commissions,
                             numberOrder = detail.numberOrder,
-                            checkoutNumbers = detail.activeNumbers
+                            checkoutNumbers = detail.activeNumbers,
+                            checkoutTabs = detail.checkoutTabs ?: emptyMap()
                         )
                     }
                     // Commission menu lock state comes from the commissions endpoint too

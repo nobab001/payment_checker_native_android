@@ -31,6 +31,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import online.paychek.app.data.remote.dto.CheckoutTabToggle
 import online.paychek.app.data.remote.dto.OfficialGatewayDto
 import online.paychek.app.data.remote.dto.UpdateWebsiteRequest
 
@@ -38,7 +39,19 @@ private val AccentCyan = Color(0xFF22D3EE)
 private val AccentGreen = Color(0xFF10B981)
 private val AccentAmber = Color(0xFFF59E0B)
 
-private val CHECKOUT_THEMES = listOf("default", "light", "dark", "minimal", "brand")
+private val CHECKOUT_DESIGNS = listOf(
+    "design-1" to "ডিজাইন ১ — লিস্ট",
+    "design-2" to "ডিজাইন ২ — কার্ড",
+    "design-3" to "ডিজাইন ৩ — অ্যাকর্ডিয়ন"
+)
+
+private val CHECKOUT_TAB_KEYS = listOf(
+    "send_money" to "Send Money",
+    "cash_out" to "Cash Out",
+    "payment" to "Payment",
+    "bank" to "Bank",
+    "card" to "Card Payment"
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,7 +79,7 @@ fun WebsiteSettingsScreen(
     // Editable fields
     var companyName by remember(site?.id) { mutableStateOf(site?.companyName ?: "") }
     var logoUrl by remember(site?.id) { mutableStateOf(site?.logoUrl ?: "") }
-    var theme by remember(site?.id) { mutableStateOf(site?.checkoutTheme ?: "default") }
+    var theme by remember(site?.id) { mutableStateOf(site?.checkoutTheme?.takeIf { it.startsWith("design-") } ?: "design-1") }
     var checkoutMode by remember(site?.id) { mutableStateOf(site?.checkoutMode ?: "transaction") }
     var successUrl by remember(site?.id) { mutableStateOf(site?.successUrl ?: "") }
     var cancelUrl by remember(site?.id) { mutableStateOf(site?.cancelUrl ?: "") }
@@ -74,6 +87,15 @@ fun WebsiteSettingsScreen(
     var webhookUrl by remember(site?.id) { mutableStateOf(site?.webhookUrl ?: "") }
     var receivePaymentType by remember(site?.id) { mutableStateOf(site?.receivePaymentType ?: false) }
     var receiveCommission by remember(site?.id) { mutableStateOf(site?.receiveCommission ?: false) }
+
+    val tabStates = remember(site?.id) {
+        CHECKOUT_TAB_KEYS.associate { (key, _) -> key to mutableStateOf(key != "bank") }
+    }
+    LaunchedEffect(state.checkoutTabs) {
+        CHECKOUT_TAB_KEYS.forEach { (key, _) ->
+            state.checkoutTabs[key]?.let { tabStates[key]?.value = it.enabled }
+        }
+    }
 
     Scaffold(
         containerColor = bg,
@@ -119,14 +141,42 @@ fun WebsiteSettingsScreen(
                 }
             }
 
-            // Branding
-            SettingsCard(card, isDark, "ব্র্যান্ডিং", Icons.Default.Palette) {
+            // Branding + Design selection
+            SettingsCard(card, isDark, "ব্র্যান্ডিং ও চেকআউট ডিজাইন", Icons.Default.Palette) {
                 EditField("Company Name", companyName) { companyName = it }
                 EditField("Logo URL", logoUrl) { logoUrl = it }
                 Spacer(Modifier.height(6.dp))
-                Text("Checkout Theme", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("চেকআউট ডিজাইন (Design Selection)", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(6.dp))
-                ChipRow(CHECKOUT_THEMES, theme) { theme = it }
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CHECKOUT_DESIGNS.forEach { (id, label) ->
+                        val sel = id == theme
+                        Box(
+                            Modifier.clip(RoundedCornerShape(20.dp))
+                                .background(if (sel) AccentCyan.copy(alpha = 0.2f) else Color.Transparent)
+                                .border(1.dp, if (sel) AccentCyan else Color(0xFF3A3F4A), RoundedCornerShape(20.dp))
+                                .clickable { theme = id }
+                                .padding(horizontal = 12.dp, vertical = 7.dp)
+                        ) { Text(label, color = if (sel) AccentCyan else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp) }
+                    }
+                }
+            }
+
+            // Tab customization
+            SettingsCard(card, isDark, "ট্যাব কাস্টমাইজেশন", Icons.Default.Dashboard) {
+                Text("চেকআউট পেজে কোন পেমেন্ট ট্যাব দেখাবে তা নির্ধারণ করুন।", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                Spacer(Modifier.height(8.dp))
+                CHECKOUT_TAB_KEYS.forEach { (key, label) ->
+                    val tabState = tabStates[key] ?: return@forEach
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(label, Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Switch(
+                            checked = tabState.value,
+                            onCheckedChange = { tabState.value = it },
+                            colors = SwitchDefaults.colors(checkedTrackColor = AccentGreen)
+                        )
+                    }
+                }
             }
 
             // Checkout numbers (auto-synced from devices)
@@ -209,7 +259,10 @@ fun WebsiteSettingsScreen(
                             callbackUrl = callbackUrl,
                             webhookUrl = webhookUrl,
                             receivePaymentType = receivePaymentType,
-                            receiveCommission = receiveCommission
+                            receiveCommission = receiveCommission,
+                            checkoutTabs = CHECKOUT_TAB_KEYS.associate { (key, _) ->
+                                key to CheckoutTabToggle(enabled = tabStates[key]?.value ?: true)
+                            }
                         )
                     )
                 },

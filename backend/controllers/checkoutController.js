@@ -1,7 +1,9 @@
 const prisma = require('../db/prisma');
 const axios = require('axios');
+const crypto = require('crypto');
 const merchantCallback = require('../services/merchantCallback');
 const paymentFlow = require('./paymentFlowController');
+const layoutHelper = require('../services/checkoutLayoutHelper');
 
 // Full column set needed to build an enriched, signed merchant callback.
 const MERCHANT_CALLBACK_SELECT = {
@@ -117,16 +119,40 @@ async function getCheckoutLayout(req, res) {
       } catch (_) { /* malformed override JSON — fall back to default order */ }
     }
 
+    // Parse tab customization + design from layout_config
+    const checkoutTabs = layoutHelper.parseTabs(layout.layout_config);
+    const checkoutDesign = layoutHelper.resolveDesign(layout.checkout_theme);
+
+    // Official (live) payment channels for bank/card/merchant tabs
+    const officialRows = await prisma.website_official_gateways.findMany({
+      where: { website_id: layout.id, is_active: 1 },
+      select: { id: true, provider: true, display_name: true, redirect_url_template: true },
+    });
+    const officialGateways = officialRows.map((og) => ({
+      id: og.id,
+      provider: og.provider,
+      displayName: og.display_name || og.provider,
+      tab: layoutHelper.officialProviderTab(og.provider),
+      livePayment: true,
+    }));
+
+    // Enrich synced SIM rows with tab + group metadata for the 3 checkout designs
+    formattedGateways = formattedGateways.map((g) => layoutHelper.enrichGatewayRow(g));
+
     return res.json({
       siteName: layout.site_name,
       siteUrl: layout.site_url,
       companyName: layout.company_name,
       logoUrl: layout.logo_url,
-      checkoutTheme: layout.checkout_theme || 'default',
+      checkoutTheme: checkoutDesign,
+      checkoutDesign,
       checkoutMode: layout.checkout_mode || 'transaction',
       merchantId: layout.merchant_id,
+      checkoutTabs: Object.values(checkoutTabs).filter((t) => t.enabled),
+      checkoutTabsAll: checkoutTabs,
       layoutConfig,
       activeGateways: formattedGateways,
+      officialGateways,
       redirectUrl: layout.redirect_url,
       successUrl: layout.success_url || layout.redirect_url,
       cancelUrl: layout.cancel_url
@@ -473,11 +499,69 @@ function triggerWebhook(url, payload) {
     });
 }
 
+/**
+ * POST /api/checkout/:apiKey/live-init
+ * Customer-facing: start an official-gateway live payment session from checkout.
+ * Body: { provider, amount }
+ */
+async function liveInit(req, res) {
+  try {
+    const { apiKey } = req.params;
+    const { provider, amount } = req.body;
+    if (!apiKey || !provider || !amount) {
+      return res.status(400).json({ success: false, error: 'apiKey, provider, amount আবশ্যক।' });
+    }
+
+    const merchant = await prisma.gateway_layouts.findFirst({
+      where: { api_key: apiKey, is_active: 1 },
+      select: { id: true, user_id: true, success_url: true, cancel_url: true, redirect_url: true },
+    });
+    if (!merchant) return res.status(404).json({ success: false, error: 'Invalid API Key' });
+
+    const cleanAmount = parseFloat(amount);
+    if (!(cleanAmount > 0)) return res.status(400).json({ success: false, error: 'INVALID_AMOUNT' });
+
+    const prov = String(provider).toLowerCase();
+    const gw = await prisma.website_official_gateways.findFirst({
+      where: { website_id: merchant.id, provider: prov, is_active: 1 },
+    });
+    if (!gw) return res.status(400).json({ success: false, error: 'PROVIDER_NOT_CONFIGURED' });
+
+    const token = `ps_${crypto.randomBytes(24).toString('hex')}`;
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    await prisma.payment_sessions.create({
+      data: {
+        session_token: token,
+        website_id: merchant.id,
+        user_id: merchant.user_id,
+        amount: cleanAmount,
+        channel: 'official',
+        official_provider: prov,
+        status: 'created',
+        success_url: merchant.success_url || merchant.redirect_url,
+        cancel_url: merchant.cancel_url,
+        expires_at: expiresAt,
+      },
+    });
+
+    const base = process.env.PUBLIC_BASE_URL
+      || `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
+    return res.json({
+      success: true,
+      redirectUrl: `${base.replace(/\/$/, '')}/pay/${token}`,
+    });
+  } catch (error) {
+    console.error('Error in liveInit:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   getCheckoutLayout,
   verifyCheckoutPayment,
   claimCheckTransaction,
   vibeInit,
   vibeStatus,
-  matchVibeForHistory
+  matchVibeForHistory,
+  liveInit,
 };
