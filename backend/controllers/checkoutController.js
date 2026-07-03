@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const merchantCallback = require('../services/merchantCallback');
 const paymentFlow = require('./paymentFlowController');
 const layoutHelper = require('../services/checkoutLayoutHelper');
+const checkoutData = require('../services/checkoutDataService');
 
 // Full column set needed to build an enriched, signed merchant callback.
 const MERCHANT_CALLBACK_SELECT = {
@@ -57,71 +58,20 @@ async function getCheckoutLayout(req, res) {
       layoutConfig = JSON.parse(layoutConfig);
     }
 
-    // Retrieve active gateways linked to sms_templates and checkout_view_templates (Security Lock)
-    const activeGatewaysRows = await prisma.$queryRaw`
-      SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.device_id,
-              cvt.single_number_instruction, cvt.multiple_number_instruction,
-              rd.device_name
-         FROM gateway_methods gm
-         JOIN sms_templates t ON gm.template_id = t.id
-         JOIN checkout_view_templates cvt ON cvt.sms_template_id = t.id
-    LEFT JOIN registered_devices rd ON gm.device_id = rd.device_id AND rd.user_id = gm.user_id
-        WHERE gm.user_id = ${layout.user_id} AND gm.is_enabled = 1 AND gm.number IS NOT NULL AND gm.number != ''
-     ORDER BY gm.priority ASC, gm.sim_slot ASC
-    `;
+    // Secure checkout gateways — only active + parseable official templates
+    const { gateways: secureGateways, gatewaysByCategory } = await checkoutData.buildSecureCheckoutData(
+      layout.user_id,
+      layout.number_order_json,
+      { excludeDisabled: true }
+    );
 
-    // Count active numbers per provider to decide single/multiple instructions
-    const providerCounts = {};
-    activeGatewaysRows.forEach(g => {
-      const p = g.provider;
-      providerCounts[p] = (providerCounts[p] || 0) + 1;
-    });
+    let formattedGateways = secureGateways;
 
-    // Format active gateways with dynamic instruction texts
-    let formattedGateways = activeGatewaysRows.map(g => {
-      const count = providerCounts[g.provider] || 1;
-      const instruction = count > 1 ? g.multiple_number_instruction : g.single_number_instruction;
-      return {
-        id: Number(g.id) || g.id,
-        simSlot: g.sim_slot,
-        provider: g.provider,
-        number: g.number,
-        deviceId: g.device_id,
-        deviceName: g.device_name || 'Main Phone',
-        displayName: g.display_name || g.provider,
-        instruction: instruction
-      };
-    });
-
-    // Apply merchant's checkout-only ordering + enable/disable overrides.
-    // IMPORTANT: this affects ONLY what the checkout page renders. It never
-    // touches gateway_methods.is_enabled, so the SMS reader keeps running.
-    if (layout.number_order_json) {
-      try {
-        const overrides = JSON.parse(layout.number_order_json);
-        const orderMap = new Map(); // key -> { position, enabled }
-        overrides.forEach((o, idx) => {
-          const key = o.methodId != null ? `id:${o.methodId}` : `num:${o.provider}|${o.number}`;
-          orderMap.set(key, { position: o.position != null ? o.position : idx, enabled: o.enabled !== false });
-        });
-        const lookup = (g) => orderMap.get(`id:${g.id}`) || orderMap.get(`num:${g.provider}|${g.number}`);
-        // Drop numbers the merchant explicitly disabled for checkout
-        formattedGateways = formattedGateways.filter(g => {
-          const ov = lookup(g);
-          return !ov || ov.enabled;
-        });
-        // Sort by merchant position; unknown (newly-synced) numbers go to the end
-        formattedGateways.sort((a, b) => {
-          const pa = lookup(a)?.position ?? Number.MAX_SAFE_INTEGER;
-          const pb = lookup(b)?.position ?? Number.MAX_SAFE_INTEGER;
-          return pa - pb;
-        });
-      } catch (_) { /* malformed override JSON — fall back to default order */ }
-    }
-
-    // Parse tab customization + design from layout_config
-    const checkoutTabs = layoutHelper.parseTabs(layout.layout_config);
+    // Parse tab customization + design from layout_config (merged with global admin defaults)
+    const { tabs: globalTabs, providerBranding } = await layoutHelper.loadGlobalCheckoutDefaults();
+    const checkoutTabs = layoutHelper.parseTabs(layout.layout_config, globalTabs);
     const checkoutDesign = layoutHelper.resolveDesign(layout.checkout_theme);
+    const providers = layoutHelper.resolveProviderBranding(providerBranding);
 
     // Official (live) payment channels for bank/card/merchant tabs
     const officialRows = await prisma.website_official_gateways.findMany({
@@ -150,8 +100,10 @@ async function getCheckoutLayout(req, res) {
       merchantId: layout.merchant_id,
       checkoutTabs: Object.values(checkoutTabs).filter((t) => t.enabled),
       checkoutTabsAll: checkoutTabs,
+      providerBranding: providers,
       layoutConfig,
       activeGateways: formattedGateways,
+      gatewaysByCategory,
       officialGateways,
       redirectUrl: layout.redirect_url,
       successUrl: layout.success_url || layout.redirect_url,

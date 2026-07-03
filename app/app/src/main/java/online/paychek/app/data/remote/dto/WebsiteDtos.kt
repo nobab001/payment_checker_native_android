@@ -59,6 +59,8 @@ data class ActiveNumberDto(
     @SerializedName("simSlot") val simSlot: Int = 1,
     @SerializedName("deviceId") val deviceId: String? = null,
     @SerializedName("displayName") val displayName: String? = null,
+    @SerializedName("category") val category: String? = null,
+    @SerializedName("tab") val tab: String? = null,
     @SerializedName("enabled") val enabled: Boolean = true,
     @SerializedName("position") val position: Long = Long.MAX_VALUE
 )
@@ -81,6 +83,7 @@ data class CreateWebsiteRequest(
 
 data class UpdateWebsiteRequest(
     @SerializedName("website_name") val websiteName: String? = null,
+    @SerializedName("domain") val domain: String? = null,
     @SerializedName("company_name") val companyName: String? = null,
     @SerializedName("logo_url") val logoUrl: String? = null,
     @SerializedName("checkout_theme") val checkoutTheme: String? = null,
@@ -120,7 +123,31 @@ data class UpsertCommissionRequest(
     @SerializedName("is_active") val isActive: Boolean = true
 )
 
-// ── Responses ────────────────────────────────────────────────────────────────
+data class DeleteWebsiteRequest(
+    @SerializedName("pin") val pin: String
+)
+
+data class SaveGlobalCheckoutRequest(
+    @SerializedName("checkout_theme") val checkoutTheme: String,
+    @SerializedName("checkout_mode") val checkoutMode: String,
+    @SerializedName("checkout_tabs") val checkoutTabs: Map<String, CheckoutTabToggle>? = null,
+    @SerializedName("order") val order: List<NumberOrderItem> = emptyList()
+)
+
+data class GlobalCheckoutResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("checkoutTheme") val checkoutTheme: String = "design-1",
+    @SerializedName("checkoutMode") val checkoutMode: String = "transaction",
+    @SerializedName("checkoutTabs") val checkoutTabs: Map<String, CheckoutTabDto>? = null,
+    @SerializedName("activeNumbers") val activeNumbers: List<ActiveNumberDto> = emptyList(),
+    @SerializedName("gatewaysByCategory") val gatewaysByCategory: Map<String, List<ActiveNumberDto>>? = null,
+    @SerializedName("numberOrder") val numberOrder: List<NumberOrderItem> = emptyList(),
+    @SerializedName("websiteCount") val websiteCount: Int = 0,
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("websitesUpdated") val websitesUpdated: Int? = null,
+    @SerializedName("error") val error: String? = null
+)
+
 
 data class CreateWebsiteResponse(
     @SerializedName("success") val success: Boolean = false,
@@ -141,13 +168,17 @@ data class WebsiteDetailResponse(
     @SerializedName("commissions") val commissions: List<CommissionDto> = emptyList(),
     @SerializedName("numberOrder") val numberOrder: List<NumberOrderItem> = emptyList(),
     @SerializedName("activeNumbers") val activeNumbers: List<ActiveNumberDto> = emptyList(),
+    @SerializedName("gatewaysByCategory") val gatewaysByCategory: Map<String, List<ActiveNumberDto>>? = null,
     @SerializedName("checkoutTabs") val checkoutTabs: Map<String, CheckoutTabDto>? = null
 )
 
 data class CheckoutTabDto(
     @SerializedName("id") val id: String = "",
     @SerializedName("label") val label: String = "",
-    @SerializedName("enabled") val enabled: Boolean = true
+    @SerializedName("enabled") val enabled: Boolean = true,
+    @SerializedName("icon") val icon: String? = null,
+    @SerializedName("iconUrl") val iconUrl: String? = null,
+    @SerializedName("category") val category: String? = null
 )
 
 data class WebsiteUpdateResponse(

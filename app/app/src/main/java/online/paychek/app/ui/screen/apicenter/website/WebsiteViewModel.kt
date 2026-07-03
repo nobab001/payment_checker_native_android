@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import online.paychek.app.data.remote.dto.ActiveNumberDto
 import online.paychek.app.data.remote.dto.CheckoutTabDto
@@ -51,6 +53,7 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
+    private var autoSaveJob: Job? = null
 
     fun clearMessages() = _state.update { it.copy(error = null, infoMessage = null) }
 
@@ -146,20 +149,60 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun deleteWebsite(id: Int, onDone: () -> Unit) {
+    fun updateWebsiteInfo(id: Int, domain: String, name: String?, onDone: () -> Unit = {}) {
+        if (domain.isBlank()) {
+            _state.update { it.copy(error = "ডোমেইন লিখুন।") }
+            return
+        }
+        _state.update { it.copy(isSaving = true, error = null) }
         viewModelScope.launch {
-            repo.deleteWebsite(id)
+            repo.updateWebsite(
+                id,
+                UpdateWebsiteRequest(
+                    domain = domain.trim(),
+                    websiteName = name?.trim()?.ifBlank { null }
+                )
+            )
+                .onSuccess { w ->
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            selected = if (it.selected?.id == id) w else it.selected,
+                            websites = it.websites.map { site -> if (site.id == id) w else site },
+                            infoMessage = "ওয়েবসাইট আপডেট হয়েছে।"
+                        )
+                    }
+                    onDone()
+                }
+                .onFailure { e -> _state.update { it.copy(isSaving = false, error = e.message) } }
+        }
+    }
+
+    fun deleteWebsiteWithPin(id: Int, pin: String, onDone: () -> Unit) {
+        if (pin.isBlank()) {
+            _state.update { it.copy(error = "নিরাপত্তা PIN দিন।") }
+            return
+        }
+        _state.update { it.copy(isSaving = true, error = null) }
+        viewModelScope.launch {
+            repo.deleteWebsite(id, pin)
                 .onSuccess {
-                    _state.update { it.copy(infoMessage = "ওয়েবসাইট মুছে ফেলা হয়েছে।") }
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            websites = it.websites.filter { w -> w.id != id },
+                            infoMessage = "ওয়েবসাইট মুছে ফেলা হয়েছে।"
+                        )
+                    }
                     loadWebsites()
                     onDone()
                 }
-                .onFailure { e -> _state.update { it.copy(error = e.message) } }
+                .onFailure { e -> _state.update { it.copy(isSaving = false, error = e.message) } }
         }
     }
 
     /** Local reorder for the checkout numbers list (drag/drop or move buttons). */
-    fun moveCheckoutNumber(from: Int, to: Int) {
+    fun moveCheckoutNumber(from: Int, to: Int, websiteId: Int? = null) {
         _state.update { s ->
             val list = s.checkoutNumbers.toMutableList()
             if (from in list.indices && to in list.indices) {
@@ -168,26 +211,43 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
             }
             s.copy(checkoutNumbers = list)
         }
+        websiteId?.let { scheduleSaveCheckoutNumbers(it) }
     }
 
     /** Toggle checkout-only visibility for a number (does NOT affect SMS reader). */
-    fun toggleCheckoutNumber(methodId: Int, enabled: Boolean) {
+    fun toggleCheckoutNumber(methodId: Int, enabled: Boolean, websiteId: Int? = null) {
         _state.update { s ->
             s.copy(checkoutNumbers = s.checkoutNumbers.map {
                 if (it.methodId == methodId) it.copy(enabled = enabled) else it
             })
         }
+        websiteId?.let { scheduleSaveCheckoutNumbers(it) }
+    }
+
+    private fun scheduleSaveCheckoutNumbers(websiteId: Int) {
+        autoSaveJob?.cancel()
+        autoSaveJob = viewModelScope.launch {
+            delay(450)
+            saveCheckoutNumbers(websiteId, silent = true)
+        }
     }
 
     /** Persist the current checkout number order + enable/disable state. */
-    fun saveCheckoutNumbers(id: Int) {
+    fun saveCheckoutNumbers(id: Int, silent: Boolean = false) {
         val order = _state.value.checkoutNumbers.mapIndexed { idx, n ->
             NumberOrderItem(methodId = n.methodId, provider = n.provider, number = n.number, enabled = n.enabled, position = idx)
         }
         _state.update { it.copy(isSaving = true) }
         viewModelScope.launch {
             repo.updateNumberOrder(id, order)
-                .onSuccess { _state.update { it.copy(isSaving = false, infoMessage = "চেকআউট নাম্বার সংরক্ষণ হয়েছে।") } }
+                .onSuccess {
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            infoMessage = if (silent) null else "চেকআউট নাম্বার সংরক্ষণ হয়েছে।"
+                        )
+                    }
+                }
                 .onFailure { e -> _state.update { it.copy(isSaving = false, error = e.message) } }
         }
     }

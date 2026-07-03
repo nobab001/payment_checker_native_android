@@ -26,6 +26,7 @@ sealed interface NavKey : androidx.navigation3.runtime.NavKey {
     @Serializable data class  CheckoutNumbers(val websiteId: Int) : NavKey
     @Serializable data object ApiDocs : NavKey
     @Serializable data object AdminDashboard : NavKey
+    @Serializable data class AdminUserSettings(val userId: Int) : NavKey
     @Serializable data object AdminBillingConfig : NavKey
     @Serializable data class SubscriptionPackages(val initialTab: Int = 0) : NavKey
     @Serializable data object PaymentGatewayMock : NavKey

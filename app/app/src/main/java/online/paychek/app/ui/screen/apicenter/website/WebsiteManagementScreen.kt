@@ -47,11 +47,23 @@ fun WebsiteManagementScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var showWizard by remember { mutableStateOf(false) }
+    var editSite by remember { mutableStateOf<WebsiteDto?>(null) }
+    var deleteSite by remember { mutableStateOf<WebsiteDto?>(null) }
+    var deletePinError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) { viewModel.loadWebsites() }
 
+    LaunchedEffect(state.error, deleteSite?.id) {
+        if (deleteSite == null) {
+            state.error?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show(); viewModel.clearMessages() }
+        } else if (state.error != null) {
+            deletePinError = state.error
+            viewModel.clearMessages()
+        }
+    }
+
     LaunchedEffect(state.error, state.infoMessage) {
-        state.error?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show(); viewModel.clearMessages() }
+        state.infoMessage?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show(); viewModel.clearMessages() }
     }
 
     val bg = MaterialTheme.colorScheme.background
@@ -102,7 +114,12 @@ fun WebsiteManagementScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(state.websites, key = { it.id }) { site ->
-                    WebsiteCard(site, card, isDark) { onOpenWebsite(site.id) }
+                    WebsiteCard(
+                        site, card, isDark,
+                        onClick = { onOpenWebsite(site.id) },
+                        onEdit = { editSite = site },
+                        onDelete = { deleteSite = site; deletePinError = null }
+                    )
                 }
                 item { Spacer(Modifier.height(72.dp)) }
             }
@@ -114,6 +131,32 @@ fun WebsiteManagementScreen(
             isCreating = state.isCreating,
             onDismiss = { showWizard = false },
             onCreate = { domain, name -> viewModel.createWebsite(domain, name) }
+        )
+    }
+
+    editSite?.let { site ->
+        EditWebsiteDialog(
+            site = site,
+            isSaving = state.isSaving,
+            onDismiss = { editSite = null },
+            onSave = { domain, name ->
+                viewModel.updateWebsiteInfo(site.id, domain, name) { editSite = null }
+            }
+        )
+    }
+
+    deleteSite?.let { site ->
+        DeleteWebsitePinDialog(
+            siteName = site.siteName.ifBlank { site.domain ?: "Website" },
+            isDeleting = state.isSaving,
+            pinError = deletePinError,
+            onDismiss = { deleteSite = null; deletePinError = null },
+            onConfirm = { pin ->
+                viewModel.deleteWebsiteWithPin(site.id, pin) {
+                    deleteSite = null
+                    deletePinError = null
+                }
+            }
         )
     }
 
@@ -131,7 +174,16 @@ fun WebsiteManagementScreen(
 }
 
 @Composable
-private fun WebsiteCard(site: WebsiteDto, card: Color, isDark: Boolean, onClick: () -> Unit) {
+internal fun WebsiteCard(
+    site: WebsiteDto,
+    card: Color,
+    isDark: Boolean,
+    onClick: () -> Unit,
+    onEdit: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
     Card(
         colors = CardDefaults.cardColors(containerColor = card),
         shape = RoundedCornerShape(16.dp),
@@ -162,7 +214,31 @@ private fun WebsiteCard(site: WebsiteDto, card: Color, isDark: Boolean, onClick:
                     StatusChip(if (site.checkoutMode == "merchant_vibe") "Vibe Mode" else "Transaction", AccentCyan)
                 }
             }
-            Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (onEdit != null || onDelete != null) {
+                Box {
+                    IconButton(onClick = { showMenu = true }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.MoreVert, "Options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        onEdit?.let {
+                            DropdownMenuItem(
+                                text = { Text("এডিট করুন") },
+                                onClick = { showMenu = false; it() },
+                                leadingIcon = { Icon(Icons.Default.Edit, null) }
+                            )
+                        }
+                        onDelete?.let {
+                            DropdownMenuItem(
+                                text = { Text("মুছে ফেলুন", color = Color(0xFFEF4444)) },
+                                onClick = { showMenu = false; it() },
+                                leadingIcon = { Icon(Icons.Default.Delete, null, tint = Color(0xFFEF4444)) }
+                            )
+                        }
+                    }
+                }
+            } else {
+                Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
@@ -175,7 +251,101 @@ private fun StatusChip(label: String, color: Color) {
 }
 
 @Composable
-private fun AddWebsiteWizard(
+internal fun EditWebsiteDialog(
+    site: WebsiteDto,
+    isSaving: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (domain: String, name: String?) -> Unit
+) {
+    var domain by remember(site.id) { mutableStateOf(site.domain ?: "") }
+    var name by remember(site.id) { mutableStateOf(site.siteName.ifBlank { site.companyName ?: "" }) }
+    val card = MaterialTheme.colorScheme.surface
+
+    Dialog(onDismissRequest = { if (!isSaving) onDismiss() }) {
+        Surface(shape = RoundedCornerShape(24.dp), color = card) {
+            Column(Modifier.padding(22.dp)) {
+                Text("ওয়েবসাইট এডিট", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(Modifier.height(14.dp))
+                OutlinedTextField(
+                    value = domain, onValueChange = { domain = it },
+                    label = { Text("ডোমেইন") }, singleLine = true, enabled = !isSaving,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it },
+                    label = { Text("ওয়েবসাইট নাম") }, singleLine = true, enabled = !isSaving,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(18.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss, enabled = !isSaving) { Text("বাতিল") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = { onSave(domain, name) },
+                        enabled = !isSaving && domain.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentCyan, contentColor = Color(0xFF0B0E14))
+                    ) {
+                        if (isSaving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else Text("সংরক্ষণ", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun DeleteWebsitePinDialog(
+    siteName: String,
+    isDeleting: Boolean,
+    pinError: String?,
+    onDismiss: () -> Unit,
+    onConfirm: (pin: String) -> Unit
+) {
+    var pin by remember { mutableStateOf("") }
+    val card = MaterialTheme.colorScheme.surface
+
+    Dialog(onDismissRequest = { if (!isDeleting) onDismiss() }) {
+        Surface(shape = RoundedCornerShape(24.dp), color = card) {
+            Column(Modifier.padding(22.dp)) {
+                Text("ওয়েবসাইট মুছে ফেলুন", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFFEF4444))
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "\"$siteName\" স্থায়ীভাবে মুছে যাবে। নিরাপত্তার জন্য PIN দিন।",
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(14.dp))
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) pin = it },
+                    label = { Text("নিরাপত্তা PIN") },
+                    singleLine = true,
+                    enabled = !isDeleting,
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = pinError != null,
+                    supportingText = pinError?.let { { Text(it, color = Color(0xFFEF4444)) } }
+                )
+                Spacer(Modifier.height(18.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss, enabled = !isDeleting) { Text("বাতিল") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = { onConfirm(pin) },
+                        enabled = !isDeleting && pin.length >= 4,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                    ) {
+                        if (isDeleting) CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                        else Text("মুছে ফেলুন", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun AddWebsiteWizard(
     isCreating: Boolean,
     onDismiss: () -> Unit,
     onCreate: (String, String?) -> Unit
@@ -224,7 +394,7 @@ private fun AddWebsiteWizard(
 }
 
 @Composable
-private fun CredentialRevealDialog(
+internal fun CredentialRevealDialog(
     website: WebsiteDto,
     apiSecret: String,
     onDismiss: () -> Unit

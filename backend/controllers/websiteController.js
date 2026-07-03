@@ -14,9 +14,11 @@
  */
 
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const prisma = require('../db/prisma');
 const merchantCache = require('../services/merchantCache');
 const layoutHelper = require('../services/checkoutLayoutHelper');
+const checkoutData = require('../services/checkoutDataService');
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -90,7 +92,70 @@ async function resolveMaxSites(user) {
   return plan ? plan.max_sites : 1;
 }
 
-/** Fetch a website row owned by the given user, or null. */
+const GLOBAL_CHECKOUT_KEY_PREFIX = 'merchant_global_checkout_';
+
+/** Verify merchant security PIN (same rules as pinController.verifyPin). */
+async function verifyUserPin(userId, role, pin) {
+  if (!pin) {
+    return { ok: false, status: 400, error: 'PIN প্রয়োজন।', message: 'ওয়েবসাইট মুছতে নিরাপত্তা PIN দিন।' };
+  }
+  if (role === 'admin') {
+    const adminPin = process.env.ADMIN_PIN || '5566';
+    if (pin === adminPin) return { ok: true };
+    return { ok: false, status: 401, error: 'INVALID_PIN', message: 'ভুল পিন নম্বর।' };
+  }
+  const user = await prisma.users.findUnique({ where: { id: userId }, select: { pin: true } });
+  if (!user?.pin) {
+    return { ok: false, status: 400, error: 'PIN_NOT_SET', message: 'ইউজারের কোনো PIN সেট করা নেই।' };
+  }
+  const isMatch = await bcrypt.compare(String(pin), user.pin);
+  if (!isMatch) return { ok: false, status: 401, error: 'INVALID_PIN', message: 'ভুল পিন নম্বর।' };
+  return { ok: true };
+}
+
+/** Build active SIM numbers for merchant designer/preview — includes disabled overrides. */
+async function buildActiveNumbers(userId, numberOrderJson) {
+  const { activeNumbers, gatewaysByCategory } = await checkoutData.buildSecureCheckoutData(
+    userId,
+    numberOrderJson,
+    { excludeDisabled: false }
+  );
+  return { activeNumbers, gatewaysByCategory };
+}
+
+function sanitizeNumberOrder(order) {
+  if (!Array.isArray(order)) return [];
+  return order.map((o, idx) => ({
+    methodId: o.methodId != null ? Number(o.methodId) : null,
+    provider: o.provider ? String(o.provider) : null,
+    number: o.number ? String(o.number) : null,
+    enabled: o.enabled === undefined ? true : !!o.enabled,
+    position: o.position != null ? Number(o.position) : idx,
+  }));
+}
+
+/** Parse stored global checkout JSON from global_config. */
+function parseGlobalCheckoutConfig(raw) {
+  const defaults = {
+    checkout_theme: 'design-1',
+    checkout_mode: 'transaction',
+    layout_config: { tabs: layoutHelper.DEFAULT_TABS },
+    numberOrder: [],
+  };
+  if (!raw) return defaults;
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      checkout_theme: parsed.checkout_theme || defaults.checkout_theme,
+      checkout_mode: parsed.checkout_mode || defaults.checkout_mode,
+      layout_config: parsed.layout_config || defaults.layout_config,
+      numberOrder: Array.isArray(parsed.numberOrder) ? parsed.numberOrder : [],
+    };
+  } catch (_) {
+    return defaults;
+  }
+}
+
 async function findOwnedWebsite(websiteId, userId) {
   const id = parseInt(websiteId, 10);
   if (!Number.isFinite(id)) return null;
@@ -148,6 +213,12 @@ async function createWebsite(req, res) {
 
     // Generate identifiers. Retry a few times on the (extremely rare)
     // unique-collision for merchant_id / api_key.
+    const globalKey = `${GLOBAL_CHECKOUT_KEY_PREFIX}${userId}`;
+    const globalCfgRow = await prisma.global_config.findUnique({ where: { config_key: globalKey } });
+    const globalCfg = parseGlobalCheckoutConfig(globalCfgRow?.config_value);
+    const globalLayoutStr = JSON.stringify(globalCfg.layout_config || { tabs: layoutHelper.DEFAULT_TABS });
+    const globalNumberOrderStr = JSON.stringify(globalCfg.numberOrder || []);
+
     let created = null;
     let plaintextSecret = null;
     for (let attempt = 0; attempt < 5 && !created; attempt++) {
@@ -169,9 +240,10 @@ async function createWebsite(req, res) {
             api_secret_version: 1,
             merchant_id: merchantId,
             company_name: websiteName || null,
-            checkout_theme: 'design-1',
-            checkout_mode: 'transaction',
-            layout_config: JSON.stringify({ tabs: layoutHelper.DEFAULT_TABS }),
+            checkout_theme: globalCfg.checkout_theme || 'design-1',
+            checkout_mode: globalCfg.checkout_mode || 'transaction',
+            layout_config: globalLayoutStr,
+            number_order_json: globalNumberOrderStr,
           },
         });
       } catch (e) {
@@ -229,41 +301,14 @@ async function getWebsite(req, res) {
       try { numberOrder = JSON.parse(row.number_order_json); } catch (_) { numberOrder = []; }
     }
 
-    // Auto-synced active SIM numbers for this account (across all devices).
-    // Source of truth = gateway_methods (same data the SMS reader uses). We only
-    // READ it here; checkout enable/disable is stored separately in numberOrder.
-    const methods = await prisma.gateway_methods.findMany({
-      where: { user_id: String(row.user_id), is_enabled: 1, NOT: { number: '' } },
-      orderBy: [{ priority: 'asc' }, { sim_slot: 'asc' }],
-      select: { id: true, provider: true, number: true, sim_slot: true, device_id: true, display_name: true },
-    });
-    const orderLookup = new Map();
-    numberOrder.forEach((o, idx) => {
-      const key = o.methodId != null ? `id:${o.methodId}` : `num:${o.provider}|${o.number}`;
-      orderLookup.set(key, { position: o.position != null ? o.position : idx, enabled: o.enabled !== false });
-    });
-    const activeNumbers = methods
-      .filter((m) => m.number && m.number.trim() !== '')
-      .map((m) => {
-        const ov = orderLookup.get(`id:${m.id}`) || orderLookup.get(`num:${m.provider}|${m.number}`);
-        return {
-          methodId: m.id,
-          provider: m.provider,
-          number: m.number,
-          simSlot: m.sim_slot,
-          deviceId: m.device_id,
-          displayName: m.display_name || m.provider,
-          enabled: ov ? ov.enabled : true,
-          position: ov ? ov.position : Number.MAX_SAFE_INTEGER,
-        };
-      })
-      .sort((a, b) => a.position - b.position);
+    const { activeNumbers, gatewaysByCategory } = await buildActiveNumbers(row.user_id, row.number_order_json);
 
     return res.json({
       success: true,
       website: toWebsiteDto(row),
       activeNumbers,
-      checkoutTabs: layoutHelper.parseTabs(row.layout_config),
+      gatewaysByCategory,
+      checkoutTabs: await layoutHelper.parseTabsForMerchant(row.layout_config),
       commissions: commissions.map((c) => ({
         id: c.id,
         paymentType: c.payment_type,
@@ -322,7 +367,8 @@ async function updateWebsiteSettings(req, res) {
     // Tab customization (Send Money, Cash Out, Payment, Bank, Card)
     if (b.checkout_tabs && typeof b.checkout_tabs === 'object') {
       const existing = row.layout_config;
-      data.layout_config = JSON.stringify(layoutHelper.mergeTabsIntoLayout(existing, b.checkout_tabs));
+      const { tabs: globalTabs } = await layoutHelper.loadGlobalCheckoutDefaults();
+      data.layout_config = JSON.stringify(layoutHelper.mergeTabsIntoLayout(existing, b.checkout_tabs, globalTabs));
     }
 
     if (b.checkout_mode !== undefined) {
@@ -423,16 +469,150 @@ async function updateNumberOrder(req, res) {
   }
 }
 
-/** DELETE /api/v1/websites/:id */
+/** DELETE /api/v1/websites/:id — requires security PIN in body. */
 async function deleteWebsite(req, res) {
   try {
     const userId = req.user.userId;
     const row = await findOwnedWebsite(req.params.id, userId);
     if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
+
+    const pin = (req.body && req.body.pin) ? String(req.body.pin) : '';
+    const pinCheck = await verifyUserPin(userId, req.user.role, pin);
+    if (!pinCheck.ok) {
+      return res.status(pinCheck.status).json({
+        success: false,
+        error: pinCheck.error,
+        message: pinCheck.message,
+      });
+    }
+
     await prisma.gateway_layouts.delete({ where: { id: row.id } });
+    merchantCache.invalidate(row.api_key);
     return res.json({ success: true, message: 'ওয়েবসাইট মুছে ফেলা হয়েছে।' });
   } catch (error) {
     console.error('[Website] deleteWebsite error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/**
+ * GET /api/v1/websites/global-checkout
+ * Merchant-wide default checkout config (applies to all websites on save).
+ */
+async function getGlobalCheckout(req, res) {
+  try {
+    const userId = req.user.userId;
+    const configKey = `${GLOBAL_CHECKOUT_KEY_PREFIX}${userId}`;
+    const cfgRow = await prisma.global_config.findUnique({ where: { config_key: configKey } });
+
+    let config = parseGlobalCheckoutConfig(cfgRow?.config_value);
+    if (!cfgRow) {
+      const first = await prisma.gateway_layouts.findFirst({
+        where: { user_id: userId },
+        orderBy: { created_at: 'asc' },
+      });
+      if (first) {
+        config.checkout_theme = first.checkout_theme || config.checkout_theme;
+        config.checkout_mode = first.checkout_mode || config.checkout_mode;
+        if (first.layout_config) {
+          try {
+            config.layout_config = typeof first.layout_config === 'string'
+              ? JSON.parse(first.layout_config) : first.layout_config;
+          } catch (_) { /* keep default */ }
+        }
+        if (first.number_order_json) {
+          try { config.numberOrder = JSON.parse(first.number_order_json); } catch (_) { /* */ }
+        }
+      }
+    }
+
+    const numberOrderJson = JSON.stringify(config.numberOrder || []);
+    const { activeNumbers, gatewaysByCategory } = await buildActiveNumbers(userId, numberOrderJson);
+    const websiteCount = await prisma.gateway_layouts.count({ where: { user_id: userId } });
+    const layoutRaw = typeof config.layout_config === 'string'
+      ? config.layout_config : JSON.stringify(config.layout_config || {});
+
+    return res.json({
+      success: true,
+      checkoutTheme: config.checkout_theme,
+      checkoutMode: config.checkout_mode,
+      checkoutTabs: await layoutHelper.parseTabsForMerchant(layoutRaw),
+      activeNumbers,
+      gatewaysByCategory,
+      numberOrder: config.numberOrder || [],
+      websiteCount,
+    });
+  } catch (error) {
+    console.error('[Website] getGlobalCheckout error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/**
+ * PUT /api/v1/websites/global-checkout
+ * Save global checkout and propagate live to every website owned by the merchant.
+ */
+async function saveGlobalCheckout(req, res) {
+  try {
+    const userId = req.user.userId;
+    const b = req.body || {};
+
+    const theme = String(b.checkout_theme || b.checkoutTheme || 'design-1');
+    if (!layoutHelper.VALID_DESIGNS.has(theme) && !['default', 'light', 'dark', 'minimal', 'brand'].includes(theme)) {
+      return res.status(400).json({ success: false, error: 'INVALID_CHECKOUT_THEME' });
+    }
+    const mode = String(b.checkout_mode || b.checkoutMode || 'transaction');
+    if (!['transaction', 'merchant_vibe'].includes(mode)) {
+      return res.status(400).json({ success: false, error: 'INVALID_CHECKOUT_MODE' });
+    }
+
+    const tabsInput = b.checkout_tabs || b.checkoutTabs;
+    const { tabs: globalTabs } = await layoutHelper.loadGlobalCheckoutDefaults();
+    const layoutObj = layoutHelper.mergeTabsIntoLayout(null, tabsInput || {}, globalTabs);
+    const layoutConfigStr = JSON.stringify(layoutObj);
+    const sanitizedOrder = sanitizeNumberOrder(b.order || b.numberOrder || []);
+    const numberOrderJson = JSON.stringify(sanitizedOrder);
+
+    const configKey = `${GLOBAL_CHECKOUT_KEY_PREFIX}${userId}`;
+    const globalPayload = JSON.stringify({
+      checkout_theme: theme,
+      checkout_mode: mode,
+      layout_config: layoutObj,
+      numberOrder: sanitizedOrder,
+      updatedAt: new Date().toISOString(),
+    });
+    await prisma.global_config.upsert({
+      where: { config_key: configKey },
+      update: { config_value: globalPayload, updated_at: new Date() },
+      create: { config_key: configKey, config_value: globalPayload, updated_at: new Date() },
+    });
+
+    const websites = await prisma.gateway_layouts.findMany({ where: { user_id: userId } });
+    for (const w of websites) {
+      await prisma.gateway_layouts.update({
+        where: { id: w.id },
+        data: {
+          checkout_theme: theme,
+          checkout_mode: mode,
+          layout_config: layoutConfigStr,
+          number_order_json: numberOrderJson,
+          updated_at: new Date(),
+        },
+      });
+      merchantCache.invalidate(w.api_key);
+    }
+
+    return res.json({
+      success: true,
+      message: `গ্লোবাল চেকআউট সংরক্ষণ হয়েছে — ${websites.length}টি ওয়েবসাইটে প্রয়োগ করা হয়েছে।`,
+      websitesUpdated: websites.length,
+      checkoutTheme: theme,
+      checkoutMode: mode,
+      checkoutTabs: layoutHelper.parseTabs(layoutConfigStr, globalTabs),
+      numberOrder: sanitizedOrder,
+    });
+  } catch (error) {
+    console.error('[Website] saveGlobalCheckout error:', error);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 }
@@ -671,6 +851,8 @@ module.exports = {
   regenerateSecret,
   updateNumberOrder,
   deleteWebsite,
+  getGlobalCheckout,
+  saveGlobalCheckout,
   listCommissions,
   upsertCommission,
   deleteCommission,

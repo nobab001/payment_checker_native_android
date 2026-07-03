@@ -12,8 +12,9 @@ import androidx.navigation3.ui.NavDisplay
 import online.paychek.app.ui.screen.auth.login.LoginScreen
 import online.paychek.app.ui.screen.auth.signup.SignupScreen
 import online.paychek.app.ui.screen.home.HomeScreen
-import online.paychek.app.ui.screen.apicenter.CheckoutDesignerScreen
+import online.paychek.app.ui.screen.apicenter.GlobalCheckoutScreen
 import online.paychek.app.ui.screen.admin.AdminDashboardScreen
+import online.paychek.app.ui.screen.admin.AdminUserSettingsScreen
 import online.paychek.app.ui.screen.admin.BillingConfigScreen
 import online.paychek.app.ui.screen.profile.ProfileSettingsScreen
 import online.paychek.app.ui.screen.sync.SyncSettingsScreen
@@ -93,7 +94,7 @@ fun MainNavigation() {
             }
 
             entry<NavKey.ApiCenter> {
-                CheckoutDesignerScreen(
+                GlobalCheckoutScreen(
                     onNavigateBack = { backStack.removeLastOrNull() },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -154,7 +155,18 @@ fun MainNavigation() {
                         SecurePreferences.remove(context, "pcu_profile_complete")
                         SecurePreferences.remove(context, "pcu_contact")
                         backStack.add(NavKey.Login)
+                    },
+                    onOpenUserSettings = { userId ->
+                        backStack.add(NavKey.AdminUserSettings(userId))
                     }
+                )
+            }
+
+            entry<NavKey.AdminUserSettings> { key ->
+                AdminUserSettingsScreen(
+                    userId = key.userId,
+                    onNavigateBack = { backStack.removeLastOrNull() },
+                    modifier = Modifier.fillMaxSize()
                 )
             }
 

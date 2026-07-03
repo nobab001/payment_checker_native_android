@@ -44,6 +44,7 @@ private val AccentCyan = Color(0xFF22D3EE)
 @Composable
 fun AdminDashboardScreen(
     onLogout: () -> Unit,
+    onOpenUserSettings: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: AdminDashboardViewModel = viewModel()
 ) {
@@ -54,7 +55,6 @@ fun AdminDashboardScreen(
     var showTemplateDialog by remember { mutableStateOf<SmsTemplateDto?>(null) }
     var showEmailDialog by remember { mutableStateOf<EmailAccountDto?>(null) }
     var showGatewayDialog by remember { mutableStateOf<SmsSettingsDto?>(null) }
-    var showUserDialog by remember { mutableStateOf<AdminUserDto?>(null) }
     var showCheckoutDialog by remember { mutableStateOf<CheckoutTemplateDto?>(null) }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -72,72 +72,126 @@ fun AdminDashboardScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                modifier = Modifier.height(56.dp),
-                windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
-                title = {
-                    Text(
-                        "Admin Panel Console",
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        fontSize = 16.sp
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.primary)
+            ) {
+                TopAppBar(
+                    modifier = Modifier.statusBarsPadding(),
+                    windowInsets = WindowInsets(0, 0, 0, 0),
+                    title = {
+                        Text(
+                            "Admin Panel Console",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            fontSize = 16.sp
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onLogout, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ExitToApp,
+                                contentDescription = "Logout",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { viewModel.loadAllData() }, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                        actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                     )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onLogout, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ExitToApp,
-                            contentDescription = "Logout",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { viewModel.loadAllData() }, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
-            )
+                )
+            }
         },
         bottomBar = {
-            PrimaryTabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary,
-                modifier = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Modifier else Modifier.border(1.dp, Color(0xFFE3E5E8), RoundedCornerShape(0.dp))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface)
             ) {
+                PrimaryTabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    modifier = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) {
+                        Modifier
+                    } else {
+                        Modifier.border(1.dp, Color(0xFFE3E5E8), RoundedCornerShape(0.dp))
+                    }
+                ) {
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("গেটওয়ে ও টেমপ্লেট", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (selectedTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
-                    icon = { Icon(Icons.Default.Build, "Gateways", tint = if (selectedTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                    icon = {
+                        Icon(
+                            Icons.Default.Build,
+                            contentDescription = "গেটওয়ে ও টেমপ্লেট",
+                            tint = if (selectedTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("ইউজার ও ডিভাইস", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (selectedTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
-                    icon = { Icon(Icons.Default.People, "Users", tint = if (selectedTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                    icon = {
+                        Icon(
+                            Icons.Default.ShoppingCart,
+                            contentDescription = "চেকআউট ডিজাইন",
+                            tint = if (selectedTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 )
                 Tab(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
-                    text = { Text("অ্যাপ সেটিংস", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (selectedTab == 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
-                    icon = { Icon(Icons.Default.Settings, "Config", tint = if (selectedTab == 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                    icon = {
+                        Icon(
+                            Icons.Default.People,
+                            contentDescription = "ইউজার ও ডিভাইস",
+                            tint = if (selectedTab == 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 )
                 Tab(
                     selected = selectedTab == 3,
                     onClick = { selectedTab = 3 },
-                    text = { Text("বিলিং সেটিংস", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (selectedTab == 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
-                    icon = { Icon(Icons.Default.CreditCard, "Billing", tint = if (selectedTab == 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                    icon = {
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = "অ্যাপ সেটিংস",
+                            tint = if (selectedTab == 3) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 )
+                Tab(
+                    selected = selectedTab == 4,
+                    onClick = { selectedTab = 4 },
+                    icon = {
+                        Icon(
+                            Icons.Default.CreditCard,
+                            contentDescription = "বিলিং সেটিংস",
+                            tint = if (selectedTab == 4) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                )
+                }
+                Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
             }
         },
         modifier = modifier
@@ -165,15 +219,21 @@ fun AdminDashboardScreen(
                         onDeleteEmail = { viewModel.deleteEmailAccount(it) },
                         onUpdateOtpFormat = { viewModel.updateOtpFormat(it) }
                     )
-                    1 -> UsersAndDevicesTab(
+                    1 -> CheckoutDesignTab(
                         uiState = uiState,
-                        onUserClick = { showUserDialog = it }
+                        onSaveCheckoutDesign = { tabs, branding ->
+                            viewModel.saveCheckoutDesign(tabs, branding)
+                        }
                     )
-                    2 -> GlobalSettingsTab(
+                    2 -> UsersAndDevicesTab(
+                        uiState = uiState,
+                        onOpenUserSettings = { onOpenUserSettings(it.id) }
+                    )
+                    3 -> GlobalSettingsTab(
                         uiState = uiState,
                         onUpdateConfig = { key, valStr -> viewModel.updateConfig(key, valStr) }
                     )
-                    3 -> BillingConfigScreen(
+                    4 -> BillingConfigScreen(
                         viewModel = viewModel,
                         modifier = Modifier.fillMaxSize()
                     )
@@ -225,25 +285,6 @@ fun AdminDashboardScreen(
             onSave = {
                 viewModel.saveCheckoutTemplate(it)
                 showCheckoutDialog = null
-            }
-        )
-    }
-
-    showUserDialog?.let { user ->
-        UserDetailAndTrialDialog(
-            user = user,
-            onDismiss = { showUserDialog = null },
-            onToggleBlock = { blocked ->
-                viewModel.toggleUserBlock(user.id, blocked)
-                showUserDialog = null
-            },
-            onUpdateTrial = { devId, expires, locked, reason ->
-                viewModel.updateDeviceTrial(devId, expires, locked, reason)
-                showUserDialog = null
-            },
-            onGiveManualGrace = { credits ->
-                viewModel.giveManualGrace(user.id, credits)
-                showUserDialog = null
             }
         )
     }
@@ -461,7 +502,22 @@ private fun GatewaysAndTemplatesTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("SMS Templates (Official)", fontWeight = FontWeight.Bold, color = AccentTitle, fontSize = 16.sp)
-                    IconButton(onClick = { onEditTemplate(SmsTemplateDto(null, "", "", "", "", "", 1, 1)) }) {
+                    IconButton(onClick = {
+                        onEditTemplate(
+                            SmsTemplateDto(
+                                id = null,
+                                templateName = "",
+                                senderId = "",
+                                senderNumber = "",
+                                matchingKeyword = "",
+                                regexPattern = "",
+                                isOfficial = 1,
+                                isActive = 1,
+                                isParseable = 1,
+                                category = "SEND_MONEY"
+                            )
+                        )
+                    }) {
                         Icon(Icons.Default.AddCircle, "Add Template", tint = RoyalIndigo)
                     }
                 }
@@ -480,7 +536,11 @@ private fun GatewaysAndTemplatesTab(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(temp.templateName, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text("Sender ID: ${temp.senderId} | Number: ${temp.senderNumber ?: "—"} | Active: ${if (temp.isActive == 1) "Yes" else "No"}", fontSize = 12.sp, color = TextSecondary)
+                                Text(
+                                    "Type: ${temp.category ?: "SEND_MONEY"} | Sender: ${temp.senderId} | Active: ${if (temp.isActive == 1) "Yes" else "No"}",
+                                    fontSize = 12.sp,
+                                    color = TextSecondary
+                                )
                             }
                             IconButton(onClick = { temp.id?.let { onDeleteTemplate(it) } }) {
                                 Icon(Icons.Default.Delete, "Delete", tint = StatusRed)
@@ -536,9 +596,31 @@ private fun GatewaysAndTemplatesTab(
 }
 
 @Composable
+private fun CheckoutDesignTab(
+    uiState: AdminUiState,
+    onSaveCheckoutDesign: (Map<String, CheckoutDesignTabInput>, Map<String, ProviderBrandingDto>) -> Unit
+) {
+    val scrollState = rememberScrollState()
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(scrollState),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        AdminCheckoutDesignCard(
+            tabs = uiState.checkoutDesignTabs,
+            providerBranding = uiState.providerBranding,
+            isSaving = uiState.isSaving,
+            onSave = onSaveCheckoutDesign
+        )
+    }
+}
+
+@Composable
 private fun UsersAndDevicesTab(
     uiState: AdminUiState,
-    onUserClick: (AdminUserDto) -> Unit
+    onOpenUserSettings: (AdminUserDto) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
     val filteredUsers = remember(uiState.users, searchQuery) {
@@ -584,13 +666,11 @@ private fun UsersAndDevicesTab(
                         colors = CardDefaults.cardColors(containerColor = CardBackground),
                         shape = RoundedCornerShape(12.dp),
                         border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onUserClick(user) }
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             modifier = Modifier
-                                .padding(16.dp)
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
                                 .fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
@@ -600,19 +680,37 @@ private fun UsersAndDevicesTab(
                                 Text("Contact: ${user.phone ?: user.email ?: "Unknown"}", fontSize = 12.sp, color = TextSecondary)
                                 Text("Role: ${user.role} | Devices: ${user.devices.size}", fontSize = 12.sp, color = TextSecondary)
                             }
-                            val chipBg = if (user.blocked) Color(0xFFFFEBEE) else Color(0xFFE8F9EE)
-                            val chipText = if (user.blocked) StatusRed else Color(0xFF1B5E20)
-                            Box(
-                                modifier = Modifier
-                                    .background(chipBg, RoundedCornerShape(6.dp))
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text(
-                                    text = if (user.blocked) "Blocked" else "Active",
-                                    color = chipText,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                val chipBg = if (user.blocked) Color(0xFFFFEBEE) else Color(0xFFE8F9EE)
+                                val chipText = if (user.blocked) StatusRed else Color(0xFF1B5E20)
+                                Box(
+                                    modifier = Modifier
+                                        .background(chipBg, RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = if (user.blocked) "Blocked" else "Active",
+                                        color = chipText,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { onOpenUserSettings(user) },
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(RoyalIndigo.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Settings,
+                                        contentDescription = "সেটিংস",
+                                        tint = RoyalIndigo,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -744,6 +842,7 @@ private fun GlobalSettingsTab(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SmsTemplateEditDialog(
     template: SmsTemplateDto,
@@ -755,14 +854,27 @@ private fun SmsTemplateEditDialog(
     var senderNumber by remember { mutableStateOf(template.senderNumber ?: "") }
     var regexList by remember {
         mutableStateOf(
-            template.regexPattern.split("|||")
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
+            runCatching {
+                template.regexPattern.split("|||")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+            }.getOrDefault(emptyList())
         )
     }
     var newRegex by remember { mutableStateOf("") }
-    var isActive by remember { mutableIntStateOf(template.isActive) }
-    var isParseable by remember { mutableIntStateOf(template.isParseable) }
+    var isActive by remember { mutableIntStateOf(runCatching { template.isActive }.getOrDefault(1)) }
+    var isParseable by remember { mutableIntStateOf(runCatching { template.isParseable }.getOrDefault(1)) }
+    var category by remember {
+        mutableStateOf(template.category?.takeIf { it.isNotBlank() } ?: "SEND_MONEY")
+    }
+    var categoryExpanded by remember { mutableStateOf(false) }
+    val categoryOptions = listOf(
+        "SEND_MONEY" to "সেন্ড মানি",
+        "CASH_OUT" to "ক্যাশ আউট",
+        "PAYMENT" to "পেমেন্ট",
+        "BANK" to "ব্যাংক",
+        "CARD" to "কার্ড"
+    )
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -821,6 +933,42 @@ private fun SmsTemplateEditDialog(
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                ExposedDropdownMenuBox(
+                    expanded = categoryExpanded,
+                    onExpandedChange = { categoryExpanded = it },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = categoryOptions.find { it.first == category }?.second ?: category,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("লেনদেনের টাইপ (Category)") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = CardBackground,
+                            unfocusedContainerColor = CardBackground
+                        ),
+                        modifier = Modifier
+                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = categoryExpanded,
+                        onDismissRequest = { categoryExpanded = false }
+                    ) {
+                        categoryOptions.forEach { (value, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    category = value
+                                    categoryExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(4.dp))
                 Text("SMS Body Formats", fontWeight = FontWeight.Bold, color = AccentTitle, fontSize = 14.sp)
@@ -961,10 +1109,11 @@ private fun SmsTemplateEditDialog(
                                     templateName = name,
                                     senderId = sender,
                                     senderNumber = senderNumber.ifBlank { null },
-                                    matchingKeyword = "", // default empty since UI is removed
+                                    matchingKeyword = "",
                                     regexPattern = finalRegexPattern,
                                     isActive = isActive,
-                                    isParseable = isParseable
+                                    isParseable = isParseable,
+                                    category = category
                                 )
                             )
                         },
@@ -1392,6 +1541,173 @@ private fun UserDetailAndTrialDialog(
 
                 TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
                     Text("বন্ধ করুন", color = RoyalIndigo)
+                }
+            }
+        }
+    }
+}
+
+private val CHECKOUT_TAB_ORDER = listOf(
+    "send_money" to "Send Money",
+    "cash_out" to "Cash Out",
+    "payment" to "Payment",
+    "bank" to "Bank",
+    "card" to "Card Payment"
+)
+
+private val PROVIDER_ORDER = listOf("bkash", "nagad", "rocket", "upay")
+
+@Composable
+private fun AdminCheckoutDesignCard(
+    tabs: Map<String, CheckoutTabDto>,
+    providerBranding: Map<String, ProviderBrandingDto>,
+    isSaving: Boolean,
+    onSave: (Map<String, CheckoutDesignTabInput>, Map<String, ProviderBrandingDto>) -> Unit
+) {
+    val tabEnabled = remember { mutableStateMapOf<String, Boolean>() }
+    val tabLabels = remember { mutableStateMapOf<String, String>() }
+    val tabIcons = remember { mutableStateMapOf<String, String>() }
+    val tabIconUrls = remember { mutableStateMapOf<String, String>() }
+    val provNames = remember { mutableStateMapOf<String, String>() }
+    val provLogos = remember { mutableStateMapOf<String, String>() }
+
+    LaunchedEffect(tabs, providerBranding) {
+        CHECKOUT_TAB_ORDER.forEach { (key, defaultLabel) ->
+            val t = tabs[key]
+            tabEnabled[key] = t?.enabled ?: true
+            tabLabels[key] = t?.label?.takeIf { it.isNotBlank() } ?: defaultLabel
+            tabIcons[key] = t?.icon ?: "💳"
+            tabIconUrls[key] = t?.iconUrl.orEmpty()
+        }
+        PROVIDER_ORDER.forEach { key ->
+            val p = providerBranding[key]
+            provNames[key] = p?.displayName?.takeIf { it.isNotBlank() }
+                ?: key.replaceFirstChar { it.uppercase() }
+            provLogos[key] = p?.logoUrl.orEmpty()
+        }
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+        shape = RoundedCornerShape(12.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null
+        else BorderStroke(1.dp, Color(0xFFE3E5E8)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                "গ্লোবাল চেকআউট ডিজাইন",
+                fontWeight = FontWeight.Bold,
+                color = AccentTitle,
+                fontSize = 16.sp
+            )
+            Text(
+                "ট্যাব আইকন/নাম ও পেমেন্ট প্রোভাইডার লোগো সব মার্চেন্টের চেকআউটে প্রযোজ্য। আইকন URL অনলাইন থেকে দিতে পারেন।",
+                fontSize = 12.sp,
+                color = TextSecondary
+            )
+
+            Text("চেকআউট ট্যাব", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = TextPrimary)
+            CHECKOUT_TAB_ORDER.forEach { (key, defaultLabel) ->
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(defaultLabel, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Switch(
+                                checked = tabEnabled[key] ?: true,
+                                onCheckedChange = { tabEnabled[key] = it }
+                            )
+                        }
+                        OutlinedTextField(
+                            value = tabLabels[key] ?: defaultLabel,
+                            onValueChange = { tabLabels[key] = it },
+                            label = { Text("ট্যাব নাম") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = tabIcons[key] ?: "💳",
+                                onValueChange = { tabIcons[key] = it },
+                                label = { Text("ইমোজি") },
+                                singleLine = true,
+                                modifier = Modifier.weight(0.35f)
+                            )
+                            OutlinedTextField(
+                                value = tabIconUrls[key].orEmpty(),
+                                onValueChange = { tabIconUrls[key] = it },
+                                label = { Text("আইকন URL") },
+                                singleLine = true,
+                                modifier = Modifier.weight(0.65f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Text("পেমেন্ট প্রোভাইডার ব্র্যান্ডিং", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = TextPrimary)
+            PROVIDER_ORDER.forEach { key ->
+                val display = key.replaceFirstChar { it.uppercase() }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = provNames[key] ?: display,
+                        onValueChange = { provNames[key] = it },
+                        label = { Text("$display নাম") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = provLogos[key].orEmpty(),
+                        onValueChange = { provLogos[key] = it },
+                        label = { Text("লোগো URL") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            Button(
+                onClick = {
+                    val tabInput = CHECKOUT_TAB_ORDER.associate { (key, defaultLabel) ->
+                        key to CheckoutDesignTabInput(
+                            enabled = tabEnabled[key] ?: true,
+                            label = tabLabels[key]?.trim().orEmpty().ifBlank { defaultLabel },
+                            icon = tabIcons[key]?.trim().orEmpty().ifBlank { "💳" },
+                            iconUrl = tabIconUrls[key]?.trim().orEmpty(),
+                            category = when (key) {
+                                "cash_out" -> "CASH_OUT"
+                                "payment" -> "PAYMENT"
+                                "bank" -> "BANK"
+                                "card" -> "CARD"
+                                else -> "SEND_MONEY"
+                            }
+                        )
+                    }
+                    val branding = PROVIDER_ORDER.associate { key ->
+                        key to ProviderBrandingDto(
+                            displayName = provNames[key]?.trim().orEmpty()
+                                .ifBlank { key.replaceFirstChar { it.uppercase() } },
+                            logoUrl = provLogos[key]?.trim().orEmpty()
+                        )
+                    }
+                    onSave(tabInput, branding)
+                },
+                enabled = !isSaving,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo)
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                } else {
+                    Text("চেকআউট ডিজাইন সংরক্ষণ করুন", fontWeight = FontWeight.Bold)
                 }
             }
         }

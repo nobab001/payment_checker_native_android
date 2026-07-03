@@ -46,8 +46,21 @@ class WebsiteRepository(private val context: Context) {
         else Result.failure(Exception(body?.error ?: parseError(r)))
     }
 
-    suspend fun deleteWebsite(id: Int): Result<Unit> = safeCall {
-        val r = api.deleteWebsite(bearer(), id)
+    suspend fun getGlobalCheckout(): Result<GlobalCheckoutResponse> = safeCall {
+        val r = api.getGlobalCheckout(bearer())
+        if (r.isSuccessful && r.body()?.success == true) Result.success(r.body()!!)
+        else Result.failure(Exception(parseError(r)))
+    }
+
+    suspend fun saveGlobalCheckout(request: SaveGlobalCheckoutRequest): Result<GlobalCheckoutResponse> = safeCall {
+        val r = api.saveGlobalCheckout(bearer(), request)
+        val body = r.body()
+        if (r.isSuccessful && body?.success == true) Result.success(body)
+        else Result.failure(Exception(body?.message ?: body?.error ?: parseError(r)))
+    }
+
+    suspend fun deleteWebsite(id: Int, pin: String): Result<Unit> = safeCall {
+        val r = api.deleteWebsite(bearer(), id, DeleteWebsiteRequest(pin))
         if (r.isSuccessful && r.body()?.success == true) Result.success(Unit)
         else Result.failure(Exception(parseError(r)))
     }

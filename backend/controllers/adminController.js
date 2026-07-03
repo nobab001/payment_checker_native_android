@@ -1,5 +1,6 @@
 const prisma = require('../db/prisma');
 const dataSyncCache = require('../services/dataSyncCache');
+const layoutHelper = require('../services/checkoutLayoutHelper');
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_987654321';
@@ -134,7 +135,8 @@ async function getSmsTemplates(req, res) {
       ...t,
       sender_number: t.sender_number || '',
       matching_keyword: t.matching_keyword || '',
-      regex_pattern: regexToBrackets(t.regex_pattern)
+      category: t.category || 'SEND_MONEY',
+      regex_pattern: regexToBrackets(t.regex_pattern || '')
     }));
     return res.json({ success: true, templates: mapped });
   } catch (err) {
@@ -145,10 +147,13 @@ async function getSmsTemplates(req, res) {
 
 async function saveSmsTemplate(req, res) {
   try {
-    const { id, template_name, sender_id, sender_number, matching_keyword, regex_pattern, is_active, is_parseable } = req.body;
+    const { id, template_name, sender_id, sender_number, matching_keyword, regex_pattern, is_active, is_parseable, category } = req.body;
     if (!template_name || !sender_id) {
       return res.status(400).json({ error: 'Missing required template fields' });
     }
+
+    const allowedCategories = ['SEND_MONEY', 'CASH_OUT', 'PAYMENT', 'BANK', 'CARD'];
+    const resolvedCategory = allowedCategories.includes(category) ? category : 'SEND_MONEY';
 
     const data = {
       template_name,
@@ -158,6 +163,7 @@ async function saveSmsTemplate(req, res) {
       regex_pattern: generateCustomRegex(regex_pattern ? regex_pattern.trim() : ''),
       is_active: is_active === undefined ? 1 : (is_active ? 1 : 0),
       is_parseable: is_parseable === undefined ? 1 : (is_parseable ? 1 : 0),
+      category: resolvedCategory,
       is_official: 1,
       updated_at: new Date()
     };
@@ -181,7 +187,8 @@ async function saveSmsTemplate(req, res) {
     return res.json({ success: true, message: 'SMS Template saved successfully.', data_version: version });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    const msg = err?.message || 'Internal Server Error';
+    return res.status(500).json({ success: false, error: msg, message: 'টেমপ্লেট সেভ ব্যর্থ হয়েছে। সার্ভার রিস্টার্ট করে আবার চেষ্টা করুন।' });
   }
 }
 
@@ -716,9 +723,15 @@ async function setWebsitePermissions(req, res) {
       success: true,
       website: {
         id: updated.id,
-        allowPaymentTypeCallback: !!updated.allow_payment_type_callback,
-        allowCommissionCallback: !!updated.allow_commission_callback,
-        commissionEnabled: !!updated.commission_enabled,
+        user_id: updated.user_id,
+        site_name: updated.site_name,
+        site_url: updated.site_url,
+        merchant_id: updated.merchant_id,
+        api_key: updated.api_key,
+        is_active: updated.is_active,
+        allow_payment_type_callback: updated.allow_payment_type_callback,
+        allow_commission_callback: updated.allow_commission_callback,
+        commission_enabled: updated.commission_enabled,
       },
     });
   } catch (err) {
@@ -727,10 +740,56 @@ async function setWebsitePermissions(req, res) {
   }
 }
 
+/** GET /api/admin/checkout-design — global tab icons/labels + provider branding */
+async function getCheckoutDesignConfig(req, res) {
+  try {
+    const { tabs: globalTabs, providerBranding } = await layoutHelper.loadGlobalCheckoutDefaults();
+    const tabs = layoutHelper.parseTabs(null, globalTabs);
+    const providers = layoutHelper.resolveProviderBranding(providerBranding);
+    return res.json({ success: true, tabs, providerBranding: providers, designs: ['design-1', 'design-2', 'design-3'] });
+  } catch (err) {
+    console.error('getCheckoutDesignConfig error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/** POST /api/admin/checkout-design — save global checkout tab + provider config (all merchants) */
+async function saveCheckoutDesignConfig(req, res) {
+  try {
+    const b = req.body || {};
+    const tabsInput = b.tabs || {};
+    const tabs = {};
+    for (const [key, def] of Object.entries(layoutHelper.DEFAULT_TABS)) {
+      const ov = tabsInput[key] || {};
+      tabs[key] = {
+        enabled: ov.enabled !== undefined ? !!ov.enabled : def.enabled,
+        label: String(ov.label || def.label).trim() || def.label,
+        icon: String(ov.icon || def.icon).trim() || def.icon,
+        iconUrl: String(ov.iconUrl || '').trim(),
+        category: String(ov.category || def.category).toUpperCase(),
+      };
+    }
+    const providerBranding = b.providerBranding && typeof b.providerBranding === 'object'
+      ? b.providerBranding : layoutHelper.DEFAULT_PROVIDER_BRANDING;
+    await layoutHelper.saveGlobalCheckoutDefaults(tabs, providerBranding);
+    return res.json({
+      success: true,
+      message: 'গ্লোবাল চেকআউট ডিজাইন কনফিগ সংরক্ষণ হয়েছে। সব মার্চেন্টে প্রযোজ্য হবে।',
+      tabs: layoutHelper.parseTabs(null, tabs),
+      providerBranding: layoutHelper.resolveProviderBranding(providerBranding),
+    });
+  } catch (err) {
+    console.error('saveCheckoutDesignConfig error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   verifyAdmin,
   listAllWebsites,
   setWebsitePermissions,
+  getCheckoutDesignConfig,
+  saveCheckoutDesignConfig,
   getConfigs,
   updateConfig,
   getSmsTemplates,

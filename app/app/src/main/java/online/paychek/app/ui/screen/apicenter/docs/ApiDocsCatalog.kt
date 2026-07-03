@@ -22,6 +22,25 @@ data class DocLanguage(
 
 object ApiDocsCatalog {
 
+    val overviewSections: List<DocSection> = listOf(
+        DocSection(
+            "Developer API Credentials",
+            "প্রতিটি ওয়েবসাইট তৈরি হলে একবারই Merchant ID, API Key ও Secret Key দেখানো হয়। Secret পরে আর দেখা যায় না — ওয়েবসাইট সেটিংস → মার্চেন্ট পরিচিতি থেকে দেখুন।"
+        ),
+        DocSection(
+            "Webhook Configuration",
+            "পেমেন্ট ভেরিফাই হলে PayCheck আপনার webhook_url-এ HMAC-সাইন্ড POST পাঠায়। ওয়েবসাইট সেটিংসে Callback/Webhook URL সেট করুন।"
+        ),
+        DocSection(
+            "API Usage Status",
+            "সব API কল JWT + Merchant API Key দিয়ে অথেন্টিকেট হয়। Rate limit ও subscription প্যাকেজ অনুযায়ী সাইট সংখ্যা সীমাবদ্ধ।"
+        ),
+        DocSection(
+            "Quick Integration (Node.js SDK)",
+            "দ্রুত শুরু: npm install axios → POST /api/transactions/claim-check দিয়ে TrxID ভেরিফাই করুন। নিচে ১৩টি ভাষায় সম্পূর্ণ উদাহরণ আছে।"
+        )
+    )
+
     // Shared endpoint reference used across examples.
     private const val BASE = "https://paychek.online"
 

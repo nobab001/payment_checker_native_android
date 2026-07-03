@@ -155,4 +155,27 @@ interface AdminApiService {
         @Header("Authorization") token: String,
         @Path("id") id: Int
     ): Response<AdminGenericResponse>
+
+    @GET("admin/websites")
+    suspend fun getWebsites(
+        @Header("Authorization") token: String
+    ): Response<AdminWebsitesResponse>
+
+    @POST("admin/websites/{id}/permissions")
+    suspend fun setWebsitePermissions(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Body request: WebsitePermissionsRequest
+    ): Response<WebsitePermissionsResponse>
+
+    @GET("admin/checkout-design")
+    suspend fun getCheckoutDesignConfig(
+        @Header("Authorization") token: String
+    ): Response<CheckoutDesignConfigResponse>
+
+    @POST("admin/checkout-design")
+    suspend fun saveCheckoutDesignConfig(
+        @Header("Authorization") token: String,
+        @Body request: SaveCheckoutDesignRequest
+    ): Response<CheckoutDesignConfigResponse>
 }

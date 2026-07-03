@@ -28,6 +28,7 @@ data class SmsTemplateDto(
     @SerializedName("is_official") val isOfficial: Int?,
     @SerializedName("is_active") val isActive: Int,
     @SerializedName("is_parseable") val isParseable: Int = 1,
+    @SerializedName("category") val category: String? = "SEND_MONEY",
     @SerializedName("is_other_device") val isOtherDevice: Boolean? = false,
     @SerializedName("is_admin_archive") val isAdminArchive: Boolean? = false
 )
@@ -160,6 +161,35 @@ data class ManualGraceRequest(
     @SerializedName("credits") val credits: Int
 )
 
+data class AdminWebsiteDto(
+    @SerializedName("id") val id: Int,
+    @SerializedName("user_id") val userId: Int,
+    @SerializedName("site_name") val siteName: String?,
+    @SerializedName("site_url") val siteUrl: String?,
+    @SerializedName("merchant_id") val merchantId: String?,
+    @SerializedName("api_key") val apiKey: String?,
+    @SerializedName("is_active") val isActive: Int = 1,
+    @SerializedName("allow_payment_type_callback") val allowPaymentTypeCallback: Int = 0,
+    @SerializedName("allow_commission_callback") val allowCommissionCallback: Int = 0,
+    @SerializedName("commission_enabled") val commissionEnabled: Int = 0
+)
+
+data class AdminWebsitesResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("websites") val websites: List<AdminWebsiteDto>
+)
+
+data class WebsitePermissionsRequest(
+    @SerializedName("allow_payment_type_callback") val allowPaymentTypeCallback: Boolean? = null,
+    @SerializedName("allow_commission_callback") val allowCommissionCallback: Boolean? = null,
+    @SerializedName("commission_enabled") val commissionEnabled: Boolean? = null
+)
+
+data class WebsitePermissionsResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("website") val website: AdminWebsiteDto?
+)
+
 data class SubscriptionPlanDto(
     @SerializedName("id") val id: Int? = null,
     @SerializedName("plan_name") val planName: String,
@@ -193,4 +223,33 @@ data class AddonPlansResponse(
 
 data class PurchaseAddonRequest(
     @SerializedName("plan_id") val planId: Int
+)
+
+// ── Global Checkout Design (admin) ───────────────────────────────────────────
+
+data class ProviderBrandingDto(
+    @SerializedName("displayName") val displayName: String = "",
+    @SerializedName("logoUrl") val logoUrl: String = ""
+)
+
+data class CheckoutDesignTabInput(
+    @SerializedName("enabled") val enabled: Boolean = true,
+    @SerializedName("label") val label: String = "",
+    @SerializedName("icon") val icon: String = "",
+    @SerializedName("iconUrl") val iconUrl: String = "",
+    @SerializedName("category") val category: String = ""
+)
+
+data class SaveCheckoutDesignRequest(
+    @SerializedName("tabs") val tabs: Map<String, CheckoutDesignTabInput>,
+    @SerializedName("providerBranding") val providerBranding: Map<String, ProviderBrandingDto>
+)
+
+data class CheckoutDesignConfigResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("tabs") val tabs: Map<String, CheckoutTabDto>? = null,
+    @SerializedName("providerBranding") val providerBranding: Map<String, ProviderBrandingDto>? = null,
+    @SerializedName("designs") val designs: List<String>? = null,
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("error") val error: String? = null
 )

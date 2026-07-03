@@ -56,6 +56,10 @@ router.post('/otp-format/update', admin.updateOtpFormat);
 router.get('/websites', admin.listAllWebsites);
 router.post('/websites/:id/permissions', admin.setWebsitePermissions);
 
+// 5e. Global checkout design (tabs, icons, provider branding — all merchants)
+router.get('/checkout-design', admin.getCheckoutDesignConfig);
+router.post('/checkout-design', admin.saveCheckoutDesignConfig);
+
 // 6. User and Device management list and toggle endpoints
 router.get('/users', admin.listUsers);
 router.post('/users/:id/block', admin.toggleUserBlock);

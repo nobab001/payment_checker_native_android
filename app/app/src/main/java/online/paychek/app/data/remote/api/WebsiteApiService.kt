@@ -11,6 +11,17 @@ import retrofit2.http.*
  */
 interface WebsiteApiService {
 
+    @GET("v1/websites/global-checkout")
+    suspend fun getGlobalCheckout(
+        @Header("Authorization") token: String
+    ): Response<GlobalCheckoutResponse>
+
+    @PUT("v1/websites/global-checkout")
+    suspend fun saveGlobalCheckout(
+        @Header("Authorization") token: String,
+        @Body request: SaveGlobalCheckoutRequest
+    ): Response<GlobalCheckoutResponse>
+
     @GET("v1/websites")
     suspend fun listWebsites(
         @Header("Authorization") token: String
@@ -35,10 +46,11 @@ interface WebsiteApiService {
         @Body request: UpdateWebsiteRequest
     ): Response<WebsiteUpdateResponse>
 
-    @DELETE("v1/websites/{id}")
+    @HTTP(method = "DELETE", path = "v1/websites/{id}", hasBody = true)
     suspend fun deleteWebsite(
         @Header("Authorization") token: String,
-        @Path("id") id: Int
+        @Path("id") id: Int,
+        @Body request: DeleteWebsiteRequest
     ): Response<SimpleWebsiteActionResponse>
 
     @POST("v1/websites/{id}/regenerate-secret")

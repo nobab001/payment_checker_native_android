@@ -88,9 +88,14 @@ fun ApiDocsScreen(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text(lang.name, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text("সাধারণ তথ্য", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                ApiDocsCatalog.overviewSections.forEach { section ->
+                    DocSectionCard(section, card, isDark)
+                }
+                HorizontalDivider(color = Color(0xFF2A2F3A))
+                Text("ভাষা অনুযায়ী উদাহরণ — ${lang.name}", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 lang.sections.forEach { section ->
-                    DocSection(section, card, isDark)
+                    DocSectionCard(section, card, isDark)
                 }
                 Spacer(Modifier.height(24.dp))
             }
@@ -99,7 +104,7 @@ fun ApiDocsScreen(
 }
 
 @Composable
-private fun DocSection(section: DocSection, card: Color, isDark: Boolean) {
+private fun DocSectionCard(section: DocSection, card: Color, isDark: Boolean) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current

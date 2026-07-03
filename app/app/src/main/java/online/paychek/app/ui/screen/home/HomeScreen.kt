@@ -789,7 +789,7 @@ fun HomeScreen(
                     )
                     HomeTab.API -> ApiIntegrationScreen(
                         onNavigateToCheckout = onNavigateToApiCenter,
-                        onNavigateToWebsites = { onNavigate(AppNavKey.WebsiteManagement) },
+                        onOpenWebsite = { id -> onNavigate(AppNavKey.WebsiteSettings(id)) },
                         onNavigateToDocs = { onNavigate(AppNavKey.ApiDocs) },
                         modifier = Modifier.fillMaxSize()
                     )

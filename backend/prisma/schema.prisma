@@ -367,6 +367,7 @@ model sms_templates {
   user_id                 Int?
   device_id               String?                  @db.VarChar(255)
   template_name           String                   @db.VarChar(128)
+  category                String?                  @default("SEND_MONEY") @db.VarChar(32)
   sender_id               String                   @default("") @db.VarChar(64)
   matching_keyword        String?                  @db.VarChar(255)
   regex_pattern           String?                  @db.Text

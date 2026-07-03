@@ -24,6 +24,8 @@ data class AdminUiState(
     val otpFormatTemplate: String = "",
     val plans: List<SubscriptionPlanDto> = emptyList(),
     val addonPlans: List<AddonPlanDto> = emptyList(),
+    val checkoutDesignTabs: Map<String, CheckoutTabDto> = emptyMap(),
+    val providerBranding: Map<String, ProviderBrandingDto> = emptyMap(),
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
@@ -159,7 +161,27 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 }
             }
 
-            kotlinx.coroutines.joinAll(jobConfigs, jobTemplates, jobCheckouts, jobEmails, jobSmsSettings, jobUsers, jobOtpFormat, jobPlans, jobAddonPlans)
+            val jobCheckoutDesign = launch {
+                try {
+                    val res = api.getCheckoutDesignConfig(token)
+                    if (res.isSuccessful) {
+                        val body = res.body()
+                        _state.update {
+                            it.copy(
+                                checkoutDesignTabs = body?.tabs ?: emptyMap(),
+                                providerBranding = body?.providerBranding ?: emptyMap()
+                            )
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            kotlinx.coroutines.joinAll(
+                jobConfigs, jobTemplates, jobCheckouts, jobEmails, jobSmsSettings,
+                jobUsers, jobOtpFormat, jobPlans, jobAddonPlans, jobCheckoutDesign
+            )
             _state.update { it.copy(isLoading = false) }
         }
     }
@@ -245,7 +267,10 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                     _state.update { it.copy(successMessage = "টেমপ্লেট সেভ সফল হয়েছে।") }
                     refreshTemplates()
                 } else {
-                    _state.update { it.copy(isSaving = false, errorMessage = "সেভ ব্যর্থ হয়েছে।") }
+                    val msg = parseApiErrorMessage(response.errorBody()?.string())
+                        ?: response.body()?.message
+                        ?: "সেভ ব্যর্থ হয়েছে। ব্যাকএন্ড সার্ভার রিস্টার্ট করে আবার চেষ্টা করুন।"
+                    _state.update { it.copy(isSaving = false, errorMessage = msg) }
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }
@@ -625,6 +650,53 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun clearMessages() {
-        _state.update { it.copy(errorMessage = null, successMessage = null) }
+        _state.update { it.copy(successMessage = null, errorMessage = null) }
+    }
+
+    fun saveCheckoutDesign(
+        tabs: Map<String, CheckoutDesignTabInput>,
+        providerBranding: Map<String, ProviderBrandingDto>
+    ) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, errorMessage = null) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val res = api.saveCheckoutDesignConfig(
+                    token,
+                    SaveCheckoutDesignRequest(tabs = tabs, providerBranding = providerBranding)
+                )
+                if (res.isSuccessful && res.body()?.success == true) {
+                    val body = res.body()
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            checkoutDesignTabs = body?.tabs ?: tabs.mapValues { (_, v) ->
+                                CheckoutTabDto(
+                                    id = "",
+                                    label = v.label,
+                                    enabled = v.enabled,
+                                    icon = v.icon,
+                                    iconUrl = v.iconUrl,
+                                    category = v.category
+                                )
+                            },
+                            providerBranding = body?.providerBranding ?: providerBranding,
+                            successMessage = body?.message ?: "চেকআউট ডিজাইন সংরক্ষণ হয়েছে।"
+                        )
+                    }
+                } else {
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            errorMessage = res.body()?.error ?: "সেভ ব্যর্থ হয়েছে।"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(isSaving = false, errorMessage = "নেটওয়ার্ক এরর: ${e.localizedMessage}")
+                }
+            }
+        }
     }
 }

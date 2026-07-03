@@ -14,6 +14,10 @@ const authenticateToken = auth.authenticateToken || auth;
 
 router.use(authenticateToken);
 
+// Global checkout (must be before /:id)
+router.get('/global-checkout', websiteController.getGlobalCheckout);
+router.put('/global-checkout', websiteController.saveGlobalCheckout);
+
 // Website CRUD
 router.post('/', websiteController.createWebsite);
 router.get('/', websiteController.listWebsites);

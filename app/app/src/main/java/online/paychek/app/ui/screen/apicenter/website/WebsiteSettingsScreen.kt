@@ -39,12 +39,6 @@ private val AccentCyan = Color(0xFF22D3EE)
 private val AccentGreen = Color(0xFF10B981)
 private val AccentAmber = Color(0xFFF59E0B)
 
-private val CHECKOUT_DESIGNS = listOf(
-    "design-1" to "ডিজাইন ১ — লিস্ট",
-    "design-2" to "ডিজাইন ২ — কার্ড",
-    "design-3" to "ডিজাইন ৩ — অ্যাকর্ডিয়ন"
-)
-
 private val CHECKOUT_TAB_KEYS = listOf(
     "send_money" to "Send Money",
     "cash_out" to "Cash Out",
@@ -87,6 +81,7 @@ fun WebsiteSettingsScreen(
     var webhookUrl by remember(site?.id) { mutableStateOf(site?.webhookUrl ?: "") }
     var receivePaymentType by remember(site?.id) { mutableStateOf(site?.receivePaymentType ?: false) }
     var receiveCommission by remember(site?.id) { mutableStateOf(site?.receiveCommission ?: false) }
+    var designerTab by remember { mutableIntStateOf(0) }
 
     val tabStates = remember(site?.id) {
         CHECKOUT_TAB_KEYS.associate { (key, _) -> key to mutableStateOf(key != "bank") }
@@ -124,7 +119,117 @@ fun WebsiteSettingsScreen(
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Identity card (read-only)
+            // ── Checkout Page Settings (top) ─────────────────────────────────
+            Text(
+                "চেকআউট পেজ সেটিংস",
+                color = MaterialTheme.colorScheme.onBackground,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp
+            )
+            Text(
+                "এই সাইটের জন্য আলাদা কনফিগ। API ট্যাবের গ্লোবাল চেকআউট সব সাইটে প্রয়োগ হয়।",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp
+            )
+
+            TabRow(
+                selectedTabIndex = designerTab,
+                containerColor = card,
+                modifier = Modifier.fillMaxWidth().height(40.dp),
+                divider = {}
+            ) {
+                Tab(
+                    selected = designerTab == 0,
+                    onClick = { designerTab = 0 },
+                    text = { Text("ডিজাইনার সেটিংস", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+                )
+                Tab(
+                    selected = designerTab == 1,
+                    onClick = { designerTab = 1 },
+                    text = { Text("কাস্টমার প্রিভিউ", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+                )
+            }
+
+            val tabMap = CHECKOUT_TAB_KEYS.associate { (key, _) -> key to (tabStates[key]?.value ?: true) }
+            val previewNumbers = state.checkoutNumbers.filter { it.enabled }
+
+            when (designerTab) {
+                0 -> {
+                    WebsiteCheckoutLiveEditor(
+                        companyName = companyName,
+                        logoUrl = logoUrl,
+                        checkoutMode = checkoutMode,
+                        onCheckoutModeChange = { checkoutMode = it },
+                        design = theme,
+                        onDesignChange = { theme = it },
+                        tabStates = tabMap,
+                        onTabToggle = { key, enabled -> tabStates[key]?.value = enabled },
+                        numbers = state.checkoutNumbers,
+                        editable = true,
+                        onMoveNumber = { from, to ->
+                            viewModel.moveCheckoutNumber(from, to, site.id)
+                        },
+                        onToggleNumber = { id, enabled ->
+                            viewModel.toggleCheckoutNumber(id, enabled, site.id)
+                        },
+                        checkoutTabs = state.checkoutTabs,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            viewModel.updateSettings(
+                                site.id,
+                                UpdateWebsiteRequest(
+                                    companyName = companyName,
+                                    logoUrl = logoUrl,
+                                    checkoutTheme = theme,
+                                    checkoutMode = checkoutMode,
+                                    checkoutTabs = CHECKOUT_TAB_KEYS.associate { (key, _) ->
+                                        key to CheckoutTabToggle(enabled = tabStates[key]?.value ?: true)
+                                    }
+                                )
+                            )
+                            viewModel.saveCheckoutNumbers(site.id)
+                        },
+                        enabled = !state.isSaving,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentCyan)
+                    ) {
+                        if (state.isSaving) CircularProgressIndicator(Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                        else Text("চেকআউট কনফিগ সংরক্ষণ করুন", fontWeight = FontWeight.Bold)
+                    }
+                }
+                1 -> {
+                    WebsiteCheckoutLiveEditor(
+                        companyName = companyName,
+                        logoUrl = logoUrl,
+                        checkoutMode = checkoutMode,
+                        onCheckoutModeChange = {},
+                        design = theme,
+                        onDesignChange = {},
+                        tabStates = tabMap,
+                        onTabToggle = { _, _ -> },
+                        numbers = previewNumbers,
+                        editable = false,
+                        checkoutTabs = state.checkoutTabs,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        "এটি গ্রাহকের দেখতে পাওয়া চেকআউট পেজের প্রিভিউ — এখানে কিছু এডিট করা যাবে না।",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                }
+            }
+
+            // Branding
+            SettingsCard(card, isDark, "ব্র্যান্ডিং", Icons.Default.Palette) {
+                EditField("Company Name", companyName) { companyName = it }
+                EditField("Logo URL", logoUrl) { logoUrl = it }
+            }
+
+            // Merchant identity (read-only)
             SettingsCard(card, isDark, "মার্চেন্ট পরিচিতি", Icons.Default.Badge) {
                 ReadOnlyRow("Merchant ID", site.merchantId ?: "-")
                 ReadOnlyRow("API Key", site.apiKey)
@@ -139,69 +244,6 @@ fun WebsiteSettingsScreen(
                     Spacer(Modifier.width(6.dp))
                     Text("Secret Key রিজেনারেট করুন")
                 }
-            }
-
-            // Branding + Design selection
-            SettingsCard(card, isDark, "ব্র্যান্ডিং ও চেকআউট ডিজাইন", Icons.Default.Palette) {
-                EditField("Company Name", companyName) { companyName = it }
-                EditField("Logo URL", logoUrl) { logoUrl = it }
-                Spacer(Modifier.height(6.dp))
-                Text("চেকআউট ডিজাইন (Design Selection)", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CHECKOUT_DESIGNS.forEach { (id, label) ->
-                        val sel = id == theme
-                        Box(
-                            Modifier.clip(RoundedCornerShape(20.dp))
-                                .background(if (sel) AccentCyan.copy(alpha = 0.2f) else Color.Transparent)
-                                .border(1.dp, if (sel) AccentCyan else Color(0xFF3A3F4A), RoundedCornerShape(20.dp))
-                                .clickable { theme = id }
-                                .padding(horizontal = 12.dp, vertical = 7.dp)
-                        ) { Text(label, color = if (sel) AccentCyan else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp) }
-                    }
-                }
-            }
-
-            // Tab customization
-            SettingsCard(card, isDark, "ট্যাব কাস্টমাইজেশন", Icons.Default.Dashboard) {
-                Text("চেকআউট পেজে কোন পেমেন্ট ট্যাব দেখাবে তা নির্ধারণ করুন।", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-                Spacer(Modifier.height(8.dp))
-                CHECKOUT_TAB_KEYS.forEach { (key, label) ->
-                    val tabState = tabStates[key] ?: return@forEach
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(label, Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        Switch(
-                            checked = tabState.value,
-                            onCheckedChange = { tabState.value = it },
-                            colors = SwitchDefaults.colors(checkedTrackColor = AccentGreen)
-                        )
-                    }
-                }
-            }
-
-            // Checkout numbers (auto-synced from devices)
-            Card(
-                colors = CardDefaults.cardColors(containerColor = card),
-                shape = RoundedCornerShape(16.dp),
-                border = if (isDark) null else androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE3E5E8)),
-                modifier = Modifier.fillMaxWidth().clickable { onOpenCheckoutNumbers() }
-            ) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.SimCard, null, tint = AccentCyan, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("চেকআউট নাম্বার", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Text("ডিভাইসের SIM নাম্বার সাজান / চালু-বন্ধ করুন", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-                    }
-                    Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-
-            // Checkout mode
-            SettingsCard(card, isDark, "চেকআউট মোড", Icons.Default.Tune) {
-                ModeOption("Transaction Mode", "গ্রাহক নাম্বার কপি করে TrxID দিয়ে ভেরিফাই করবে", checkoutMode == "transaction") { checkoutMode = "transaction" }
-                Spacer(Modifier.height(8.dp))
-                ModeOption("Merchant Vibe Mode", "গ্রাহক আগে নিজের নাম্বার দেবে, টাকা এলে অটো ম্যাচ", checkoutMode == "merchant_vibe") { checkoutMode = "merchant_vibe" }
             }
 
             // URLs
@@ -244,25 +286,17 @@ fun WebsiteSettingsScreen(
                 onDelete = { cid -> viewModel.deleteCommission(site.id, cid) }
             )
 
-            // Save
             Button(
                 onClick = {
                     viewModel.updateSettings(
                         site.id,
                         UpdateWebsiteRequest(
-                            companyName = companyName,
-                            logoUrl = logoUrl,
-                            checkoutTheme = theme,
-                            checkoutMode = checkoutMode,
                             successUrl = successUrl,
                             cancelUrl = cancelUrl,
                             callbackUrl = callbackUrl,
                             webhookUrl = webhookUrl,
                             receivePaymentType = receivePaymentType,
-                            receiveCommission = receiveCommission,
-                            checkoutTabs = CHECKOUT_TAB_KEYS.associate { (key, _) ->
-                                key to CheckoutTabToggle(enabled = tabStates[key]?.value ?: true)
-                            }
+                            receiveCommission = receiveCommission
                         )
                     )
                 },
@@ -271,7 +305,7 @@ fun WebsiteSettingsScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
             ) {
                 if (state.isSaving) CircularProgressIndicator(Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
-                else Text("সেটিংস সংরক্ষণ করুন", fontWeight = FontWeight.Bold)
+                else Text("ইন্টিগ্রেশন সেটিংস সংরক্ষণ করুন", fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(20.dp))
         }
