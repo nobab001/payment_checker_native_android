@@ -21,9 +21,14 @@ import online.paychek.app.data.local.entity.SeenSmsCursorEntity
  * পদ্ধতি:
  *  1. Room থেকে `lastSeenSmsId` পড়া
  *  2. `content://sms/inbox` এ query: `_id > lastSeenSmsId`
- *  3. বিদ্যমান gateway config (sender, slot, keyword) দিয়ে ফিল্টার
- *  4. নতুন SMS list রিটার্ন
- *  5. Room cursor আপডেট করা (সর্বোচ্চ `_id` দিয়ে)
+ *  3. নতুন SMS list রিটার্ন (cursor এখানে এগোয় না)
+ *  4. Cursor শুধুমাত্র `commitCursor()` দিয়ে এগোয় — যখন SmsPollWorker
+ *     একটি SMS নিশ্চিতভাবে Room queue-তে লিখে ফেলে।
+ *
+ * ⚠️ Data-loss রোধ:
+ *  আগে cursor স্ক্যানের সাথে সাথেই সর্বোচ্চ `_id`-তে এগিয়ে যেত — process kill
+ *  বা insert ব্যর্থ হলে ওই SMS চিরতরে বাদ পড়ত। এখন cursor শুধুমাত্র
+ *  durably-handled মেসেজ পর্যন্ত এগোয় (commitCursor)।
  *
  * Baseline Mode (প্রথমবার):
  *  lastSeenSmsId = 0 → শুধু বর্তমান inbox-এর সর্বোচ্চ _id দিয়ে
@@ -88,9 +93,9 @@ class SmsInboxScanner(private val context: Context) {
             return emptyList()
         }
 
-        // নতুন SMS query করা (_id > lastSeenId)
+        // নতুন SMS query করা (_id > lastSeenId) — ASC ক্রমে, যাতে
+        // SmsPollWorker ক্রমান্বয়ে handle করে cursor এগোতে পারে।
         val candidates = mutableListOf<SmsCandidate>()
-        var newMaxId = lastSeenId
 
         try {
             val projection = arrayOf(COL_ID, COL_ADDRESS, COL_BODY, COL_DATE, COL_SUB_ID)
@@ -129,7 +134,6 @@ class SmsInboxScanner(private val context: Context) {
                             subscriptionId = subId
                         )
                     )
-                    if (smsId > newMaxId) newMaxId = smsId
                 }
             }
         } catch (e: Exception) {
@@ -137,20 +141,37 @@ class SmsInboxScanner(private val context: Context) {
             return emptyList()
         }
 
-        // cursor advance করা
-        if (newMaxId > lastSeenId) {
-            cursorDao.upsertCursor(
-                SeenSmsCursorEntity(
-                    lastSeenSmsId = newMaxId,
-                    lastScannedAt = System.currentTimeMillis()
-                )
-            )
-            Log.i(TAG, "[Guard-2] Cursor advanced — $lastSeenId → $newMaxId | ${candidates.size}টি candidate পাওয়া গেছে")
-        } else {
-            Log.d(TAG, "[Guard-2] নতুন কোনো SMS নেই (lastSeenId=$lastSeenId অপরিবর্তিত)")
-        }
-
+        // ⚠️ এখানে cursor এগোনো হয় না — SmsPollWorker প্রতিটি SMS নিশ্চিতভাবে
+        // Room queue-তে লেখার পর commitCursor() কল করে cursor এগোবে।
+        Log.i(TAG, "[Guard-2] Scan সম্পন্ন — ${candidates.size}টি candidate (lastSeenId=$lastSeenId, cursor অপরিবর্তিত)")
         return candidates
+    }
+
+    /**
+     * Guard-2 cursor commit — একটি SMS নিশ্চিতভাবে queue/handle হওয়ার
+     * পরেই কেবল cursor এগোনো হয়। process kill বা insert ব্যর্থ হলে cursor
+     * পিছিয়ে থাকে, ফলে পরের poll-এ SMS আবার scan হয় (data-loss রোধ)।
+     *
+     * শুধুমাত্র সামনের দিকে (monotonic) এগোয় — কখনো পিছায় না।
+     */
+    suspend fun commitCursor(smsId: Long) {
+        if (smsId <= 0L) return
+        try {
+            val db = AppDatabase.getInstance(context)
+            val cursorDao = db.seenSmsCursorDao()
+            val current = cursorDao.getCursor()?.lastSeenSmsId ?: 0L
+            if (smsId > current) {
+                cursorDao.upsertCursor(
+                    SeenSmsCursorEntity(
+                        lastSeenSmsId = smsId,
+                        lastScannedAt = System.currentTimeMillis()
+                    )
+                )
+                Log.i(TAG, "[Guard-2] Cursor committed — $current → $smsId")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "[Guard-2] Cursor commit ব্যর্থ: ${e.message}", e)
+        }
     }
 
     /**

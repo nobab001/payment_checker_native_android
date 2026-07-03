@@ -161,150 +161,166 @@ class SmsPollWorker(
 
         var processedCount = 0
 
+        // ── Cursor high-water mark ─────────────────────────────────────────
+        // candidates ASC (_id) ক্রমে। প্রতিটি SMS "durably handled" (queued /
+        // duplicate / বৈধ skip) হলে committableId এগোয়। প্রথম hard-failure
+        // (exception বা pipeline failure) হলে cursorBlocked=true — এর পর আর
+        // cursor এগোয় না, ফলে ওই SMS ও তার পরের সব SMS পরের poll-এ আবার
+        // scan হবে (data-loss রোধ)।
+        var committableId = -1L
+        var cursorBlocked = false
+
         for (candidate in candidates) {
+            // durably handled না হলে (retry দরকার) false হবে
+            var handled = true
             try {
                 val cleanSender = candidate.sender.trim().lowercase(Locale.US)
 
-                // ── Sender pre-filter (Dynamic) ─────────────────
                 // ── SIM slot resolve করা ─────────────────────────────────
                 val simSlot   = resolveSimSlotFromSubId(candidate.subscriptionId)
                 val simNumber = resolveSimNumberFromSubId(candidate.subscriptionId)
 
-                // ── SIM slot filter ──────────────────────────────────────
-                if (simSlot != null) {
-                    val isEnabled = if (simSlot == 1) sim1Enabled else sim2Enabled
-                    if (!isEnabled) {
-                        Log.d(TAG, "[Guard-2] Skip — SIM slot $simSlot disabled")
-                        continue
-                    }
+                // ── SIM slot filter (বৈধ skip → handled) ─────────────────
+                val simAllowed = if (simSlot != null) {
+                    if (simSlot == 1) sim1Enabled else sim2Enabled
                 } else {
-                    if (!sim1Enabled && !sim2Enabled) {
-                        Log.d(TAG, "[Guard-2] Skip — উভয় SIM slot disabled")
-                        continue
-                    }
+                    sim1Enabled || sim2Enabled
                 }
 
-                // ── 4-Step Verification Chain (Dynamic) ─────────────────────
-                // Step 1: SIM Slot — already filtered above
-                // Step 2: Sender ID — alphanumeric/phone sender match
-                // Step 3: Sender Number — separate sender_number field match
-                // Step 4: SMS Body — matching keywords from template conditions
-                val matchingMethod = cachedMethods.firstOrNull { method ->
-                    val isArchiveMode = (method.isParseable ?: 1) == 0
-                    method.isEnabled == 1 &&
-                    (simSlot == null || method.simSlot == simSlot) &&
-                    (
-                        if (method.templateId == null) {
-                            cleanSender == method.provider.trim().lowercase(Locale.US)
-                        } else {
-                            val targetSender = method.senderId?.trim()?.lowercase(Locale.US)
-                                ?: method.provider.lowercase(Locale.US)
-                            cleanSender.contains(targetSender)
-                        }
-                    ) &&
-                    (
-                        isArchiveMode ||
-                        method.senderNumber.isNullOrBlank() ||
-                        run {
-                            val targetSenderNumber = method.senderNumber.trim().lowercase(Locale.US)
-                            cleanSender.contains(targetSenderNumber)
-                        }
-                    ) &&
-                    (
-                        isArchiveMode ||
-                        method.matchingKeyword.isNullOrBlank() ||
-                        method.matchingKeyword.split(",")
-                            .map { it.trim() }.filter { it.isNotEmpty() }
-                            .any { kw -> candidate.body.contains(kw, ignoreCase = true) }
-                    )
-                }
-
-                if (matchingMethod == null) {
-                    Log.d(TAG, "[Guard-2] Skip — no matching gateway config for '${candidate.sender}'")
-                    continue
-                }
-
-                val isArchiveMode = (matchingMethod.isParseable ?: 1) == 0
-
-                val createdAtStr = matchingMethod.createdAt
-                if (!createdAtStr.isNullOrBlank()) {
-                    val createdTimeMs = parseIsoDateToMillis(createdAtStr)
-                    if (createdTimeMs > 0L && candidate.timestamp < createdTimeMs) {
-                        Log.d(TAG, "[Guard-2] Skip old SMS for '${candidate.sender}' — timestamp (${candidate.timestamp}) is before creation time ($createdTimeMs)")
-                        continue
-                    }
-                }
-
-                // Forward RAW SMS payload — archive senders skip parsing
-                val payment = if (isArchiveMode) {
-                    SmsParser.ParsedPayment(
-                        amount         = 0.0,
-                        trxId          = "",
-                        providerTag    = matchingMethod.provider,
-                        senderNumber   = candidate.sender,
-                        rawBody        = candidate.body,
-                        smsTimestamp   = candidate.timestamp,
-                        simSlot        = simSlot,
-                        simNumber      = simNumber ?: matchingMethod.number,
-                        isCustomSender = true,
-                        fullSms        = candidate.body,
-                        isParseable    = 0
-                    )
+                if (!simAllowed) {
+                    Log.d(TAG, "[Guard-2] Skip — SIM slot ${simSlot ?: "?"} disabled (handled)")
                 } else {
-                    SmsParser.parseWithDynamicRegex(
-                        body = candidate.body,
-                        regexPattern = matchingMethod.regexPattern,
-                        providerTag = matchingMethod.provider,
-                        senderNumber = candidate.sender,
-                        timestamp = candidate.timestamp,
-                        simSlot = simSlot,
-                        simNumber = simNumber ?: matchingMethod.number,
-                        isCustomSender = false
-                    ) ?: SmsParser.parseSms(candidate.sender, candidate.body, candidate.timestamp)?.copy(
-                        simSlot = simSlot,
-                        simNumber = simNumber ?: matchingMethod.number,
-                        isCustomSender = false,
-                        providerTag = matchingMethod.provider
-                    ) ?: SmsParser.ParsedPayment(
-                        amount         = 0.0,
-                        trxId          = "",
-                        providerTag    = matchingMethod.provider,
-                        senderNumber   = candidate.sender,
-                        rawBody        = candidate.body,
-                        smsTimestamp   = candidate.timestamp,
-                        simSlot        = simSlot,
-                        simNumber      = simNumber ?: matchingMethod.number,
-                        isCustomSender = false,
-                        fullSms        = candidate.body,
-                        isParseable    = matchingMethod.isParseable ?: 1
-                    )
-                }
-
-                Log.i(TAG, "[Guard-2] 4 Conditions Met. Forwarding RAW payload to queue. Provider: ${matchingMethod.provider} | SIM: $simSlot | Processing via use case")
-
-                // ── ProcessIncomingSmsUseCase দিয়ে pipeline এ push করা ──
-                // rawBodyHash UNIQUE index Guard-1 এর duplicate silently ignore করবে
-                val result = ProcessIncomingSmsUseCase(context).execute(payment)
-                result.fold(
-                    onSuccess = { id ->
-                        if (id > 0L) {
-                            processedCount++
-                            Log.i(TAG, "[Guard-2] ✅ Queued — smsId=${candidate.smsId} | roomId=$id")
-                        } else {
-                            Log.d(TAG, "[Guard-2] Duplicate skip — smsId=${candidate.smsId} (rawBodyHash already exists)")
-                        }
-                    },
-                    onFailure = { e ->
-                        Log.e(TAG, "[Guard-2] Pipeline error — smsId=${candidate.smsId}: ${e.message}")
+                    // ── 4-Step Verification Chain (Dynamic) ───────────────
+                    val matchingMethod = cachedMethods.firstOrNull { method ->
+                        val isArchiveMode = (method.isParseable ?: 1) == 0
+                        method.isEnabled == 1 &&
+                        (simSlot == null || method.simSlot == simSlot) &&
+                        (
+                            if (method.templateId == null) {
+                                cleanSender == method.provider.trim().lowercase(Locale.US)
+                            } else {
+                                val targetSender = method.senderId?.trim()?.lowercase(Locale.US)
+                                    ?: method.provider.lowercase(Locale.US)
+                                cleanSender.contains(targetSender)
+                            }
+                        ) &&
+                        (
+                            isArchiveMode ||
+                            method.senderNumber.isNullOrBlank() ||
+                            run {
+                                val targetSenderNumber = method.senderNumber.trim().lowercase(Locale.US)
+                                cleanSender.contains(targetSenderNumber)
+                            }
+                        ) &&
+                        (
+                            isArchiveMode ||
+                            method.matchingKeyword.isNullOrBlank() ||
+                            method.matchingKeyword.split(",")
+                                .map { it.trim() }.filter { it.isNotEmpty() }
+                                .any { kw -> candidate.body.contains(kw, ignoreCase = true) }
+                        )
                     }
-                )
 
+                    if (matchingMethod == null) {
+                        Log.d(TAG, "[Guard-2] Skip — no matching gateway config for '${candidate.sender}' (handled)")
+                    } else {
+                        val isArchiveMode = (matchingMethod.isParseable ?: 1) == 0
+
+                        // পুরনো SMS (method তৈরির আগের) → বৈধ skip
+                        val createdAtStr = matchingMethod.createdAt
+                        val tooOld = !createdAtStr.isNullOrBlank() && run {
+                            val createdTimeMs = parseIsoDateToMillis(createdAtStr)
+                            createdTimeMs > 0L && candidate.timestamp < createdTimeMs
+                        }
+
+                        if (tooOld) {
+                            Log.d(TAG, "[Guard-2] Skip old SMS for '${candidate.sender}' — before method creation (handled)")
+                        } else {
+                            // Forward RAW SMS payload — archive senders skip parsing
+                            val payment = if (isArchiveMode) {
+                                SmsParser.ParsedPayment(
+                                    amount         = 0.0,
+                                    trxId          = "",
+                                    providerTag    = matchingMethod.provider,
+                                    senderNumber   = candidate.sender,
+                                    rawBody        = candidate.body,
+                                    smsTimestamp   = candidate.timestamp,
+                                    simSlot        = simSlot,
+                                    simNumber      = simNumber ?: matchingMethod.number,
+                                    isCustomSender = true,
+                                    fullSms        = candidate.body,
+                                    isParseable    = 0
+                                )
+                            } else {
+                                SmsParser.parseWithDynamicRegex(
+                                    body = candidate.body,
+                                    regexPattern = matchingMethod.regexPattern,
+                                    providerTag = matchingMethod.provider,
+                                    senderNumber = candidate.sender,
+                                    timestamp = candidate.timestamp,
+                                    simSlot = simSlot,
+                                    simNumber = simNumber ?: matchingMethod.number,
+                                    isCustomSender = false
+                                ) ?: SmsParser.parseSms(candidate.sender, candidate.body, candidate.timestamp)?.copy(
+                                    simSlot = simSlot,
+                                    simNumber = simNumber ?: matchingMethod.number,
+                                    isCustomSender = false,
+                                    providerTag = matchingMethod.provider
+                                ) ?: SmsParser.ParsedPayment(
+                                    amount         = 0.0,
+                                    trxId          = "",
+                                    providerTag    = matchingMethod.provider,
+                                    senderNumber   = candidate.sender,
+                                    rawBody        = candidate.body,
+                                    smsTimestamp   = candidate.timestamp,
+                                    simSlot        = simSlot,
+                                    simNumber      = simNumber ?: matchingMethod.number,
+                                    isCustomSender = false,
+                                    fullSms        = candidate.body,
+                                    isParseable    = matchingMethod.isParseable ?: 1
+                                )
+                            }
+
+                            Log.i(TAG, "[Guard-2] 4 Conditions Met. Forwarding RAW payload to queue. Provider: ${matchingMethod.provider} | SIM: $simSlot")
+
+                            // ── ProcessIncomingSmsUseCase দিয়ে queue এ push ──
+                            // rawBodyHash UNIQUE index Guard-1 এর duplicate ignore করবে
+                            val result = ProcessIncomingSmsUseCase(context).execute(payment)
+                            result.fold(
+                                onSuccess = { id ->
+                                    if (id > 0L) {
+                                        processedCount++
+                                        Log.i(TAG, "[Guard-2] ✅ Queued — smsId=${candidate.smsId} | roomId=$id")
+                                    } else {
+                                        Log.d(TAG, "[Guard-2] Duplicate skip — smsId=${candidate.smsId} (already queued)")
+                                    }
+                                },
+                                onFailure = { e ->
+                                    // queue insert ব্যর্থ → retry দরকার, cursor এগোবে না
+                                    handled = false
+                                    Log.e(TAG, "[Guard-2] Pipeline error — smsId=${candidate.smsId}: ${e.message}")
+                                }
+                            )
+                        }
+                    }
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "[Guard-2] Candidate processing error: ${e.message}", e)
+                // অপ্রত্যাশিত exception → retry দরকার, cursor এগোবে না
+                handled = false
+                Log.e(TAG, "[Guard-2] Candidate processing error — smsId=${candidate.smsId}: ${e.message}", e)
             }
+
+            // Cursor শুধু ধারাবাহিক durably-handled SMS পর্যন্ত এগোয়।
+            if (!handled) cursorBlocked = true
+            if (!cursorBlocked) committableId = candidate.smsId
         }
 
-        Log.i(TAG, "[Guard-2] Poll complete — ${candidates.size} candidates | $processedCount নতুন queued")
+        // ── Cursor commit — শুধুমাত্র নিশ্চিতভাবে handle হওয়া SMS পর্যন্ত ──
+        if (committableId > 0L) {
+            scanner.commitCursor(committableId)
+        }
+
+        Log.i(TAG, "[Guard-2] Poll complete — ${candidates.size} candidates | $processedCount নতুন queued | cursor→$committableId${if (cursorBlocked) " (blocked, বাকিগুলো পরের poll-এ retry হবে)" else ""}")
         return Result.success()
     }
 
