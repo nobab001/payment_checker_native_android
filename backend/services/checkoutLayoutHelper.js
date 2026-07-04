@@ -169,9 +169,13 @@ async function deriveProviderBrandingFromTemplates() {
       select: { sender_id: true },
     });
     for (const r of rows) {
-      const key = providerKey(r.sender_id);
-      if (!key) continue;
-      if (!map[key]) map[key] = { displayName: (r.sender_id || '').trim() || key, logoUrl: '' };
+      const raw = (r.sender_id || '').trim();
+      const key = providerKey(raw);
+      if (!key || key.length < 2) continue;
+      // Skip purely-numeric senders (SMS shortcodes like "16216") — those are
+      // not brand names and would create confusing/unused branding entries.
+      if (/^\d+$/.test(key)) continue;
+      if (!map[key]) map[key] = { displayName: raw || key, logoUrl: '' };
     }
   } catch (_) { /* ignore — fall back to defaults */ }
   _providerCache = { at: now, data: map };
