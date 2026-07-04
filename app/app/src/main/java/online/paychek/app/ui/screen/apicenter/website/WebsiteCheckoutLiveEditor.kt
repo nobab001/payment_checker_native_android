@@ -57,8 +57,9 @@ private fun provColor(p: String) = when (p.lowercase()) {
 private fun providerKey(provider: String?): String =
     (provider ?: "").lowercase().replace(Regex("[^a-z0-9]"), "")
 
-private fun logoFor(branding: Map<String, ProviderBrandingDto>, provider: String?): String? =
-    branding[providerKey(provider)]?.logoUrl?.takeIf { it.isNotBlank() }
+/** Provider branding is keyed per SMS template (`t<templateId>`). */
+private fun logoFor(branding: Map<String, ProviderBrandingDto>, templateId: Int?): String? =
+    templateId?.let { branding["t$it"]?.logoUrl }?.takeIf { it.isNotBlank() }
 
 /** Provider logo with a colored initial-letter fallback; sized per view. */
 @Composable
@@ -317,14 +318,14 @@ private fun Design1Preview(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(vertical = 4.dp)
         ) {
-            ProviderLogo(logoFor(providerBranding, items.firstOrNull()?.provider), items.firstOrNull()?.provider ?: label, 28.dp)
+            ProviderLogo(logoFor(providerBranding, items.firstOrNull()?.templateId), items.firstOrNull()?.provider ?: label, 28.dp)
             Spacer(Modifier.width(8.dp))
             Text(label, color = Purple, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         }
         items.forEach { num ->
             val localIdx = numbers.indexOfFirst { it.methodId == num.methodId }
             val globalIdx = globalIndices.getOrNull(localIdx) ?: localIdx
-            NumberListRow(num, editable, globalIdx == draggingIndex, dragOffset, rowHeightPx, localIdx, onDragStart, onDragEnd, onDrag, onToggle, logoFor(providerBranding, num.provider))
+            NumberListRow(num, editable, globalIdx == draggingIndex, dragOffset, rowHeightPx, localIdx, onDragStart, onDragEnd, onDrag, onToggle, logoFor(providerBranding, num.templateId))
         }
     }
     if (numbers.isEmpty()) EmptyNumbers()
@@ -350,7 +351,7 @@ private fun Design2Preview(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             // Card view: large logo displayed vertically above the name
-                            ProviderLogo(logoFor(providerBranding, num.provider), num.provider, 48.dp)
+                            ProviderLogo(logoFor(providerBranding, num.templateId), num.provider, 48.dp)
                             Spacer(Modifier.height(6.dp))
                             Text(num.displayName ?: num.provider, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             Text(num.number, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
@@ -365,7 +366,7 @@ private fun Design2Preview(
         Spacer(Modifier.height(8.dp))
         Text("নাম্বার তালিকা (ড্র্যাগ করে সাজান)", fontSize = 10.sp, color = Color.Gray)
         numbers.forEachIndexed { idx, num ->
-            NumberListRow(num, true, idx == draggingIndex, dragOffset, rowHeightPx, idx, onDragStart, onDragEnd, onDrag, onToggle, logoFor(providerBranding, num.provider))
+            NumberListRow(num, true, idx == draggingIndex, dragOffset, rowHeightPx, idx, onDragStart, onDragEnd, onDrag, onToggle, logoFor(providerBranding, num.templateId))
         }
     }
     if (numbers.isEmpty()) EmptyNumbers()
@@ -395,7 +396,7 @@ private fun Design3Preview(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // Large logo next to the provider name
-                    ProviderLogo(logoFor(providerBranding, prov), prov, 26.dp)
+                    ProviderLogo(logoFor(providerBranding, items.firstOrNull()?.templateId), prov, 26.dp)
                     Spacer(Modifier.width(8.dp))
                     Text(prov.replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
@@ -404,7 +405,7 @@ private fun Design3Preview(
             items.forEach { num ->
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     // Small logo next to each number
-                    ProviderLogo(logoFor(providerBranding, num.provider), num.provider, 18.dp)
+                    ProviderLogo(logoFor(providerBranding, num.templateId), num.provider, 18.dp)
                     Spacer(Modifier.width(8.dp))
                     Column(Modifier.weight(1f)) {
                         Text(num.displayName ?: num.provider, fontSize = 12.sp, fontWeight = FontWeight.Bold)

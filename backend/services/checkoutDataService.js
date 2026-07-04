@@ -175,6 +175,7 @@ async function buildSecureCheckoutData(userId, numberOrderJson = null, options =
     simSlot: g.simSlot,
     deviceId: g.deviceId,
     displayName: g.displayName,
+    templateId: g.templateId,
     category: g.category,
     tab: g.tab,
     enabled: g.enabled !== false,

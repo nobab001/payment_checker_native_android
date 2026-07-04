@@ -154,10 +154,16 @@ function invalidateProviderCache() {
   _providerCache = { at: 0, data: null };
 }
 
+/** Stable branding key for a template: `t<id>`. Non-numeric prefix keeps JSON
+ * object key order (insertion order) instead of numeric re-ordering. */
+function providerKeyForTemplate(id) {
+  return `t${id}`;
+}
+
 /**
- * Derive provider branding entries from the official SMS templates so that any
- * newly created template's provider automatically shows up in the Provider
- * Branding section (and on the checkout page) without manual setup.
+ * Derive one provider-branding slot per official SMS template. Adding a template
+ * automatically creates a slot; deleting it removes the slot. Keyed by `t<id>`
+ * with the template name as the default display name.
  */
 async function deriveProviderBrandingFromTemplates() {
   const now = Date.now();
@@ -166,39 +172,52 @@ async function deriveProviderBrandingFromTemplates() {
   try {
     const rows = await prisma.sms_templates.findMany({
       where: { is_official: 1 },
-      select: { sender_id: true },
+      select: { id: true, template_name: true, sender_id: true },
+      orderBy: { id: 'asc' },
     });
     for (const r of rows) {
-      const raw = (r.sender_id || '').trim();
-      const key = providerKey(raw);
-      if (!key || key.length < 2) continue;
-      // Skip purely-numeric senders (SMS shortcodes like "16216") — those are
-      // not brand names and would create confusing/unused branding entries.
-      if (/^\d+$/.test(key)) continue;
-      if (!map[key]) map[key] = { displayName: raw || key, logoUrl: '' };
+      const key = providerKeyForTemplate(r.id);
+      const name = (r.template_name || r.sender_id || key).trim();
+      map[key] = { displayName: name, logoUrl: '', templateId: r.id };
     }
-  } catch (_) { /* ignore — fall back to defaults */ }
+  } catch (_) { /* ignore — empty branding */ }
   _providerCache = { at: now, data: map };
   return map;
 }
 
 /**
- * Full provider branding = hardcoded defaults ⊕ providers derived from official
- * SMS templates ⊕ admin-saved overrides (admin display name / logo always wins).
+ * Full provider branding = one entry per official SMS template (derived) ⊕
+ * admin-saved overrides (display name / uploaded logo). Only keys that map to a
+ * currently-existing template are returned, so deleted templates' orphaned saved
+ * entries disappear automatically.
  */
 async function resolveProviderBrandingFull(globalBranding) {
-  const merged = { ...DEFAULT_PROVIDER_BRANDING };
   const derived = await deriveProviderBrandingFromTemplates();
+  const saved = (globalBranding && typeof globalBranding === 'object') ? globalBranding : {};
+  const merged = {};
   for (const [k, v] of Object.entries(derived)) {
-    merged[k] = { ...(merged[k] || {}), ...v };
-  }
-  if (globalBranding && typeof globalBranding === 'object') {
-    for (const [k, v] of Object.entries(globalBranding)) {
-      const kk = k.toLowerCase();
-      merged[kk] = { ...(merged[kk] || {}), ...v };
-    }
+    const ov = saved[k] || {};
+    merged[k] = {
+      displayName: (ov.displayName && String(ov.displayName).trim()) || v.displayName,
+      logoUrl: (ov.logoUrl !== undefined && ov.logoUrl !== null) ? ov.logoUrl : (v.logoUrl || ''),
+      templateId: v.templateId,
+    };
   }
   return merged;
+}
+
+/**
+ * Attach a `logo_url` field to each template row from the saved per-template
+ * branding config (keyed by `t<id>`). Used by the device/admin template lists so
+ * the uploaded provider logo shows in front of each template.
+ */
+function attachTemplateLogos(rows, savedBranding) {
+  const saved = (savedBranding && typeof savedBranding === 'object') ? savedBranding : {};
+  return (rows || []).map((r) => {
+    const id = (r.id != null) ? r.id : r.template_id;
+    const b = saved[providerKeyForTemplate(id)];
+    return { ...r, logo_url: (b && b.logoUrl) ? b.logoUrl : (r.logo_url || null) };
+  });
 }
 
 function officialProviderTab(provider) {
@@ -242,8 +261,10 @@ module.exports = {
   resolveProviderBranding,
   resolveProviderBrandingFull,
   deriveProviderBrandingFromTemplates,
+  attachTemplateLogos,
   invalidateProviderCache,
   providerKey,
+  providerKeyForTemplate,
   officialProviderTab,
   enrichGatewayRow,
 };

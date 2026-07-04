@@ -256,6 +256,16 @@ function provBrand(p) {
     // Match the backend's provider key normalization so multi-word providers resolve.
     return providerBranding[provKey(p)] || providerBranding[(p || '').toLowerCase()] || { displayName: p, logoUrl: '' };
 }
+// Per-template branding: branding is keyed by `t<templateId>` (one slot per SMS template).
+function provBrandByTemplate(tid) {
+    if (tid === undefined || tid === null || tid === '') return null;
+    return providerBranding['t' + tid] || null;
+}
+// টেমপ্লেট অনুযায়ী লোগো — templateId থাকলে সেটির লোগো, না থাকলে খালি।
+function templateLogoUrl(tid) {
+    const b = provBrandByTemplate(tid);
+    return (b && b.logoUrl) ? b.logoUrl : '';
+}
 // সম্পূর্ণ http(s):// URL অথবা সার্ভারে আপলোড করা relative path (uploads/...) —
 // দুটোই গ্রহণযোগ্য। খালি হলে emoji/initial-avatar fallback দেখায়।
 function isHttpUrl(u) { return typeof u === 'string' && /^https?:\/\//i.test(u.trim()); }
@@ -284,15 +294,16 @@ function iconFail(img) {
     s.textContent = img.getAttribute('data-emoji') || '💳';
     img.replaceWith(s);
 }
-// প্রোভাইডার লোগো — px দিয়ে সাইজ নিয়ন্ত্রণ (নামের পাশে বড়, নাম্বারের পাশে ছোট)।
-function providerLogoHtml(provider, px) {
+// প্রোভাইডার লোগো — টেমপ্লেট অনুযায়ী (templateId), px দিয়ে সাইজ নিয়ন্ত্রণ
+// (নামের পাশে বড়, নাম্বারের পাশে ছোট)। provider শুধু fallback রঙ/আদ্যক্ষরের জন্য।
+function providerLogoHtml(tid, provider, px) {
     px = px || 28;
-    const b = provBrand(provider);
+    const logoUrl = templateLogoUrl(tid);
     const color = provColor(provider);
     const initial = provInitial(provider);
     const radius = Math.round(px * 0.28);
-    if (hasImg(b.logoUrl)) {
-        return `<img src="${esc(imgSrc(b.logoUrl))}" alt="" style="width:${px}px;height:${px}px;border-radius:${radius}px;object-fit:contain;background:#fff;flex:0 0 auto" decoding="async" loading="lazy" data-initial="${esc(initial)}" data-color="${esc(color)}" data-px="${px}" onerror="logoFail(this)">`;
+    if (hasImg(logoUrl)) {
+        return `<img src="${esc(imgSrc(logoUrl))}" alt="" style="width:${px}px;height:${px}px;border-radius:${radius}px;object-fit:contain;background:#fff;flex:0 0 auto" decoding="async" loading="lazy" data-initial="${esc(initial)}" data-color="${esc(color)}" data-px="${px}" onerror="logoFail(this)">`;
     }
     return `<span class="prov-avatar" style="width:${px}px;height:${px}px;border-radius:${radius}px;background:${color};font-size:${Math.round(px * 0.42)}px;flex:0 0 auto">${initial}</span>`;
 }
@@ -405,13 +416,14 @@ function renderDesign1(simItems, liveItems) {
     const groups = groupBy(simItems, g => g.groupLabel || `${g.provider} Personal`);
     for (const [label, items] of Object.entries(groups)) {
         const prov = items[0]?.provider || label;
+        const groupTid = items[0]?.templateId;
         // নামের পাশে বড় লোগো
         html += `<div class="group-title" style="display:flex;align-items:center;gap:10px">
-            ${providerLogoHtml(prov, 40)}<span>${esc(label)}</span></div>`;
+            ${providerLogoHtml(groupTid, prov, 40)}<span>${esc(label)}</span></div>`;
         items.forEach(g => {
             // নাম্বারের পাশে ছোট লোগো
             html += `<div class="list-row">
-                <span style="display:flex;align-items:center;gap:10px">${providerLogoHtml(g.provider, 24)}<span class="num">${esc(g.number)}</span></span>
+                <span style="display:flex;align-items:center;gap:10px">${providerLogoHtml(g.templateId, g.provider, 24)}<span class="num">${esc(g.number)}</span></span>
                 <button class="btn-copy" onclick="copyNum('${esc(g.number)}',this)">কপি করুন</button>
             </div>`;
         });
@@ -427,14 +439,14 @@ function renderDesign2(simItems, liveItems) {
     let html = '<div class="card-grid">';
     for (const [label, items] of Object.entries(groups)) {
         const g = items[0];
-        const b = provBrand(g.provider);
         const c = provColor(g.provider);
+        const cardLogo = templateLogoUrl(g.templateId);
         const nums = items.map(i => i.number).join(', ');
         html += `<div class="prov-card" onclick="copyNum('${esc(g.number)}',null)">
-            ${hasImg(b.logoUrl)
-                ? `<img src="${esc(imgSrc(b.logoUrl))}" style="width:56px;height:56px;border-radius:16px;margin:0 auto 10px;object-fit:contain;background:#fff" decoding="async" loading="lazy" data-initial="${esc(provInitial(g.provider))}" data-color="${esc(c)}" onerror="cardLogoFail(this)">`
+            ${hasImg(cardLogo)
+                ? `<img src="${esc(imgSrc(cardLogo))}" style="width:56px;height:56px;border-radius:16px;margin:0 auto 10px;object-fit:contain;background:#fff" decoding="async" loading="lazy" data-initial="${esc(provInitial(g.provider))}" data-color="${esc(c)}" onerror="cardLogoFail(this)">`
                 : `<div class="logo" style="background:${c}">${provInitial(g.provider)}</div>`}
-            <div class="name">${esc(b.displayName || label)}</div>
+            <div class="name">${esc(label)}</div>
             <div class="sub">${esc(nums)}</div>
         </div>`;
     }
@@ -457,12 +469,13 @@ function renderDesign3(simItems, liveItems) {
     const groups = groupBy(simItems, g => g.provider);
     for (const [prov, items] of Object.entries(groups)) {
         const b = provBrand(prov);
+        const groupTid = items[0]?.templateId;
         html += `<div class="accordion"><div class="acc-head open">
-            <span style="display:flex;align-items:center;gap:10px">${providerLogoHtml(prov, 34)}${esc(b.displayName || prov)}</span>
+            <span style="display:flex;align-items:center;gap:10px">${providerLogoHtml(groupTid, prov, 34)}${esc(b.displayName || prov)}</span>
             <span class="chev">▼</span></div><div class="acc-body open">`;
         items.forEach(g => {
             html += `<div class="acc-item">
-                <span style="margin-right:8px;display:flex;align-items:center">${providerLogoHtml(g.provider, 22)}</span>
+                <span style="margin-right:8px;display:flex;align-items:center">${providerLogoHtml(g.templateId, g.provider, 22)}</span>
                 <div class="acc-info"><div class="pname">${esc(g.displayName||g.provider)}</div><div class="pnum">${esc(g.number)}</div></div>
                 <button class="acc-copy" onclick="copyNum('${esc(g.number)}',this)">কপি</button>
             </div>`;

@@ -132,12 +132,14 @@ function regexToBrackets(regexPattern) {
 async function getSmsTemplates(req, res) {
   try {
     const templates = await dataSyncCache.getOfficialTemplatesForAdmin();
+    const { providerBranding: savedBranding } = await layoutHelper.loadGlobalCheckoutDefaults();
     const mapped = templates.map(t => ({
       ...t,
       sender_number: t.sender_number || '',
       matching_keyword: t.matching_keyword || '',
       category: t.category || 'SEND_MONEY',
-      regex_pattern: regexToBrackets(t.regex_pattern || '')
+      regex_pattern: regexToBrackets(t.regex_pattern || ''),
+      logo_url: (savedBranding && savedBranding[layoutHelper.providerKeyForTemplate(t.id)]?.logoUrl) || null,
     }));
     return res.json({ success: true, templates: mapped });
   } catch (err) {
@@ -776,8 +778,16 @@ async function saveCheckoutDesignConfig(req, res) {
       };
     }
     const providerBranding = b.providerBranding && typeof b.providerBranding === 'object'
-      ? b.providerBranding : layoutHelper.DEFAULT_PROVIDER_BRANDING;
+      ? b.providerBranding : {};
     await layoutHelper.saveGlobalCheckoutDefaults(tabs, providerBranding);
+
+    // Uploaded logos are attached to the templates payload — bump the sync version
+    // and broadcast so connected devices refetch templates and show the new logos.
+    const version = await dataSyncCache.bumpGlobalTemplateVersion();
+    layoutHelper.invalidateProviderCache();
+    const io = req.app.get('io');
+    if (io) dataSyncCache.scheduleTemplateSyncBroadcast(io, version);
+
     return res.json({
       success: true,
       message: 'গ্লোবাল চেকআউট ডিজাইন কনফিগ সংরক্ষণ হয়েছে। সব মার্চেন্টে প্রযোজ্য হবে।',

@@ -1588,10 +1588,10 @@ private fun AdminCheckoutDesignCard(
     val provNames = remember { mutableStateMapOf<String, String>() }
     val provLogos = remember { mutableStateMapOf<String, String>() }
 
-    // Providers are dynamic: the known ones first, then any extra derived from
-    // official SMS templates (auto-synced by the backend).
+    // One provider entry per official SMS template (keyed `t<id>` by the backend,
+    // already ordered by template id). Adding/removing a template adds/removes an entry.
     val providerKeys = remember(providerBranding) {
-        (PROVIDER_ORDER + providerBranding.keys.sorted()).distinct()
+        providerBranding.keys.toList()
     }
 
     LaunchedEffect(tabs, providerBranding) {
@@ -1786,7 +1786,7 @@ private fun AdminCheckoutDesignCard(
                     val branding = providerKeys.associate { key ->
                         key to ProviderBrandingDto(
                             displayName = provNames[key]?.trim().orEmpty()
-                                .ifBlank { key.replaceFirstChar { it.uppercase() } },
+                                .ifBlank { providerBranding[key]?.displayName.orEmpty() },
                             logoUrl = provLogos[key]?.trim().orEmpty()
                         )
                     }

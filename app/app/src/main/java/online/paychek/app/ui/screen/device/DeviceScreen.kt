@@ -49,6 +49,8 @@ import android.content.Intent
 import online.paychek.app.data.remote.dto.GatewayMethod
 import online.paychek.app.data.remote.dto.ChildDeviceDto
 import online.paychek.app.data.remote.dto.SmsTemplateDto
+import online.paychek.app.ui.common.RemoteImage
+import androidx.compose.ui.layout.ContentScale
 import online.paychek.app.ui.theme.*
 import online.paychek.app.ui.components.ConnectivityBanner
 import sh.calvin.reorderable.ReorderableItem
@@ -2096,6 +2098,7 @@ private fun SimCard(
                         name = template.templateName,
                         dotColor = getDotColor(template.templateName),
                         isSelected = isSelected,
+                        logoUrl = template.logoUrl,
                         onClick = { onToggleTemplate(template) }
                     )
                 }
@@ -2173,6 +2176,7 @@ private fun TemplateChip(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     enabled: Boolean = true,
+    logoUrl: String? = null,
     modifier: Modifier = Modifier
 ) {
     val borderStroke = if (isSelected) {
@@ -2212,12 +2216,33 @@ private fun TemplateChip(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(6.dp)
-                .clip(CircleShape)
-                .background(dotColor)
-        )
+        // প্রোভাইডারের লোগো থাকলে ছোট আকারে দেখাও; না থাকলে রঙিন ডট fallback।
+        if (!logoUrl.isNullOrBlank()) {
+            RemoteImage(
+                url = logoUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .background(Color.White),
+                contentScale = ContentScale.Fit,
+                fallback = {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(dotColor)
+                    )
+                }
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(dotColor)
+            )
+        }
         Text(
             text = name,
             color = textColor,
@@ -2263,6 +2288,7 @@ private fun RemoteSimTemplateSection(
                     dotColor = getDotColor(template.templateName),
                     isSelected = isSelected,
                     enabled = simActive,
+                    logoUrl = template.logoUrl,
                     onClick = { if (simActive) onToggleTemplate(template) }
                 )
             }

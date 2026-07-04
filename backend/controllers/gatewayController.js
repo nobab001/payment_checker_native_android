@@ -1,5 +1,6 @@
 const prisma = require('../db/prisma');
 const dataSyncCache = require('../services/dataSyncCache');
+const layoutHelper = require('../services/checkoutLayoutHelper');
 
 let simBindingsTableReady = false;
 
@@ -567,6 +568,10 @@ async function getTemplates(req, res) {
 
     const rows = [...officialRows, ...customRows];
 
+    // Per-template provider logos (uploaded via the admin Global Checkout Design)
+    // so each template can show its brand logo on the device page.
+    const { providerBranding: savedBranding } = await layoutHelper.loadGlobalCheckoutDefaults();
+
     const formatted = rows.map(r => {
       const isOther = r.is_official === 0 && r.device_id !== deviceId;
       return {
@@ -581,6 +586,7 @@ async function getTemplates(req, res) {
         is_parseable: r.is_parseable ?? 1,
         is_other_device: isOther,
         is_admin_archive: r.is_official === 1 && (r.is_parseable ?? 1) === 0,
+        logo_url: (savedBranding && savedBranding[layoutHelper.providerKeyForTemplate(r.id)]?.logoUrl) || null,
       };
     });
 

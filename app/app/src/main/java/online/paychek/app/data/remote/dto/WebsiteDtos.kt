@@ -59,6 +59,7 @@ data class ActiveNumberDto(
     @SerializedName("simSlot") val simSlot: Int = 1,
     @SerializedName("deviceId") val deviceId: String? = null,
     @SerializedName("displayName") val displayName: String? = null,
+    @SerializedName("templateId") val templateId: Int? = null,
     @SerializedName("category") val category: String? = null,
     @SerializedName("tab") val tab: String? = null,
     @SerializedName("enabled") val enabled: Boolean = true,

@@ -30,7 +30,8 @@ data class SmsTemplateDto(
     @SerializedName("is_parseable") val isParseable: Int = 1,
     @SerializedName("category") val category: String? = "SEND_MONEY",
     @SerializedName("is_other_device") val isOtherDevice: Boolean? = false,
-    @SerializedName("is_admin_archive") val isAdminArchive: Boolean? = false
+    @SerializedName("is_admin_archive") val isAdminArchive: Boolean? = false,
+    @SerializedName("logo_url") val logoUrl: String? = null
 )
 
 data class SmsTemplatesResponse(
