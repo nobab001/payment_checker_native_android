@@ -173,6 +173,7 @@ fun WebsiteSettingsScreen(
                             viewModel.toggleCheckoutNumber(id, enabled, site.id)
                         },
                         checkoutTabs = state.checkoutTabs,
+                        providerBranding = state.providerBranding,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Button(
@@ -212,6 +213,7 @@ fun WebsiteSettingsScreen(
                         numbers = previewNumbers,
                         editable = false,
                         checkoutTabs = state.checkoutTabs,
+                        providerBranding = state.providerBranding,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(

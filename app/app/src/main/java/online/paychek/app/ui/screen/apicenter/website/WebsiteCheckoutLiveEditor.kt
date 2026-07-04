@@ -20,13 +20,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import online.paychek.app.data.remote.dto.ActiveNumberDto
 import online.paychek.app.data.remote.dto.CheckoutTabDto
+import online.paychek.app.data.remote.dto.ProviderBrandingDto
+import online.paychek.app.ui.common.RemoteImage
 
 private val Purple = Color(0xFF5B21B6)
 private val Bkash = Color(0xFFE2136E)
@@ -48,6 +52,43 @@ private fun provColor(p: String) = when (p.lowercase()) {
     "rocket" -> Rocket
     "upay" -> Upay
     else -> Color(0xFF94A3B8)
+}
+
+private fun providerKey(provider: String?): String =
+    (provider ?: "").lowercase().replace(Regex("[^a-z0-9]"), "")
+
+private fun logoFor(branding: Map<String, ProviderBrandingDto>, provider: String?): String? =
+    branding[providerKey(provider)]?.logoUrl?.takeIf { it.isNotBlank() }
+
+/** Provider logo with a colored initial-letter fallback; sized per view. */
+@Composable
+private fun ProviderLogo(logoUrl: String?, provider: String, size: Dp) {
+    val corner = (size.value * 0.24f).dp
+    val c = provColor(provider)
+    Box(
+        Modifier
+            .size(size)
+            .clip(RoundedCornerShape(corner))
+            .background(if (logoUrl.isNullOrBlank()) c else Color.White),
+        contentAlignment = Alignment.Center
+    ) {
+        RemoteImage(
+            url = logoUrl,
+            contentDescription = null,
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(corner)),
+            contentScale = ContentScale.Fit,
+            fallback = {
+                Text(
+                    provider.take(1).uppercase(),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = (size.value * 0.42f).sp
+                )
+            }
+        )
+    }
 }
 
 private fun resolveTabs(checkoutTabs: Map<String, CheckoutTabDto>): List<Triple<String, String, String>> {
@@ -98,6 +139,7 @@ fun WebsiteCheckoutLiveEditor(
     onMoveNumber: (Int, Int) -> Unit = { _, _ -> },
     onToggleNumber: (Int, Boolean) -> Unit = { _, _ -> },
     checkoutTabs: Map<String, CheckoutTabDto> = emptyMap(),
+    providerBranding: Map<String, ProviderBrandingDto> = emptyMap(),
     modifier: Modifier = Modifier
 ) {
     var activeTab by remember { mutableStateOf("send_money") }
@@ -185,7 +227,8 @@ fun WebsiteCheckoutLiveEditor(
                             onMoveNumber(cur, cur - 1); draggingIndex = cur - 1; dragOffset += rowHeightPx
                         }
                     },
-                    onToggle = onToggleNumber
+                    onToggle = onToggleNumber,
+                    providerBranding = providerBranding
                 )
                 "design-3" -> Design3Preview(
                     tabNumbers,
@@ -193,7 +236,8 @@ fun WebsiteCheckoutLiveEditor(
                     enabledTabs.filter { it.first != activeTab },
                     editable,
                     onSwitchTab = { activeTab = it },
-                    onToggleNumber
+                    onToggle = onToggleNumber,
+                    providerBranding = providerBranding
                 )
                 else -> Design1Preview(tabNumbers, editable, draggingIndex, dragOffset, rowHeightPx,
                     onDragStart = { localIdx -> draggingIndex = tabNumbersIndexed.getOrNull(localIdx) },
@@ -208,7 +252,8 @@ fun WebsiteCheckoutLiveEditor(
                         }
                     },
                     onToggle = onToggleNumber,
-                    globalIndices = tabNumbersIndexed
+                    globalIndices = tabNumbersIndexed,
+                    providerBranding = providerBranding
                 )
             }
         }
@@ -262,15 +307,24 @@ private fun Design1Preview(
     draggingIndex: Int?, dragOffset: Float, rowHeightPx: Float,
     onDragStart: (Int) -> Unit, onDragEnd: () -> Unit,
     onDrag: (Int, Float) -> Unit, onToggle: (Int, Boolean) -> Unit,
-    globalIndices: List<Int> = numbers.indices.toList()
+    globalIndices: List<Int> = numbers.indices.toList(),
+    providerBranding: Map<String, ProviderBrandingDto> = emptyMap()
 ) {
     val grouped = numbers.groupBy { it.displayName ?: it.provider }
     grouped.forEach { (label, items) ->
-        Text(label, color = Purple, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp))
+        // Large logo next to the provider/group name
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(vertical = 4.dp)
+        ) {
+            ProviderLogo(logoFor(providerBranding, items.firstOrNull()?.provider), items.firstOrNull()?.provider ?: label, 28.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(label, color = Purple, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        }
         items.forEach { num ->
             val localIdx = numbers.indexOfFirst { it.methodId == num.methodId }
             val globalIdx = globalIndices.getOrNull(localIdx) ?: localIdx
-            NumberListRow(num, editable, globalIdx == draggingIndex, dragOffset, rowHeightPx, localIdx, onDragStart, onDragEnd, onDrag, onToggle)
+            NumberListRow(num, editable, globalIdx == draggingIndex, dragOffset, rowHeightPx, localIdx, onDragStart, onDragEnd, onDrag, onToggle, logoFor(providerBranding, num.provider))
         }
     }
     if (numbers.isEmpty()) EmptyNumbers()
@@ -281,23 +335,22 @@ private fun Design2Preview(
     numbers: List<ActiveNumberDto>, editable: Boolean,
     draggingIndex: Int?, dragOffset: Float, rowHeightPx: Float,
     onDragStart: (Int) -> Unit, onDragEnd: () -> Unit,
-    onDrag: (Int, Float) -> Unit, onToggle: (Int, Boolean) -> Unit
+    onDrag: (Int, Float) -> Unit, onToggle: (Int, Boolean) -> Unit,
+    providerBranding: Map<String, ProviderBrandingDto> = emptyMap()
 ) {
     val providers = numbers.distinctBy { it.provider }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         providers.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { num ->
-                    val c = provColor(num.provider)
                     Box(
                         Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(Color.White)
                             .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(12.dp)).padding(12.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(c), contentAlignment = Alignment.Center) {
-                                Text(num.provider.take(1), color = Color.White, fontWeight = FontWeight.Bold)
-                            }
+                            // Card view: large logo displayed vertically above the name
+                            ProviderLogo(logoFor(providerBranding, num.provider), num.provider, 48.dp)
                             Spacer(Modifier.height(6.dp))
                             Text(num.displayName ?: num.provider, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             Text(num.number, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
@@ -312,7 +365,7 @@ private fun Design2Preview(
         Spacer(Modifier.height(8.dp))
         Text("নাম্বার তালিকা (ড্র্যাগ করে সাজান)", fontSize = 10.sp, color = Color.Gray)
         numbers.forEachIndexed { idx, num ->
-            NumberListRow(num, true, idx == draggingIndex, dragOffset, rowHeightPx, idx, onDragStart, onDragEnd, onDrag, onToggle)
+            NumberListRow(num, true, idx == draggingIndex, dragOffset, rowHeightPx, idx, onDragStart, onDragEnd, onDrag, onToggle, logoFor(providerBranding, num.provider))
         }
     }
     if (numbers.isEmpty()) EmptyNumbers()
@@ -325,7 +378,8 @@ private fun Design3Preview(
     otherTabs: List<Triple<String, String, String>>,
     editable: Boolean,
     onSwitchTab: (String) -> Unit,
-    onToggle: (Int, Boolean) -> Unit
+    onToggle: (Int, Boolean) -> Unit,
+    providerBranding: Map<String, ProviderBrandingDto> = emptyMap()
 ) {
     val grouped = numbers.groupBy { it.provider }
     Text(sectionTitle, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Purple, modifier = Modifier.padding(bottom = 6.dp))
@@ -339,12 +393,18 @@ private fun Design3Preview(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(prov.replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Large logo next to the provider name
+                    ProviderLogo(logoFor(providerBranding, prov), prov, 26.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(prov.replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
                 Text("▼", color = Color.Gray)
             }
             items.forEach { num ->
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(provColor(num.provider)))
+                    // Small logo next to each number
+                    ProviderLogo(logoFor(providerBranding, num.provider), num.provider, 18.dp)
                     Spacer(Modifier.width(8.dp))
                     Column(Modifier.weight(1f)) {
                         Text(num.displayName ?: num.provider, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -383,7 +443,8 @@ private fun Design3Preview(
 private fun NumberListRow(
     num: ActiveNumberDto, editable: Boolean, isDragging: Boolean, dragOffset: Float, rowHeightPx: Float,
     index: Int, onDragStart: (Int) -> Unit, onDragEnd: () -> Unit, onDrag: (Int, Float) -> Unit,
-    onToggle: (Int, Boolean) -> Unit
+    onToggle: (Int, Boolean) -> Unit,
+    logoUrl: String? = null
 ) {
     Box(
         Modifier.fillMaxWidth().height(52.dp).zIndex(if (isDragging) 1f else 0f)
@@ -407,6 +468,9 @@ private fun NumberListRow(
                     }
                 )
             }
+            // Small logo next to the number
+            ProviderLogo(logoUrl, num.provider, 22.dp)
+            Spacer(Modifier.width(8.dp))
             Text(num.number, Modifier.weight(1f), fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             if (editable) {
                 Switch(checked = num.enabled, onCheckedChange = { onToggle(num.methodId, it) }, modifier = Modifier.height(28.dp))

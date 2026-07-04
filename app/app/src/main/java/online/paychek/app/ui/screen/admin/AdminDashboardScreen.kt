@@ -1,5 +1,7 @@
 package online.paychek.app.ui.screen.admin
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,14 +16,23 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 import online.paychek.app.data.remote.dto.*
+import online.paychek.app.ui.common.ImageCropperDialog
+import online.paychek.app.ui.common.RemoteImage
+import online.paychek.app.ui.common.bitmapToBase64Png
+import online.paychek.app.ui.common.decodeUriToBitmap
 import online.paychek.app.ui.theme.RoyalIndigo
 import online.paychek.app.ui.theme.RoyalIndigoLight
 import online.paychek.app.ui.theme.BkashPink
@@ -223,6 +234,9 @@ fun AdminDashboardScreen(
                         uiState = uiState,
                         onSaveCheckoutDesign = { tabs, branding ->
                             viewModel.saveCheckoutDesign(tabs, branding)
+                        },
+                        onUploadImage = { b64, kind, key, cb ->
+                            viewModel.uploadCheckoutImage(b64, kind, key, cb)
                         }
                     )
                     2 -> UsersAndDevicesTab(
@@ -598,7 +612,8 @@ private fun GatewaysAndTemplatesTab(
 @Composable
 private fun CheckoutDesignTab(
     uiState: AdminUiState,
-    onSaveCheckoutDesign: (Map<String, CheckoutDesignTabInput>, Map<String, ProviderBrandingDto>) -> Unit
+    onSaveCheckoutDesign: (Map<String, CheckoutDesignTabInput>, Map<String, ProviderBrandingDto>) -> Unit,
+    onUploadImage: (String, String, String, (String?) -> Unit) -> Unit
 ) {
     val scrollState = rememberScrollState()
     Column(
@@ -612,7 +627,8 @@ private fun CheckoutDesignTab(
             tabs = uiState.checkoutDesignTabs,
             providerBranding = uiState.providerBranding,
             isSaving = uiState.isSaving,
-            onSave = onSaveCheckoutDesign
+            onSave = onSaveCheckoutDesign,
+            onUploadImage = onUploadImage
         )
     }
 }
@@ -1562,7 +1578,8 @@ private fun AdminCheckoutDesignCard(
     tabs: Map<String, CheckoutTabDto>,
     providerBranding: Map<String, ProviderBrandingDto>,
     isSaving: Boolean,
-    onSave: (Map<String, CheckoutDesignTabInput>, Map<String, ProviderBrandingDto>) -> Unit
+    onSave: (Map<String, CheckoutDesignTabInput>, Map<String, ProviderBrandingDto>) -> Unit,
+    onUploadImage: (String, String, String, (String?) -> Unit) -> Unit
 ) {
     val tabEnabled = remember { mutableStateMapOf<String, Boolean>() }
     val tabLabels = remember { mutableStateMapOf<String, String>() }
@@ -1570,6 +1587,12 @@ private fun AdminCheckoutDesignCard(
     val tabIconUrls = remember { mutableStateMapOf<String, String>() }
     val provNames = remember { mutableStateMapOf<String, String>() }
     val provLogos = remember { mutableStateMapOf<String, String>() }
+
+    // Providers are dynamic: the known ones first, then any extra derived from
+    // official SMS templates (auto-synced by the backend).
+    val providerKeys = remember(providerBranding) {
+        (PROVIDER_ORDER + providerBranding.keys.sorted()).distinct()
+    }
 
     LaunchedEffect(tabs, providerBranding) {
         CHECKOUT_TAB_ORDER.forEach { (key, defaultLabel) ->
@@ -1579,12 +1602,49 @@ private fun AdminCheckoutDesignCard(
             tabIcons[key] = t?.icon ?: "💳"
             tabIconUrls[key] = t?.iconUrl.orEmpty()
         }
-        PROVIDER_ORDER.forEach { key ->
+        providerKeys.forEach { key ->
             val p = providerBranding[key]
             provNames[key] = p?.displayName?.takeIf { it.isNotBlank() }
                 ?: key.replaceFirstChar { it.uppercase() }
             provLogos[key] = p?.logoUrl.orEmpty()
         }
+    }
+
+    // ── Image picker + crop + upload plumbing ────────────────────────────────
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var bitmapToCrop by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var uploadKind by remember { mutableStateOf("provider_logo") }
+    var uploadKey by remember { mutableStateOf("") }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            scope.launch { bitmapToCrop = decodeUriToBitmap(context, uri) }
+        }
+    }
+    val requestUpload: (String, String) -> Unit = { kind, key ->
+        uploadKind = kind
+        uploadKey = key
+        picker.launch("image/*")
+    }
+
+    val cropBmp = bitmapToCrop
+    if (cropBmp != null) {
+        ImageCropperDialog(
+            bitmap = cropBmp,
+            title = if (uploadKind == "tab_icon") "আইকন সাজান" else "লোগো সাজান",
+            onDismiss = { bitmapToCrop = null },
+            onCropSuccess = { cropped ->
+                bitmapToCrop = null
+                val b64 = bitmapToBase64Png(cropped)
+                val kind = uploadKind
+                val key = uploadKey
+                onUploadImage(b64, kind, key) { path ->
+                    if (!path.isNullOrBlank()) {
+                        if (kind == "tab_icon") tabIconUrls[key] = path else provLogos[key] = path
+                    }
+                }
+            }
+        )
     }
 
     Card(
@@ -1602,8 +1662,13 @@ private fun AdminCheckoutDesignCard(
                 fontSize = 16.sp
             )
             Text(
-                "ট্যাব আইকন/নাম ও পেমেন্ট প্রোভাইডার লোগো সব মার্চেন্টের চেকআউটে প্রযোজ্য। আইকন URL অনলাইন থেকে দিতে পারেন।",
+                "ট্যাব আইকন/নাম ও পেমেন্ট প্রোভাইডার লোগো সব মার্চেন্টের চেকআউটে প্রযোজ্য।",
                 fontSize = 12.sp,
+                color = TextSecondary
+            )
+            Text(
+                "পরামর্শ: দ্রুত ও নির্ভরযোগ্য লোডিংয়ের জন্য শুধু ইমোজি ব্যবহার করুন — এগুলো তাৎক্ষণিক লোড হয়। আইকন/লোগো URL ঐচ্ছিক; দিলে অবশ্যই সম্পূর্ণ লিংক দিন (https:// দিয়ে শুরু)। ভুল বা ধীর লিংক হলে স্বয়ংক্রিয়ভাবে ইমোজি দেখাবে।",
+                fontSize = 11.sp,
                 color = TextSecondary
             )
 
@@ -1644,33 +1709,60 @@ private fun AdminCheckoutDesignCard(
                             OutlinedTextField(
                                 value = tabIconUrls[key].orEmpty(),
                                 onValueChange = { tabIconUrls[key] = it },
-                                label = { Text("আইকন URL") },
+                                label = { Text("আইকন URL/পাথ") },
+                                placeholder = { Text("আপলোড করুন বা লিংক দিন", fontSize = 11.sp) },
                                 singleLine = true,
                                 modifier = Modifier.weight(0.65f)
                             )
                         }
+                        BrandImageControls(
+                            currentPath = tabIconUrls[key].orEmpty(),
+                            fallbackText = tabIcons[key]?.takeIf { it.isNotBlank() } ?: "🖼",
+                            uploadLabel = "আইকন আপলোড",
+                            onUpload = { requestUpload("tab_icon", key) },
+                            onClear = { tabIconUrls[key] = "" }
+                        )
                     }
                 }
             }
 
             Text("পেমেন্ট প্রোভাইডার ব্র্যান্ডিং", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = TextPrimary)
-            PROVIDER_ORDER.forEach { key ->
-                val display = key.replaceFirstChar { it.uppercase() }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = provNames[key] ?: display,
-                        onValueChange = { provNames[key] = it },
-                        label = { Text("$display নাম") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = provLogos[key].orEmpty(),
-                        onValueChange = { provLogos[key] = it },
-                        label = { Text("লোগো URL") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
+            Text(
+                "নতুন SMS টেমপ্লেট যোগ করলে সেই প্রোভাইডার এখানে স্বয়ংক্রিয়ভাবে যুক্ত হয়। লোগো সরাসরি আপলোড করুন — সার্ভারে অপ্টিমাইজ হয়ে সেভ হবে।",
+                fontSize = 11.sp,
+                color = TextSecondary
+            )
+            providerKeys.forEach { key ->
+                val display = provNames[key]?.takeIf { it.isNotBlank() } ?: key.replaceFirstChar { it.uppercase() }
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = provNames[key] ?: display,
+                            onValueChange = { provNames[key] = it },
+                            label = { Text("প্রোভাইডার নাম") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        BrandImageControls(
+                            currentPath = provLogos[key].orEmpty(),
+                            fallbackText = display.take(1).uppercase(),
+                            uploadLabel = "লোগো আপলোড",
+                            onUpload = { requestUpload("provider_logo", key) },
+                            onClear = { provLogos[key] = "" }
+                        )
+                        OutlinedTextField(
+                            value = provLogos[key].orEmpty(),
+                            onValueChange = { provLogos[key] = it },
+                            label = { Text("লোগো URL/পাথ") },
+                            placeholder = { Text("আপলোড করুন বা লিংক দিন", fontSize = 11.sp) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             }
 
@@ -1691,7 +1783,7 @@ private fun AdminCheckoutDesignCard(
                             }
                         )
                     }
-                    val branding = PROVIDER_ORDER.associate { key ->
+                    val branding = providerKeys.associate { key ->
                         key to ProviderBrandingDto(
                             displayName = provNames[key]?.trim().orEmpty()
                                 .ifBlank { key.replaceFirstChar { it.uppercase() } },
@@ -1710,6 +1802,54 @@ private fun AdminCheckoutDesignCard(
                     Text("চেকআউট ডিজাইন সংরক্ষণ করুন", fontWeight = FontWeight.Bold)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun BrandImageControls(
+    currentPath: String,
+    fallbackText: String,
+    uploadLabel: String,
+    onUpload: () -> Unit,
+    onClear: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(
+            Modifier
+                .size(46.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xFF1E293B)),
+            contentAlignment = Alignment.Center
+        ) {
+            RemoteImage(
+                url = currentPath,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(10.dp)),
+                contentScale = ContentScale.Fit,
+                fallback = {
+                    Text(fallbackText, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            )
+        }
+        OutlinedButton(
+            onClick = onUpload,
+            shape = RoundedCornerShape(10.dp),
+            border = BorderStroke(1.dp, AccentCyan),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentCyan)
+        ) {
+            Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(uploadLabel, fontSize = 13.sp)
+        }
+        if (currentPath.isNotBlank()) {
+            TextButton(onClick = onClear) { Text("মুছুন", fontSize = 12.sp, color = StatusRed) }
         }
     }
 }

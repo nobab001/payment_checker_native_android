@@ -143,6 +143,60 @@ function resolveProviderBranding(globalBranding) {
   return merged;
 }
 
+/** Normalize a sender id / provider string into a branding map key. */
+function providerKey(senderId) {
+  return String(senderId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// Short-lived cache so the customer checkout hot-path doesn't re-query on every hit.
+let _providerCache = { at: 0, data: null };
+function invalidateProviderCache() {
+  _providerCache = { at: 0, data: null };
+}
+
+/**
+ * Derive provider branding entries from the official SMS templates so that any
+ * newly created template's provider automatically shows up in the Provider
+ * Branding section (and on the checkout page) without manual setup.
+ */
+async function deriveProviderBrandingFromTemplates() {
+  const now = Date.now();
+  if (_providerCache.data && now - _providerCache.at < 60000) return _providerCache.data;
+  const map = {};
+  try {
+    const rows = await prisma.sms_templates.findMany({
+      where: { is_official: 1 },
+      select: { sender_id: true },
+    });
+    for (const r of rows) {
+      const key = providerKey(r.sender_id);
+      if (!key) continue;
+      if (!map[key]) map[key] = { displayName: (r.sender_id || '').trim() || key, logoUrl: '' };
+    }
+  } catch (_) { /* ignore — fall back to defaults */ }
+  _providerCache = { at: now, data: map };
+  return map;
+}
+
+/**
+ * Full provider branding = hardcoded defaults ⊕ providers derived from official
+ * SMS templates ⊕ admin-saved overrides (admin display name / logo always wins).
+ */
+async function resolveProviderBrandingFull(globalBranding) {
+  const merged = { ...DEFAULT_PROVIDER_BRANDING };
+  const derived = await deriveProviderBrandingFromTemplates();
+  for (const [k, v] of Object.entries(derived)) {
+    merged[k] = { ...(merged[k] || {}), ...v };
+  }
+  if (globalBranding && typeof globalBranding === 'object') {
+    for (const [k, v] of Object.entries(globalBranding)) {
+      const kk = k.toLowerCase();
+      merged[kk] = { ...(merged[kk] || {}), ...v };
+    }
+  }
+  return merged;
+}
+
 function officialProviderTab(provider) {
   const p = (provider || '').toLowerCase();
   if (p === 'bank') return 'bank';
@@ -182,6 +236,10 @@ module.exports = {
   parseTabsForMerchant,
   mergeTabsIntoLayout,
   resolveProviderBranding,
+  resolveProviderBrandingFull,
+  deriveProviderBrandingFromTemplates,
+  invalidateProviderCache,
+  providerKey,
   officialProviderTab,
   enrichGatewayRow,
 };

@@ -178,4 +178,10 @@ interface AdminApiService {
         @Header("Authorization") token: String,
         @Body request: SaveCheckoutDesignRequest
     ): Response<CheckoutDesignConfigResponse>
+
+    @POST("admin/upload-image")
+    suspend fun uploadCheckoutImage(
+        @Header("Authorization") token: String,
+        @Body request: UploadImageRequest
+    ): Response<UploadImageResponse>
 }

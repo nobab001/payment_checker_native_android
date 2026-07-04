@@ -653,6 +653,42 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
         _state.update { it.copy(successMessage = null, errorMessage = null) }
     }
 
+    /**
+     * Upload a cropped provider logo / tab icon (base64 PNG). Returns the stored
+     * server path via [onResult] (null on failure) so the caller can drop it into
+     * the corresponding logoUrl / iconUrl field.
+     */
+    fun uploadCheckoutImage(
+        base64Png: String,
+        kind: String,
+        key: String,
+        onResult: (String?) -> Unit
+    ) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, errorMessage = null) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val res = api.uploadCheckoutImage(
+                    token,
+                    UploadImageRequest(imageData = base64Png, kind = kind, key = key)
+                )
+                val path = res.body()?.path
+                if (res.isSuccessful && res.body()?.success == true && !path.isNullOrBlank()) {
+                    _state.update { it.copy(isSaving = false, successMessage = "ছবি আপলোড হয়েছে।") }
+                    onResult(path)
+                } else {
+                    _state.update {
+                        it.copy(isSaving = false, errorMessage = res.body()?.error ?: "ছবি আপলোড ব্যর্থ হয়েছে।")
+                    }
+                    onResult(null)
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isSaving = false, errorMessage = "নেটওয়ার্ক এরর: ${e.localizedMessage}") }
+                onResult(null)
+            }
+        }
+    }
+
     fun saveCheckoutDesign(
         tabs: Map<String, CheckoutDesignTabInput>,
         providerBranding: Map<String, ProviderBrandingDto>

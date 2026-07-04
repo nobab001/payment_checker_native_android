@@ -15,6 +15,7 @@ import online.paychek.app.data.remote.dto.CheckoutTabDto
 import online.paychek.app.data.remote.dto.CommissionDto
 import online.paychek.app.data.remote.dto.NumberOrderItem
 import online.paychek.app.data.remote.dto.OfficialGatewayDto
+import online.paychek.app.data.remote.dto.ProviderBrandingDto
 import online.paychek.app.data.remote.dto.UpdateWebsiteRequest
 import online.paychek.app.data.remote.dto.UpsertCommissionRequest
 import online.paychek.app.data.remote.dto.UpsertOfficialGatewayRequest
@@ -48,6 +49,7 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
         // Official (redirect-based) payment gateways configured for this website
         val officialGateways: List<OfficialGatewayDto> = emptyList(),
         val checkoutTabs: Map<String, CheckoutTabDto> = emptyMap(),
+        val providerBranding: Map<String, ProviderBrandingDto> = emptyMap(),
         val isSaving: Boolean = false
     )
 
@@ -104,7 +106,8 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
                             commissions = detail.commissions,
                             numberOrder = detail.numberOrder,
                             checkoutNumbers = detail.activeNumbers,
-                            checkoutTabs = detail.checkoutTabs ?: emptyMap()
+                            checkoutTabs = detail.checkoutTabs ?: emptyMap(),
+                            providerBranding = detail.providerBranding ?: emptyMap()
                         )
                     }
                     // Commission menu lock state comes from the commissions endpoint too

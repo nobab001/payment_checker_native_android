@@ -71,7 +71,7 @@ async function getCheckoutLayout(req, res) {
     const { tabs: globalTabs, providerBranding } = await layoutHelper.loadGlobalCheckoutDefaults();
     const checkoutTabs = layoutHelper.parseTabs(layout.layout_config, globalTabs);
     const checkoutDesign = layoutHelper.resolveDesign(layout.checkout_theme);
-    const providers = layoutHelper.resolveProviderBranding(providerBranding);
+    const providers = await layoutHelper.resolveProviderBrandingFull(providerBranding);
 
     // Official (live) payment channels for bank/card/merchant tabs
     const officialRows = await prisma.website_official_gateways.findMany({

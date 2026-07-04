@@ -14,6 +14,7 @@ import online.paychek.app.data.remote.dto.ActiveNumberDto
 import online.paychek.app.data.remote.dto.CheckoutTabDto
 import online.paychek.app.data.remote.dto.CheckoutTabToggle
 import online.paychek.app.data.remote.dto.NumberOrderItem
+import online.paychek.app.data.remote.dto.ProviderBrandingDto
 import online.paychek.app.data.remote.dto.SaveGlobalCheckoutRequest
 import online.paychek.app.data.repository.WebsiteRepository
 
@@ -27,6 +28,7 @@ class GlobalCheckoutViewModel(app: Application) : AndroidViewModel(app) {
         val checkoutTheme: String = "design-1",
         val checkoutMode: String = "transaction",
         val checkoutTabs: Map<String, CheckoutTabDto> = emptyMap(),
+        val providerBranding: Map<String, ProviderBrandingDto> = emptyMap(),
         val checkoutNumbers: List<ActiveNumberDto> = emptyList(),
         val websiteCount: Int = 0,
         val error: String? = null,
@@ -55,6 +57,7 @@ class GlobalCheckoutViewModel(app: Application) : AndroidViewModel(app) {
                             checkoutTheme = resp.checkoutTheme,
                             checkoutMode = resp.checkoutMode,
                             checkoutTabs = resp.checkoutTabs ?: emptyMap(),
+                            providerBranding = resp.providerBranding ?: emptyMap(),
                             checkoutNumbers = resp.activeNumbers,
                             websiteCount = resp.websiteCount
                         )

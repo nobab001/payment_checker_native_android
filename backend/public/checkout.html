@@ -249,21 +249,74 @@ const COLORS = { bkash: '#E2136E', nagad: '#EF4123', rocket: '#8C3494', upay: '#
 
 document.getElementById('payment-amount').textContent = parseFloat(amount).toFixed(2);
 
-function provColor(p) { return COLORS[(p||'').toLowerCase()] || '#94a3b8'; }
+function provKey(p) { return (p || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function provColor(p) { return COLORS[provKey(p)] || COLORS[(p||'').toLowerCase()] || '#94a3b8'; }
 function provInitial(p) { return (p||'?').charAt(0).toUpperCase(); }
 function provBrand(p) {
-    const key = (p || '').toLowerCase();
-    return providerBranding[key] || { displayName: p, logoUrl: '' };
+    // Match the backend's provider key normalization so multi-word providers resolve.
+    return providerBranding[provKey(p)] || providerBranding[(p || '').toLowerCase()] || { displayName: p, logoUrl: '' };
 }
+// সম্পূর্ণ http(s):// URL অথবা সার্ভারে আপলোড করা relative path (uploads/...) —
+// দুটোই গ্রহণযোগ্য। খালি হলে emoji/initial-avatar fallback দেখায়।
+function isHttpUrl(u) { return typeof u === 'string' && /^https?:\/\//i.test(u.trim()); }
+function hasImg(u) { return typeof u === 'string' && u.trim() !== ''; }
+// relative path কে origin-root থেকে absolute বানাও (checkout.html একই origin এ সার্ভ হয়)।
+function imgSrc(u) {
+    u = (u || '').trim();
+    if (!u) return '';
+    if (/^https?:\/\//i.test(u) || u.startsWith('data:')) return u;
+    return '/' + u.replace(/^\/+/, '');
+}
+
+// Tab icon: emoji সবসময় হার্ডকোড করা থাকে (তাৎক্ষণিক লোড হয়)। ছবি দিলে সেটি
+// progressive enhancement — লোড ব্যর্থ/ধীর হলে onerror তৎক্ষণাৎ emoji দেখায়।
 function tabIconHtml(t) {
     const fb = TAB_FALLBACK[t.id] || { icon: '💳', label: t.label };
-    if (t.iconUrl) return `<img src="${esc(t.iconUrl)}" alt="">`;
-    return esc(t.icon || fb.icon);
+    const emoji = t.icon || fb.icon;
+    if (hasImg(t.iconUrl)) {
+        return `<img src="${esc(imgSrc(t.iconUrl))}" alt="" width="22" height="22" decoding="async" loading="eager" data-emoji="${esc(emoji)}" onerror="iconFail(this)">`;
+    }
+    return esc(emoji);
 }
-function providerLogoHtml(provider, size) {
+// লোড ব্যর্থ হলে img সরিয়ে emoji বসাও — ভাঙা ছবির বদলে সবসময় কিছু দেখাবে।
+function iconFail(img) {
+    const s = document.createElement('span');
+    s.textContent = img.getAttribute('data-emoji') || '💳';
+    img.replaceWith(s);
+}
+// প্রোভাইডার লোগো — px দিয়ে সাইজ নিয়ন্ত্রণ (নামের পাশে বড়, নাম্বারের পাশে ছোট)।
+function providerLogoHtml(provider, px) {
+    px = px || 28;
     const b = provBrand(provider);
-    if (b.logoUrl) return `<img class="${size}" src="${esc(b.logoUrl)}" alt="">`;
-    return `<span class="prov-avatar" style="background:${provColor(provider)}">${provInitial(provider)}</span>`;
+    const color = provColor(provider);
+    const initial = provInitial(provider);
+    const radius = Math.round(px * 0.28);
+    if (hasImg(b.logoUrl)) {
+        return `<img src="${esc(imgSrc(b.logoUrl))}" alt="" style="width:${px}px;height:${px}px;border-radius:${radius}px;object-fit:contain;background:#fff;flex:0 0 auto" decoding="async" loading="lazy" data-initial="${esc(initial)}" data-color="${esc(color)}" data-px="${px}" onerror="logoFail(this)">`;
+    }
+    return `<span class="prov-avatar" style="width:${px}px;height:${px}px;border-radius:${radius}px;background:${color};font-size:${Math.round(px * 0.42)}px;flex:0 0 auto">${initial}</span>`;
+}
+// লোগো লোড ব্যর্থ হলে একই সাইজের রঙিন initial-অ্যাভাটার fallback।
+function logoFail(img) {
+    const px = parseInt(img.getAttribute('data-px') || '28', 10);
+    const s = document.createElement('span');
+    s.className = 'prov-avatar';
+    s.style.width = px + 'px';
+    s.style.height = px + 'px';
+    s.style.borderRadius = Math.round(px * 0.28) + 'px';
+    s.style.background = img.getAttribute('data-color') || '#94a3b8';
+    s.style.fontSize = Math.round(px * 0.42) + 'px';
+    s.style.flex = '0 0 auto';
+    s.textContent = img.getAttribute('data-initial') || '?';
+    img.replaceWith(s);
+}
+// Design-2 কার্ডের বড় লোগো ব্যর্থ হলে .logo অ্যাভাটার fallback।
+function cardLogoFail(img) {
+    const d = document.createElement('div');
+    d.className = 'logo';
+    d.style.background = img.getAttribute('data-color') || '#94a3b8';
+    d.textContent = img.getAttribute('data-initial') || '?';
+    img.replaceWith(d);
 }
 
 async function fetchLayout() {
@@ -287,9 +340,10 @@ async function fetchLayout() {
         const sub = document.getElementById('merchant-sub');
         if (data.siteUrl) { sub.textContent = data.siteUrl.replace(/^https?:\/\//, ''); sub.style.display = 'block'; }
         else sub.style.display = 'none';
-        if (data.logoUrl) {
+        if (hasImg(data.logoUrl)) {
             const lg = document.getElementById('merchant-logo');
-            lg.src = data.logoUrl; lg.classList.remove('hidden');
+            lg.onerror = () => lg.classList.add('hidden');
+            lg.src = imgSrc(data.logoUrl); lg.classList.remove('hidden');
         }
 
         if (checkoutMode === 'merchant_vibe') {
@@ -351,11 +405,13 @@ function renderDesign1(simItems, liveItems) {
     const groups = groupBy(simItems, g => g.groupLabel || `${g.provider} Personal`);
     for (const [label, items] of Object.entries(groups)) {
         const prov = items[0]?.provider || label;
-        html += `<div class="group-title" style="display:flex;align-items:center;gap:8px">
-            ${providerLogoHtml(prov, 'prov-logo-sm')}<span>${esc(label)}</span></div>`;
+        // নামের পাশে বড় লোগো
+        html += `<div class="group-title" style="display:flex;align-items:center;gap:10px">
+            ${providerLogoHtml(prov, 40)}<span>${esc(label)}</span></div>`;
         items.forEach(g => {
+            // নাম্বারের পাশে ছোট লোগো
             html += `<div class="list-row">
-                <span class="num">${esc(g.number)}</span>
+                <span style="display:flex;align-items:center;gap:10px">${providerLogoHtml(g.provider, 24)}<span class="num">${esc(g.number)}</span></span>
                 <button class="btn-copy" onclick="copyNum('${esc(g.number)}',this)">কপি করুন</button>
             </div>`;
         });
@@ -375,7 +431,8 @@ function renderDesign2(simItems, liveItems) {
         const c = provColor(g.provider);
         const nums = items.map(i => i.number).join(', ');
         html += `<div class="prov-card" onclick="copyNum('${esc(g.number)}',null)">
-            ${b.logoUrl ? `<img src="${esc(b.logoUrl)}" style="width:48px;height:48px;border-radius:14px;margin:0 auto 10px;object-fit:contain">`
+            ${hasImg(b.logoUrl)
+                ? `<img src="${esc(imgSrc(b.logoUrl))}" style="width:56px;height:56px;border-radius:16px;margin:0 auto 10px;object-fit:contain;background:#fff" decoding="async" loading="lazy" data-initial="${esc(provInitial(g.provider))}" data-color="${esc(c)}" onerror="cardLogoFail(this)">`
                 : `<div class="logo" style="background:${c}">${provInitial(g.provider)}</div>`}
             <div class="name">${esc(b.displayName || label)}</div>
             <div class="sub">${esc(nums)}</div>
@@ -401,11 +458,11 @@ function renderDesign3(simItems, liveItems) {
     for (const [prov, items] of Object.entries(groups)) {
         const b = provBrand(prov);
         html += `<div class="accordion"><div class="acc-head open">
-            <span style="display:flex;align-items:center;gap:8px">${providerLogoHtml(prov, 'prov-logo-sm')}${esc(b.displayName || prov)}</span>
+            <span style="display:flex;align-items:center;gap:10px">${providerLogoHtml(prov, 34)}${esc(b.displayName || prov)}</span>
             <span class="chev">▼</span></div><div class="acc-body open">`;
         items.forEach(g => {
             html += `<div class="acc-item">
-                <span class="acc-dot" style="background:${provColor(g.provider)}"></span>
+                <span style="margin-right:8px;display:flex;align-items:center">${providerLogoHtml(g.provider, 22)}</span>
                 <div class="acc-info"><div class="pname">${esc(g.displayName||g.provider)}</div><div class="pnum">${esc(g.number)}</div></div>
                 <button class="acc-copy" onclick="copyNum('${esc(g.number)}',this)">কপি</button>
             </div>`;
@@ -563,6 +620,13 @@ function showStatus(t, cls) { const p=document.getElementById('status-panel'); p
 function showVibeStatus(t, cls) { const p=document.getElementById('vibe-step-status'); p.className='status '+cls; p.textContent=t; }
 
 window.onload = fetchLayout;
+
+// Service worker: cache the checkout shell, logos & icons so the page loads
+// once and then serves instantly from cache (stale-while-revalidate). Payment
+// API calls are never cached.
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(function () { /* ignore */ });
+}
 </script>
 </body>
 </html>

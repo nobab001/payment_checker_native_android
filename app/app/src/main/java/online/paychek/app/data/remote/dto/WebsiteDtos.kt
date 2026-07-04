@@ -139,6 +139,7 @@ data class GlobalCheckoutResponse(
     @SerializedName("checkoutTheme") val checkoutTheme: String = "design-1",
     @SerializedName("checkoutMode") val checkoutMode: String = "transaction",
     @SerializedName("checkoutTabs") val checkoutTabs: Map<String, CheckoutTabDto>? = null,
+    @SerializedName("providerBranding") val providerBranding: Map<String, ProviderBrandingDto>? = null,
     @SerializedName("activeNumbers") val activeNumbers: List<ActiveNumberDto> = emptyList(),
     @SerializedName("gatewaysByCategory") val gatewaysByCategory: Map<String, List<ActiveNumberDto>>? = null,
     @SerializedName("numberOrder") val numberOrder: List<NumberOrderItem> = emptyList(),
@@ -169,7 +170,8 @@ data class WebsiteDetailResponse(
     @SerializedName("numberOrder") val numberOrder: List<NumberOrderItem> = emptyList(),
     @SerializedName("activeNumbers") val activeNumbers: List<ActiveNumberDto> = emptyList(),
     @SerializedName("gatewaysByCategory") val gatewaysByCategory: Map<String, List<ActiveNumberDto>>? = null,
-    @SerializedName("checkoutTabs") val checkoutTabs: Map<String, CheckoutTabDto>? = null
+    @SerializedName("checkoutTabs") val checkoutTabs: Map<String, CheckoutTabDto>? = null,
+    @SerializedName("providerBranding") val providerBranding: Map<String, ProviderBrandingDto>? = null
 )
 
 data class CheckoutTabDto(

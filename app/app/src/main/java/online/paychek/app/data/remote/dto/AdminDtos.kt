@@ -253,3 +253,17 @@ data class CheckoutDesignConfigResponse(
     @SerializedName("message") val message: String? = null,
     @SerializedName("error") val error: String? = null
 )
+
+// ── Direct image upload (provider logo / tab icon) ───────────────────────────
+
+data class UploadImageRequest(
+    @SerializedName("imageData") val imageData: String,
+    @SerializedName("kind") val kind: String,   // "provider_logo" | "tab_icon"
+    @SerializedName("key") val key: String
+)
+
+data class UploadImageResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("path") val path: String? = null,
+    @SerializedName("error") val error: String? = null
+)

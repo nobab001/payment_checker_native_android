@@ -59,6 +59,8 @@ router.post('/websites/:id/permissions', admin.setWebsitePermissions);
 // 5e. Global checkout design (tabs, icons, provider branding — all merchants)
 router.get('/checkout-design', admin.getCheckoutDesignConfig);
 router.post('/checkout-design', admin.saveCheckoutDesignConfig);
+// Direct image upload for provider logos & checkout tab icons (base64 -> optimized file)
+router.post('/upload-image', admin.uploadCheckoutImage);
 
 // 6. User and Device management list and toggle endpoints
 router.get('/users', admin.listUsers);

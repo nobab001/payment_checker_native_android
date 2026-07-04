@@ -302,12 +302,15 @@ async function getWebsite(req, res) {
     }
 
     const { activeNumbers, gatewaysByCategory } = await buildActiveNumbers(row.user_id, row.number_order_json);
+    const { providerBranding: gBranding } = await layoutHelper.loadGlobalCheckoutDefaults();
+    const providerBranding = await layoutHelper.resolveProviderBrandingFull(gBranding);
 
     return res.json({
       success: true,
       website: toWebsiteDto(row),
       activeNumbers,
       gatewaysByCategory,
+      providerBranding,
       checkoutTabs: await layoutHelper.parseTabsForMerchant(row.layout_config),
       commissions: commissions.map((c) => ({
         id: c.id,
@@ -531,12 +534,15 @@ async function getGlobalCheckout(req, res) {
     const websiteCount = await prisma.gateway_layouts.count({ where: { user_id: userId } });
     const layoutRaw = typeof config.layout_config === 'string'
       ? config.layout_config : JSON.stringify(config.layout_config || {});
+    const { providerBranding: gBranding } = await layoutHelper.loadGlobalCheckoutDefaults();
+    const providerBranding = await layoutHelper.resolveProviderBrandingFull(gBranding);
 
     return res.json({
       success: true,
       checkoutTheme: config.checkout_theme,
       checkoutMode: config.checkout_mode,
       checkoutTabs: await layoutHelper.parseTabsForMerchant(layoutRaw),
+      providerBranding,
       activeNumbers,
       gatewaysByCategory,
       numberOrder: config.numberOrder || [],

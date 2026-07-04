@@ -3,6 +3,7 @@ process.env.TZ = 'Asia/Dhaka';
 
 const express = require('express');
 const http = require('http');
+const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const cron = require('node-cron');
@@ -51,11 +52,23 @@ const PORT = process.env.PORT || 3000;
 // Enable CORS for frontend API requests
 app.use(cors());
 
-// Serve static webpage assets (like public/checkout.html)
-app.use(express.static('public'));
+// Serve static webpage assets (like public/checkout.html).
+// Uploaded logos/icons use content-hashed filenames, so they can be cached
+// aggressively & immutably; the service worker + browser reuse them from cache.
+app.use(express.static('public', {
+  setHeaders: (res, filePath) => {
+    const rel = filePath.split(path.sep).join('/');
+    if (rel.includes('/uploads/')) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else if (filePath.endsWith('sw.js')) {
+      // The service worker itself must always be revalidated so updates ship.
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
 
-// Parse incoming JSON body payloads
-app.use(express.json());
+// Parse incoming JSON body payloads (raised limit to allow base64 image uploads)
+app.use(express.json({ limit: '12mb' }));
 
 // Helper to get formatted Bangladesh Standard Time (BST) timestamp
 const getBdTimestamp = () => {

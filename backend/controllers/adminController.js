@@ -1,6 +1,7 @@
 const prisma = require('../db/prisma');
 const dataSyncCache = require('../services/dataSyncCache');
 const layoutHelper = require('../services/checkoutLayoutHelper');
+const imageUpload = require('../services/imageUploadService');
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_987654321';
@@ -178,6 +179,8 @@ async function saveSmsTemplate(req, res) {
     }
 
     const version = await dataSyncCache.bumpGlobalTemplateVersion();
+    // New/edited template may introduce a new provider — refresh branding cache.
+    layoutHelper.invalidateProviderCache();
 
     const io = req.app.get('io');
     if (io) {
@@ -200,6 +203,7 @@ async function deleteSmsTemplate(req, res) {
     });
 
     const version = await dataSyncCache.bumpGlobalTemplateVersion();
+    layoutHelper.invalidateProviderCache();
 
     const io = req.app.get('io');
     if (io) {
@@ -745,7 +749,9 @@ async function getCheckoutDesignConfig(req, res) {
   try {
     const { tabs: globalTabs, providerBranding } = await layoutHelper.loadGlobalCheckoutDefaults();
     const tabs = layoutHelper.parseTabs(null, globalTabs);
-    const providers = layoutHelper.resolveProviderBranding(providerBranding);
+    // Merge in providers derived from official SMS templates so newly added
+    // templates appear here automatically for logo/name customization.
+    const providers = await layoutHelper.resolveProviderBrandingFull(providerBranding);
     return res.json({ success: true, tabs, providerBranding: providers, designs: ['design-1', 'design-2', 'design-3'] });
   } catch (err) {
     console.error('getCheckoutDesignConfig error:', err);
@@ -776,11 +782,37 @@ async function saveCheckoutDesignConfig(req, res) {
       success: true,
       message: 'গ্লোবাল চেকআউট ডিজাইন কনফিগ সংরক্ষণ হয়েছে। সব মার্চেন্টে প্রযোজ্য হবে।',
       tabs: layoutHelper.parseTabs(null, tabs),
-      providerBranding: layoutHelper.resolveProviderBranding(providerBranding),
+      providerBranding: await layoutHelper.resolveProviderBrandingFull(providerBranding),
     });
   } catch (err) {
     console.error('saveCheckoutDesignConfig error:', err);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/**
+ * POST /api/admin/upload-image — accepts a base64 image (provider logo or tab
+ * icon), optimizes/compresses it server-side and returns the stored public path.
+ * Body: { imageData: <base64/data-uri>, kind: 'provider_logo'|'tab_icon', key }
+ */
+async function uploadCheckoutImage(req, res) {
+  try {
+    const { imageData, kind, key } = req.body || {};
+    if (!imageData) {
+      return res.status(400).json({ success: false, error: 'imageData is required' });
+    }
+    const isTab = kind === 'tab_icon';
+    const folder = isTab ? 'tabs' : 'branding';
+    const maxSize = isTab ? 160 : 512;
+    const path = await imageUpload.saveOptimizedImage(imageData, {
+      folder,
+      key: key || kind || folder,
+      maxSize,
+    });
+    return res.json({ success: true, path });
+  } catch (err) {
+    console.error('uploadCheckoutImage error:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Internal Server Error' });
   }
 }
 
@@ -790,6 +822,7 @@ module.exports = {
   setWebsitePermissions,
   getCheckoutDesignConfig,
   saveCheckoutDesignConfig,
+  uploadCheckoutImage,
   getConfigs,
   updateConfig,
   getSmsTemplates,
