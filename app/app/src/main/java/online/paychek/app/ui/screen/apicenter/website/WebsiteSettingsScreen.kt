@@ -291,6 +291,8 @@ fun WebsiteSettingsScreen(
                     viewModel.updateSettings(
                         site.id,
                         UpdateWebsiteRequest(
+                            companyName = companyName,
+                            logoUrl = logoUrl,
                             successUrl = successUrl,
                             cancelUrl = cancelUrl,
                             callbackUrl = callbackUrl,
@@ -305,7 +307,7 @@ fun WebsiteSettingsScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
             ) {
                 if (state.isSaving) CircularProgressIndicator(Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
-                else Text("ইন্টিগ্রেশন সেটিংস সংরক্ষণ করুন", fontWeight = FontWeight.Bold)
+                else Text("ব্র্যান্ডিং ও ইন্টিগ্রেশন সেটিংস সংরক্ষণ করুন", fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(20.dp))
         }
