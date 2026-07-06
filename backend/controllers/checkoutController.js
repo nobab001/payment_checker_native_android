@@ -1,6 +1,5 @@
 const prisma = require('../db/prisma');
 const axios = require('axios');
-const crypto = require('crypto');
 const merchantCallback = require('../services/merchantCallback');
 const paymentFlow = require('./paymentFlowController');
 const layoutHelper = require('../services/checkoutLayoutHelper');
@@ -453,59 +452,11 @@ function triggerWebhook(url, payload) {
 
 /**
  * POST /api/checkout/:apiKey/live-init
- * Customer-facing: start an official-gateway live payment session from checkout.
- * Body: { provider, amount }
+ * Thin wrapper — all payment logic lives in PaymentEngine.
  */
 async function liveInit(req, res) {
-  try {
-    const { apiKey } = req.params;
-    const { provider, amount } = req.body;
-    if (!apiKey || !provider || !amount) {
-      return res.status(400).json({ success: false, error: 'apiKey, provider, amount আবশ্যক।' });
-    }
-
-    const merchant = await prisma.gateway_layouts.findFirst({
-      where: { api_key: apiKey, is_active: 1 },
-      select: { id: true, user_id: true, success_url: true, cancel_url: true, redirect_url: true },
-    });
-    if (!merchant) return res.status(404).json({ success: false, error: 'Invalid API Key' });
-
-    const cleanAmount = parseFloat(amount);
-    if (!(cleanAmount > 0)) return res.status(400).json({ success: false, error: 'INVALID_AMOUNT' });
-
-    const prov = String(provider).toLowerCase();
-    const gw = await prisma.website_official_gateways.findFirst({
-      where: { website_id: merchant.id, provider: prov, is_active: 1 },
-    });
-    if (!gw) return res.status(400).json({ success: false, error: 'PROVIDER_NOT_CONFIGURED' });
-
-    const token = `ps_${crypto.randomBytes(24).toString('hex')}`;
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-    await prisma.payment_sessions.create({
-      data: {
-        session_token: token,
-        website_id: merchant.id,
-        user_id: merchant.user_id,
-        amount: cleanAmount,
-        channel: 'official',
-        official_provider: prov,
-        status: 'created',
-        success_url: merchant.success_url || merchant.redirect_url,
-        cancel_url: merchant.cancel_url,
-        expires_at: expiresAt,
-      },
-    });
-
-    const base = process.env.PUBLIC_BASE_URL
-      || `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
-    return res.json({
-      success: true,
-      redirectUrl: `${base.replace(/\/$/, '')}/pay/${token}`,
-    });
-  } catch (error) {
-    console.error('Error in liveInit:', error);
-    return res.status(500).json({ success: false, error: 'Internal Server Error' });
-  }
+  const PaymentEngine = require('../payment/engine/payment-engine');
+  return PaymentEngine.initiateCheckoutLiveInit(req, res);
 }
 
 module.exports = {
