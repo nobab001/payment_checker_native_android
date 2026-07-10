@@ -374,6 +374,16 @@ class SmsMonitorService : Service() {
                 }
             }
 
+            socket?.on("device_revoked") { _ ->
+                try {
+                    SecurePreferences.remove(this@SmsMonitorService, AppConfig.KEY_AUTH_TOKEN)
+                    SecurePreferences.remove(this@SmsMonitorService, "pcu_is_approved")
+                    Log.w(TAG, "Device revoked by server — session cleared")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error handling device_revoked: ${e.message}")
+                }
+            }
+
             socket?.on("force_template_sync") { args ->
                 var serverVersion = 0L
                 if (args.isNotEmpty()) {

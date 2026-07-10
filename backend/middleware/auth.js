@@ -48,4 +48,27 @@ async function restrictDevice(req, res, next) {
 }
 
 authenticateToken.restrictDevice = restrictDevice;
+
+async function requireOwnerCaller(req, res, next) {
+  try {
+    const userId = req.user.userId;
+    const deviceId = req.user.deviceId;
+    if (!userId || !deviceId) {
+      return res.status(403).json({ success: false, error: 'Access denied: Device context missing.' });
+    }
+    const device = await prisma.registered_devices.findFirst({
+      where: { user_id: Number(userId), device_id: deviceId },
+      select: { device_role: true },
+    });
+    if (!device || device.device_role !== 'owner') {
+      return res.status(403).json({ success: false, error: 'শুধুমাত্র মালিক ডিভাইস এই কাজ করতে পারবে।' });
+    }
+    next();
+  } catch (err) {
+    console.error('[Middleware] requireOwnerCaller error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+authenticateToken.requireOwnerCaller = requireOwnerCaller;
 module.exports = authenticateToken;

@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -300,6 +301,22 @@ fun DeviceScreen(
                 .weight(1f)
                 .fillMaxWidth()
         ) {
+            val remoteDevice = state.activeRemoteDevice
+            if (remoteDevice != null) {
+                RemoteDeviceSettingsFullScreen(
+                    device = remoteDevice,
+                    state = state,
+                    viewModel = viewModel,
+                    onBack = { viewModel.closeRemoteDeviceSettings() },
+                    onRemoteAddSender = { slot ->
+                        viewModel.onAddCustomSenderClick(slot) { allowedSlot ->
+                            remoteActiveSimSlotForCustomSender = allowedSlot
+                            showRemoteAddSenderDialog = true
+                        }
+                    },
+                    onRemoteDeleteSender = { remoteMethodToDelete = it }
+                )
+            } else {
             LazyColumn(
                 modifier            = Modifier.fillMaxSize(),
                 contentPadding      = PaddingValues(bottom = 40.dp),
@@ -349,7 +366,7 @@ fun DeviceScreen(
                             onClick = { viewModel.setSubTab(1) },
                             text = {
                                 Text(
-                                    "আদার্স ডিভাইস",
+                                    "লগইন ডিভাইস",
                                     color = if (currentSubTab == 1) AccentCyan else TextMuted,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = adaptiveTextSize(13.sp, 15.sp)
@@ -452,7 +469,7 @@ fun DeviceScreen(
                                 modifier        = Modifier.size(56.dp)
                             )
                             Text(
-                                "কোনো অন্য ডিভাইস লিঙ্কড নেই",
+                                "কোনো লগইন ডিভাইস নেই",
                                 color    = TextMuted,
                                 fontSize = 14.sp,
                                 textAlign = TextAlign.Center
@@ -467,10 +484,12 @@ fun DeviceScreen(
                         ChildDeviceCard(
                             device = device,
                             onConfigure = { viewModel.openRemoteDeviceSettings(device) },
+                            onDelete = { viewModel.initiateDeleteDevice(device) },
                             modifier = Modifier.padding(horizontal = adaptivePadding(10.dp, 16.dp), vertical = 6.dp)
                         )
                     }
                 }
+            }
             }
         }
 
@@ -545,299 +564,6 @@ fun DeviceScreen(
                 )
             }
         }
-
-        // ─── Bottom Sheet — Remote Child Config ──────────────────────────────────
-        val remoteDevice = state.activeRemoteDevice
-        if (remoteDevice != null) {
-            ModalBottomSheet(
-                onDismissRequest = { viewModel.closeRemoteDeviceSettings() },
-                sheetState       = sheetState,
-                containerColor   = GwCard
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp)
-                        .padding(bottom = 36.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "চাইল্ড ডিভাইস সেটিংস",
-                        color = TextWhite,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    )
-
-                    // ─── Custom M3 Switch for Role ──────────────────────────────────
-                    val isOwnerRole = remoteDevice.deviceRole == "owner"
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(GwBg.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                            .padding(12.dp)
-                    ) {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(
-                                text = if (isOwnerRole) "মালিক মোড (Full Access)" else "স্টাফ/সীমাবদ্ধ মোড (Read-Only)",
-                                color = if (isOwnerRole) AccentCyan else TextWhite,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "সতর্কতা: এই ডিভাইসের এক্সেস পলিসি পরিবর্তন করতে আপনার মূল অ্যাকাউন্ট পিন কোডটি ভেরিফাই করতে হবে।",
-                                color = TextMuted,
-                                fontSize = 10.sp,
-                                lineHeight = 14.sp
-                            )
-                        }
-                        Switch(
-                            checked = isOwnerRole,
-                            onCheckedChange = { isChecked ->
-                                val targetRole = if (isChecked) "owner" else "restricted"
-                                viewModel.initiateRoleToggle(remoteDevice, targetRole)
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedTrackColor = AccentCyan,
-                                uncheckedTrackColor = ToggleOff,
-                                uncheckedBorderColor = ToggleOff
-                            )
-                        )
-                    }
-
-                    HorizontalDivider(color = TextMuted.copy(0.15f))
-
-                    // Rename TextField
-                    OutlinedTextField(
-                        value = state.remoteDeviceEditName,
-                        onValueChange = viewModel::onRemoteDeviceEditNameChanged,
-                        label = { Text("ডিভাইসের নাম (Rename)", color = TextMuted) },
-                        leadingIcon = {
-                            Icon(Icons.Default.Edit, null, tint = AccentCyan, modifier = Modifier.size(18.dp))
-                        },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AccentCyan,
-                            unfocusedBorderColor = TextMuted.copy(0.3f),
-                            focusedTextColor = TextWhite,
-                            unfocusedTextColor = TextWhite,
-                            focusedContainerColor = GwBg,
-                            unfocusedContainerColor = GwBg
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    // Staff PIN TextField
-                    if (!isOwnerRole) {
-                        OutlinedTextField(
-                            value = state.remoteDeviceEditPin,
-                            onValueChange = viewModel::onRemoteDeviceEditPinChanged,
-                            label = { Text("স্টাফ ডিভাইসের পিনকোড (ঐচ্ছিক)", color = TextMuted) },
-                            leadingIcon = {
-                                Icon(Icons.Default.Lock, null, tint = AccentCyan, modifier = Modifier.size(18.dp))
-                            },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = AccentCyan,
-                                unfocusedBorderColor = TextMuted.copy(0.3f),
-                                focusedTextColor = TextWhite,
-                                unfocusedTextColor = TextWhite,
-                                focusedContainerColor = GwBg,
-                                unfocusedContainerColor = GwBg
-                            ),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            text = "যদি স্টাফ এর জন্য কোনো পিন কোড না দেন, তবে মালিকের মূল পিন দিয়ে আনলক করা যাবে।",
-                            color = TextMuted,
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
-                        )
-                    }
-
-                    HorizontalDivider(color = TextMuted.copy(0.15f))
-
-                    if (state.isRemoteGatewayLoading) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
-                                color = AccentCyan,
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text("গেটওয়ে লোড হচ্ছে...", color = TextMuted, fontSize = 12.sp)
-                        }
-                    }
-
-                    // SIM 1 Config row
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("📱 ১ নম্বর সিম স্লট", color = TextWhite, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedTextField(
-                                value = state.remoteDeviceEditSim1Number,
-                                onValueChange = { viewModel.remoteUpdateSimNumber(1, it) },
-                                placeholder = { Text("01XXXXXXXXX", color = TextMuted.copy(0.4f)) },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = AccentCyan,
-                                    unfocusedBorderColor = TextMuted.copy(0.3f),
-                                    focusedTextColor = TextWhite,
-                                    unfocusedTextColor = TextWhite,
-                                    focusedContainerColor = GwBg,
-                                    unfocusedContainerColor = GwBg
-                                ),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f)
-                            )
-                            Switch(
-                                checked = state.remoteDeviceEditSim1Active,
-                                onCheckedChange = { viewModel.remoteToggleSim(1, it) },
-                                colors = SwitchDefaults.colors(
-                                    checkedTrackColor = AccentGreen,
-                                    uncheckedTrackColor = ToggleOff,
-                                    uncheckedBorderColor = ToggleOff
-                                )
-                            )
-                        }
-                        RemoteSimTemplateSection(
-                            simSlot = 1,
-                            simActive = state.remoteDeviceEditSim1Active,
-                            templates = state.remoteTemplates,
-                            methods = state.remoteGatewayMethods,
-                            onToggleTemplate = { viewModel.remoteToggleTemplate(1, it) },
-                            onToggleMethod = { viewModel.remoteToggleMethod(it) },
-                            onDeleteCustomSender = { remoteMethodToDelete = it },
-                            onAddCustomSenderClick = {
-                                viewModel.onAddCustomSenderClick(1) { allowedSlot ->
-                                    remoteActiveSimSlotForCustomSender = allowedSlot
-                                    showRemoteAddSenderDialog = true
-                                }
-                            }
-                        )
-                    }
-
-                    // SIM 2 Config row
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("📱 ২ নম্বর সিম স্লট", color = TextWhite, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedTextField(
-                                value = state.remoteDeviceEditSim2Number,
-                                onValueChange = { viewModel.remoteUpdateSimNumber(2, it) },
-                                placeholder = { Text("01XXXXXXXXX", color = TextMuted.copy(0.4f)) },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = AccentCyan,
-                                    unfocusedBorderColor = TextMuted.copy(0.3f),
-                                    focusedTextColor = TextWhite,
-                                    unfocusedTextColor = TextWhite,
-                                    focusedContainerColor = GwBg,
-                                    unfocusedContainerColor = GwBg
-                                ),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f)
-                            )
-                            Switch(
-                                checked = state.remoteDeviceEditSim2Active,
-                                onCheckedChange = { viewModel.remoteToggleSim(2, it) },
-                                colors = SwitchDefaults.colors(
-                                    checkedTrackColor = AccentGreen,
-                                    uncheckedTrackColor = ToggleOff,
-                                    uncheckedBorderColor = ToggleOff
-                                )
-                            )
-                        }
-                        RemoteSimTemplateSection(
-                            simSlot = 2,
-                            simActive = state.remoteDeviceEditSim2Active,
-                            templates = state.remoteTemplates,
-                            methods = state.remoteGatewayMethods,
-                            onToggleTemplate = { viewModel.remoteToggleTemplate(2, it) },
-                            onToggleMethod = { viewModel.remoteToggleMethod(it) },
-                            onDeleteCustomSender = { remoteMethodToDelete = it },
-                            onAddCustomSenderClick = {
-                                viewModel.onAddCustomSenderClick(2) { allowedSlot ->
-                                    remoteActiveSimSlotForCustomSender = allowedSlot
-                                    showRemoteAddSenderDialog = true
-                                }
-                            }
-                        )
-                    }
-
-                    HorizontalDivider(color = TextMuted.copy(0.15f))
-
-                    // App active/deactive master switch
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("🔒 অ্যাপ অ্যাক্টিভ/ডিঅ্যাক্টিভ", color = TextWhite, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            Text("চাইল্ড ডিভাইসের অ্যাক্সেস লক করতে এটি বন্ধ করুন", color = TextMuted, fontSize = 11.sp)
-                        }
-                        Switch(
-                            checked = state.remoteDeviceEditAppActive,
-                            onCheckedChange = viewModel::onRemoteDeviceEditAppActiveChanged,
-                            colors = SwitchDefaults.colors(
-                                checkedTrackColor = AccentGreen,
-                                uncheckedTrackColor = ToggleOff,
-                                uncheckedBorderColor = ToggleOff
-                            )
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { viewModel.closeRemoteDeviceSettings() },
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, TextMuted.copy(0.3f)),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMuted),
-                            contentPadding = PaddingValues(vertical = 12.dp)
-                        ) {
-                            Text("বাতিল")
-                        }
-                        Button(
-                            onClick = { viewModel.saveRemoteDeviceSettings() },
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
-                            contentPadding = PaddingValues(vertical = 12.dp)
-                        ) {
-                            Text("সেভ করুন", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-        }
-
-
-
 
         // ─── Dialog — Role PIN Verification ──────────────────────────────────
         if (state.showRolePinDialog) {
@@ -935,6 +661,88 @@ fun DeviceScreen(
                                 contentPadding = PaddingValues(vertical = 12.dp, horizontal = 8.dp)
                             ) {
                                 Text("নিশ্চিত করুন", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ─── Dialog — Delete Device PIN ──────────────────────────────────────
+        if (state.showDeleteDevicePinDialog) {
+            Dialog(
+                onDismissRequest = { if (!state.isDeletingDevice) viewModel.dismissDeleteDeviceDialog() },
+                properties = DialogProperties(usePlatformDefaultWidth = true)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = GwCard,
+                    border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
+                    tonalElevation = 8.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .wrapContentHeight()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text(
+                            text = "ডিভাইস মুছুন",
+                            fontWeight = FontWeight.Bold,
+                            color = TextWhite,
+                            fontSize = 18.sp
+                        )
+                        Text(
+                            text = "'${state.deviceToDelete?.customDeviceName ?: ""}' ডিভাইসটি মুছতে অ্যাকাউন্ট পিন দিন।",
+                            color = TextMuted,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        OutlinedTextField(
+                            value = state.deleteDevicePinInput,
+                            onValueChange = viewModel::onDeleteDevicePinChanged,
+                            label = { Text("পিন কোড", color = TextMuted) },
+                            singleLine = true,
+                            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = AccentCyan,
+                                unfocusedBorderColor = ToggleOff,
+                                focusedTextColor = TextWhite,
+                                unfocusedTextColor = TextWhite
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        state.deleteDevicePinError?.let {
+                            Text(it, color = Color(0xFFEF4444), fontSize = 12.sp, textAlign = TextAlign.Center)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { viewModel.dismissDeleteDeviceDialog() },
+                                enabled = !state.isDeletingDevice,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) { Text("বাতিল") }
+                            Button(
+                                onClick = { viewModel.confirmDeleteDevice() },
+                                enabled = !state.isDeletingDevice,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                if (state.isDeletingDevice) {
+                                    CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                } else {
+                                    Text("মুছুন", color = Color.White, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
@@ -1929,14 +1737,257 @@ private fun DeviceSkeletonCard() {
 }
 
 @Composable
+private fun RemoteDeviceSettingsFullScreen(
+    device: ChildDeviceDto,
+    state: DeviceUiState,
+    viewModel: DeviceViewModel,
+    onBack: () -> Unit,
+    onRemoteAddSender: (Int) -> Unit,
+    onRemoteDeleteSender: (GatewayMethod) -> Unit
+) {
+    val activeDevice = state.activeRemoteDevice ?: device
+    val isOwnerRole = activeDevice.deviceRole == "owner"
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(GwBg)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "পিছনে", tint = TextWhite)
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = activeDevice.customDeviceName.ifEmpty { "ডিভাইস সেটিংস" },
+                    color = TextWhite,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = if (isOwnerRole) "মালিক ডিভাইস" else "স্টাফ ডিভাইস",
+                    color = AccentCyan,
+                    fontSize = 12.sp
+                )
+            }
+            if (state.isSaving) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    color = AccentCyan,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                TextButton(onClick = { viewModel.saveRemoteDeviceSettings() }) {
+                    Text("সেভ", color = AccentCyan, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(GwCard, RoundedCornerShape(12.dp))
+                    .padding(12.dp)
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = if (isOwnerRole) "মালিক মোড" else "স্টাফ মোড",
+                        color = if (isOwnerRole) AccentCyan else TextWhite,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "রোল পরিবর্তনে অ্যাকাউন্ট পিন লাগবে।",
+                        color = TextMuted,
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp
+                    )
+                }
+                Switch(
+                    checked = isOwnerRole,
+                    onCheckedChange = { isChecked ->
+                        val targetRole = if (isChecked) "owner" else "restricted"
+                        viewModel.initiateRoleToggle(activeDevice, targetRole)
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedTrackColor = AccentCyan,
+                        uncheckedTrackColor = ToggleOff,
+                        uncheckedBorderColor = ToggleOff
+                    )
+                )
+            }
+
+            OutlinedTextField(
+                value = state.remoteDeviceEditName,
+                onValueChange = viewModel::onRemoteDeviceEditNameChanged,
+                label = { Text("ডিভাইসের নাম", color = TextMuted) },
+                leadingIcon = {
+                    Icon(Icons.Default.Edit, null, tint = AccentCyan, modifier = Modifier.size(18.dp))
+                },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = AccentCyan,
+                    unfocusedBorderColor = TextMuted.copy(0.3f),
+                    focusedTextColor = TextWhite,
+                    unfocusedTextColor = TextWhite,
+                    focusedContainerColor = GwCard,
+                    unfocusedContainerColor = GwCard
+                ),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (!isOwnerRole) {
+                OutlinedTextField(
+                    value = state.remoteDeviceEditPin,
+                    onValueChange = viewModel::onRemoteDeviceEditPinChanged,
+                    label = { Text("স্টাফ পিন (ঐচ্ছিক)", color = TextMuted) },
+                    leadingIcon = {
+                        Icon(Icons.Default.Lock, null, tint = AccentCyan, modifier = Modifier.size(18.dp))
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = AccentCyan,
+                        unfocusedBorderColor = TextMuted.copy(0.3f),
+                        focusedTextColor = TextWhite,
+                        unfocusedTextColor = TextWhite,
+                        focusedContainerColor = GwCard,
+                        unfocusedContainerColor = GwCard
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = "পিন দিলে শুধু ওই ফোনে ওই পিন কাজ করবে। পিন না দিলে একাউন্টের মূল পিন কাজ করবে।",
+                    color = TextMuted,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
+
+            if (state.isRemoteGatewayLoading) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        color = AccentCyan,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text("গেটওয়ে লোড হচ্ছে...", color = TextMuted, fontSize = 12.sp)
+                }
+            }
+
+            listOf(1, 2).forEach { simSlot ->
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = if (simSlot == 1) "📱 ১ নম্বর সিম স্লট" else "📱 ২ নম্বর সিম স্লট",
+                        color = TextWhite,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = if (simSlot == 1) state.remoteDeviceEditSim1Number else state.remoteDeviceEditSim2Number,
+                            onValueChange = { viewModel.remoteUpdateSimNumber(simSlot, it) },
+                            placeholder = { Text("01XXXXXXXXX", color = TextMuted.copy(0.4f)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = AccentCyan,
+                                unfocusedBorderColor = TextMuted.copy(0.3f),
+                                focusedTextColor = TextWhite,
+                                unfocusedTextColor = TextWhite,
+                                focusedContainerColor = GwCard,
+                                unfocusedContainerColor = GwCard
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Switch(
+                            checked = if (simSlot == 1) state.remoteDeviceEditSim1Active else state.remoteDeviceEditSim2Active,
+                            onCheckedChange = { viewModel.remoteToggleSim(simSlot, it) },
+                            colors = SwitchDefaults.colors(
+                                checkedTrackColor = AccentGreen,
+                                uncheckedTrackColor = ToggleOff,
+                                uncheckedBorderColor = ToggleOff
+                            )
+                        )
+                    }
+                    RemoteSimTemplateSection(
+                        simSlot = simSlot,
+                        simActive = if (simSlot == 1) state.remoteDeviceEditSim1Active else state.remoteDeviceEditSim2Active,
+                        templates = state.remoteTemplates,
+                        methods = state.remoteGatewayMethods,
+                        onToggleTemplate = { viewModel.remoteToggleTemplate(simSlot, it) },
+                        onToggleMethod = { viewModel.remoteToggleMethod(it) },
+                        onDeleteCustomSender = onRemoteDeleteSender,
+                        onAddCustomSenderClick = { onRemoteAddSender(simSlot) }
+                    )
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("🔒 অ্যাপ অ্যাক্টিভ/ডিঅ্যাক্টিভ", color = TextWhite, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text("ডিভাইসের অ্যাক্সেস লক করতে এটি বন্ধ করুন", color = TextMuted, fontSize = 11.sp)
+                }
+                Switch(
+                    checked = state.remoteDeviceEditAppActive,
+                    onCheckedChange = viewModel::onRemoteDeviceEditAppActiveChanged,
+                    colors = SwitchDefaults.colors(
+                        checkedTrackColor = AccentGreen,
+                        uncheckedTrackColor = ToggleOff,
+                        uncheckedBorderColor = ToggleOff
+                    )
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ChildDeviceCard(
     device: ChildDeviceDto,
     onConfigure: () -> Unit,
+    onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isAppActive = device.isAppActive == 1
     val statusText = if (isAppActive) "সক্রিয়" else "নিষ্ক্রিয়"
     val statusColor = if (isAppActive) AccentGreen else Color(0xFFEF4444)
+    val roleLabel = if (device.deviceRole == "owner") "মালিক" else "স্টাফ"
+    val roleColor = if (device.deviceRole == "owner") AccentCyan else Color(0xFFF59E0B)
 
     Card(
         colors = CardDefaults.cardColors(containerColor = GwCard),
@@ -1971,18 +2022,44 @@ private fun ChildDeviceCard(
                     )
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = device.customDeviceName.ifEmpty { "চাইল্ড ডিভাইস" },
-                        color = TextWhite,
-                        fontSize = adaptiveTextSize(14.sp, 16.sp),
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        Text(
+                            text = device.customDeviceName.ifEmpty { "চাইল্ড ডিভাইস" },
+                            color = TextWhite,
+                            fontSize = adaptiveTextSize(14.sp, 16.sp),
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (device.isCurrent == 1) {
+                            Text(
+                                text = "এই ডিভাইস",
+                                color = AccentCyan,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .background(AccentCyan.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = roleLabel,
+                            color = roleColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier
+                                .background(roleColor.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
                         Box(
                             modifier = Modifier
                                 .size(6.dp)
@@ -2004,6 +2081,7 @@ private fun ChildDeviceCard(
                 }
             }
 
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             IconButton(
                 onClick = onConfigure,
                 modifier = Modifier
@@ -2016,6 +2094,22 @@ private fun ChildDeviceCard(
                     tint = AccentCyan,
                     modifier = Modifier.size(20.dp)
                 )
+            }
+            if (device.isCurrent != 1) {
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(GwBg, CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "মুছুন",
+                        tint = Color(0xFFEF4444),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
             }
         }
     }

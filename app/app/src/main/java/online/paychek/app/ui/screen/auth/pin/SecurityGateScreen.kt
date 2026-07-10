@@ -46,8 +46,8 @@ fun SecurityGateScreen(
     val context = LocalContext.current
     val activity = remember(context) { context.findFragmentActivity() }
 
-    val isOwnerStr = online.paychek.app.utils.SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_IS_OWNER_DEVICE)
-    val isOwnerDevice = isOwnerStr != "false"
+    val deviceRole = online.paychek.app.utils.SecurePreferences.decrypt(context, "pcu_device_role")
+    val isOwnerDevice = deviceRole == "owner"
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, activity) {
@@ -309,18 +309,14 @@ fun SecurityGateScreen(
                                                     modifier = Modifier.size(28.dp)
                                                 )
                                             }
-                                        } else if (activity != null && isBiometricEnrolled(activity)) {
+                                        } else if (isOwnerDevice && activity != null && isBiometricEnrolled(activity)) {
                                             IconButton(
                                                 onClick = {
-                                                    if (isOwnerDevice) {
-                                                        showBiometricPrompt(
-                                                            activity = activity,
-                                                            onSuccess = onUnlockSuccess,
-                                                            onError = {}
-                                                        )
-                                                    } else {
-                                                        viewModel.triggerMaintenanceDialog()
-                                                    }
+                                                    showBiometricPrompt(
+                                                        activity = activity,
+                                                        onSuccess = onUnlockSuccess,
+                                                        onError = {}
+                                                    )
                                                 },
                                                 modifier = Modifier
                                                     .size(64.dp)

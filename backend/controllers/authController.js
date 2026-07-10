@@ -28,9 +28,48 @@ const nodemailer = require('nodemailer');
 const axios = require('axios');
 const crypto = require('crypto');
 const { encryptOtp, decryptOtp } = require('../utils/otpCrypto');
+const numberHealth = require('../services/numberHealthService');
+const { fetchGatewayMethodsForUser } = require('./gatewayController');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_987654321';
 const TRIAL_DEFAULT_DAYS = parseInt(process.env.TRIAL_DEFAULT_DAYS || '7', 10);
+
+async function fetchDeviceRowForSync(userId, deviceId) {
+  const rows = await query(
+    `SELECT device_id, custom_device_name, device_role, is_app_active, device_specific_pin,
+            sim_one_number, sim_one_active, sim_two_number, sim_two_active
+     FROM registered_devices
+     WHERE user_id = ? AND device_id = ? LIMIT 1`,
+    [userId, deviceId]
+  );
+  return rows[0] || null;
+}
+
+function emitDeviceConfig(io, userId, deviceId, row) {
+  if (!io || !row) return;
+  io.to(`${userId}:${deviceId}`).emit('sync_device_config', {
+    device_id: row.device_id,
+    custom_device_name: row.custom_device_name,
+    device_role: row.device_role,
+    is_app_active: row.is_app_active,
+    device_specific_pin: row.device_specific_pin || '',
+    sim_one_number: row.sim_one_number,
+    sim_one_active: row.sim_one_active,
+    sim_two_number: row.sim_two_number,
+    sim_two_active: row.sim_two_active,
+  });
+}
+
+async function verifyAccountPin(userId, pin) {
+  const users = await query('SELECT pin FROM users WHERE id = ? LIMIT 1', [userId]);
+  if (!users.length) return { ok: false, status: 404, error: 'User not found' };
+  if (!users[0].pin) return { ok: false, status: 400, error: 'Security PIN not configured' };
+  const pinMatch = await bcrypt.compare(pin, users[0].pin);
+  if (!pinMatch) {
+    return { ok: false, status: 400, error: 'ভুল পিন কোড, অনুগ্রহ করে আবার চেষ্টা করুন।' };
+  }
+  return { ok: true };
+}
 
 async function isTrialCustomSenderEnabled() {
   const rows = await query(
@@ -1819,14 +1858,20 @@ async function getChildDevices(req, res) {
     const userId = req.user.userId;
     const currentDeviceId = req.user.deviceId || '';
     const devices = await query(
-      `SELECT id, device_id, custom_device_name, is_parent, is_approved, device_role,
+      `SELECT id, device_id, custom_device_name, device_model, is_parent, is_approved, device_role,
               sim_one_number, sim_one_active, sim_two_number, sim_two_active, is_app_active,
-              device_specific_pin
-       FROM registered_devices 
-       WHERE user_id = ? AND device_id != ?`,
-      [userId, currentDeviceId]
+              device_specific_pin, last_seen_at, android_version
+       FROM registered_devices
+       WHERE user_id = ? AND is_approved = 1
+       ORDER BY created_at DESC`,
+      [userId]
     );
-    return res.json({ success: true, data: devices });
+    const data = devices.map((d) => ({
+      ...d,
+      is_current: d.device_id === currentDeviceId ? 1 : 0,
+      has_device_pin: d.device_specific_pin ? 1 : 0,
+    }));
+    return res.json({ success: true, data });
   } catch (error) {
     console.error('Error fetching child devices:', error);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
@@ -1888,22 +1933,8 @@ async function remoteUpdateDevice(req, res) {
        WHERE user_id = ? AND device_id = ? LIMIT 1`,
       [userId, deviceId]
     );
-    const updated = updatedRows[0];
-
     const io = req.app.get('io');
-    if (io && updated) {
-      io.to(`${userId}:${deviceId}`).emit('sync_device_config', {
-        device_id: updated.device_id,
-        custom_device_name: updated.custom_device_name,
-        device_role: updated.device_role,
-        is_app_active: updated.is_app_active,
-        device_specific_pin: updated.device_specific_pin,
-        sim_one_number: updated.sim_one_number,
-        sim_one_active: updated.sim_one_active,
-        sim_two_number: updated.sim_two_number,
-        sim_two_active: updated.sim_two_active
-      });
-    }
+    emitDeviceConfig(io, userId, deviceId, updatedRows[0]);
 
     return res.json({ success: true, message: 'Device configuration updated successfully' });
   } catch (error) {
@@ -2072,44 +2103,39 @@ async function getPendingApprovals(req, res) {
 async function approveByPin(req, res) {
   try {
     const userId = req.user.userId;
-    const { deviceId, pin, deviceRole } = req.body;
+    const { deviceId, pin, deviceRole, deviceSpecificPin } = req.body;
 
     if (!deviceId || !pin) {
       return res.status(400).json({ success: false, error: 'deviceId and pin are required' });
     }
 
-    // 1. Fetch user to verify PIN
-    const users = await query('SELECT pin FROM users WHERE id = ? LIMIT 1', [userId]);
-    if (users.length === 0) {
-      return res.status(404).json({ success: false, error: 'User not found' });
+    const pinCheck = await verifyAccountPin(userId, pin);
+    if (!pinCheck.ok) {
+      return res.status(pinCheck.status).json({ success: false, error: pinCheck.error });
     }
 
-    const user = users[0];
-    if (!user.pin) {
-      return res.status(400).json({ success: false, error: 'Security PIN not configured' });
-    }
-
-    // Verify PIN
-    const pinMatch = await bcrypt.compare(pin, user.pin);
-    if (!pinMatch) {
-      return res.status(400).json({ success: false, error: 'ভুল পিন কোড, অনুগ্রহ করে আবার চেষ্টা করুন।' });
-    }
-
-    // Validate deviceRole
-    const role = (deviceRole === 'owner' || deviceRole === 'restricted') ? deviceRole : 'restricted';
+    const role = deviceRole === 'restricted' ? 'restricted' : 'owner';
     const isOwnerDeviceVal = role === 'owner' ? 1 : 0;
+    let staffPin = null;
+    if (role === 'restricted' && deviceSpecificPin && String(deviceSpecificPin).trim().length >= 4) {
+      staffPin = String(deviceSpecificPin).trim();
+    }
 
-    // 2. Update device status to approved, active, and set the role
     const result = await query(
-      `UPDATE registered_devices 
-       SET is_approved = 1, status = 'active', device_role = ?, is_owner_device = ? 
-       WHERE user_id = ? AND device_id = ?`,
-      [role, isOwnerDeviceVal, userId, deviceId]
+      `UPDATE registered_devices
+       SET is_approved = 1, status = 'active', device_role = ?, is_owner_device = ?,
+           device_specific_pin = ?
+       WHERE user_id = ? AND device_id = ? AND is_approved = 0`,
+      [role, isOwnerDeviceVal, role === 'owner' ? null : staffPin, userId, deviceId]
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ success: false, error: 'Device not found' });
+      return res.status(404).json({ success: false, error: 'Device not found or already approved' });
     }
+
+    const io = req.app.get('io');
+    const row = await fetchDeviceRowForSync(userId, deviceId);
+    emitDeviceConfig(io, userId, deviceId, row);
 
     return res.json({ success: true, message: 'ডিভাইসটি সফলভাবে অনুমোদন করা হয়েছে।' });
   } catch (error) {
@@ -2189,39 +2215,80 @@ async function toggleRemoteRole(req, res) {
       return res.status(400).json({ success: false, error: 'Invalid role' });
     }
 
-    // 1. Fetch user to verify PIN
-    const users = await query('SELECT pin FROM users WHERE id = ? LIMIT 1', [userId]);
-    if (users.length === 0) {
-      return res.status(404).json({ success: false, error: 'User not found' });
+    const pinCheck = await verifyAccountPin(userId, pin);
+    if (!pinCheck.ok) {
+      return res.status(pinCheck.status).json({ success: false, error: pinCheck.error });
     }
 
-    const user = users[0];
-    if (!user.pin) {
-      return res.status(400).json({ success: false, error: 'Security PIN not configured' });
-    }
-
-    // Verify PIN
-    const pinMatch = await bcrypt.compare(pin, user.pin);
-    if (!pinMatch) {
-      return res.status(401).json({ success: false, error: 'ভুল পিন কোড, অনুগ্রহ করে আবার চেষ্টা করুন।' });
-    }
-
-    // 2. Update device role
     const isOwnerDeviceVal = newRole === 'owner' ? 1 : 0;
     const result = await query(
-      `UPDATE registered_devices 
-       SET device_role = ?, is_owner_device = ? 
+      `UPDATE registered_devices
+       SET device_role = ?, is_owner_device = ?,
+           device_specific_pin = CASE WHEN ? = 'owner' THEN NULL ELSE device_specific_pin END
        WHERE user_id = ? AND device_id = ?`,
-      [newRole, isOwnerDeviceVal, userId, remoteDeviceId]
+      [newRole, isOwnerDeviceVal, newRole, userId, remoteDeviceId]
     );
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ success: false, error: 'Device not found' });
     }
 
+    const io = req.app.get('io');
+    const row = await fetchDeviceRowForSync(userId, remoteDeviceId);
+    emitDeviceConfig(io, userId, remoteDeviceId, row);
+
     return res.json({ success: true, message: 'রিমোট ডিভাইসের রোল সফলভাবে পরিবর্তন করা হয়েছে।' });
   } catch (error) {
     console.error('Error toggling remote device role:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function deleteDevice(req, res) {
+  try {
+    const userId = req.user.userId;
+    const { deviceId, pin } = req.body;
+
+    if (!deviceId || !pin) {
+      return res.status(400).json({ success: false, error: 'deviceId and pin are required' });
+    }
+
+    const pinCheck = await verifyAccountPin(userId, pin);
+    if (!pinCheck.ok) {
+      return res.status(pinCheck.status).json({ success: false, error: pinCheck.error });
+    }
+
+    const devices = await query(
+      `SELECT device_id FROM registered_devices WHERE user_id = ? AND device_id = ? LIMIT 1`,
+      [userId, deviceId]
+    );
+    if (!devices.length) {
+      return res.status(404).json({ success: false, error: 'Device not found' });
+    }
+
+    const bindings = await query(
+      `SELECT phone_number FROM sim_slot_bindings WHERE user_id = ? AND device_id = ?`,
+      [String(userId), deviceId]
+    );
+    const phones = [...new Set(bindings.map((b) => b.phone_number).filter(Boolean))];
+
+    await query(`DELETE FROM gateway_methods WHERE user_id = ? AND device_id = ?`, [String(userId), deviceId]);
+    await query(`DELETE FROM sim_slot_bindings WHERE user_id = ? AND device_id = ?`, [String(userId), deviceId]);
+    await query(`DELETE FROM sim_number_profiles WHERE user_id = ? AND device_id = ?`, [String(userId), deviceId]);
+    await query(`DELETE FROM registered_devices WHERE user_id = ? AND device_id = ?`, [userId, deviceId]);
+
+    for (const phone of phones) {
+      await numberHealth.purgeNumber(userId, phone);
+    }
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`${userId}:${deviceId}`).emit('device_revoked', { reason: 'deleted' });
+    }
+
+    return res.json({ success: true, message: 'ডিভাইস সফলভাবে মুছে ফেলা হয়েছে।' });
+  } catch (error) {
+    console.error('Error deleting device:', error);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 }
@@ -2245,6 +2312,7 @@ module.exports = {
   getProfile,
   uploadAvatar,
   toggleRemoteRole,
+  deleteDevice,
   sendOtpDispatch   // exported for reuse by credentialController & pinController
 };
 

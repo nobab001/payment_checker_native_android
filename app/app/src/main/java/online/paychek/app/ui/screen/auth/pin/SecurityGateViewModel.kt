@@ -157,8 +157,8 @@ class SecurityGateViewModel : ViewModel() {
         val pinCode = _uiState.value.pin
         if (pinCode.length < 4 || pinCode.length > 6) return
 
-        val isOwnerStr = SecurePreferences.decrypt(context, AppConfig.KEY_IS_OWNER_DEVICE)
-        val isOwnerDevice = isOwnerStr != "false"
+        val deviceRole = SecurePreferences.decrypt(context, "pcu_device_role")
+        val isOwnerDevice = deviceRole == "owner"
 
         if (!isOwnerDevice) {
             val deviceSpecificPin = SecurePreferences.decrypt(context, AppConfig.KEY_DEVICE_SPECIFIC_PIN)

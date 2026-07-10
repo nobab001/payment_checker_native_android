@@ -150,13 +150,20 @@ fun LoginScreen(
             online.paychek.app.utils.SecurePreferences.encrypt(
                 context,
                 online.paychek.app.config.AppConfig.KEY_IS_OWNER_DEVICE,
-                if (res.device.isOwnerDevice) "true" else "false"
+                if (res.device.deviceRole == "owner") "true" else "false"
             )
-            online.paychek.app.utils.SecurePreferences.encrypt(
-                context,
-                online.paychek.app.config.AppConfig.KEY_DEVICE_SPECIFIC_PIN,
-                res.device.deviceSpecificPin ?: ""
-            )
+            if (!res.device.deviceSpecificPin.isNullOrEmpty()) {
+                online.paychek.app.utils.SecurePreferences.encrypt(
+                    context,
+                    online.paychek.app.config.AppConfig.KEY_DEVICE_SPECIFIC_PIN,
+                    res.device.deviceSpecificPin
+                )
+            } else {
+                online.paychek.app.utils.SecurePreferences.remove(
+                    context,
+                    online.paychek.app.config.AppConfig.KEY_DEVICE_SPECIFIC_PIN
+                )
+            }
             if (!res.secretKey.isNullOrBlank()) {
                 online.paychek.app.utils.SecurePreferences.encrypt(
                     context,

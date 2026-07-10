@@ -104,6 +104,12 @@ interface GatewayApiService {
         @Body request: ToggleRemoteRoleRequest
     ): Response<BasicResponse>
 
+    @POST("v1/devices/delete")
+    suspend fun deleteDevice(
+        @Header("Authorization") token: String,
+        @Body request: DeleteDeviceRequest
+    ): Response<BasicResponse>
+
     @POST("gateway/custom-sender")
     suspend fun addCustomSender(
         @Header("Authorization") token: String,

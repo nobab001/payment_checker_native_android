@@ -236,8 +236,8 @@ fun HomeScreen(
 
     // Fetch pending approvals on load or refresh (no 10-second polling)
     var pendingDevices by remember { mutableStateOf<List<online.paychek.app.data.remote.dto.ChildDeviceDto>>(emptyList()) }
-    LaunchedEffect(isApproved, deviceRole) {
-        if (isApproved && deviceRole == "owner") {
+    LaunchedEffect(isApproved) {
+        if (isApproved) {
             try {
                 val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
                 if (token.isNotEmpty()) {
@@ -500,7 +500,8 @@ fun HomeScreen(
     // 3. PIN Approval Dialog for Owner Device
     val deviceToApprove = showPinApprovalDialogForDevice
     if (deviceToApprove != null) {
-        var selectedRoleToApprove by remember { mutableStateOf<String?>(null) }
+        var selectedRoleToApprove by remember { mutableStateOf("owner") }
+        var staffPinToApprove by remember { mutableStateOf("") }
         Dialog(
             onDismissRequest = {
                 showPinApprovalDialogForDevice = null
@@ -606,9 +607,37 @@ fun HomeScreen(
                         }
                     }
 
-                    // PIN Text Field: visible and active (enabled = true) only if selectedRoleToApprove != null
-                    androidx.compose.animation.AnimatedVisibility(visible = selectedRoleToApprove != null) {
-                        OutlinedTextField(
+                    androidx.compose.animation.AnimatedVisibility(visible = selectedRoleToApprove == "restricted") {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedTextField(
+                                value = staffPinToApprove,
+                                onValueChange = { newValue ->
+                                    if (newValue.length <= 6 && newValue.all { it.isDigit() }) {
+                                        staffPinToApprove = newValue
+                                    }
+                                },
+                                label = { Text("স্টাফ পিন (ঐচ্ছিক)", color = Color(0xFF94A3B8)) },
+                                singleLine = true,
+                                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color(0xFF22D3EE),
+                                    unfocusedBorderColor = Color(0xFF475569),
+                                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                text = "পিন দিলে শুধু ওই ফোনে ওই পিন কাজ করবে। পিন না দিলে একাউন্টের মূল পিন কাজ করবে।",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
                             value = pinApprovalInput,
                             onValueChange = { newValue ->
                                 if (newValue.length <= 6 && newValue.all { it.isDigit() }) {
@@ -617,7 +646,7 @@ fun HomeScreen(
                             },
                             label = { Text("পিন কোড", color = Color(0xFF94A3B8)) },
                             singleLine = true,
-                            enabled = selectedRoleToApprove != null,
+                            enabled = true,
                             visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -628,7 +657,6 @@ fun HomeScreen(
                             ),
                             modifier = Modifier.fillMaxWidth()
                         )
-                    }
 
                     if (pinApprovalError != null) {
                         Text(pinApprovalError!!, color = Color(0xFFEF4444), fontSize = 12.sp, textAlign = TextAlign.Center)
@@ -655,10 +683,6 @@ fun HomeScreen(
                             onClick = {
                                 coroutineScope.launch {
                                     val currentRole = selectedRoleToApprove
-                                    if (currentRole == null) {
-                                        pinApprovalError = "অনুগ্রহ করে একটি ডিভাইস রোল সিলেক্ট করুন"
-                                        return@launch
-                                    }
                                     if (pinApprovalInput.length < 4) {
                                         pinApprovalError = "কমপক্ষে ৪ ডিজিটের পিন দিন"
                                         return@launch
@@ -672,7 +696,8 @@ fun HomeScreen(
                                             online.paychek.app.data.remote.dto.ApproveDeviceRequest(
                                                 deviceId = deviceToApprove.deviceId,
                                                 pin = pinApprovalInput,
-                                                deviceRole = currentRole
+                                                deviceRole = currentRole,
+                                                deviceSpecificPin = if (currentRole == "restricted" && staffPinToApprove.length >= 4) staffPinToApprove else null
                                             )
                                         )
                                         if (response.isSuccessful && response.body()?.success == true) {
@@ -681,7 +706,10 @@ fun HomeScreen(
                                             showPinApprovalDialogForDevice = null
                                             pinApprovalInput = ""
                                         } else {
-                                            pinApprovalError = "ভুল পিন কোড, অনুগ্রহ করে আবার চেষ্টা করুন।"
+                                            pinApprovalError = when (response.code()) {
+                                                403 -> "শুধুমাত্র মালিক ডিভাইস অনুমোদন করতে পারবে।"
+                                                else -> "ভুল পিন কোড, অনুগ্রহ করে আবার চেষ্টা করুন।"
+                                            }
                                         }
                                     } catch (e: Exception) {
                                         pinApprovalError = "নেটওয়ার্ক ত্রুটি: ${e.localizedMessage}"
@@ -692,7 +720,7 @@ fun HomeScreen(
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22D3EE)),
-                            enabled = !pinApprovalLoading && selectedRoleToApprove != null,
+                            enabled = !pinApprovalLoading,
                             contentPadding = PaddingValues(vertical = 12.dp, horizontal = 8.dp)
                         ) {
                             if (pinApprovalLoading) {
@@ -727,7 +755,7 @@ fun HomeScreen(
 
 
             // Top notification banner for owner devices with pending requests
-            if (isApproved && deviceRole == "owner" && pendingDevices.isNotEmpty()) {
+            if (isApproved && pendingDevices.isNotEmpty()) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFFF59E0B)),
                     shape = RoundedCornerShape(12.dp),

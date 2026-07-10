@@ -149,7 +149,11 @@ data class ChildDeviceDto(
     @SerializedName("sim_two_active") val simTwoActive: Int,
     @SerializedName("is_app_active") val isAppActive: Int,
     @SerializedName("is_owner") val isOwner: Int? = null,
-    @SerializedName("device_specific_pin") val deviceSpecificPin: String? = null
+    @SerializedName("device_specific_pin") val deviceSpecificPin: String? = null,
+    @SerializedName("device_model") val deviceModel: String? = null,
+    @SerializedName("last_seen_at") val lastSeenAt: String? = null,
+    @SerializedName("is_current") val isCurrent: Int = 0,
+    @SerializedName("has_device_pin") val hasDevicePin: Int = 0
 )
 
 data class ChildDeviceListResponse(
@@ -177,7 +181,13 @@ data class RemoteUpdateDeviceRequest(
 data class ApproveDeviceRequest(
     @SerializedName("deviceId") val deviceId: String,
     @SerializedName("pin") val pin: String,
-    @SerializedName("deviceRole") val deviceRole: String
+    @SerializedName("deviceRole") val deviceRole: String,
+    @SerializedName("deviceSpecificPin") val deviceSpecificPin: String? = null
+)
+
+data class DeleteDeviceRequest(
+    @SerializedName("deviceId") val deviceId: String,
+    @SerializedName("pin") val pin: String
 )
 
 data class ToggleRemoteRoleRequest(

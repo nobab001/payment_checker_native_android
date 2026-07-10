@@ -78,7 +78,14 @@ data class DeviceUiState(
     val accountNumbers: List<AccountNumberDto> = emptyList(),
     val isAccountNumbersLoading: Boolean        = false,
     val accountNumberToDelete: AccountNumberDto? = null,
-    val isDeletingAccountNumber: Boolean        = false
+    val isDeletingAccountNumber: Boolean        = false,
+
+    // Delete device flow
+    val showDeleteDevicePinDialog: Boolean      = false,
+    val deviceToDelete: ChildDeviceDto?         = null,
+    val deleteDevicePinInput: String              = "",
+    val deleteDevicePinError: String?             = null,
+    val isDeletingDevice: Boolean               = false
 )
 
 data class SimConflictUi(
@@ -1076,6 +1083,83 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 .onFailure { exception ->
                     _state.update { it.copy(isSaving = false, rolePinError = "নেটওয়ার্ক সমস্যা: ${exception.message}") }
                 }
+        }
+    }
+
+    fun initiateDeleteDevice(device: ChildDeviceDto) {
+        _state.update {
+            it.copy(
+                showDeleteDevicePinDialog = true,
+                deviceToDelete = device,
+                deleteDevicePinInput = "",
+                deleteDevicePinError = null
+            )
+        }
+    }
+
+    fun dismissDeleteDeviceDialog() {
+        _state.update {
+            it.copy(
+                showDeleteDevicePinDialog = false,
+                deviceToDelete = null,
+                deleteDevicePinInput = "",
+                deleteDevicePinError = null,
+                isDeletingDevice = false
+            )
+        }
+    }
+
+    fun onDeleteDevicePinChanged(pin: String) {
+        if (pin.length <= 6 && pin.all { it.isDigit() }) {
+            _state.update { it.copy(deleteDevicePinInput = pin) }
+        }
+    }
+
+    fun confirmDeleteDevice() {
+        val device = _state.value.deviceToDelete ?: return
+        val pin = _state.value.deleteDevicePinInput
+        if (pin.length < 4) {
+            _state.update { it.copy(deleteDevicePinError = "কমপক্ষে ৪ ডিজিটের পিন দিন") }
+            return
+        }
+
+        viewModelScope.launch {
+            _state.update { it.copy(isDeletingDevice = true, deleteDevicePinError = null) }
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+
+            runCatching {
+                api.deleteDevice(
+                    "Bearer $token",
+                    DeleteDeviceRequest(deviceId = device.deviceId, pin = pin)
+                )
+            }.onSuccess { res ->
+                if (res.isSuccessful && res.body()?.success == true) {
+                    dismissDeleteDeviceDialog()
+                    if (_state.value.activeRemoteDevice?.deviceId == device.deviceId) {
+                        closeRemoteDeviceSettings()
+                    }
+                    _state.update { it.copy(successMessage = "ডিভাইস মুছে ফেলা হয়েছে ✓") }
+                    loadChildDevices()
+                    viewModelScope.launch {
+                        delay(2000)
+                        _state.update { it.copy(successMessage = null) }
+                    }
+                } else {
+                    val err = if (res.code() == 400 || res.code() == 401) {
+                        "ভুল পিন কোড, অনুগ্রহ করে আবার চেষ্টা করুন।"
+                    } else {
+                        "ডিভাইস মুছতে ব্যর্থ (${res.code()})"
+                    }
+                    _state.update { it.copy(isDeletingDevice = false, deleteDevicePinError = err) }
+                }
+            }.onFailure { exception ->
+                _state.update {
+                    it.copy(
+                        isDeletingDevice = false,
+                        deleteDevicePinError = "নেটওয়ার্ক সমস্যা: ${exception.message}"
+                    )
+                }
+            }
         }
     }
 
