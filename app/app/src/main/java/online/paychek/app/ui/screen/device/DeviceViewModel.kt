@@ -70,7 +70,14 @@ data class DeviceUiState(
     val showPremiumUpgradeDialog: Boolean     = false,
     val dialogErrorMessage: String?           = null,
     val hasCustomSenderPermission: Boolean    = false,
-    val pendingSimConflict: SimConflictUi?      = null
+    val pendingSimConflict: SimConflictUi?      = null,
+
+    // Account-wide active numbers modal
+    val showAccountNumbersSheet: Boolean      = false,
+    val accountNumbers: List<AccountNumberDto> = emptyList(),
+    val isAccountNumbersLoading: Boolean        = false,
+    val accountNumberToDelete: AccountNumberDto? = null,
+    val isDeletingAccountNumber: Boolean        = false
 )
 
 data class SimConflictUi(
@@ -1713,6 +1720,79 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
             endCal.timeInMillis >= System.currentTimeMillis()
         } catch (_: Exception) {
             true
+        }
+    }
+
+    fun setShowAccountNumbersSheet(show: Boolean) {
+        _state.update { it.copy(showAccountNumbersSheet = show) }
+        if (show) loadAccountNumbers()
+    }
+
+    fun loadAccountNumbers() {
+        viewModelScope.launch {
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+            _state.update { it.copy(isAccountNumbersLoading = true) }
+            val deviceId = DeviceIdHelper.getHashedAndroidId(getApplication())
+            runCatching { api.getAccountNumbers("Bearer $token", deviceId) }
+                .onSuccess { res ->
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        _state.update {
+                            it.copy(
+                                accountNumbers = res.body()?.data.orEmpty(),
+                                isAccountNumbersLoading = false
+                            )
+                        }
+                    } else {
+                        _state.update { it.copy(isAccountNumbersLoading = false) }
+                        setError("নাম্বার লিস্ট লোড ব্যর্থ (${res.code()})")
+                    }
+                }
+                .onFailure {
+                    _state.update { it.copy(isAccountNumbersLoading = false) }
+                    setError("নেটওয়ার্ক সমস্যা: ${it.message}")
+                }
+        }
+    }
+
+    fun requestDeleteAccountNumber(item: AccountNumberDto) {
+        _state.update { it.copy(accountNumberToDelete = item) }
+    }
+
+    fun dismissDeleteAccountNumber() {
+        _state.update { it.copy(accountNumberToDelete = null) }
+    }
+
+    fun confirmDeleteAccountNumber() {
+        val item = _state.value.accountNumberToDelete ?: return
+        viewModelScope.launch {
+            val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
+            _state.update { it.copy(isDeletingAccountNumber = true) }
+            val deviceId = DeviceIdHelper.getHashedAndroidId(getApplication())
+            runCatching {
+                api.deleteAccountNumber(
+                    "Bearer $token",
+                    DeleteAccountNumberRequest(item.phoneNumber),
+                    deviceId
+                )
+            }.onSuccess { res ->
+                _state.update { it.copy(isDeletingAccountNumber = false, accountNumberToDelete = null) }
+                if (res.isSuccessful && res.body()?.success == true) {
+                    val msg = res.body()?.message ?: "নাম্বার মুছে ফেলা হয়েছে"
+                    _state.update {
+                        it.copy(
+                            successMessage = msg,
+                            accountNumbers = it.accountNumbers.filter { n -> n.phoneNumber != item.phoneNumber }
+                        )
+                    }
+                    loadGatewayMethods()
+                    loadTemplates()
+                } else {
+                    setError(res.body()?.error ?: "নাম্বার মুছতে ব্যর্থ (${res.code()})")
+                }
+            }.onFailure {
+                _state.update { it.copy(isDeletingAccountNumber = false, accountNumberToDelete = null) }
+                setError("নেটওয়ার্ক সমস্যা: ${it.message}")
+            }
         }
     }
 }

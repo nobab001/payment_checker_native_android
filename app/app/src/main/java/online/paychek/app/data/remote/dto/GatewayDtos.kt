@@ -302,3 +302,30 @@ data class HeartbeatResponse(
     @SerializedName("states") val states: Map<String, String>? = null
 )
 
+data class AccountNumberDto(
+    @SerializedName("phone_number") val phoneNumber: String,
+    @SerializedName("device_id") val deviceId: String? = null,
+    @SerializedName("device_name") val deviceName: String? = null,
+    @SerializedName("sim_slot") val simSlot: Int = 1,
+    @SerializedName("health_state") val healthState: String? = null,
+    @SerializedName("method_count") val methodCount: Int = 0,
+    @SerializedName("providers") val providers: List<String>? = null
+)
+
+data class AccountNumbersResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("data") val data: List<AccountNumberDto>? = null,
+    @SerializedName("error") val error: String? = null
+)
+
+data class DeleteAccountNumberRequest(
+    @SerializedName("phone_number") val phoneNumber: String
+)
+
+data class DeleteAccountNumberResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("phone_number") val phoneNumber: String? = null,
+    @SerializedName("error") val error: String? = null
+)
+

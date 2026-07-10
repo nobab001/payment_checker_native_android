@@ -185,6 +185,23 @@ async function setNumberDisabled(userId, phone, disabled = true) {
   }
 }
 
+/** Remove all Redis health keys for a deleted account number. */
+async function purgeNumber(userId, phone) {
+  const uid = String(userId);
+  const num = normalizePhone(phone);
+  if (!num) return;
+  try {
+    const redis = getRedisClient();
+    await redis.del(
+      KEYS.numberLastSeen(uid, num),
+      KEYS.numberDevice(uid, num),
+      KEYS.numberDisabled(uid, num),
+    );
+  } catch (err) {
+    console.warn('[NumberHealth] purgeNumber failed:', err.message);
+  }
+}
+
 async function getDeviceHealth(userId, deviceId) {
   const uid = String(userId);
   const dev = String(deviceId);
@@ -262,6 +279,7 @@ module.exports = {
   getNumberState,
   getNumberMeta,
   setNumberDisabled,
+  purgeNumber,
   getDeviceHealth,
   applyHealthToCheckoutRows,
 };

@@ -1493,6 +1493,165 @@ async function bulkSyncSlotMethods(req, res) {
 }
 
 // =============================================================================
+// GET /api/gateway/account-numbers — all active SIM numbers under account
+// =============================================================================
+async function listAccountActiveNumbers(req, res) {
+  try {
+    const userId = req.user.userId;
+    await ensureSimBindingsTable();
+
+    const bindings = await prisma.$queryRaw`
+      SELECT ssb.phone_number, ssb.device_id, ssb.sim_slot, ssb.updated_at,
+             rd.device_name, rd.custom_device_name, rd.device_model
+        FROM sim_slot_bindings ssb
+        LEFT JOIN registered_devices rd
+          ON rd.user_id = CAST(ssb.user_id AS UNSIGNED)
+         AND rd.device_id = ssb.device_id
+       WHERE ssb.user_id = ${String(userId)}
+         AND ssb.is_active = 1
+         AND ssb.phone_number IS NOT NULL
+         AND ssb.phone_number != ''
+       ORDER BY ssb.updated_at DESC
+    `;
+
+    const phones = [...new Set(bindings.map((b) => normalizePhoneNumber(b.phone_number)).filter((p) => p.length === 11))];
+    const methodRows = phones.length
+      ? await prisma.gateway_methods.findMany({
+          where: { user_id: String(userId), number: { in: phones } },
+          select: { number: true, provider: true },
+        })
+      : [];
+
+    const methodsByPhone = {};
+    methodRows.forEach((m) => {
+      const p = normalizePhoneNumber(m.number);
+      if (!methodsByPhone[p]) methodsByPhone[p] = new Set();
+      if (m.provider) methodsByPhone[p].add(m.provider);
+    });
+
+    const seen = new Set();
+    const data = [];
+    for (const row of bindings) {
+      const phone = normalizePhoneNumber(row.phone_number);
+      if (phone.length !== 11 || seen.has(phone)) continue;
+      seen.add(phone);
+
+      const health = await numberHealth.getNumberState(userId, phone);
+      const providers = methodsByPhone[phone] ? [...methodsByPhone[phone]] : [];
+      data.push({
+        phone_number: phone,
+        device_id: row.device_id || '',
+        device_name: row.custom_device_name || row.device_name || row.device_model || 'ডিভাইস',
+        sim_slot: Number(row.sim_slot) || 1,
+        health_state: health.state,
+        method_count: methodRows.filter((m) => normalizePhoneNumber(m.number) === phone).length,
+        providers,
+      });
+    }
+
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error('[GATEWAY] listAccountActiveNumbers error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function stripNumberFromCheckoutOrders(userId, phone) {
+  const layouts = await prisma.gateway_layouts.findMany({
+    where: { user_id: Number(userId) },
+    select: { id: true, number_order_json: true },
+  });
+  for (const layout of layouts) {
+    if (!layout.number_order_json) continue;
+    let order = [];
+    try { order = JSON.parse(layout.number_order_json); } catch (_) { continue; }
+    const filtered = order.filter((o) => normalizePhoneNumber(o.number) !== phone);
+    if (filtered.length === order.length) continue;
+    await prisma.gateway_layouts.update({
+      where: { id: layout.id },
+      data: { number_order_json: JSON.stringify(filtered), updated_at: new Date() },
+    });
+  }
+}
+
+// =============================================================================
+// DELETE /api/gateway/account-numbers — remove phone from entire account (server)
+// Body: { phone_number }
+// =============================================================================
+async function deleteAccountNumber(req, res) {
+  try {
+    const userId = req.user.userId;
+    const cleanNum = normalizePhoneNumber(req.body.phone_number || req.params.phone || '');
+    if (cleanNum.length !== 11) {
+      return res.status(400).json({ success: false, error: '১১ ডিজিটের বৈধ মোবাইল নম্বর দিন' });
+    }
+
+    await ensureSimBindingsTable();
+
+    const bindings = await prisma.$queryRaw`
+      SELECT device_id, sim_slot
+      FROM sim_slot_bindings
+      WHERE user_id = ${String(userId)} AND phone_number = ${cleanNum}
+    `;
+    const affectedDevices = [...new Set(bindings.map((b) => b.device_id).filter(Boolean))];
+
+    await prisma.gateway_methods.deleteMany({
+      where: { user_id: String(userId), number: cleanNum },
+    });
+
+    await prisma.$executeRaw`
+      DELETE FROM sim_slot_bindings
+      WHERE user_id = ${String(userId)} AND phone_number = ${cleanNum}
+    `;
+
+    await prisma.$executeRaw`
+      DELETE FROM sim_number_profiles
+      WHERE user_id = ${String(userId)} AND phone_number = ${cleanNum}
+    `;
+
+    await numberHealth.purgeNumber(userId, cleanNum);
+    await stripNumberFromCheckoutOrders(userId, cleanNum);
+
+    // Clear legacy registered_devices SIM fields referencing this number
+    await prisma.$executeRaw`
+      UPDATE registered_devices
+      SET sim1_number = CASE WHEN sim1_number = ${cleanNum} THEN NULL ELSE sim1_number END,
+          sim2_number = CASE WHEN sim2_number = ${cleanNum} THEN NULL ELSE sim2_number END,
+          sim_one_number = CASE WHEN sim_one_number = ${cleanNum} THEN NULL ELSE sim_one_number END,
+          sim_two_number = CASE WHEN sim_two_number = ${cleanNum} THEN NULL ELSE sim_two_number END,
+          sim_one_active = CASE WHEN sim_one_number = ${cleanNum} THEN 0 ELSE sim_one_active END,
+          sim_two_active = CASE WHEN sim_two_number = ${cleanNum} THEN 0 ELSE sim_two_active END
+      WHERE user_id = ${Number(userId)}
+        AND (sim1_number = ${cleanNum} OR sim2_number = ${cleanNum}
+             OR sim_one_number = ${cleanNum} OR sim_two_number = ${cleanNum})
+    `;
+
+    const io = req.app.get('io');
+    const requestDeviceId = req.headers['x-device-id'] || req.user.deviceId || '';
+    const devicesToSync = new Set(affectedDevices);
+    if (requestDeviceId) devicesToSync.add(String(requestDeviceId));
+
+    for (const deviceId of devicesToSync) {
+      const data = await fetchGatewayMethodsForUser(userId, deviceId);
+      await touchDeviceSync(userId, deviceId, { userCustomChanged: true });
+      if (io && deviceId) {
+        io.to(`${userId}:${deviceId}`).emit('sync_gateway_methods', data);
+      }
+    }
+
+    console.log(`[GATEWAY] Account number deleted | User: ${userId} | Phone: ${cleanNum}`);
+    return res.json({
+      success: true,
+      message: `নাম্বার ${cleanNum} সার্ভার থেকে মুছে ফেলা হয়েছে।`,
+      phone_number: cleanNum,
+    });
+  } catch (error) {
+    console.error('[GATEWAY] deleteAccountNumber error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+// =============================================================================
 // POST /api/gateway/sim-swap  (legacy — delegates to lookup / force-shift)
 // =============================================================================
 async function syncAndValidateSimSwap(req, res) {
@@ -1525,4 +1684,6 @@ module.exports = {
   forceShiftSlot,
   setSlotActive,
   bulkSyncSlotMethods,
+  listAccountActiveNumbers,
+  deleteAccountNumber,
 };

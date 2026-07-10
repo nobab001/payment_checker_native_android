@@ -167,4 +167,19 @@ interface GatewayApiService {
         @Body request: HeartbeatRequest,
         @Header("X-Device-Id") deviceId: String = ""
     ): Response<HeartbeatResponse>
+
+    /** All active SIM numbers under this account */
+    @GET("gateway/account-numbers")
+    suspend fun getAccountNumbers(
+        @Header("Authorization") token: String,
+        @Header("X-Device-Id") deviceId: String = ""
+    ): Response<AccountNumbersResponse>
+
+    /** Permanently remove a phone number from the account (server-side) */
+    @HTTP(method = "DELETE", path = "gateway/account-numbers", hasBody = true)
+    suspend fun deleteAccountNumber(
+        @Header("Authorization") token: String,
+        @Body request: DeleteAccountNumberRequest,
+        @Header("X-Device-Id") deviceId: String = ""
+    ): Response<DeleteAccountNumberResponse>
 }

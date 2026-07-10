@@ -56,4 +56,10 @@ router.post('/gateway/slot/active', auth, billing, gw.setSlotActive);
 // POST /api/gateway/methods/bulk-sync → slot methods batch sync on SIM enable
 router.post('/gateway/methods/bulk-sync', auth, billing, gw.bulkSyncSlotMethods);
 
+// GET  /api/gateway/account-numbers → all active account SIM numbers
+router.get('/gateway/account-numbers', auth, billing, gw.listAccountActiveNumbers);
+
+// DELETE /api/gateway/account-numbers → remove number from entire account
+router.delete('/gateway/account-numbers', auth, billing, gw.deleteAccountNumber);
+
 module.exports = router;

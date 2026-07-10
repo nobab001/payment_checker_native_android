@@ -49,6 +49,7 @@ import android.content.Intent
 import online.paychek.app.data.remote.dto.GatewayMethod
 import online.paychek.app.data.remote.dto.ChildDeviceDto
 import online.paychek.app.data.remote.dto.SmsTemplateDto
+import online.paychek.app.data.remote.dto.AccountNumberDto
 import online.paychek.app.ui.common.RemoteImage
 import androidx.compose.ui.layout.ContentScale
 import online.paychek.app.ui.theme.*
@@ -130,6 +131,7 @@ fun DeviceScreen(
     val hasInternet by viewModel.hasInternet.collectAsStateWithLifecycle()
     val haptic      = LocalHapticFeedback.current
     val sheetState  = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val accountNumbersSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var showAddSenderDialog by remember { mutableStateOf(false) }
     var activeSimSlotForCustomSender by remember { mutableStateOf(1) }
@@ -303,7 +305,12 @@ fun DeviceScreen(
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
             // ─── Header ──────────────────────────────────────────────────────
-            item { DeviceTopBar(isSaving = state.isSaving, onNavigateBack = onNavigateBack, onRefresh = refreshDeviceData) }
+            item { DeviceTopBar(
+                isSaving = state.isSaving,
+                onNavigateBack = onNavigateBack,
+                onRefresh = refreshDeviceData,
+                onAccountNumbers = { viewModel.setShowAccountNumbersSheet(true) }
+            ) }
 
             // ─── Success Toast ────────────────────────────────────────────────
             state.successMessage?.let { msg ->
@@ -464,6 +471,59 @@ fun DeviceScreen(
                     }
                 }
             }
+        }
+
+        // ─── Account active numbers sheet ─────────────────────────────────────
+        if (state.showAccountNumbersSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { viewModel.setShowAccountNumbersSheet(false) },
+                sheetState = accountNumbersSheetState,
+                containerColor = GwCard
+            ) {
+                AccountNumbersSheet(
+                    numbers = state.accountNumbers,
+                    isLoading = state.isAccountNumbersLoading,
+                    onRefresh = { viewModel.loadAccountNumbers() },
+                    onDelete = { viewModel.requestDeleteAccountNumber(it) },
+                    onClose = { viewModel.setShowAccountNumbersSheet(false) }
+                )
+            }
+        }
+
+        state.accountNumberToDelete?.let { toDelete ->
+            AlertDialog(
+                onDismissRequest = { if (!state.isDeletingAccountNumber) viewModel.dismissDeleteAccountNumber() },
+                title = {
+                    Text("নাম্বার মুছবেন?", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                },
+                text = {
+                    Text(
+                        "${toDelete.phoneNumber} নাম্বারটি সার্ভার থেকে সম্পূর্ণ মুছে যাবে।\n\nএই নাম্বারের সব প্রোভাইডার/টেমপ্লেট এবং চেকআউট থেকেও সরে যাবে।",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 14.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { viewModel.confirmDeleteAccountNumber() },
+                        enabled = !state.isDeletingAccountNumber,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                    ) {
+                        if (state.isDeletingAccountNumber) {
+                            CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Text("মুছে ফেলুন", color = Color.White)
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { viewModel.dismissDeleteAccountNumber() },
+                        enabled = !state.isDeletingAccountNumber
+                    ) { Text("বাতিল") }
+                },
+                containerColor = GwCard
+            )
         }
 
         // ─── Bottom Sheet — Method Edit ───────────────────────────────────────
@@ -1423,7 +1483,8 @@ fun DeviceScreen(
 private fun DeviceTopBar(
     isSaving: Boolean,
     onNavigateBack: (() -> Unit)? = null,
-    onRefresh: (() -> Unit)? = null
+    onRefresh: (() -> Unit)? = null,
+    onAccountNumbers: (() -> Unit)? = null
 ) {
     TopAppBar(
         modifier = Modifier.height(adaptivePadding(56.dp, 62.dp)),
@@ -1475,6 +1536,16 @@ private fun DeviceTopBar(
             }
         },
         actions = {
+            if (!isSaving && onAccountNumbers != null) {
+                IconButton(onClick = onAccountNumbers, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.ContactPhone,
+                        contentDescription = "সক্রিয় নাম্বার",
+                        tint = AccentCyan,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
             if (!isSaving && onRefresh != null) {
                 IconButton(onClick = onRefresh, modifier = Modifier.size(36.dp)) {
                     Icon(
@@ -2360,4 +2431,154 @@ private fun getDotColor(providerName: String): Color {
     }
 }
 
+@Composable
+private fun AccountNumbersSheet(
+    numbers: List<AccountNumberDto>,
+    isLoading: Boolean,
+    onRefresh: () -> Unit,
+    onDelete: (AccountNumberDto) -> Unit,
+    onClose: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 32.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text("সক্রিয় নাম্বার", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(
+                    "একাউন্টের সব অ্যাক্টিভ SIM নাম্বার",
+                    color = TextMuted,
+                    fontSize = 12.sp
+                )
+            }
+            Row {
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.Default.Refresh, "রিফ্রেশ", tint = AccentCyan)
+                }
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Default.Close, "বন্ধ", tint = TextMuted)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(AccentCyan.copy(alpha = 0.1f))
+                .padding(10.dp)
+        ) {
+            Text(
+                "চেকআউটে নাম্বার লুকাতে API Center → চেকআউট নাম্বার মেনু ব্যবহার করুন। এখানে মুছলে সার্ভার থেকে সম্পূর্ণ ডিলিট হবে।",
+                color = AccentCyan,
+                fontSize = 11.sp,
+                lineHeight = 15.sp
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        when {
+            isLoading -> {
+                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = AccentCyan)
+                }
+            }
+            numbers.isEmpty() -> {
+                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.SimCard, null, tint = TextMuted, modifier = Modifier.size(40.dp))
+                        Spacer(Modifier.height(8.dp))
+                        Text("কোনো সক্রিয় নাম্বার নেই", color = TextMuted, fontSize = 13.sp)
+                    }
+                }
+            }
+            else -> {
+                numbers.forEach { item ->
+                    AccountNumberRow(item = item, onDelete = { onDelete(item) })
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountNumberRow(
+    item: AccountNumberDto,
+    onDelete: () -> Unit
+) {
+    val healthColor = when (item.healthState?.uppercase()) {
+        "ONLINE" -> AccentGreen
+        "GRACE" -> Color(0xFFF59E0B)
+        "OFFLINE" -> Color(0xFFEF4444)
+        "DISABLED" -> Color(0xFF64748B)
+        "STALE" -> Color(0xFF94A3B8)
+        else -> TextMuted
+    }
+    val healthLabel = when (item.healthState?.uppercase()) {
+        "ONLINE" -> "অনলাইন"
+        "GRACE" -> "গ্রেস"
+        "OFFLINE" -> "অফলাইন"
+        "DISABLED" -> "বন্ধ"
+        "STALE" -> "নিষ্ক্রিয়"
+        else -> "—"
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(GwBg.copy(alpha = 0.6f))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                item.phoneNumber,
+                color = TextWhite,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+            )
+            Text(
+                "${item.deviceName ?: "ডিভাইস"} • SIM ${item.simSlot}",
+                color = TextMuted,
+                fontSize = 11.sp
+            )
+            if (!item.providers.isNullOrEmpty()) {
+                Text(
+                    item.providers.joinToString(", "),
+                    color = TextMuted.copy(alpha = 0.8f),
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Box(
+                    Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(healthColor)
+                )
+                Text(healthLabel, color = healthColor, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+            }
+            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.Delete, "মুছুন", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+}
 
