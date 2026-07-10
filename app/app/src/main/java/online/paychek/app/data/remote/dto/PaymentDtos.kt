@@ -194,12 +194,35 @@ data class PurchaseSubscriptionRequest(
     @SerializedName("planName") val planName: String
 )
 
+data class SubscriptionQuoteDto(
+    @SerializedName("plan_name") val planName: String,
+    @SerializedName("purchase_type") val purchaseType: String,
+    @SerializedName("list_price") val listPrice: Double,
+    @SerializedName("credit_applied") val creditApplied: Double,
+    @SerializedName("payable_amount") val payableAmount: Double,
+    @SerializedName("duration_days") val durationDays: Int,
+    @SerializedName("new_expiry_date") val newExpiryDate: String,
+    @SerializedName("current_plan_name") val currentPlanName: String? = null,
+    @SerializedName("current_expiry_date") val currentExpiryDate: String? = null,
+    @SerializedName("remaining_days") val remainingDays: Int = 0,
+    @SerializedName("credit_source_plan") val creditSourcePlan: String? = null
+)
+
+data class SubscriptionQuoteResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("quote") val quote: SubscriptionQuoteDto?
+)
+
 data class PurchaseSubscriptionResponse(
     @SerializedName("success") val success: Boolean,
     @SerializedName("message") val message: String?,
     @SerializedName("is_paid") val isPaid: Boolean,
     @SerializedName("active_plan_name") val activePlanName: String?,
-    @SerializedName("expiry_date") val expiryDate: String?
+    @SerializedName("expiry_date") val expiryDate: String?,
+    @SerializedName("purchase_type") val purchaseType: String? = null,
+    @SerializedName("list_price") val listPrice: Double? = null,
+    @SerializedName("credit_applied") val creditApplied: Double? = null,
+    @SerializedName("payable_amount") val payableAmount: Double? = null
 )
 
 data class CustomArchiveItem(

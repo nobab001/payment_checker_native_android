@@ -149,6 +149,25 @@ class PaymentRepository {
         }
     }
 
+    suspend fun getSubscriptionQuote(token: String, planName: String): Result<SubscriptionQuoteDto> {
+        return try {
+            val response = api.getSubscriptionQuote("Bearer $token", planName)
+            if (response.isSuccessful) {
+                val body = response.body()
+                val quote = body?.quote
+                if (body?.success == true && quote != null) {
+                    Result.success(quote)
+                } else {
+                    Result.failure(Exception("কোট লোড ব্যর্থ হয়েছে"))
+                }
+            } else {
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "কোট লোড ব্যর্থ")))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "কোট লোড ব্যর্থ")))
+        }
+    }
+
     suspend fun markTransactionSoldOut(token: String, transactionId: Int): Result<Unit> {
         return try {
             val response = api.markTransactionSoldOut("Bearer $token", transactionId)

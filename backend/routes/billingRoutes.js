@@ -14,6 +14,7 @@ router.use(authenticateToken);
 router.post('/subscription/fcm-token', billingController.updateFcmToken);
 
 // POST /api/v1/subscription/purchase → Purchase subscription
+router.get('/subscription/quote', billingController.getSubscriptionQuote);
 router.post('/subscription/purchase', billingController.purchaseSubscription);
 
 // POST /api/v1/subscription/purchase-addon → Purchase Custom Sender add-on

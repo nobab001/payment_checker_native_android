@@ -1,5 +1,10 @@
 const prisma = require('../db/prisma');
 const { syncUserEntitlements, ensureEntitlementSchema } = require('../services/accountEntitlementsService');
+const {
+  computeSubscriptionQuote,
+  applySubscriptionPurchase,
+  formatDateYmd,
+} = require('../services/subscriptionBillingService');
 
 let addonPlansTableReady = false;
 
@@ -187,16 +192,42 @@ async function stackCustomSenderExpiry(userId, durationDays) {
   return new Date(baseDate);
 }
 
+async function getSubscriptionQuote(req, res) {
+  try {
+    const userId = req.user.userId;
+    const planName = req.query.planName || req.query.plan_name;
+    if (!planName) {
+      return res.status(400).json({ success: false, error: 'Missing planName query parameter.' });
+    }
+
+    const plan = await prisma.subscription_plans.findFirst({ where: { plan_name: planName } });
+    if (!plan) {
+      return res.status(404).json({ success: false, error: 'PLAN_NOT_FOUND', message: 'প্ল্যানটি খুঁজে পাওয়া যায়নি।' });
+    }
+    if (isLegacyCustomSenderPlanName(plan.plan_name)) {
+      return res.status(400).json({
+        success: false,
+        error: 'USE_ADDON_ENDPOINT',
+        message: 'কাস্টম সেন্ডার প্যাকেজ কিনতে অ্যাড-অন ট্যাব ব্যবহার করুন।',
+      });
+    }
+
+    const quote = await computeSubscriptionQuote(userId, planName);
+    if (quote.error) {
+      return res.status(404).json({ success: false, error: quote.error, message: quote.message });
+    }
+
+    return res.json({ success: true, quote });
+  } catch (error) {
+    console.error('[Billing Controller] getSubscriptionQuote error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 /**
  * POST /api/v1/subscription/purchase
- * 
- * Boolean Paid-Gate & Dynamic Plan Name Architecture:
- * ─────────────────────────────────────────────────────
- * ১. subscription_plans টেবিল থেকে plan_name অনুযায়ী প্ল্যান ডেটা ফেচ করে
- * ২. Date Stacking Logic:
- *    - ইউজার যদি ফ্রি (is_paid=0) বা মেয়াদ উত্তীর্ণ → আজ থেকে duration_days যোগ
- *    - ইউজার যদি পেইড (is_paid=1) এবং মেয়াদ বাকি → আগের expiry_date থেকে duration_days যোগ
- * ৩. users টেবিলে is_paid=1, active_plan_name=plan.plan_name, expiry_date=নতুন তারিখ সেট করে
+ * Renew: same plan → stack expiry, full price
+ * Upgrade: different active plan → prorated credit, new expiry from today
  */
 async function purchaseSubscription(req, res) {
   try {
@@ -207,29 +238,15 @@ async function purchaseSubscription(req, res) {
       return res.status(400).json({ success: false, error: 'Missing planName field.' });
     }
 
-    // ১. প্ল্যান ফেচ
     const plan = await prisma.subscription_plans.findFirst({
-      where: { plan_name: planName }
+      where: { plan_name: planName },
     });
-    
+
     if (!plan) {
       return res.status(404).json({ success: false, error: 'PLAN_NOT_FOUND', message: 'প্ল্যানটি খুঁজে পাওয়া যায়নি।' });
     }
-    const durationDays = plan.duration_days || 365;
 
-    // ২. ইউজারের বর্তমান সাবস্ক্রিপশন স্ট্যাটাস পড়া
-    const user = await prisma.users.findUnique({
-      where: { id: userId },
-      select: { is_paid: true, active_plan_name: true, expiry_date: true, custom_sender_ends_at: true }
-    });
-    
-    if (!user) {
-      return res.status(404).json({ success: false, error: 'User not found' });
-    }
-
-    const isCustomSenderPlan = isLegacyCustomSenderPlanName(plan.plan_name);
-
-    if (isCustomSenderPlan) {
+    if (isLegacyCustomSenderPlanName(plan.plan_name)) {
       return res.status(400).json({
         success: false,
         error: 'USE_ADDON_ENDPOINT',
@@ -237,39 +254,15 @@ async function purchaseSubscription(req, res) {
       });
     }
 
-    // ৩. Date Stacking Logic
-    let baseDate = new Date(); // ডিফল্ট: আজ থেকে হিসাব শুরু
-
-    // কাস্টমার যদি অলরেডি পেইড এবং মেয়াদ বাকি থাকে → আগের expiry_date থেকে স্ট্যাক
-    if (user.is_paid && user.expiry_date) {
-      const existingExpiry = new Date(user.expiry_date);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      if (existingExpiry > today) {
-        baseDate = existingExpiry;
-      }
+    const quote = await applySubscriptionPurchase(userId, planName);
+    if (quote.error) {
+      return res.status(404).json({ success: false, error: quote.error, message: quote.message });
     }
 
-    baseDate.setDate(baseDate.getDate() + durationDays);
-    const newExpiryDate = new Date(baseDate);
-
-    // ৪. ডাটাবেজ আপডেট — is_paid=1, active_plan_name=purchased plan, expiry_date=stacked date
-    await prisma.users.update({
-      where: { id: userId },
-      data: {
-        is_paid: 1,
-        active_plan_name: plan.plan_name,
-        expiry_date: newExpiryDate,
-        ...(plan.is_custom_sender_allowed === 1 ? { has_custom_sender_addon: 1 } : {})
-      }
-    });
-
-    const year = newExpiryDate.getFullYear();
-    const month = String(newExpiryDate.getMonth() + 1).padStart(2, '0');
-    const day = String(newExpiryDate.getDate()).padStart(2, '0');
-    const formattedExpiry = `${year}-${month}-${day}`;
-
-    console.log(`[Subscription] ✅ User ${userId} purchased "${plan.plan_name}". Expiry stacked to: ${formattedExpiry} (+${durationDays} days)`);
+    const formattedExpiry = quote.new_expiry_date;
+    console.log(
+      `[Subscription] ✅ User ${userId} ${quote.purchase_type} "${plan.plan_name}". Payable: ৳${quote.payable_amount} (credit ৳${quote.credit_applied}). Expiry: ${formattedExpiry}`
+    );
 
     await syncUserEntitlements(userId);
 
@@ -278,7 +271,11 @@ async function purchaseSubscription(req, res) {
       message: `${plan.plan_name} প্যাকেজটি সফলভাবে সক্রিয় করা হয়েছে। মেয়াদ: ${formattedExpiry}`,
       is_paid: 1,
       active_plan_name: plan.plan_name,
-      expiry_date: formattedExpiry
+      expiry_date: formattedExpiry,
+      purchase_type: quote.purchase_type,
+      list_price: quote.list_price,
+      credit_applied: quote.credit_applied,
+      payable_amount: quote.payable_amount,
     });
   } catch (error) {
     console.error('[Billing Controller] purchaseSubscription error:', error);
@@ -641,6 +638,7 @@ async function getAccountEntitlements(req, res) {
 
 module.exports = {
   updateFcmToken,
+  getSubscriptionQuote,
   purchaseSubscription,
   listPlans,
   listAddonPlans,

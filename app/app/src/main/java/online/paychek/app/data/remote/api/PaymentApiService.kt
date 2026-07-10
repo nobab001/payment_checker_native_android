@@ -78,6 +78,12 @@ interface PaymentApiService {
         @Header("Authorization") token: String
     ): Response<SubscriptionPlansResponse>
 
+    @GET("v1/subscription/quote")
+    suspend fun getSubscriptionQuote(
+        @Header("Authorization") token: String,
+        @Query("planName") planName: String
+    ): Response<SubscriptionQuoteResponse>
+
     @POST("v1/subscription/purchase")
     suspend fun purchaseSubscription(
         @Header("Authorization") token: String,

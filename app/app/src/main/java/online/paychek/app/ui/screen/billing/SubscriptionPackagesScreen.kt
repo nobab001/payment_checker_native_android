@@ -52,6 +52,7 @@ fun SubscriptionPackagesScreen(
     var purchasingAddonId by remember { mutableStateOf<Int?>(null) }
     var previewSubscription by remember { mutableStateOf<SubscriptionPlanDto?>(null) }
     var previewAddon by remember { mutableStateOf<AddonPlanDto?>(null) }
+    var checkoutPlan by remember { mutableStateOf<SubscriptionPlanDto?>(null) }
 
     fun reloadPlans() {
         coroutineScope.launch {
@@ -213,7 +214,7 @@ fun SubscriptionPackagesScreen(
                                         highlighted = isPremium,
                                         buyButtonText = "Buy Now",
                                         buyButtonTextColor = if (isPremium) Color.Black else Color.White,
-                                        onBuyClick = onNavigateToPaymentMock,
+                                        onBuyClick = { checkoutPlan = plan },
                                         onDetailsClick = { previewSubscription = plan }
                                     )
                                 }
@@ -329,6 +330,18 @@ fun SubscriptionPackagesScreen(
                 permDevice = addon.permDevice
             ),
             onDismiss = { previewAddon = null }
+        )
+    }
+
+    checkoutPlan?.let { plan ->
+        SubscriptionCheckoutDialog(
+            planName = plan.planName,
+            planTitle = plan.planName,
+            onDismiss = { checkoutPlan = null },
+            onPurchased = { message ->
+                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                checkoutPlan = null
+            }
         )
     }
 }

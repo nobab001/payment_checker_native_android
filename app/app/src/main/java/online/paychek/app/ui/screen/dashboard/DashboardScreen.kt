@@ -135,6 +135,7 @@ fun DashboardScreen(
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     var hasShownReminder by remember { mutableStateOf(false) }
     var showExpiryReminderDialog by remember { mutableStateOf(false) }
+    var checkoutPlanName by remember { mutableStateOf<String?>(null) }
 
     var showSmsPermissionRationaleDialog by remember { mutableStateOf(false) }
 
@@ -192,16 +193,21 @@ fun DashboardScreen(
             isLoading = screenState.purchaseLoading,
             onDismiss = { viewModel.setShowPurchaseDialog(false) },
             onPurchase = { planName ->
-                viewModel.purchaseSubscription(planName) { result ->
-                    result.fold(
-                        onSuccess = {
-                            android.widget.Toast.makeText(context, "${planName} প্যাকেজ সক্রিয় হয়েছে।", android.widget.Toast.LENGTH_SHORT).show()
-                        },
-                        onFailure = { error ->
-                            android.widget.Toast.makeText(context, error.message ?: "প্যাকেজ ক্রয় ব্যর্থ হয়েছে।", android.widget.Toast.LENGTH_LONG).show()
-                        }
-                    )
-                }
+                viewModel.setShowPurchaseDialog(false)
+                checkoutPlanName = planName
+            }
+        )
+    }
+
+    checkoutPlanName?.let { planName ->
+        online.paychek.app.ui.screen.billing.SubscriptionCheckoutDialog(
+            planName = planName,
+            planTitle = planName,
+            onDismiss = { checkoutPlanName = null },
+            onPurchased = { message ->
+                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                checkoutPlanName = null
+                viewModel.loadDashboardStats()
             }
         )
     }
