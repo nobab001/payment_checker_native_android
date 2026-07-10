@@ -62,6 +62,7 @@ private val OnSurface: Color @Composable get() = MaterialTheme.colorScheme.onSur
 // ─────────────────────────────────────────────────────────────────────────────
 private data class QueueStats(
     val pending: Int         = 0,
+    val waitingBackoff: Int  = 0,
     val permanentFailed: Int = 0,
     val lastSyncMs: Long     = 0L,
     val isOnline: Boolean    = false
@@ -94,12 +95,13 @@ fun SyncSettingsScreen(
         scope.launch(Dispatchers.IO) {
             val dao          = AppDatabase.getInstance(context).pendingSmsDao()
             val nowMs        = System.currentTimeMillis()
-            val pendingList  = dao.getPendingItemsForRetry(nowMs)
+            val pendingTotal = dao.countPendingUnsynced()
+            val waiting      = dao.countWaitingBackoff(nowMs)
             val failedCount  = dao.countPermanentlyFailed()
             val lastSyncMs   = PrefsHelper.getLastWorkerSyncMs(context)
             val online       = ConnectivityService(context).isOnline()
             withContext(Dispatchers.Main) {
-                stats     = QueueStats(pendingList.size, failedCount, lastSyncMs, online)
+                stats     = QueueStats(pendingTotal, waiting, failedCount, lastSyncMs, online)
                 isLoading = false
             }
         }
@@ -182,7 +184,11 @@ fun SyncSettingsScreen(
                     iconColor   = if (stats.pending > 0) WarnAmber else StatusGreen,
                     label       = "Pending",
                     value       = stats.pending.toString(),
-                    description = if (stats.pending == 0) "Queue is clear" else "Awaiting sync"
+                    description = when {
+                        stats.pending == 0 -> "Queue is clear"
+                        stats.waitingBackoff > 0 -> "${stats.waitingBackoff} waiting backoff"
+                        else -> "Awaiting sync"
+                    }
                 )
                 StatCard(
                     modifier    = Modifier.weight(1f),
@@ -234,13 +240,14 @@ fun SyncSettingsScreen(
                         syncMessage = null
                         scope.launch {
                             val result = withContext(Dispatchers.IO) {
-                                FlushOfflineQueueUseCase(context).execute()
+                                // Manual sync: clear backoff + await real upload
+                                FlushOfflineQueueUseCase(context).execute(force = true)
                             }
-                            delay(800L) // let the spinner complete one full turn
+                            delay(400L)
                             result.fold(
                                 onSuccess = { count ->
                                     syncMessage = if (count > 0)
-                                        "✅ Sync triggered for $count pending item(s)"
+                                        "✅ Synced $count pending item(s)"
                                     else
                                         "✅ Queue is already empty or device is offline"
                                 },
@@ -274,6 +281,48 @@ fun SyncSettingsScreen(
                     fontWeight = FontWeight.Bold,
                     color      = Color.White
                 )
+            }
+
+            if (stats.permanentFailed > 0) {
+                OutlinedButton(
+                    onClick = {
+                        if (!isSyncing) {
+                            isSyncing = true
+                            syncMessage = null
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    val dao = AppDatabase.getInstance(context).pendingSmsDao()
+                                    dao.resetPermanentlyFailed()
+                                    FlushOfflineQueueUseCase(context).execute(force = true)
+                                }
+                                result.fold(
+                                    onSuccess = { count ->
+                                        syncMessage = if (count > 0)
+                                            "✅ Retried failed items — synced $count"
+                                        else
+                                            "✅ Failed items reset; nothing left to upload"
+                                    },
+                                    onFailure = { e ->
+                                        syncMessage = "❌ Retry failed: ${e.message}"
+                                    }
+                                )
+                                loadStats()
+                                isSyncing = false
+                            }
+                        }
+                    },
+                    enabled = !isSyncing,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Text(
+                        text = "Retry ${stats.permanentFailed} failed item(s)",
+                        fontWeight = FontWeight.SemiBold,
+                        color = DangerRed
+                    )
+                }
             }
 
             // ── Spec reference footer ─────────────────────────────────────

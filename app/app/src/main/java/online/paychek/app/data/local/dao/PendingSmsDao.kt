@@ -109,6 +109,45 @@ interface PendingSmsDao {
     @Query("SELECT COUNT(*) FROM pending_sms_queue WHERE isPermanentlyFailed = 1")
     suspend fun countPermanentlyFailed(): Int
 
+    /** সব unsynced (backoff সহ) — Sync UI মোট pending দেখাতে। */
+    @Query("""
+        SELECT COUNT(*) FROM pending_sms_queue
+        WHERE isSynced = 0 AND isPermanentlyFailed = 0
+    """)
+    suspend fun countPendingUnsynced(): Int
+
+    /** Backoff window-এ আটকে থাকা আইটেম। */
+    @Query("""
+        SELECT COUNT(*) FROM pending_sms_queue
+        WHERE isSynced = 0
+          AND isPermanentlyFailed = 0
+          AND nextRetryAt > :nowMs
+    """)
+    suspend fun countWaitingBackoff(nowMs: Long): Int
+
+    /**
+     * Manual "Sync Now" — backoff মুছে সব pending এখনই eligible করে।
+     */
+    @Query("""
+        UPDATE pending_sms_queue
+        SET nextRetryAt = 0
+        WHERE isSynced = 0 AND isPermanentlyFailed = 0
+    """)
+    suspend fun clearBackoffForPending()
+
+    /**
+     * Manual retry — permanently failed আইটেম আবার চেষ্টা করার জন্য রিসেট।
+     */
+    @Query("""
+        UPDATE pending_sms_queue
+        SET isPermanentlyFailed = 0,
+            retryCount = 0,
+            nextRetryAt = 0,
+            lastAttemptAt = 0
+        WHERE isPermanentlyFailed = 1 AND isSynced = 0
+    """)
+    suspend fun resetPermanentlyFailed(): Int
+
     /**
      * retryCount >= 10 কিন্তু এখনো permanently failed নয় — zombie rows cleanup।
      */

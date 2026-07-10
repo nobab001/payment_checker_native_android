@@ -11,6 +11,29 @@ const { fetchGatewayMethodsForUser } = require('./gatewayController');
 const dataSyncCache = require('../services/dataSyncCache');
 
 const { smsQueue } = require('../services/smsQueue');
+const { getRedisClient } = require('../services/redisClient');
+
+/** Fail fast if Redis is down — client must keep SMS in offline queue and retry. */
+async function assertSmsQueueReady() {
+  try {
+    const redis = getRedisClient();
+    const pong = await Promise.race([
+      redis.ping(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('REDIS_TIMEOUT')), 2000)),
+    ]);
+    if (pong !== 'PONG') {
+      const err = new Error('REDIS_UNAVAILABLE');
+      err.code = 'REDIS_UNAVAILABLE';
+      throw err;
+    }
+  } catch (e) {
+    if (e.code === 'REDIS_UNAVAILABLE') throw e;
+    const err = new Error('SMS queue unavailable — Redis is down');
+    err.code = 'REDIS_UNAVAILABLE';
+    err.cause = e;
+    throw err;
+  }
+}
 
 // =============================================================================
 // POST /api/payment-sms-ingest
@@ -36,6 +59,7 @@ async function paymentSmsIngest(req, res) {
       return res.status(400).json({ error: 'Missing basic validation fields' });
     }
 
+    await assertSmsQueueReady();
     await smsQueue.add('processSms', payload);
 
     return res.status(202).json({
@@ -45,6 +69,14 @@ async function paymentSmsIngest(req, res) {
     });
 
   } catch (error) {
+    if (error.code === 'REDIS_UNAVAILABLE') {
+      console.error('[INGEST] Redis unavailable — client should retry:', error.message);
+      return res.status(503).json({
+        success: false,
+        error: 'QUEUE_UNAVAILABLE',
+        message: 'SMS queue temporarily unavailable. Keep offline and retry.',
+      });
+    }
     console.error('[INGEST] Error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
@@ -62,6 +94,8 @@ async function paymentSmsIngestBulk(req, res) {
     if (!items || !Array.isArray(items)) {
       return res.status(400).json({ error: 'items array is required' });
     }
+
+    await assertSmsQueueReady();
 
     const jobs = items.map(item => ({
       name: 'processSms',
@@ -94,6 +128,16 @@ async function paymentSmsIngestBulk(req, res) {
     });
 
   } catch (error) {
+    if (error.code === 'REDIS_UNAVAILABLE') {
+      console.error('[INGEST BULK] Redis unavailable — client should retry:', error.message);
+      return res.status(503).json({
+        success: false,
+        error: 'QUEUE_UNAVAILABLE',
+        message: 'SMS queue temporarily unavailable. Keep offline and retry.',
+        processed: 0,
+        failed: Array.isArray(req.body?.items) ? req.body.items.length : 0,
+      });
+    }
     console.error('[INGEST BULK] Error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
   }

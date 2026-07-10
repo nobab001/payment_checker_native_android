@@ -58,7 +58,7 @@ class SyncWorker(
         return try {
             // Delegate all precondition checks and sync logic to the use case.
             // SyncWorker owns zero business logic — it is a pure scheduler.
-            val result = FlushOfflineQueueUseCase(context).execute()
+            val result = FlushOfflineQueueUseCase(context).execute(force = false)
 
             result.fold(
                 onSuccess = { pendingCount ->

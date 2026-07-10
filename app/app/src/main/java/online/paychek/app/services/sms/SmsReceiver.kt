@@ -159,6 +159,12 @@ class SmsReceiver(
                                 chunk.forEach { dao.markPermanentlyFailed(it.id, nowMs) }
                                 Log.w(TAG, "[Sync] HTTP 422 — ${chunk.size} items marked permanently failed")
                             }
+                            response.code() == 503 -> {
+                                chunk.forEach { item -> handleSyncFailure(dao, item, nowMs) }
+                                Log.w(TAG, "[Sync] HTTP 503 QUEUE_UNAVAILABLE — keeping offline, starting PingEngine")
+                                online.paychek.app.services.sync.PingEngine.start(context)
+                                syncHadFailure = true
+                            }
                             else -> {
                                 chunk.forEach { item -> handleSyncFailure(dao, item, nowMs) }
                                 Log.w(TAG, "[Sync] FAIL Bulk HTTP ${response.code()} — starting PingEngine")
