@@ -9,6 +9,7 @@ const {
 } = require('../utils/smsSecuritySpec');
 const { fetchGatewayMethodsForUser } = require('./gatewayController');
 const dataSyncCache = require('../services/dataSyncCache');
+const numberHealth = require('../services/numberHealthService');
 
 const { smsQueue } = require('../services/smsQueue');
 const { getRedisClient } = require('../services/redisClient');
@@ -61,6 +62,10 @@ async function paymentSmsIngest(req, res) {
 
     await assertSmsQueueReady();
     await smsQueue.add('processSms', payload);
+
+    if (payload.simNumber) {
+      numberHealth.touchNumberLive(payload.userId, payload.deviceId, payload.simNumber).catch(() => {});
+    }
 
     return res.status(202).json({
       success: true,

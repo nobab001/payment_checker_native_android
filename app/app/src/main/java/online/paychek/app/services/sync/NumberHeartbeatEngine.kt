@@ -49,6 +49,13 @@ object NumberHeartbeatEngine {
         }
     }
 
+    /** Immediate one-shot heartbeat (e.g. before refreshing account number list). */
+    fun pulse(context: Context) {
+        scope.launch {
+            sendHeartbeat(context.applicationContext)
+        }
+    }
+
     /** Push active SIM numbers over Socket.IO so server can mark ONLINE instantly. */
     fun emitSocketDeviceNumbers(socket: io.socket.client.Socket?, context: Context) {
         if (socket == null || !socket.connected()) return
@@ -108,22 +115,24 @@ object NumberHeartbeatEngine {
         val sim2Enabled = PrefsHelper.isSim2Enabled(context)
         val methods = loadMethodsFromCache(context)
 
-        val bySlot = methods
-            .filter { !it.number.isNullOrBlank() }
-            .groupBy { it.simSlot }
-
         val out = mutableListOf<HeartbeatNumberItem>()
         if (sim1Enabled) {
-            bySlot[1]?.firstOrNull()?.number?.takeIf { it.length >= 11 }?.let {
-                out.add(HeartbeatNumberItem(simSlot = 1, phoneNumber = it.takeLast(11)))
-            }
+            phoneForSlot(methods, 1)?.let { out.add(HeartbeatNumberItem(simSlot = 1, phoneNumber = it)) }
         }
         if (sim2Enabled) {
-            bySlot[2]?.firstOrNull()?.number?.takeIf { it.length >= 11 }?.let {
-                out.add(HeartbeatNumberItem(simSlot = 2, phoneNumber = it.takeLast(11)))
-            }
+            phoneForSlot(methods, 2)?.let { out.add(HeartbeatNumberItem(simSlot = 2, phoneNumber = it)) }
         }
         return out
+    }
+
+    private fun phoneForSlot(methods: List<GatewayMethod>, slot: Int): String? {
+        return methods
+            .filter { it.simSlot == slot && !it.number.isNullOrBlank() }
+            .sortedBy { it.priority }
+            .firstNotNullOfOrNull { method ->
+                val digits = method.number!!.filter { it.isDigit() }
+                digits.takeLast(11).takeIf { it.length == 11 }
+            }
     }
 
     private fun loadMethodsFromCache(context: Context): List<GatewayMethod> {

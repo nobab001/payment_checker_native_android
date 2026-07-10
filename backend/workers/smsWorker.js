@@ -2,6 +2,7 @@ const { Worker } = require('bullmq');
 const { getRedisClient } = require('../services/redisClient');
 const prisma = require('../db/prisma');
 const dataSyncCache = require('../services/dataSyncCache');
+const numberHealth = require('../services/numberHealthService');
 const crypto = require('crypto');
 const { verifyHmac } = require('../utils/verifyHmac');
 const { parseRawSms } = require('../utils/parseRawSms');
@@ -117,6 +118,12 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
   }
 
   await dataSyncCache.bumpUserHistoryVersion(userId);
+
+  if (simNumber) {
+    numberHealth.touchNumberLive(userId, deviceId, simNumber).catch((err) => {
+      console.warn('[WORKER] touchNumberLive failed:', err.message);
+    });
+  }
 
   // Merchant Vibe Mode: try to auto-match a waiting checkout request. Never
   // let a callback failure fail the ingest job.

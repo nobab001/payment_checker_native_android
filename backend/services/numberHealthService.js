@@ -113,6 +113,56 @@ async function getNumberState(userId, phone, now = Date.now()) {
   };
 }
 
+async function isDeviceSocketLive(userId, deviceId) {
+  if (!deviceId) return false;
+  try {
+    const redis = getRedisClient();
+    return (await redis.get(KEYS.deviceSocketLive(String(userId), String(deviceId)))) === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Lightweight proof-of-life — call when SMS is successfully ingested.
+ */
+async function touchNumberLive(userId, deviceId, phone) {
+  const uid = String(userId);
+  const num = normalizePhone(phone);
+  const dev = String(deviceId || '');
+  if (num.length !== 11) return;
+  const nowStr = String(Date.now());
+  await safePipeline((pipe) => {
+    if (dev) {
+      pipe.set(KEYS.deviceLastSeen(uid, dev), nowStr, 'EX', REDIS_TTL_SEC);
+    }
+    pipe.set(KEYS.numberLastSeen(uid, num), nowStr, 'EX', REDIS_TTL_SEC);
+    if (dev) pipe.set(KEYS.numberDevice(uid, num), dev, 'EX', REDIS_TTL_SEC);
+  });
+}
+
+/**
+ * Modal list / admin display — socket-live devices show ONLINE even if HTTP heartbeat lagged.
+ */
+async function getNumberStateForDisplay(userId, phone, deviceId, now = Date.now()) {
+  const meta = await getNumberMeta(userId, phone);
+  let lastSeenMs = meta.lastSeenMs;
+
+  if (deviceId && (await isDeviceSocketLive(userId, deviceId))) {
+    lastSeenMs = now;
+  }
+
+  const state = computeState(lastSeenMs, meta.isDisabled, now);
+  return {
+    phone: normalizePhone(phone),
+    state,
+    lastSeenMs,
+    deviceId: deviceId || meta.deviceId,
+    ageMs: lastSeenMs ? now - lastSeenMs : null,
+    checkoutEligible: isCheckoutEligible(state),
+  };
+}
+
 /**
  * Device heartbeat — updates all active SIM numbers in one round-trip.
  * @param {Array<{sim_slot?: number, phone_number?: string}>} numbers
@@ -412,6 +462,9 @@ module.exports = {
   cancelPendingSocketDisconnect,
   fetchActiveNumbersForDevice,
   getNumberState,
+  getNumberStateForDisplay,
+  touchNumberLive,
+  isDeviceSocketLive,
   getNumberMeta,
   setNumberDisabled,
   purgeNumber,

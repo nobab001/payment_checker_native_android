@@ -16,6 +16,7 @@ import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.data.remote.dto.*
 import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.services.connectivity.ConnectionEngine
+import online.paychek.app.services.sync.NumberHeartbeatEngine
 import online.paychek.app.utils.DeviceIdHelper
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -1733,6 +1734,10 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
             val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
             _state.update { it.copy(isAccountNumbersLoading = true) }
             val deviceId = DeviceIdHelper.getHashedAndroidId(getApplication())
+
+            NumberHeartbeatEngine.pulse(getApplication())
+            delay(400)
+
             runCatching { api.getAccountNumbers("Bearer $token", deviceId) }
                 .onSuccess { res ->
                     if (res.isSuccessful && res.body()?.success == true) {

@@ -1536,7 +1536,11 @@ async function listAccountActiveNumbers(req, res) {
       if (phone.length !== 11 || seen.has(phone)) continue;
       seen.add(phone);
 
-      const health = await numberHealth.getNumberState(userId, phone);
+      const health = await numberHealth.getNumberStateForDisplay(
+        userId,
+        phone,
+        row.device_id || '',
+      );
       const providers = methodsByPhone[phone] ? [...methodsByPhone[phone]] : [];
       data.push({
         phone_number: phone,
