@@ -14,6 +14,8 @@ import online.paychek.app.data.remote.dto.HeartbeatRequest
 import online.paychek.app.utils.DeviceIdHelper
 import online.paychek.app.utils.GsonUtils
 import online.paychek.app.utils.SecurePreferences
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Sends device-level number health heartbeats every 60s while SMS service runs.
@@ -44,6 +46,27 @@ object NumberHeartbeatEngine {
             Log.i(TAG, "Stopping number heartbeat engine")
             heartbeatJob?.cancel()
             heartbeatJob = null
+        }
+    }
+
+    /** Push active SIM numbers over Socket.IO so server can mark ONLINE instantly. */
+    fun emitSocketDeviceNumbers(socket: io.socket.client.Socket?, context: Context) {
+        if (socket == null || !socket.connected()) return
+        val numbers = collectActiveNumbers(context)
+        if (numbers.isEmpty()) return
+        try {
+            val arr = JSONArray()
+            numbers.forEach { n ->
+                arr.put(
+                    JSONObject()
+                        .put("sim_slot", n.simSlot)
+                        .put("phone_number", n.phoneNumber)
+                )
+            }
+            socket.emit("device_numbers", JSONObject().put("numbers", arr))
+            Log.d(TAG, "Emitted device_numbers over socket (${numbers.size})")
+        } catch (e: Exception) {
+            Log.w(TAG, "emitSocketDeviceNumbers failed: ${e.message}")
         }
     }
 

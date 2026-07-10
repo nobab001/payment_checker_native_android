@@ -35,7 +35,12 @@ const KEYS = {
   numberDisabled: (userId, phone) => `paychek:nh:u:${userId}:n:${phone}:dis`,
   deviceLastSeen: (userId, deviceId) => `paychek:nh:u:${userId}:d:${deviceId}:seen`,
   deviceDbFlush: (userId, deviceId) => `paychek:nh:u:${userId}:d:${deviceId}:dbflush`,
+  deviceSocketLive: (userId, deviceId) => `paychek:nh:u:${userId}:d:${deviceId}:socket`,
 };
+
+/** In-memory debounce — brief socket flaps do not push numbers into GRACE. */
+const pendingSocketDisconnect = new Map();
+const SOCKET_DISCONNECT_DEBOUNCE_MS = 30 * 1000;
 
 const DEVICE_DB_FLUSH_MS = 5 * 60 * 1000;
 const REDIS_TTL_SEC = 48 * 60 * 60; // 48h — STALE still computable
@@ -142,6 +147,131 @@ async function recordHeartbeat(userId, deviceId, numbers = [], opts = {}) {
     states[phone] = computeState(now, false, now);
   }
   return { updated: cleaned.map((n) => n.phone), states, serverTime: now };
+}
+
+function cancelPendingSocketDisconnect(userId, deviceId) {
+  const key = `${userId}:${deviceId}`;
+  const pending = pendingSocketDisconnect.get(key);
+  if (pending) {
+    clearTimeout(pending);
+    pendingSocketDisconnect.delete(key);
+  }
+}
+
+async function fetchActiveNumbersForDevice(userId, deviceId) {
+  const uid = String(userId);
+  const dev = String(deviceId);
+  try {
+    const prisma = require('../db/prisma');
+    const bindings = await prisma.$queryRaw`
+      SELECT phone_number, sim_slot
+      FROM sim_slot_bindings
+      WHERE user_id = ${uid}
+        AND device_id = ${dev}
+        AND is_active = 1
+        AND phone_number IS NOT NULL
+        AND phone_number != ''
+    `;
+    if (bindings.length) {
+      return bindings.map((r) => ({
+        sim_slot: Number(r.sim_slot) || 1,
+        phone_number: normalizePhone(r.phone_number),
+      })).filter((n) => n.phone_number.length === 11);
+    }
+
+    const methods = await prisma.gateway_methods.findMany({
+      where: { user_id: uid, device_id: dev },
+      select: { number: true, sim_slot: true },
+    });
+    const seen = new Set();
+    const out = [];
+    for (const m of methods) {
+      const phone = normalizePhone(m.number);
+      if (phone.length !== 11 || seen.has(phone)) continue;
+      seen.add(phone);
+      out.push({ sim_slot: m.sim_slot || 1, phone_number: phone });
+    }
+    return out;
+  } catch (err) {
+    console.warn('[NumberHealth] fetchActiveNumbersForDevice failed:', err.message);
+    return [];
+  }
+}
+
+function normalizeClientNumbers(numbers) {
+  if (!Array.isArray(numbers)) return [];
+  return numbers
+    .map((n) => ({
+      sim_slot: Number(n.sim_slot || n.simSlot || 0),
+      phone_number: normalizePhone(n.phone_number || n.phoneNumber || n.number || ''),
+    }))
+    .filter((n) => n.phone_number.length === 11);
+}
+
+/**
+ * Socket.IO connect — mark device + SIM numbers ONLINE immediately.
+ * Does NOT mutate sim_slot_bindings.is_active (user assignment).
+ */
+async function onDeviceSocketConnect(userId, deviceId, clientNumbers = null) {
+  const uid = String(userId);
+  const dev = String(deviceId || '');
+  if (!uid || !dev) return { updated: [], states: {} };
+
+  cancelPendingSocketDisconnect(uid, dev);
+
+  const fromClient = normalizeClientNumbers(clientNumbers);
+  const numbers = fromClient.length ? fromClient : await fetchActiveNumbersForDevice(uid, dev);
+
+  try {
+    const redis = getRedisClient();
+    await redis.set(KEYS.deviceSocketLive(uid, dev), '1', 'EX', REDIS_TTL_SEC);
+  } catch (_) { /* ignore */ }
+
+  if (!numbers.length) {
+    return { updated: [], states: {}, serverTime: Date.now() };
+  }
+
+  return recordHeartbeat(uid, dev, numbers);
+}
+
+/**
+ * Socket.IO disconnect (debounced) — shift numbers into GRACE band.
+ * Checkout still eligible until GRACE window expires; then OFFLINE.
+ */
+async function onDeviceSocketDisconnect(userId, deviceId) {
+  const uid = String(userId);
+  const dev = String(deviceId || '');
+  if (!uid || !dev) return;
+
+  const numbers = await fetchActiveNumbersForDevice(uid, dev);
+  const graceAnchorMs = Date.now() - THRESHOLDS.ONLINE_MS - 1000;
+  const anchorStr = String(graceAnchorMs);
+
+  await safePipeline((pipe) => {
+    pipe.del(KEYS.deviceSocketLive(uid, dev));
+    numbers.forEach(({ phone_number: phone }) => {
+      pipe.set(KEYS.numberLastSeen(uid, phone), anchorStr, 'EX', REDIS_TTL_SEC);
+      pipe.set(KEYS.numberDevice(uid, phone), dev, 'EX', REDIS_TTL_SEC);
+    });
+  });
+
+  console.log(
+    `[NumberHealth] Socket disconnect → GRACE for device ${dev} (${numbers.length} number(s))`
+  );
+}
+
+function scheduleSocketDisconnect(userId, deviceId) {
+  const uid = String(userId);
+  const dev = String(deviceId || '');
+  const key = `${uid}:${dev}`;
+  cancelPendingSocketDisconnect(uid, dev);
+  const timer = setTimeout(() => {
+    pendingSocketDisconnect.delete(key);
+    onDeviceSocketDisconnect(uid, dev).catch((err) => {
+      console.warn('[NumberHealth] socket disconnect handler failed:', err.message);
+    });
+  }, SOCKET_DISCONNECT_DEBOUNCE_MS);
+  pendingSocketDisconnect.set(key, timer);
 }
 
 async function maybeFlushDeviceToDb(userId, deviceId, nowMs, batteryPercent) {
@@ -276,6 +406,11 @@ module.exports = {
   computeState,
   isCheckoutEligible,
   recordHeartbeat,
+  onDeviceSocketConnect,
+  onDeviceSocketDisconnect,
+  scheduleSocketDisconnect,
+  cancelPendingSocketDisconnect,
+  fetchActiveNumbersForDevice,
   getNumberState,
   getNumberMeta,
   setNumberDisabled,

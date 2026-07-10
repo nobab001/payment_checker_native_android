@@ -18,6 +18,7 @@ const adminRoutes       = require('./routes/adminRoutes');
 const credentialRoutes  = require('./routes/credentialRoutes');
 const pinRoutes         = require('./routes/pinRoutes');
 const billingRoutes     = require('./routes/billingRoutes');
+const numberHealth      = require('./services/numberHealthService');
 
 const app = express();
 const server = http.createServer(app);
@@ -25,23 +26,36 @@ const io = new Server(server, {
   cors: { origin: '*' }
 });
 
-// Setup Socket.IO Multi-Device Isolation
+// Setup Socket.IO Multi-Device Isolation + number health (ONLINE on connect, GRACE on disconnect)
 io.on('connection', (socket) => {
   const userId = socket.handshake.query.userId;
   const deviceId = socket.handshake.query.deviceId;
-  
-  if (userId && deviceId) {
-    const roomName = `${userId}:${deviceId}`;
-    socket.join(roomName);
-    console.log(`[Socket.IO] Device connected and locked to room: ${roomName}`);
-    
-    socket.on('disconnect', () => {
-      console.log(`[Socket.IO] Device disconnected from room: ${roomName}`);
-    });
-  } else {
-    console.log(`[Socket.IO] Anonymous connection dropped (missing userId or deviceId)`);
+
+  if (!userId || !deviceId) {
+    console.log('[Socket.IO] Anonymous connection dropped (missing userId or deviceId)');
     socket.disconnect();
+    return;
   }
+
+  const roomName = `${userId}:${deviceId}`;
+  socket.join(roomName);
+  console.log(`[Socket.IO] Device connected and locked to room: ${roomName}`);
+
+  numberHealth.onDeviceSocketConnect(userId, deviceId).catch((err) => {
+    console.warn('[Socket.IO] connect health update failed:', err.message);
+  });
+
+  socket.on('device_numbers', (payload) => {
+    const numbers = payload?.numbers || payload;
+    numberHealth.onDeviceSocketConnect(userId, deviceId, numbers).catch((err) => {
+      console.warn('[Socket.IO] device_numbers health update failed:', err.message);
+    });
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`[Socket.IO] Device disconnected from room: ${roomName}`);
+    numberHealth.scheduleSocketDisconnect(userId, deviceId);
+  });
 });
 
 // Make io accessible globally via app

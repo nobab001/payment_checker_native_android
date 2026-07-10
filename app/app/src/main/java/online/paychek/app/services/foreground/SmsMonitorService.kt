@@ -293,6 +293,7 @@ class SmsMonitorService : Service() {
                 Log.i(TAG, "Socket.IO Connected to Room: $userId:$deviceId")
                 SmsReceiver.syncPendingQueue(this@SmsMonitorService)
                 NumberHeartbeatEngine.start(this@SmsMonitorService)
+                NumberHeartbeatEngine.emitSocketDeviceNumbers(socket, this@SmsMonitorService)
             }
             
             socket?.on("sync_gateway_methods") { args ->
@@ -302,6 +303,7 @@ class SmsMonitorService : Service() {
                         val jsonStr = dataArray.toString()
                         online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(this@SmsMonitorService, jsonStr)
                         Log.i(TAG, "✅ Push-Driven Cache Sync: Gateway methods updated via Socket.IO")
+                        NumberHeartbeatEngine.emitSocketDeviceNumbers(socket, this@SmsMonitorService)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error parsing socket push data: ${e.message}")
                     }
