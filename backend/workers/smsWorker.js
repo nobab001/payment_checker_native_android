@@ -106,7 +106,7 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
         is_synced: 1,
         is_used: 0
       },
-      select: { id: true, amount: true, trx_id: true, provider_tag: true, sender_number: true, sms_timestamp: true }
+      select: { id: true, amount: true, trx_id: true, provider_tag: true, sender_number: true, sms_timestamp: true, full_sms: true }
     });
   } catch (dbErr) {
     if (dbErr.code === 'P2002') {

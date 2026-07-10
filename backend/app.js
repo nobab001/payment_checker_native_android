@@ -52,6 +52,10 @@ const PORT = process.env.PORT || 3000;
 // Enable CORS for frontend API requests
 app.use(cors());
 
+// Demo Merchant webhook (raw body for PayCheck HMAC) — must mount before express.json
+const demoMerchant = require('./demo-merchant');
+demoMerchant.mountEarly(app);
+
 // Serve static webpage assets (like public/checkout.html).
 // Uploaded logos/icons use content-hashed filenames, so they can be cached
 // aggressively & immutably; the service worker + browser reuse them from cache.
@@ -111,6 +115,9 @@ app.all('/api/pay/:token/gateway-callback', paymentFlowController.officialGatewa
 
 app.use('/api/v1', billingRoutes);
 app.use('/api/v1/websites', require('./routes/websiteRoutes'));
+
+// Demo Merchant application (test harness — consumes PayCheck APIs)
+demoMerchant.mount(app);
 
 // General 404 Route handler
 app.use((req, res) => {

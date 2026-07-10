@@ -39,7 +39,27 @@
         .merchant-text { min-width: 0; flex: 1; }
         .merchant-title { font-size: clamp(14px, 4vw, 17px); font-weight: 800; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .merchant-sub { font-size: 11px; opacity: .85; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .top-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
         .bell { opacity: .85; font-size: 18px; flex-shrink: 0; }
+        .lang-switch {
+            display: inline-flex; border: 1px solid rgba(255,255,255,.35);
+            background: rgba(255,255,255,.16); border-radius: 999px; overflow: hidden;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        }
+        .lang-switch button {
+            border: none; background: transparent; color: #fff; opacity: .9;
+            font-size: 11px; font-weight: 800; padding: 6px 10px; cursor: pointer;
+        }
+        .lang-switch button.active {
+            background: rgba(255,255,255,.30); opacity: 1;
+        }
+        .help-btn {
+            width: 34px; height: 34px; border-radius: 999px;
+            border: 1px solid rgba(255,255,255,.35);
+            background: rgba(255,255,255,.16);
+            color: #fff; cursor: pointer; font-weight: 900; font-size: 14px;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        }
         .amount-strip {
             margin-top: 10px; background: rgba(255,255,255,.15); border-radius: 12px;
             padding: 10px 14px; text-align: center;
@@ -89,41 +109,78 @@
         .btn-copy {
             background: var(--purple); color: #fff; border: none; border-radius: 8px;
             padding: 8px 14px; font-size: 12px; font-weight: 700; cursor: pointer;
+            transition: transform 120ms ease, background 120ms ease;
+        }
+        .btn-copy:active { transform: scale(0.96); }
+        .btn-copy:focus-visible, .tab-btn:focus-visible, .prov-card:focus-visible,
+        .acc-head:focus-visible, .checkout-sheet-back:focus-visible,
+        .checkout-empty-retry:focus-visible, .checkout-error-retry:focus-visible {
+            outline: 2px solid var(--purple); outline-offset: 2px;
         }
         .btn-copy.copied { background: #10B981; }
+        .btn-copy:disabled { background: #cbd5e1; cursor: not-allowed; transform: none; }
+        .number-inactive { opacity: 0.55; }
+        .number-inactive .num { color: var(--muted); }
+        .num-badge.inactive {
+            display: inline-block; font-size: 9px; font-weight: 700; margin-left: 6px;
+            padding: 2px 6px; border-radius: 6px; background: #f1f5f9; color: #64748b;
+        }
 
-        /* ── Design 2: Cards ── */
-        .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        /* ── Design 2: Cards — responsive grid ── */
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr));
+            gap: 10px;
+        }
         .prov-card {
             border: 1px solid var(--border); border-radius: 16px; padding: 18px 12px;
-            text-align: center; cursor: pointer; transition: .2s; background: #fff;
+            text-align: center; cursor: pointer; transition: transform 120ms ease, box-shadow 120ms ease;
+            background: #fff;
         }
-        .prov-card:active { transform: scale(.98); }
+        .prov-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.06); }
+        .prov-card:active { transform: scale(.97); }
         .prov-card .logo {
             width: 48px; height: 48px; border-radius: 14px; margin: 0 auto 10px;
             display: flex; align-items: center; justify-content: center;
             color: #fff; font-weight: 800; font-size: 18px;
         }
         .prov-card .name { font-size: 13px; font-weight: 700; }
-        .prov-card .sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
+        .prov-card-logo {
+            width: 56px; height: 56px; border-radius: 16px; margin: 0 auto 10px;
+            object-fit: contain; background: #fff; display: block;
+        }
+        .card-detail-panels { margin-top: 14px; }
+        .card-detail-panels .provider-block { margin-bottom: 16px; }
 
         /* ── Design 3: Accordion ── */
         .accordion { border: 1px solid var(--border); border-radius: 14px; margin-bottom: 10px; overflow: hidden; }
         .acc-head {
             display: flex; align-items: center; justify-content: space-between;
             padding: 14px 16px; background: #fff; cursor: pointer; font-weight: 700; font-size: 14px;
+            gap: 10px; width: 100%; border: none; text-align: left; font-family: inherit;
         }
-        .acc-head .chev { transition: .2s; color: var(--muted); }
+        .acc-head-inner { flex: 1; min-width: 0; }
+        .acc-head-title { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; margin: 0; }
+        .acc-head .chev { transition: transform 220ms ease; color: var(--muted); flex-shrink: 0; }
         .acc-head.open .chev { transform: rotate(180deg); }
-        .acc-body { display: none; padding: 0 12px 12px; background: #fafafa; }
-        .acc-body.open { display: block; }
+        .acc-panel-outer {
+            display: grid;
+            grid-template-rows: 0fr;
+            opacity: 0;
+            transition: grid-template-rows 220ms cubic-bezier(0.4, 0, 0.2, 1), opacity 220ms ease;
+        }
+        .acc-panel-outer.is-open {
+            grid-template-rows: 1fr;
+            opacity: 1;
+        }
+        .acc-panel-inner { overflow: hidden; min-height: 0; padding: 0 12px; }
+        .acc-panel-outer.is-open .acc-panel-inner { padding-bottom: 12px; background: #fafafa; }
         .acc-item {
             display: flex; align-items: center; gap: 10px; padding: 10px 8px;
             border-bottom: 1px solid var(--border);
         }
         .acc-item:last-child { border-bottom: none; }
-        .acc-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-        .acc-info { flex: 1; }
+        .acc-info { flex: 1; min-width: 0; }
         .acc-info .pname { font-weight: 700; font-size: 13px; }
         .acc-info .pnum { font-size: 12px; color: var(--muted); }
         .acc-copy { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 11px; }
@@ -169,11 +226,219 @@
             display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 10px;
             background: #f1f5f9; border-radius: 10px; font-size: 12px; color: #475569;
         }
+        .vibe-manual-link {
+            display: block; width: 100%; margin-top: 10px; background: none; border: none;
+            color: var(--purple); font-size: 13px; font-weight: 700; cursor: pointer; text-align: center;
+            text-decoration: underline; padding: 8px;
+        }
+
+        /* ── Verify FAB + Modal (Normal primary / Vibe manual fallback) ── */
+        .checkout-verify-fab {
+            position: fixed; right: 16px; top: 16px; z-index: 8000;
+            width: 52px; height: 52px; border-radius: 999px;
+            display: inline-flex; align-items: center; justify-content: center;
+            background: rgba(255,255,255,.22);
+            border: 1px solid rgba(255,255,255,.38);
+            color: #fff; cursor: pointer;
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 10px 28px rgba(15,23,42,.24);
+        }
+        .checkout-verify-fab .fab-icon { font-size: 20px; line-height: 1; }
+        body.verify-modal-open { overflow: hidden; }
+        .checkout-verify-modal {
+            position: fixed; inset: 0; z-index: 9500; display: flex; align-items: flex-end;
+            justify-content: center; pointer-events: none; opacity: 0; transition: opacity .22s ease;
+        }
+        .checkout-verify-modal.open { pointer-events: auto; opacity: 1; }
+        .checkout-verify-modal.hidden { display: none !important; }
+        .verify-modal-backdrop {
+            position: absolute; inset: 0; background: rgba(15,23,42,.45);
+        }
+        .verify-modal-panel {
+            position: relative; width: 100%; max-width: 420px; background: #fff;
+            border-radius: 20px 20px 0 0; padding: 16px 16px 28px;
+            transform: translateY(12px); transition: transform .22s ease;
+            box-shadow: 0 -12px 40px rgba(0,0,0,.12);
+        }
+        .checkout-verify-modal.open .verify-modal-panel { transform: translateY(0); }
+        .verify-modal-close {
+            position: absolute; top: 12px; right: 14px; background: #f1f5f9; border: none;
+            width: 32px; height: 32px; border-radius: 50%; font-size: 18px; cursor: pointer;
+        }
+        .verify-mode-tabs, .checkout-sheet-tabs {
+            display: flex; gap: 6px; margin-bottom: 12px;
+        }
+        .verify-mode-tabs button, .checkout-sheet-tab {
+            flex: 1; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border);
+            background: #fff; font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer;
+        }
+        .verify-mode-tabs button.active, .checkout-sheet-tab.active {
+            background: var(--purple-light); border-color: var(--purple); color: var(--purple);
+        }
+        .progress-card {
+            margin: 12px 14px 0;
+            padding: 12px 14px;
+            border-radius: 18px;
+            background: rgba(255,255,255,.72);
+            border: 1px solid rgba(226,232,240,.9);
+            box-shadow: 0 10px 28px rgba(15,23,42,.08);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+        }
+        .progress-card.hidden { display: none !important; }
+        .progress-title { font-size: 13px; font-weight: 900; }
+        .progress-sub { margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--muted); }
+        .smart-steps {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border);
+            display: grid;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 800;
+            color: #475569;
+        }
+        .smart-steps .active { color: var(--purple); }
+        .status.success-anim {
+            display: block;
+            background: #ecfdf5;
+            color: #065f46;
+        }
+        .status.success-anim::before {
+            content: '✓';
+            display: inline-block;
+            width: 28px;
+            height: 28px;
+            line-height: 28px;
+            text-align: center;
+            border-radius: 999px;
+            background: #10b981;
+            color: #fff;
+            margin-right: 8px;
+            transform: scale(0.8);
+            animation: pop 240ms ease-in-out forwards;
+        }
+        @keyframes pop { to { transform: scale(1); } }
+        .btn-primary, .tab-btn, .btn-copy, .checkout-verify-fab, .help-btn, .lang-switch button {
+            min-height: 48px;
+        }
+        @media (max-width: 360px) {
+            .checkout-verify-fab { right: 10px; top: 10px; width: 48px; height: 48px; }
+            .page { max-width: 100%; }
+        }
+        .checkout-sheet-wait {
+            margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);
+            text-align: center;
+        }
+        .sheet-wait-label { font-size: 12px; color: var(--muted); font-weight: 600; }
+        .sheet-wait-timer {
+            font-size: 28px; font-weight: 800; color: var(--purple); margin: 6px 0 10px;
+            font-variant-numeric: tabular-nums;
+        }
+        .sheet-manual-link {
+            background: none; border: none; color: var(--purple); font-size: 13px;
+            font-weight: 700; cursor: pointer; text-decoration: underline;
+        }
+        .checkout-sheet-manual { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+        .checkout-sheet-manual label { display: block; font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
+        .checkout-sheet-manual input {
+            width: 100%; height: 44px; border: 2px solid var(--border); border-radius: 10px;
+            padding: 0 12px; font-size: 15px; font-weight: 600;
+        }
         .spinner {
             width: 16px; height: 16px; border: 2px solid #cbd5e1; border-top-color: var(--purple);
             border-radius: 50%; animation: spin .7s linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Layout engine (Phase-1.5) ── */
+        .provider-block { margin-bottom: 14px; }
+        .provider-detail-block { margin-top: 10px; }
+        .instruction-area {
+            margin: 8px 0 10px; padding: 10px 12px;
+            background: var(--purple-light); border-radius: 10px;
+            font-size: 12px; color: var(--purple-dark); line-height: 1.45;
+        }
+        .group-section-title {
+            font-size: 14px; font-weight: 800; color: var(--purple);
+            margin: 0 0 10px; padding-left: 2px;
+        }
+        .card-detail-panels { display: none; }
+        .num-wrap { min-width: 0; display: flex; align-items: center; gap: 10px; }
+
+        /* ── Phase-2 Interaction ── */
+        .checkout-skeleton { padding: 14px; }
+        .skel {
+            border-radius: 12px; background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+            background-size: 200% 100%; animation: skel-shimmer 1.2s ease-in-out infinite;
+            margin-bottom: 10px;
+        }
+        .skel-header { height: 72px; }
+        .skel-tabs { height: 52px; }
+        .skel-card { height: 110px; width: 48%; display: inline-block; margin-right: 4%; }
+        .skel-row { height: 48px; }
+        @keyframes skel-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+        .checkout-toast-host {
+            position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%);
+            z-index: 9999; pointer-events: none; max-width: 90vw;
+        }
+        .checkout-toast {
+            background: #1e293b; color: #fff; padding: 10px 16px; border-radius: 10px;
+            font-size: 13px; font-weight: 600; opacity: 0; transform: translateY(8px);
+            transition: opacity 220ms ease, transform 220ms ease; box-shadow: 0 8px 24px rgba(0,0,0,.18);
+        }
+        .checkout-toast.visible { opacity: 1; transform: translateY(0); }
+
+        .checkout-error-banner {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+            margin: 0 12px 10px; padding: 10px 12px; border-radius: 10px;
+            background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; font-size: 12px;
+        }
+        .checkout-error-banner.hidden { display: none !important; }
+        .checkout-error-retry {
+            margin-left: auto; background: #fff; border: 1px solid #fca5a5; border-radius: 8px;
+            padding: 6px 10px; font-size: 11px; font-weight: 700; cursor: pointer; color: #991b1b;
+        }
+
+        .checkout-empty { text-align: center; padding: 36px 20px; }
+        .checkout-empty-illus { font-size: 48px; margin-bottom: 12px; opacity: .7; }
+        .checkout-empty-msg { color: var(--muted); font-size: 14px; margin-bottom: 16px; }
+        .checkout-empty-retry { max-width: 200px; margin: 0 auto; }
+
+        .checkout-sheet-overlay {
+            position: fixed; inset: 0; z-index: 9000; pointer-events: none; opacity: 0;
+            transition: opacity 220ms ease;
+        }
+        .checkout-sheet-overlay.open { pointer-events: auto; opacity: 1; }
+        body.sheet-open { overflow: hidden; }
+        .checkout-sheet-backdrop {
+            position: absolute; inset: 0; background: rgba(15,23,42,.45);
+        }
+        .checkout-sheet {
+            position: absolute; left: 0; right: 0; bottom: 0; max-width: 420px; margin: 0 auto;
+            background: #fff; border-radius: 20px 20px 0 0; max-height: 88vh; overflow-y: auto;
+            padding: 12px 16px 24px; box-shadow: 0 -12px 40px rgba(0,0,0,.12);
+            transform: translateY(12px); transition: transform 220ms ease;
+            -webkit-overflow-scrolling: touch;
+        }
+        .checkout-sheet-overlay.open .checkout-sheet { transform: translateY(0); }
+        .checkout-sheet-handle {
+            width: 40px; height: 4px; border-radius: 4px; background: #cbd5e1;
+            margin: 0 auto 12px;
+        }
+        .checkout-sheet-back {
+            background: none; border: none; font-size: 14px; font-weight: 700;
+            color: var(--purple); cursor: pointer; margin-bottom: 12px; padding: 4px 0;
+        }
+        .checkout-sheet-header { margin-bottom: 8px; }
+        .checkout-sheet-numbers { margin-top: 8px; }
+
+        .content { will-change: opacity; }
+        @media (prefers-reduced-motion: reduce) {
+            .skel { animation: none; }
+            .acc-panel-outer, .checkout-toast, .checkout-sheet, .prov-card { transition: none !important; }
+        }
     </style>
 </head>
 <body>
@@ -187,36 +452,65 @@
                     <div class="merchant-sub" id="merchant-sub"></div>
                 </div>
             </div>
-            <span class="bell">🔔</span>
+            <div class="top-actions">
+                <div class="lang-switch" role="tablist" aria-label="Language">
+                    <button type="button" id="lang-bn" class="active">বাংলা</button>
+                    <button type="button" id="lang-en">EN</button>
+                </div>
+                <button type="button" class="help-btn" id="help-btn" aria-label="Help">?</button>
+            </div>
         </div>
         <div class="amount-strip">
-            <span>পরিশোধযোগ্য মোট পরিমাণ</span>
+            <span data-i18n="pay_amount">পরিশোধযোগ্য মোট পরিমাণ</span>
             <div class="amt">৳ <span id="payment-amount">0.00</span></div>
         </div>
     </div>
 
     <!-- Vibe pre-step -->
     <div id="vibe-step" class="verify-box hidden">
-        <label>আপনি যে নাম্বার থেকে টাকা পাঠাবেন সেই নাম্বারটি লিখুন</label>
+        <label data-i18n="vibe_prompt">আপনি যে নাম্বার থেকে টাকা পাঠাবেন সেই নাম্বারটি লিখুন</label>
         <input type="tel" id="vibe-number" placeholder="01XXXXXXXXX" maxlength="11">
-        <button class="btn-primary" id="vibe-start-btn" onclick="startVibe()">চেকআউটে যান</button>
+        <button class="btn-primary" id="vibe-start-btn" onclick="startVibe()" data-i18n="vibe_go">চেকআউটে যান</button>
         <div id="vibe-step-status" class="status"></div>
     </div>
 
     <div id="checkout-main" class="hidden">
+        <div id="progress-card" class="progress-card hidden" role="status" aria-live="polite">
+            <div id="progress-title" class="progress-title"></div>
+            <div id="progress-sub" class="progress-sub"></div>
+        </div>
         <div class="tab-bar" id="tab-bar"></div>
         <div class="content" id="pay-content"></div>
 
-        <div class="verify-box">
-            <label for="trx-input" id="trx-label">ট্রানজেকশন আইডি (TrxID) দিন</label>
-            <input type="text" id="trx-input" placeholder="যেমন: 8A47K89J2B" autocomplete="off">
-            <button class="btn-primary" id="verify-btn" onclick="triggerVerification()">ভেরিফাই পেমেন্ট</button>
-            <div id="vibe-waiting" class="vibe-waiting hidden">
+        <!-- Vibe: automatic waiting only (no TrxID until fallback) -->
+        <div id="vibe-auto-panel" class="verify-box hidden">
+            <div id="vibe-waiting-main" class="vibe-waiting">
                 <div class="spinner"></div>
-                <span>পেমেন্টের জন্য অপেক্ষা... টাকা এলে স্বয়ংক্রিয়ভাবে নিশ্চিত হবে।</span>
+                <span id="vibe-wait-text" data-i18n="waiting_title">পেমেন্টের জন্য অপেক্ষা করা হচ্ছে</span>
             </div>
+            <div class="smart-steps" id="smart-steps">
+                <div id="step-ready" class="active" data-i18n="checkout_ready">✓ Checkout Ready</div>
+                <div id="step-wait" class="active" data-i18n="progress_waiting">● Waiting Payment</div>
+                <div id="step-detect" data-i18n="progress_detecting">○ Detecting</div>
+                <div id="step-verify" data-i18n="progress_verifying">○ Verifying</div>
+                <div id="step-done" data-i18n="progress_completed">○ Completed</div>
+            </div>
+            <div id="vibe-mode-tabs" class="verify-mode-tabs hidden">
+                <button type="button" class="active" data-sheet-mode="auto" data-i18n="automatic">Automatic</button>
+                <button type="button" data-sheet-mode="manual" data-i18n="manual">Manual</button>
+            </div>
+            <div id="vibe-tab-auto"></div>
+            <div id="vibe-tab-manual" class="hidden">
+                <label for="trx-input-vibe" data-i18n="trx_label">Transaction ID</label>
+                <input type="text" id="trx-input-vibe" placeholder="যেমন: 8A47K89J2B" autocomplete="off">
+                <button type="button" class="btn-primary" id="verify-btn-vibe" data-i18n="verify_btn">Verify Payment</button>
+            </div>
+            <button type="button" class="vibe-manual-link hidden" id="vibe-manual-link" data-i18n="didnt_receive">পেমেন্ট পেলেন না? ম্যানুয়ালি ভেরিফাই করুন</button>
             <div id="status-panel" class="status"></div>
         </div>
+
+        <!-- Legacy inline box removed from Normal mode — verify via FAB modal -->
+        <div id="inline-verify-box" class="verify-box hidden"></div>
 
         <div class="sync-note">
             📡 নাম্বারগুলো আপনার অ্যাক্টিভ ডিভাইসের SIM থেকে অটো-সিঙ্ক হয়। ম্যানুয়ালি যোগ/এডিট করা যায় না। নিষ্ক্রিয় SIM স্বয়ংক্রিয়ভাবে সরে যায়।
@@ -224,422 +518,47 @@
     </div>
 </div>
 
-<script>
-const urlParams = new URLSearchParams(window.location.search);
-const apiKey = urlParams.get('apiKey');
-const amount = urlParams.get('amount') || '0.00';
-const sessionToken = urlParams.get('session') || null;
+<button type="button" id="verify-fab" class="checkout-verify-fab hidden" aria-label="Verify Payment">
+    <span class="fab-icon" aria-hidden="true">🧾</span>
+</button>
 
-let checkoutMode = 'transaction';
-let checkoutDesign = 'design-1';
-let activeTab = 'send_money';
-let vibeRequestId = null, vibePollTimer = null;
-let successUrl = null, cancelUrl = null;
-let gateways = [], officialGateways = [], tabs = [];
-let providerBranding = {};
+<div id="verify-modal" class="checkout-verify-modal hidden" role="dialog" aria-modal="true" aria-labelledby="verify-modal-title">
+    <div class="verify-modal-backdrop" id="verify-modal-backdrop"></div>
+    <div class="verify-modal-panel">
+        <button type="button" class="verify-modal-close" id="verify-modal-close" aria-label="Close">×</button>
+        <h2 id="verify-modal-title" style="font-size:16px;font-weight:800;margin-bottom:12px" data-i18n="verify_payment">ভেরিফাই পেমেন্ট</h2>
+        <div id="verify-modal-tabs" class="verify-mode-tabs hidden">
+            <button type="button" data-sheet-mode="auto">Automatic</button>
+            <button type="button" data-sheet-mode="manual" class="active">Manual</button>
+        </div>
+        <div id="verify-modal-auto" class="hidden">
+            <p style="font-size:13px;color:var(--muted);text-align:center;padding:12px 0">
+                পেমেন্টের জন্য অপেক্ষা করা হচ্ছে...
+            </p>
+        </div>
+        <div id="verify-modal-manual">
+            <label for="trx-input" data-i18n="trx_label">Transaction ID</label>
+            <input type="text" id="trx-input" placeholder="যেমন: 8A47K89J2B" autocomplete="off">
+            <button type="button" class="btn-primary" id="verify-btn" data-i18n="verify_btn">Verify Payment</button>
+        </div>
+        <div id="status-panel-modal" class="status"></div>
+    </div>
+</div>
 
-const TAB_FALLBACK = {
-    send_money: { icon: '💸', label: 'Send Money' },
-    cash_out:   { icon: '💵', label: 'Cash Out' },
-    payment:    { icon: '📱', label: 'Payment' },
-    bank:       { icon: '🏦', label: 'Bank' },
-    card:       { icon: '💳', label: 'Card' },
-};
-const COLORS = { bkash: '#E2136E', nagad: '#EF4123', rocket: '#8C3494', upay: '#00B99B' };
+<div id="help-modal" class="checkout-verify-modal hidden" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
+    <div class="verify-modal-backdrop" id="help-modal-backdrop"></div>
+    <div class="verify-modal-panel">
+        <button type="button" class="verify-modal-close" id="help-modal-close" aria-label="Close">×</button>
+        <h2 id="help-modal-title" style="font-size:16px;font-weight:800;margin-bottom:12px" data-i18n="help_title">কীভাবে পেমেন্ট করবেন?</h2>
+        <div style="display:grid;gap:8px;font-size:14px;font-weight:700">
+            <div data-i18n="help_step1">① নাম্বার কপি করুন</div>
+            <div data-i18n="help_step2">② টাকা পাঠান</div>
+            <div data-i18n="help_step3">③ Verify করুন</div>
+            <div data-i18n="help_step4">④ Done</div>
+        </div>
+    </div>
+</div>
 
-document.getElementById('payment-amount').textContent = parseFloat(amount).toFixed(2);
-
-function provKey(p) { return (p || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
-function provColor(p) { return COLORS[provKey(p)] || COLORS[(p||'').toLowerCase()] || '#94a3b8'; }
-function provInitial(p) { return (p||'?').charAt(0).toUpperCase(); }
-function provBrand(p) {
-    // Match the backend's provider key normalization so multi-word providers resolve.
-    return providerBranding[provKey(p)] || providerBranding[(p || '').toLowerCase()] || { displayName: p, logoUrl: '' };
-}
-// Per-template branding: branding is keyed by `t<templateId>` (one slot per SMS template).
-function provBrandByTemplate(tid) {
-    if (tid === undefined || tid === null || tid === '') return null;
-    return providerBranding['t' + tid] || null;
-}
-// টেমপ্লেট অনুযায়ী লোগো — templateId থাকলে সেটির লোগো, না থাকলে খালি।
-function templateLogoUrl(tid) {
-    const b = provBrandByTemplate(tid);
-    return (b && b.logoUrl) ? b.logoUrl : '';
-}
-// সম্পূর্ণ http(s):// URL অথবা সার্ভারে আপলোড করা relative path (uploads/...) —
-// দুটোই গ্রহণযোগ্য। খালি হলে emoji/initial-avatar fallback দেখায়।
-function isHttpUrl(u) { return typeof u === 'string' && /^https?:\/\//i.test(u.trim()); }
-function hasImg(u) { return typeof u === 'string' && u.trim() !== ''; }
-// relative path কে origin-root থেকে absolute বানাও (checkout.html একই origin এ সার্ভ হয়)।
-function imgSrc(u) {
-    u = (u || '').trim();
-    if (!u) return '';
-    if (/^https?:\/\//i.test(u) || u.startsWith('data:')) return u;
-    return '/' + u.replace(/^\/+/, '');
-}
-
-// Tab icon: emoji সবসময় হার্ডকোড করা থাকে (তাৎক্ষণিক লোড হয়)। ছবি দিলে সেটি
-// progressive enhancement — লোড ব্যর্থ/ধীর হলে onerror তৎক্ষণাৎ emoji দেখায়।
-function tabIconHtml(t) {
-    const fb = TAB_FALLBACK[t.id] || { icon: '💳', label: t.label };
-    const emoji = t.icon || fb.icon;
-    if (hasImg(t.iconUrl)) {
-        return `<img src="${esc(imgSrc(t.iconUrl))}" alt="" width="22" height="22" decoding="async" loading="eager" data-emoji="${esc(emoji)}" onerror="iconFail(this)">`;
-    }
-    return esc(emoji);
-}
-// লোড ব্যর্থ হলে img সরিয়ে emoji বসাও — ভাঙা ছবির বদলে সবসময় কিছু দেখাবে।
-function iconFail(img) {
-    const s = document.createElement('span');
-    s.textContent = img.getAttribute('data-emoji') || '💳';
-    img.replaceWith(s);
-}
-// প্রোভাইডার লোগো — টেমপ্লেট অনুযায়ী (templateId), px দিয়ে সাইজ নিয়ন্ত্রণ
-// (নামের পাশে বড়, নাম্বারের পাশে ছোট)। provider শুধু fallback রঙ/আদ্যক্ষরের জন্য।
-function providerLogoHtml(tid, provider, px) {
-    px = px || 28;
-    const logoUrl = templateLogoUrl(tid);
-    const color = provColor(provider);
-    const initial = provInitial(provider);
-    const radius = Math.round(px * 0.28);
-    if (hasImg(logoUrl)) {
-        return `<img src="${esc(imgSrc(logoUrl))}" alt="" style="width:${px}px;height:${px}px;border-radius:${radius}px;object-fit:contain;background:#fff;flex:0 0 auto" decoding="async" loading="lazy" data-initial="${esc(initial)}" data-color="${esc(color)}" data-px="${px}" onerror="logoFail(this)">`;
-    }
-    return `<span class="prov-avatar" style="width:${px}px;height:${px}px;border-radius:${radius}px;background:${color};font-size:${Math.round(px * 0.42)}px;flex:0 0 auto">${initial}</span>`;
-}
-// লোগো লোড ব্যর্থ হলে একই সাইজের রঙিন initial-অ্যাভাটার fallback।
-function logoFail(img) {
-    const px = parseInt(img.getAttribute('data-px') || '28', 10);
-    const s = document.createElement('span');
-    s.className = 'prov-avatar';
-    s.style.width = px + 'px';
-    s.style.height = px + 'px';
-    s.style.borderRadius = Math.round(px * 0.28) + 'px';
-    s.style.background = img.getAttribute('data-color') || '#94a3b8';
-    s.style.fontSize = Math.round(px * 0.42) + 'px';
-    s.style.flex = '0 0 auto';
-    s.textContent = img.getAttribute('data-initial') || '?';
-    img.replaceWith(s);
-}
-// Design-2 কার্ডের বড় লোগো ব্যর্থ হলে .logo অ্যাভাটার fallback।
-function cardLogoFail(img) {
-    const d = document.createElement('div');
-    d.className = 'logo';
-    d.style.background = img.getAttribute('data-color') || '#94a3b8';
-    d.textContent = img.getAttribute('data-initial') || '?';
-    img.replaceWith(d);
-}
-
-async function fetchLayout() {
-    if (!apiKey) { showStatus('API Key অনুপস্থিত!', 'err'); return; }
-    try {
-        const r = await fetch(`/api/checkout/${apiKey}`);
-        if (!r.ok) throw new Error('load failed');
-        const data = await r.json();
-
-        checkoutMode = data.checkoutMode || 'transaction';
-        checkoutDesign = data.checkoutDesign || data.checkoutTheme || 'design-1';
-        successUrl = data.successUrl || data.redirectUrl;
-        cancelUrl = data.cancelUrl;
-        gateways = data.activeGateways || [];
-        officialGateways = data.officialGateways || [];
-        providerBranding = data.providerBranding || {};
-        const allTabs = data.checkoutTabsAll || {};
-        tabs = data.checkoutTabs || Object.values(allTabs).filter(t => t.enabled);
-
-        document.getElementById('merchant-name').textContent = data.companyName || data.siteName || 'Paychek';
-        const sub = document.getElementById('merchant-sub');
-        if (data.siteUrl) { sub.textContent = data.siteUrl.replace(/^https?:\/\//, ''); sub.style.display = 'block'; }
-        else sub.style.display = 'none';
-        if (hasImg(data.logoUrl)) {
-            const lg = document.getElementById('merchant-logo');
-            lg.onerror = () => lg.classList.add('hidden');
-            lg.src = imgSrc(data.logoUrl); lg.classList.remove('hidden');
-        }
-
-        if (checkoutMode === 'merchant_vibe') {
-            document.getElementById('vibe-step').classList.remove('hidden');
-        } else {
-            document.getElementById('checkout-main').classList.remove('hidden');
-            renderTabs();
-            renderContent();
-        }
-    } catch (e) {
-        console.error(e);
-        document.getElementById('checkout-main').classList.remove('hidden');
-        document.getElementById('pay-content').innerHTML = '<div class="empty">লোড ব্যর্থ। আবার চেষ্টা করুন।</div>';
-    }
-}
-
-function renderTabs() {
-    const bar = document.getElementById('tab-bar');
-    if (checkoutDesign === 'design-3' || checkoutDesign === 'design-4' || checkoutDesign === 'design-5') {
-        bar.classList.add('hidden');
-        return;
-    }
-    bar.classList.remove('hidden');
-    bar.innerHTML = '';
-    if (!tabs.length) tabs = [{ id: 'send_money', label: 'Send Money' }];
-    if (!tabs.find(t => t.id === activeTab)) activeTab = tabs[0].id;
-
-    tabs.forEach(t => {
-        const fb = TAB_FALLBACK[t.id] || { icon: '💳', label: t.label || 'Tab' };
-        const btn = document.createElement('button');
-        btn.className = 'tab-btn' + (t.id === activeTab ? ' active' : '');
-        btn.innerHTML = `<span class="ico">${tabIconHtml(t)}</span><span class="lbl">${esc(t.label || fb.label)}</span>`;
-        btn.onclick = () => { activeTab = t.id; renderTabs(); renderContent(); };
-        bar.appendChild(btn);
-    });
-}
-
-function itemsForTab(tabId) {
-    const simItems = gateways.filter(g => g.tab === tabId);
-    const liveItems = officialGateways.filter(o => o.tab === tabId);
-    return { simItems, liveItems };
-}
-
-function renderContent() {
-    const el = document.getElementById('pay-content');
-    const { simItems, liveItems } = itemsForTab(activeTab);
-
-    if (checkoutDesign === 'design-2') el.innerHTML = renderDesign2(simItems, liveItems);
-    else if (checkoutDesign === 'design-3' || checkoutDesign === 'design-4' || checkoutDesign === 'design-5') el.innerHTML = renderDesign3(simItems, liveItems);
-    else el.innerHTML = renderDesign1(simItems, liveItems);
-
-    bindLiveButtons();
-    bindAccordions();
-}
-
-/* ── Design 1: List View — grouped blocks per provider/kind ── */
-function renderDesign1(simItems, liveItems) {
-    let html = '';
-    const groups = groupBy(simItems, g => g.groupLabel || `${g.provider} Personal`);
-    for (const [label, items] of Object.entries(groups)) {
-        const prov = items[0]?.provider || label;
-        const groupTid = items[0]?.templateId;
-        // নামের পাশে বড় লোগো
-        html += `<div class="group-title" style="display:flex;align-items:center;gap:10px">
-            ${providerLogoHtml(groupTid, prov, 40)}<span>${esc(label)}</span></div>`;
-        items.forEach(g => {
-            // নাম্বারের পাশে ছোট লোগো
-            html += `<div class="list-row">
-                <span style="display:flex;align-items:center;gap:10px">${providerLogoHtml(g.templateId, g.provider, 24)}<span class="num">${esc(g.number)}</span></span>
-                <button class="btn-copy" onclick="copyNum('${esc(g.number)}',this)">কপি করুন</button>
-            </div>`;
-        });
-    }
-    liveItems.forEach(o => { html += liveCardHtml(o); });
-    if (!html) html = '<div class="empty">এই ট্যাবে কোনো পেমেন্ট মেথড নেই।</div>';
-    return html;
-}
-
-/* ── Design 2: Card View — one card per provider group ── */
-function renderDesign2(simItems, liveItems) {
-    const groups = groupBy(simItems, g => g.groupLabel || g.provider);
-    let html = '<div class="card-grid">';
-    for (const [label, items] of Object.entries(groups)) {
-        const g = items[0];
-        const c = provColor(g.provider);
-        const cardLogo = templateLogoUrl(g.templateId);
-        const nums = items.map(i => i.number).join(', ');
-        html += `<div class="prov-card" onclick="copyNum('${esc(g.number)}',null)">
-            ${hasImg(cardLogo)
-                ? `<img src="${esc(imgSrc(cardLogo))}" style="width:56px;height:56px;border-radius:16px;margin:0 auto 10px;object-fit:contain;background:#fff" decoding="async" loading="lazy" data-initial="${esc(provInitial(g.provider))}" data-color="${esc(c)}" onerror="cardLogoFail(this)">`
-                : `<div class="logo" style="background:${c}">${provInitial(g.provider)}</div>`}
-            <div class="name">${esc(label)}</div>
-            <div class="sub">${esc(nums)}</div>
-        </div>`;
-    }
-    liveItems.forEach(o => {
-        html += `<div class="prov-card" data-live="${esc(o.provider)}">
-            <div class="logo" style="background:var(--purple)">⚡</div>
-            <div class="name">${esc(o.displayName)}</div>
-            <div class="sub"><span class="live-badge">Live Payment</span></div>
-        </div>`;
-    });
-    html += '</div>';
-    if (simItems.length === 0 && liveItems.length === 0) html = '<div class="empty">এই ট্যাবে কোনো পেমেন্ট মেথড নেই।</div>';
-    return html;
-}
-
-/* ── Design 3: Active tab expanded + other tabs as switcher below ── */
-function renderDesign3(simItems, liveItems) {
-    const activeMeta = tabs.find(t => t.id === activeTab) || { label: 'Payment' };
-    let html = `<div class="group-title" style="margin-top:0">${esc(activeMeta.label)}</div>`;
-    const groups = groupBy(simItems, g => g.provider);
-    for (const [prov, items] of Object.entries(groups)) {
-        const b = provBrand(prov);
-        const groupTid = items[0]?.templateId;
-        html += `<div class="accordion"><div class="acc-head open">
-            <span style="display:flex;align-items:center;gap:10px">${providerLogoHtml(groupTid, prov, 34)}${esc(b.displayName || prov)}</span>
-            <span class="chev">▼</span></div><div class="acc-body open">`;
-        items.forEach(g => {
-            html += `<div class="acc-item">
-                <span style="margin-right:8px;display:flex;align-items:center">${providerLogoHtml(g.templateId, g.provider, 22)}</span>
-                <div class="acc-info"><div class="pname">${esc(g.displayName||g.provider)}</div><div class="pnum">${esc(g.number)}</div></div>
-                <button class="acc-copy" onclick="copyNum('${esc(g.number)}',this)">কপি</button>
-            </div>`;
-        });
-        html += '</div></div>';
-    }
-    liveItems.forEach(o => { html += liveCardHtml(o); });
-    if (simItems.length === 0 && liveItems.length === 0) html += '<div class="empty">এই ট্যাবে কোনো পেমেন্ট মেথড নেই।</div>';
-
-    html += '<div class="d3-tab-switcher">';
-    tabs.filter(t => t.id !== activeTab).forEach(t => {
-        html += `<div class="d3-tab-bar" onclick="switchTab('${esc(t.id)}')">
-            <div class="left"><span class="ico">${tabIconHtml(t)}</span><span>${esc(t.label)}</span></div>
-            <span class="chev">▼</span></div>`;
-    });
-    html += '</div>';
-    return html;
-}
-function switchTab(id) { activeTab = id; renderTabs(); renderContent(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
-
-/* ── Design 4: Compact 3-column grid ── */
-function renderDesign4(simItems, liveItems) {
-    let html = '<div class="card-grid" style="grid-template-columns:repeat(3,1fr)">';
-    simItems.forEach(g => {
-        html += `<div class="prov-card" style="padding:10px" onclick="copyNum('${esc(g.number)}',null)">
-            <div class="name" style="font-size:11px">${esc(g.provider)}</div>
-            <div class="sub">${esc(g.number)}</div>
-        </div>`;
-    });
-    html += '</div>';
-    liveItems.forEach(o => { html += liveCardHtml(o); });
-    if (simItems.length === 0 && liveItems.length === 0) html = '<div class="empty">এই ট্যাবে কোনো পেমেন্ট মেথড নেই।</div>';
-    return html;
-}
-
-/* ── Design 5: Horizontal scroll cards ── */
-function renderDesign5(simItems, liveItems) {
-    let html = '<div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:6px">';
-    simItems.forEach(g => {
-        const c = provColor(g.provider);
-        html += `<div style="min-width:120px;border:1px solid var(--border);border-radius:14px;padding:12px;text-align:center" onclick="copyNum('${esc(g.number)}',null)">
-            <div class="logo" style="background:${c};margin:0 auto 8px">${provInitial(g.provider)}</div>
-            <div class="sub">${esc(g.number)}</div>
-        </div>`;
-    });
-    html += '</div>';
-    liveItems.forEach(o => { html += liveCardHtml(o); });
-    if (simItems.length === 0 && liveItems.length === 0) html = '<div class="empty">এই ট্যাবে কোনো পেমেন্ট মেথড নেই।</div>';
-    return html;
-}
-
-function liveCardHtml(o) {
-    return `<div class="live-card" data-live="${esc(o.provider)}">
-        <div style="flex:1">
-            <div style="font-weight:700">${esc(o.displayName)}</div>
-            <span class="live-badge">লাইভ পেমেন্ট — অফিসিয়াল গেটওয়ে</span>
-        </div><span>→</span>
-    </div>`;
-}
-
-function bindLiveButtons() {
-    document.querySelectorAll('[data-live]').forEach(el => {
-        el.onclick = () => startLivePay(el.dataset.live);
-    });
-}
-function bindAccordions() { /* toggled inline */ }
-function toggleAcc(head) {
-    head.classList.toggle('open');
-    head.nextElementSibling.classList.toggle('open');
-}
-
-function groupBy(arr, fn) {
-    return arr.reduce((acc, item) => {
-        const k = fn(item);
-        (acc[k] = acc[k] || []).push(item);
-        return acc;
-    }, {});
-}
-function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/'/g,'&#39;'); }
-
-function copyNum(num, btn) {
-    navigator.clipboard.writeText(num).then(() => {
-        if (btn) { const o = btn.textContent; btn.textContent = '✓'; btn.classList.add('copied'); setTimeout(() => { btn.textContent = o; btn.classList.remove('copied'); }, 1500); }
-    }).catch(() => {});
-}
-
-async function startLivePay(provider) {
-    try {
-        const r = await fetch(`/api/checkout/${apiKey}/live-init`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider, amount: parseFloat(amount) })
-        });
-        const res = await r.json();
-        if (res.success && res.redirectUrl) window.location.href = res.redirectUrl;
-        else showStatus(res.error || 'লাইভ পেমেন্ট শুরু করা যায়নি।', 'err');
-    } catch (e) { showStatus('সংযোগ ত্রুটি।', 'err'); }
-}
-
-/* ── Vibe Mode ── */
-async function startVibe() {
-    const norm = document.getElementById('vibe-number').value.replace(/\D/g,'').replace(/^880/,'').slice(-11);
-    if (norm.length !== 11) { showVibeStatus('সঠিক ১১-সংখ্যার নাম্বার দিন।','err'); return; }
-    document.getElementById('vibe-start-btn').disabled = true;
-    try {
-        const r = await fetch(`/api/checkout/${apiKey}/vibe-init`, {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ customerNumber: norm, amount: parseFloat(amount) })
-        });
-        const res = await r.json();
-        if (!res.success) { showVibeStatus(res.error||'ব্যর্থ','err'); document.getElementById('vibe-start-btn').disabled=false; return; }
-        vibeRequestId = res.requestId;
-        document.getElementById('vibe-step').classList.add('hidden');
-        document.getElementById('checkout-main').classList.remove('hidden');
-        document.getElementById('vibe-waiting').classList.remove('hidden');
-        document.getElementById('trx-label').textContent = 'ম্যাচ না হলে TrxID দিয়ে ভেরিফাই করুন';
-        renderTabs(); renderContent(); startVibePolling();
-    } catch(e) { showVibeStatus('সার্ভার ত্রুটি।','err'); document.getElementById('vibe-start-btn').disabled=false; }
-}
-function startVibePolling() {
-    if (vibePollTimer) clearInterval(vibePollTimer);
-    vibePollTimer = setInterval(async () => {
-        if (!vibeRequestId) return;
-        try {
-            const r = await fetch(`/api/checkout/vibe-status/${vibeRequestId}`);
-            const res = await r.json();
-            if (res.status === 'matched') { stopVibe(); showStatus('পেমেন্ট স্বয়ংক্রিয়ভাবে নিশ্চিত! ✓','ok'); redirectSuccess(res.trxId); }
-            else if (res.status === 'expired') { stopVibe(); showStatus('সময় শেষ। TrxID দিয়ে ভেরিফাই করুন।','err'); }
-        } catch(_) {}
-    }, 4000);
-}
-function stopVibe() { if(vibePollTimer){clearInterval(vibePollTimer);vibePollTimer=null;} document.getElementById('vibe-waiting').classList.add('hidden'); }
-
-async function triggerVerification() {
-    const trx = document.getElementById('trx-input').value.trim();
-    if (!trx) { showStatus('TrxID লিখুন।','err'); return; }
-    const btn = document.getElementById('verify-btn');
-    btn.disabled = true; showStatus('যাচাই করা হচ্ছে...','load');
-    try {
-        const r = await fetch('/api/checkout/verify', {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ apiKey, trxId: trx, amount: parseFloat(amount), session: sessionToken })
-        });
-        const res = await r.json();
-        if (res.success) { stopVibe(); showStatus(res.message,'ok'); if(res.redirectUrl) setTimeout(()=>location.href=res.redirectUrl,2000); }
-        else { showStatus(res.message||'ভেরিফিকেশন ব্যর্থ।','err'); btn.disabled=false; }
-    } catch(e) { showStatus('সার্ভার ত্রুটি।','err'); btn.disabled=false; }
-}
-
-function redirectSuccess(trxId) {
-    if (!successUrl) return;
-    const sep = successUrl.includes('?') ? '&' : '?';
-    setTimeout(() => { location.href = `${successUrl}${sep}trxId=${encodeURIComponent(trxId||'')}&amount=${encodeURIComponent(amount)}&status=success`; }, 2000);
-}
-function showStatus(t, cls) { const p=document.getElementById('status-panel'); p.className='status '+cls; p.textContent=t; }
-function showVibeStatus(t, cls) { const p=document.getElementById('vibe-step-status'); p.className='status '+cls; p.textContent=t; }
-
-window.onload = fetchLayout;
-
-// Service worker: cache the checkout shell, logos & icons so the page loads
-// once and then serves instantly from cache (stale-while-revalidate). Payment
-// API calls are never cached.
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(function () { /* ignore */ });
-}
-</script>
+<script type="module" src="/js/checkout/app.js"></script>
 </body>
 </html>

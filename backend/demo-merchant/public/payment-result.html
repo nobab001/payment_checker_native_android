@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Payment Result — Demo Merchant</title>
+
+  <link rel="stylesheet" href="/demo-merchant/css/app.css" />
+
+</head>
+
+<body>
+
+  <div class="layout" style="max-width:520px">
+
+    <div class="panel">
+
+      <h2 id="title">Processing payment…</h2>
+
+      <p id="message" class="user-meta">Confirming with PayCheck.</p>
+
+      <div id="details" style="margin:1rem 0"></div>
+
+      <a href="/demo-merchant/" id="back-link" class="btn">Back to Demo Merchant</a>
+
+    </div>
+
+  </div>
+
+  <script src="/demo-merchant/js/api.js"></script>
+
+  <script>
+
+    (async function () {
+
+      const params = new URLSearchParams(window.location.search);
+
+      const order = params.get('order');
+
+      const sessionToken = params.get('session');
+
+      const isCancel = window.location.pathname.includes('/cancel');
+
+      const title = document.getElementById('title');
+
+      const message = document.getElementById('message');
+
+      const details = document.getElementById('details');
+
+      const backLink = document.getElementById('back-link');
+
+
+
+      function showOrderDetails(o) {
+
+        details.innerHTML = `
+
+          <p>Order: <strong>${o.orderNumber}</strong></p>
+
+          <p>Amount: <strong>৳${Number(o.amount).toFixed(2)}</strong></p>
+
+          <p>Status: <strong>${o.status}</strong></p>
+
+        `;
+
+      }
+
+
+
+      if (!order) {
+
+        title.textContent = isCancel ? 'Payment cancelled' : 'Payment complete';
+
+        message.textContent = 'No order reference in URL.';
+
+        return;
+
+      }
+
+
+
+      if (isCancel) {
+
+        title.textContent = 'Payment cancelled';
+
+        message.textContent = `Order ${order} was not completed.`;
+
+        return;
+
+      }
+
+
+
+      const token = DemoApi.getToken();
+
+
+
+      try {
+
+        let result;
+
+        if (token) {
+
+          result = await DemoApi.confirmPayment(order);
+
+        } else if (sessionToken) {
+
+          result = await DemoApi.returnConfirmPayment(order, sessionToken);
+
+        } else {
+
+          title.textContent = 'Payment returned';
+
+          message.textContent = 'লগইন করুন অথবা একই ব্রাউজার/ঠিকানা দিয়ে ডেমো মার্চেন্ট খুলুন।';
+
+          details.innerHTML = `<p>Order: <strong>${order}</strong></p>`;
+
+          return;
+
+        }
+
+
+
+        const o = result.order;
+
+        if (o.status === 'paid') {
+
+          title.textContent = 'Payment successful';
+
+          message.textContent = 'Your wallet or order has been updated.';
+
+        } else {
+
+          title.textContent = 'Payment pending';
+
+          message.textContent = `Status: ${o.status}. Webhook may still be processing.`;
+
+        }
+
+        showOrderDetails(o);
+
+      } catch (err) {
+
+        title.textContent = 'Could not confirm payment';
+
+        message.textContent = err.message || 'Try refreshing from the app.';
+
+        details.innerHTML = `<p>Order: <strong>${order}</strong></p>`;
+
+      }
+
+    })();
+
+  </script>
+
+</body>
+
+</html>
+

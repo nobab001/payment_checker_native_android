@@ -41,10 +41,10 @@ async function parseRawSms(rawBody, senderHint = '', providerTag = '') {
       isMatch = true;
     }
 
-    // 1. Check if Sender ID matches
+    // 1. Check if Sender ID matches (exact — no prefix/substring)
     if (!isMatch && cleanSender && template.sender_id) {
-      const senderPattern = new RegExp(template.sender_id, 'i');
-      if (senderPattern.test(cleanSender)) {
+      const targetSender = String(template.sender_id).trim().toLowerCase();
+      if (cleanSender === targetSender) {
         isMatch = true;
       }
     }
@@ -173,6 +173,9 @@ function smartExtractAmount(body) {
  */
 function smartExtractSender(body, senderHint) {
   const patterns = [
+    /from\s+(0\d{3}[*xX]{2,}\d{3})/i,
+    /from\s+(0\d{3}\*+\d{3})/i,
+    /from\s+(0\d{10})/i,
     /from\s+(?:A\/C[:\s]*)?([0-9*xX\/]+(?:\d{2,}))/i,
     /from\s+([\d\*xX]{5,})/i,
   ];

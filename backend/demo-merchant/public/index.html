@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Demo Merchant — PayCheck</title>
+  <link rel="stylesheet" href="/demo-merchant/css/app.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">Demo <span>Merchant</span></div>
+    <div id="header-actions" class="hidden" style="display:flex;align-items:center;gap:0.5rem">
+      <button class="btn btn-outline btn-sm hidden" id="btn-admin-mode" type="button">এডমিন মোড</button>
+      <span class="user-meta" id="user-email"></span>
+      <button class="btn btn-outline btn-sm" id="btn-logout" type="button">Logout</button>
+    </div>
+  </header>
+
+  <!-- Auth -->
+  <section id="view-auth" class="layout" style="max-width:480px">
+    <div class="panel">
+      <h2>Demo Merchant Login</h2>
+      <p class="user-meta" style="margin-bottom:1rem">Test harness for PayCheck — not a production store.</p>
+      <div id="auth-alert" class="alert hidden"></div>
+      <div class="tabs">
+        <button type="button" id="auth-tab-login" class="active">Login</button>
+        <button type="button" id="auth-tab-register">Register</button>
+      </div>
+      <form id="form-login" class="form-grid">
+        <label>Email<input type="email" id="login-email" required autocomplete="username" /></label>
+        <label>Password<input type="password" id="login-password" required autocomplete="current-password" /></label>
+        <button type="submit" class="btn">Login</button>
+        <button type="button" class="btn-text-link" id="btn-forgot-password">Forgot password?</button>
+      </form>
+      <form id="form-forgot" class="form-grid hidden">
+        <p class="user-meta">Set a new password for your demo account.</p>
+        <label>Email<input type="email" id="forgot-email" required autocomplete="username" /></label>
+        <label>New password (min 6)<input type="password" id="forgot-password" required minlength="6" autocomplete="new-password" /></label>
+        <label>Confirm password<input type="password" id="forgot-password-confirm" required minlength="6" autocomplete="new-password" /></label>
+        <button type="submit" class="btn">Reset password</button>
+        <button type="button" class="btn-text-link" id="btn-back-to-login">← Back to login</button>
+      </form>
+      <form id="form-register" class="form-grid hidden">
+        <label>Full name<input type="text" id="reg-name" required /></label>
+        <label>Email<input type="email" id="reg-email" required autocomplete="username" /></label>
+        <label>Password (min 6)<input type="password" id="reg-password" required minlength="6" autocomplete="new-password" /></label>
+        <button type="submit" class="btn">Create account</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- App -->
+  <div id="view-app" class="hidden">
+    <header class="app-header" style="position:static;border-top:1px solid var(--border)">
+      <nav class="nav" id="nav-customer">
+        <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+        <button class="nav-btn" data-view="wallet">Wallet</button>
+        <button class="nav-btn" data-view="addBalance">Add Balance</button>
+        <button class="nav-btn" data-view="products">Products</button>
+        <button class="nav-btn" data-view="orders">Orders</button>
+        <button class="nav-btn" data-view="transactions">Transactions</button>
+      </nav>
+      <nav class="nav hidden" id="nav-admin">
+        <button class="nav-btn active" data-view="adminDashboard">এডমিন ড্যাশবোর্ড</button>
+        <button class="nav-btn" data-view="adminProducts">প্রোডাক্ট ম্যানেজ</button>
+        <button class="nav-btn" data-view="adminUsers">ইউজার ম্যানেজ</button>
+      </nav>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <h3>Wallet</h3>
+        <div class="wallet-card">
+          <div class="label">Current balance</div>
+          <div class="amount" id="sidebar-balance">৳0.00</div>
+        </div>
+        <p class="user-meta">Payments go through PayCheck Checkout — this app only consumes the platform API.</p>
+      </aside>
+
+      <main class="main">
+        <section id="panel-dashboard" class="panel">
+          <h2>Dashboard</h2>
+          <div id="dash-alert" class="alert hidden"></div>
+          <div class="stats-grid">
+            <div class="stat"><div class="label">Balance</div><div class="value" id="dash-balance">৳0</div></div>
+            <div class="stat"><div class="label">Paid orders</div><div class="value" id="stat-paid">0</div></div>
+            <div class="stat"><div class="label">Pending</div><div class="value" id="stat-pending">0</div></div>
+            <div class="stat"><div class="label">Failed</div><div class="value" id="stat-failed">0</div></div>
+            <div class="stat"><div class="label">Cancelled</div><div class="value" id="stat-cancelled">0</div></div>
+            <div class="stat"><div class="label">Paid volume</div><div class="value" id="stat-paid-amount">৳0</div></div>
+          </div>
+          <h3 style="margin:1rem 0 0.5rem;font-size:0.95rem">Recent orders</h3>
+          <div id="dash-orders" class="table-wrap"></div>
+          <h3 style="margin:1rem 0 0.5rem;font-size:0.95rem">Recent transactions</h3>
+          <div id="dash-txns" class="table-wrap"></div>
+        </section>
+
+        <section id="panel-wallet" class="panel hidden">
+          <h2>Wallet</h2>
+          <div id="wallet-alert" class="alert hidden"></div>
+          <div class="wallet-card" style="margin-bottom:1rem">
+            <div class="label">Current balance</div>
+            <div class="amount" id="wallet-balance">৳0.00</div>
+          </div>
+          <h3 style="margin-bottom:0.5rem;font-size:0.95rem">Balance history</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Balance after</th><th>Description</th></tr></thead>
+              <tbody id="wallet-history-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="panel-add-balance" class="panel hidden">
+          <h2>Add Balance</h2>
+          <div id="recharge-alert" class="alert hidden"></div>
+          <p class="user-meta">Select an amount or enter custom — you will be redirected to PayCheck Checkout.</p>
+          <div id="amount-presets" class="amount-presets"></div>
+          <div class="form-grid" style="margin-top:1rem">
+            <label>Custom amount (BDT)<input type="number" id="custom-amount" min="1" step="1" placeholder="e.g. 750" /></label>
+            <button type="button" class="btn" id="btn-recharge">Pay with PayCheck Checkout</button>
+          </div>
+        </section>
+
+        <section id="panel-products" class="panel hidden">
+          <h2>Demo Products</h2>
+          <p class="user-meta" style="margin-bottom:1rem">Sandbox catalog — Buy Now opens PayCheck Checkout.</p>
+          <div id="product-grid" class="product-grid"></div>
+        </section>
+
+        <section id="panel-orders" class="panel hidden">
+          <h2>Orders</h2>
+          <div class="tabs">
+            <select id="order-filter">
+              <option value="">All</option>
+              <option value="pending">Pending</option>
+              <option value="paid">Paid</option>
+              <option value="failed">Failed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+          <div id="orders-table" class="table-wrap"></div>
+        </section>
+
+        <section id="panel-transactions" class="panel hidden">
+          <h2>Transactions</h2>
+          <div class="tabs">
+            <select id="txn-filter">
+              <option value="">All types</option>
+              <option value="wallet_recharge">Wallet recharge</option>
+              <option value="product_purchase">Product purchase</option>
+            </select>
+          </div>
+          <div id="transactions-table" class="table-wrap"></div>
+        </section>
+
+        <!-- Admin panels -->
+        <section id="panel-admin-dashboard" class="panel hidden">
+          <h2>এডমিন ড্যাশবোর্ড</h2>
+          <p class="user-meta" style="margin-bottom:1rem">এখান থেকে দোকানের সবকিছু পরিচালনা করুন। কাস্টমার মোডে গেলে শুধু কেনাকাটা দেখা যাবে।</p>
+          <div class="stats-grid" id="admin-stats-grid"></div>
+        </section>
+
+        <section id="panel-admin-products" class="panel hidden">
+          <h2>প্রোডাক্ট ম্যানেজ</h2>
+          <div id="admin-products-alert" class="alert hidden"></div>
+          <div class="panel" style="background:var(--surface2);margin-bottom:1rem">
+            <h3 style="font-size:1rem;margin-bottom:0.75rem" id="admin-product-form-title">নতুন প্রোডাক্ট যোগ করুন</h3>
+            <form id="form-admin-product" class="form-grid" style="max-width:100%">
+              <input type="hidden" id="admin-product-id" value="" />
+              <label>SKU (ইউনিক কোড)<input type="text" id="admin-product-sku" required placeholder="DEMO-ITEM-01" /></label>
+              <label>নাম<input type="text" id="admin-product-name" required /></label>
+              <label>বিবরণ<textarea id="admin-product-desc" rows="2" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:0.65rem;border-radius:8px"></textarea></label>
+              <label>দাম (৳)<input type="number" id="admin-product-price" min="1" step="1" required /></label>
+              <label>ছবি<input type="file" id="admin-product-image" accept="image/*" /></label>
+              <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+                <button type="submit" class="btn" id="btn-admin-product-save">সেভ করুন</button>
+                <button type="button" class="btn btn-outline hidden" id="btn-admin-product-cancel">বাতিল</button>
+              </div>
+            </form>
+          </div>
+          <div id="admin-product-list" class="product-grid"></div>
+        </section>
+
+        <section id="panel-admin-users" class="panel hidden">
+          <h2>ইউজার ম্যানেজ</h2>
+          <div id="admin-users-alert" class="alert hidden"></div>
+          <p class="user-meta" style="margin-bottom:1rem">যেকোনো ইউজারকে এডমিন বানাতে বা সরাতে টগল করুন।</p>
+          <div id="admin-users-table" class="table-wrap"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('view-app').addEventListener('transitionend', () => {
+      document.getElementById('header-actions').classList.toggle('hidden', document.getElementById('view-app').classList.contains('hidden'));
+    });
+    const obs = new MutationObserver(() => {
+      document.getElementById('header-actions').classList.toggle('hidden', document.getElementById('view-app').classList.contains('hidden'));
+    });
+    obs.observe(document.getElementById('view-app'), { attributes: true, attributeFilter: ['class'] });
+  </script>
+  <script src="/demo-merchant/js/api.js"></script>
+  <script src="/demo-merchant/js/app.js"></script>
+</body>
+</html>

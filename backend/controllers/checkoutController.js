@@ -1,9 +1,10 @@
 const prisma = require('../db/prisma');
 const axios = require('axios');
 const merchantCallback = require('../services/merchantCallback');
-const paymentFlow = require('./paymentFlowController');
 const layoutHelper = require('../services/checkoutLayoutHelper');
 const checkoutData = require('../services/checkoutDataService');
+const vibeMatchService = require('../services/vibeMatchService');
+const checkoutPaymentBridge = require('../services/checkoutPaymentBridge');
 
 // Full column set needed to build an enriched, signed merchant callback.
 const MERCHANT_CALLBACK_SELECT = {
@@ -88,7 +89,7 @@ async function getCheckoutLayout(req, res) {
     // Enrich synced SIM rows with tab + group metadata for the 3 checkout designs
     formattedGateways = formattedGateways.map((g) => layoutHelper.enrichGatewayRow(g));
 
-    return res.json({
+    let payload = {
       siteName: layout.site_name,
       siteUrl: layout.site_url,
       companyName: layout.company_name,
@@ -107,7 +108,14 @@ async function getCheckoutLayout(req, res) {
       redirectUrl: layout.redirect_url,
       successUrl: layout.success_url || layout.redirect_url,
       cancelUrl: layout.cancel_url
-    });
+    };
+
+    const sessionQ = req.query.session;
+    if (sessionQ) {
+      payload = await checkoutPaymentBridge.mergeSessionUrlsIntoLayout(payload, sessionQ);
+    }
+
+    return res.json(payload);
 
   } catch (error) {
     console.error('Error fetching checkout layout:', error);
@@ -166,8 +174,10 @@ async function verifyCheckoutPayment(req, res) {
       });
     }
 
+    const wasUnused = !payment.is_used;
+
     // 4. Mark transaction as used/sold out for this merchant
-    if (!payment.is_used) {
+    if (wasUnused) {
       await prisma.sms_history.update({
         where: { id: payment.id },
         data: {
@@ -177,28 +187,41 @@ async function verifyCheckoutPayment(req, res) {
         }
       });
       console.log(`[VERIFICATION] Trx ${cleanTrx} (৳${cleanAmount}) marked SOLDOUT for merchant ID ${merchant.id}`);
-
-      // Enriched + signed merchant callback (payment_type / commission gated
-      // by admin permission + merchant preference inside the dispatcher).
-      const history = await prisma.sms_history.findUnique({ where: { id: payment.id }, select: HISTORY_CALLBACK_SELECT });
-      if (history) {
-        merchantCallback.sendMerchantCallback(merchant, history, 'verified')
-          .catch((e) => console.error('[VERIFICATION] callback error:', e.message));
-      }
-
-      // Phase 6: complete the linked payment session (if this checkout came from /pay/:token).
-      if (session) {
-        paymentFlow.completeSessionByToken(session, { trxId: cleanTrx, historyId: payment.id })
-          .catch((e) => console.error('[VERIFICATION] session complete error:', e.message));
-      }
     } else {
       console.log(`[VERIFICATION] Trx ${cleanTrx} was already locked for this merchant. Skipping update.`);
     }
 
-    // 5. Calculate success redirect parameters
-    const redirectUrl = merchant.redirect_url
-      ? `${merchant.redirect_url}${merchant.redirect_url.includes('?') ? '&' : '?'}trxId=${cleanTrx}&amount=${cleanAmount}&status=success`
-      : null;
+    const history = await prisma.sms_history.findUnique({
+      where: { id: payment.id },
+      select: HISTORY_CALLBACK_SELECT,
+    });
+
+    let redirectUrl = null;
+    if (session && history) {
+      if (wasUnused) {
+        const bridge = await checkoutPaymentBridge.notifySessionPaid(session, {
+          history,
+          trxId: cleanTrx,
+        });
+        redirectUrl = bridge.redirectUrl;
+      } else {
+        const sessionRow = await checkoutPaymentBridge.loadSession(session);
+        redirectUrl = checkoutPaymentBridge.buildSuccessRedirectUrl(sessionRow, {
+          trxId: cleanTrx,
+          amount: cleanAmount,
+        });
+      }
+    } else if (wasUnused && history) {
+      merchantCallback.sendMerchantCallback(merchant, history, 'verified')
+        .catch((e) => console.error('[VERIFICATION] callback error:', e.message));
+    }
+
+    if (!redirectUrl) {
+      const successBase = merchant.success_url || merchant.redirect_url;
+      redirectUrl = successBase
+        ? `${successBase}${successBase.includes('?') ? '&' : '?'}trxId=${cleanTrx}&amount=${cleanAmount}&status=success`
+        : null;
+    }
 
     return res.json({
       success: true,
@@ -314,7 +337,7 @@ async function claimCheckTransaction(req, res) {
 async function vibeInit(req, res) {
   try {
     const { apiKey } = req.params;
-    const { customerNumber, amount } = req.body;
+    const { customerNumber, amount, session } = req.body;
     const expiresInSec = Math.min(Math.max(parseInt(req.body.expiresInSec, 10) || 900, 120), 3600); // 2min–1h, default 15min
 
     if (!apiKey || !customerNumber || !amount) {
@@ -335,9 +358,11 @@ async function vibeInit(req, res) {
     if (!(cleanAmount > 0)) return res.status(400).json({ success: false, error: 'সঠিক amount দিন।' });
 
     const expiresAt = new Date(Date.now() + expiresInSec * 1000);
+    const sessionToken = session ? String(session).trim() : null;
     const created = await prisma.checkout_vibe_requests.create({
       data: {
         website_id: merchant.id,
+        payment_session_token: sessionToken || null,
         customer_number: normNumber,
         amount: cleanAmount,
         status: 'waiting',
@@ -368,13 +393,29 @@ async function vibeStatus(req, res) {
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id)) return res.status(400).json({ success: false, error: 'INVALID_ID' });
 
-    const request = await prisma.checkout_vibe_requests.findUnique({ where: { id } });
+    let request = await prisma.checkout_vibe_requests.findUnique({ where: { id } });
     if (!request) return res.status(404).json({ success: false, error: 'REQUEST_NOT_FOUND' });
 
     let status = request.status;
     if (status === 'waiting' && request.expires_at < new Date()) {
       status = 'expired';
       await prisma.checkout_vibe_requests.update({ where: { id }, data: { status } });
+      request = await prisma.checkout_vibe_requests.findUnique({ where: { id } });
+    } else if (status === 'waiting') {
+      const matched = await vibeMatchService.attemptRetroactiveVibeMatch(id);
+      if (matched) {
+        request = await prisma.checkout_vibe_requests.findUnique({ where: { id } });
+        status = request?.status || status;
+      }
+    }
+
+    let redirectUrl = null;
+    if (status === 'matched' && request.payment_session_token) {
+      const sessionRow = await checkoutPaymentBridge.loadSession(request.payment_session_token);
+      redirectUrl = checkoutPaymentBridge.buildSuccessRedirectUrl(sessionRow, {
+        trxId: request.matched_trx_id,
+        amount: Number(request.amount),
+      });
     }
 
     return res.json({
@@ -382,6 +423,7 @@ async function vibeStatus(req, res) {
       status, // waiting | matched | expired | cancelled
       matched: status === 'matched',
       trxId: request.matched_trx_id || null,
+      redirectUrl,
       amount: Number(request.amount),
       expiresAt: request.expires_at,
     });
@@ -392,50 +434,10 @@ async function vibeStatus(req, res) {
 }
 
 /**
- * matchVibeForHistory — called by the SMS worker after a transaction is saved.
- * Finds any waiting Vibe request for this user matching (number, amount, time),
- * claims the transaction and fires the merchant callback. Never throws.
+ * matchVibeForHistory — delegated to vibeMatchService (SMS worker hook).
  */
 async function matchVibeForHistory(userId, history) {
-  try {
-    if (!history || !history.sender_number || history.amount == null) return;
-    const senderNorm = normalizeBdNumber(history.sender_number);
-    if (!senderNorm) return;
-
-    const candidates = await prisma.checkout_vibe_requests.findMany({
-      where: {
-        status: 'waiting',
-        amount: history.amount,
-        expires_at: { gt: new Date() },
-        gateway_layouts: { user_id: userId },
-      },
-      include: { gateway_layouts: { select: MERCHANT_CALLBACK_SELECT } },
-      orderBy: { created_at: 'asc' },
-    });
-
-    for (const c of candidates) {
-      if (normalizeBdNumber(c.customer_number) !== senderNorm) continue;
-
-      // Claim the transaction for this merchant (only if still unused).
-      const claimed = await prisma.sms_history.updateMany({
-        where: { id: history.id, is_used: 0 },
-        data: { is_used: 1, used_at: new Date(), used_by_merchant_id: c.gateway_layouts.id },
-      });
-      if (claimed.count === 0) continue; // already used by someone else
-
-      await prisma.checkout_vibe_requests.update({
-        where: { id: c.id },
-        data: { status: 'matched', matched_trx_id: history.trx_id, matched_history_id: history.id, matched_at: new Date() },
-      });
-
-      console.log(`[VIBE MATCH] Request ${c.id} matched Trx ${history.trx_id} (৳${history.amount})`);
-      await merchantCallback.sendMerchantCallback(c.gateway_layouts, history, 'verified')
-        .catch((e) => console.error('[VIBE MATCH] callback error:', e.message));
-      return; // one transaction satisfies exactly one waiting request
-    }
-  } catch (e) {
-    console.error('[VIBE MATCH] error:', e.message);
-  }
+  return vibeMatchService.matchVibeForHistory(userId, history);
 }
 
 // Background utility to trigger webhooks using axios
