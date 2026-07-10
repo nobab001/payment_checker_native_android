@@ -18,42 +18,57 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Sends device-level number health heartbeats every 60s while SMS service runs.
- * Server derives ONLINE / GRACE / OFFLINE / STALE from last_seen timestamps.
+ * Lightweight number health — no periodic HTTP while Socket.IO is connected.
+ *
+ * Normal path: socket connect + SMS ingest touch server last_seen.
+ * Fallback: sparse HTTP heartbeat (every 15 min) only after socket disconnect.
  */
 object NumberHeartbeatEngine {
     private const val TAG = "NumberHeartbeat"
-    private var heartbeatJob: Job? = null
+    private var fallbackJob: Job? = null
+  @Volatile private var socketConnected = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    fun onSocketConnected(context: Context, socket: io.socket.client.Socket?) {
+        socketConnected = true
+        stopFallback()
+        emitSocketDeviceNumbers(socket, context)
+        Log.i(TAG, "Socket up — fallback heartbeat off")
+    }
+
+    fun onSocketDisconnected(context: Context) {
+        socketConnected = false
+        startFallback(context.applicationContext)
+        Log.i(TAG, "Socket down — starting sparse fallback heartbeat")
+    }
+
     @Synchronized
-    fun start(context: Context) {
-        if (heartbeatJob?.isActive == true) return
+    fun startFallback(context: Context) {
+        if (socketConnected) return
+        if (fallbackJob?.isActive == true) return
         val app = context.applicationContext
-        Log.i(TAG, "Starting number heartbeat engine")
-        heartbeatJob = scope.launch {
+        fallbackJob = scope.launch {
             sendHeartbeat(app)
-            while (isActive) {
-                delay(AppConfig.HEARTBEAT_INTERVAL_MS)
-                sendHeartbeat(app)
+            while (isActive && !socketConnected) {
+                delay(AppConfig.FALLBACK_HEARTBEAT_INTERVAL_MS)
+                if (!socketConnected) sendHeartbeat(app)
             }
         }
     }
 
     @Synchronized
-    fun stop() {
-        if (heartbeatJob?.isActive == true) {
-            Log.i(TAG, "Stopping number heartbeat engine")
-            heartbeatJob?.cancel()
-            heartbeatJob = null
-        }
+    fun stopFallback() {
+        fallbackJob?.cancel()
+        fallbackJob = null
     }
+
+    /** @deprecated Use [stopFallback]; kept for service teardown. */
+    @Synchronized
+    fun stop() = stopFallback()
 
     /** Immediate one-shot heartbeat (e.g. before refreshing account number list). */
     fun pulse(context: Context) {
-        scope.launch {
-            sendHeartbeat(context.applicationContext)
-        }
+        scope.launch { sendHeartbeat(context.applicationContext) }
     }
 
     /** Push active SIM numbers over Socket.IO so server can mark ONLINE instantly. */
@@ -101,12 +116,12 @@ object NumberHeartbeatEngine {
             )
         }.onSuccess { res ->
             if (res.isSuccessful) {
-                Log.d(TAG, "Heartbeat OK — ${numbers.size} number(s)")
+                Log.d(TAG, "Fallback heartbeat OK — ${numbers.size} number(s)")
             } else {
-                Log.w(TAG, "Heartbeat HTTP ${res.code()}")
+                Log.w(TAG, "Fallback heartbeat HTTP ${res.code()}")
             }
         }.onFailure { e ->
-            Log.w(TAG, "Heartbeat failed: ${e.message}")
+            Log.w(TAG, "Fallback heartbeat failed: ${e.message}")
         }
     }
 

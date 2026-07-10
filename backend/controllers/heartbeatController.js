@@ -1,5 +1,5 @@
 /**
- * POST /api/gateway/heartbeat — device-level number health ping (every ~60s).
+ * POST /api/gateway/heartbeat — sparse fallback ping while Socket.IO is disconnected.
  */
 
 const numberHealth = require('../services/numberHealthService');

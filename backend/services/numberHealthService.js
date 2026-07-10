@@ -1,8 +1,8 @@
 /**
  * numberHealthService — Number-centric health (ONLINE / GRACE / OFFLINE / DISABLED / STALE).
  *
- * Hot path: Redis last_seen + disabled flags.
- * Checkout reads state at query time (no per-second cron).
+ * Hot path: Socket.IO connect + SMS ingest touch Redis last_seen.
+ * HTTP heartbeat is sparse fallback only while socket is down (client-side, ~15 min).
  *
  * Thresholds (ms):
  *   0–2 min   ONLINE
@@ -405,6 +405,24 @@ async function applyHealthToCheckoutRows(userId, rows) {
   const uid = String(userId);
   const now = Date.now();
   const phones = [...new Set(rows.map((r) => normalizePhone(r.number)).filter(Boolean))];
+  const deviceIds = [...new Set(
+    rows.map((r) => String(r.device_id || r.deviceId || '')).filter(Boolean),
+  )];
+
+  const socketLiveByDevice = {};
+  if (deviceIds.length) {
+    try {
+      const redis = getRedisClient();
+      const socketResults = await redis.mget(
+        ...deviceIds.map((d) => KEYS.deviceSocketLive(uid, d)),
+      );
+      deviceIds.forEach((d, i) => {
+        socketLiveByDevice[d] = socketResults[i] === '1';
+      });
+    } catch (err) {
+      console.warn('[NumberHealth] socket live batch read failed:', err.message);
+    }
+  }
 
   const metaByPhone = {};
   if (phones.length) {
@@ -432,7 +450,12 @@ async function applyHealthToCheckoutRows(userId, rows) {
   const enriched = rows.map((row) => {
     const phone = normalizePhone(row.number);
     const meta = metaByPhone[phone] || { lastSeenMs: 0, isDisabled: false };
-    const state = computeState(meta.lastSeenMs, meta.isDisabled, now);
+    const devId = String(row.device_id || row.deviceId || '');
+    let lastSeenMs = meta.lastSeenMs;
+    if (devId && socketLiveByDevice[devId]) {
+      lastSeenMs = now;
+    }
+    const state = computeState(lastSeenMs, meta.isDisabled, now);
     return {
       ...row,
       healthState: state,

@@ -127,7 +127,6 @@ class SmsMonitorService : Service() {
         serviceScope.launch {
             startOfflineRecovery()
             startSocketConnection()
-            NumberHeartbeatEngine.start(this@SmsMonitorService)
             online.paychek.app.services.foreground.SmsServiceGuard.scheduleWatchdog(this@SmsMonitorService)
         }
 
@@ -292,8 +291,17 @@ class SmsMonitorService : Service() {
             socket?.on(Socket.EVENT_CONNECT) {
                 Log.i(TAG, "Socket.IO Connected to Room: $userId:$deviceId")
                 SmsReceiver.syncPendingQueue(this@SmsMonitorService)
-                NumberHeartbeatEngine.start(this@SmsMonitorService)
-                NumberHeartbeatEngine.emitSocketDeviceNumbers(socket, this@SmsMonitorService)
+                NumberHeartbeatEngine.onSocketConnected(this@SmsMonitorService, socket)
+            }
+
+            socket?.on(Socket.EVENT_DISCONNECT) {
+                Log.w(TAG, "Socket.IO Disconnected")
+                NumberHeartbeatEngine.onSocketDisconnected(this@SmsMonitorService)
+            }
+
+            socket?.on(Socket.EVENT_CONNECT_ERROR) { args ->
+                Log.w(TAG, "Socket.IO connect error: ${args.firstOrNull()}")
+                NumberHeartbeatEngine.onSocketDisconnected(this@SmsMonitorService)
             }
             
             socket?.on("sync_gateway_methods") { args ->
