@@ -55,6 +55,18 @@ async function fetchSecureCheckoutRows(userId) {
            rd.device_name
       FROM gateway_methods gm
       INNER JOIN sms_templates t ON gm.template_id = t.id
+      INNER JOIN sim_slot_bindings ssb
+        ON CONVERT(ssb.user_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+         = CONVERT(gm.user_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+       AND CONVERT(ssb.device_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+         = CONVERT(gm.device_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+       AND ssb.sim_slot = gm.sim_slot
+       AND ssb.is_active = 1
+       AND (
+         ssb.phone_number = gm.number
+         OR RIGHT(REPLACE(REPLACE(REPLACE(ssb.phone_number, ' ', ''), '-', ''), '+', ''), 11)
+          = RIGHT(REPLACE(REPLACE(REPLACE(gm.number, ' ', ''), '-', ''), '+', ''), 11)
+       )
       LEFT JOIN checkout_view_templates cvt ON cvt.sms_template_id = t.id
       LEFT JOIN registered_devices rd
         ON CONVERT(gm.device_id USING utf8mb4) COLLATE utf8mb4_unicode_ci

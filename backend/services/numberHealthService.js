@@ -13,6 +13,10 @@
 
 const { getRedisClient } = require('./redisClient');
 
+function deviceWatchdog() {
+  return require('./deviceDisconnectWatchdog');
+}
+
 const THRESHOLDS = {
   ONLINE_MS: 2 * 60 * 1000,
   GRACE_MS: 10 * 60 * 1000,
@@ -139,6 +143,11 @@ async function touchNumberLive(userId, deviceId, phone) {
     pipe.set(KEYS.numberLastSeen(uid, num), nowStr, 'EX', REDIS_TTL_SEC);
     if (dev) pipe.set(KEYS.numberDevice(uid, num), dev, 'EX', REDIS_TTL_SEC);
   });
+  if (dev) {
+    deviceWatchdog().isDeviceCurrentlyActive(uid, dev).then((active) => {
+      if (active) deviceWatchdog().cancelDeviceWatch(uid, dev);
+    }).catch(() => {});
+  }
 }
 
 /**
@@ -191,6 +200,10 @@ async function recordHeartbeat(userId, deviceId, numbers = [], opts = {}) {
 
   // Throttled MySQL flush for admin "last seen"
   await maybeFlushDeviceToDb(uid, dev, now, opts.batteryPercent);
+
+  deviceWatchdog().isDeviceCurrentlyActive(uid, dev).then((active) => {
+    if (active) deviceWatchdog().cancelDeviceWatch(uid, dev);
+  }).catch(() => {});
 
   const states = {};
   for (const { phone } of cleaned) {
@@ -259,8 +272,7 @@ function normalizeClientNumbers(numbers) {
 }
 
 /**
- * Socket.IO connect — mark device + SIM numbers ONLINE immediately.
- * Does NOT mutate sim_slot_bindings.is_active (user assignment).
+ * Socket.IO connect — mark device + SIM numbers ONLINE; cancel disconnect watch.
  */
 async function onDeviceSocketConnect(userId, deviceId, clientNumbers = null) {
   const uid = String(userId);
@@ -268,6 +280,7 @@ async function onDeviceSocketConnect(userId, deviceId, clientNumbers = null) {
   if (!uid || !dev) return { updated: [], states: {} };
 
   cancelPendingSocketDisconnect(uid, dev);
+  deviceWatchdog().cancelDeviceWatch(uid, dev);
 
   const fromClient = normalizeClientNumbers(clientNumbers);
   const numbers = fromClient.length ? fromClient : await fetchActiveNumbersForDevice(uid, dev);
@@ -277,6 +290,10 @@ async function onDeviceSocketConnect(userId, deviceId, clientNumbers = null) {
     await redis.set(KEYS.deviceSocketLive(uid, dev), '1', 'EX', REDIS_TTL_SEC);
   } catch (_) { /* ignore */ }
 
+  if (numbers.length) {
+    await deviceWatchdog().reactivateDeviceBindings(uid, dev, numbers);
+  }
+
   if (!numbers.length) {
     return { updated: [], states: {}, serverTime: Date.now() };
   }
@@ -285,8 +302,7 @@ async function onDeviceSocketConnect(userId, deviceId, clientNumbers = null) {
 }
 
 /**
- * Socket.IO disconnect (debounced) — shift numbers into GRACE band.
- * Checkout still eligible until GRACE window expires; then OFFLINE.
+ * Socket.IO disconnect (debounced) — shift numbers into GRACE; start 3×10min server watch.
  */
 async function onDeviceSocketDisconnect(userId, deviceId) {
   const uid = String(userId);
@@ -305,8 +321,10 @@ async function onDeviceSocketDisconnect(userId, deviceId) {
     });
   });
 
+  deviceWatchdog().scheduleDeviceWatch(uid, dev);
+
   console.log(
-    `[NumberHealth] Socket disconnect → GRACE for device ${dev} (${numbers.length} number(s))`
+    `[NumberHealth] Socket disconnect → GRACE + watchdog for device ${dev} (${numbers.length} number(s))`
   );
 }
 
