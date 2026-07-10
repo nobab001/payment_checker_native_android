@@ -8,6 +8,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import online.paychek.app.config.AppConfig
+import online.paychek.app.data.remote.dto.TransactionHistoryResult
 import online.paychek.app.data.remote.dto.TransactionItem
 import online.paychek.app.data.repository.PaymentRepository
 import online.paychek.app.utils.SecurePreferences
@@ -24,9 +25,14 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-// =============================================================================
-// Provider Filter Options are now dynamic strings.
-// "all" is used as the default value to show all transactions.
+enum class HistoryLoadTier {
+    INITIAL_20,
+    DAYS_7,
+    DAYS_15,
+    DAYS_21,
+    DAYS_30,
+    CUSTOM
+}
 
 data class TransactionSearchState(
     val rawList:     List<TransactionItem> = emptyList(),
@@ -34,26 +40,28 @@ data class TransactionSearchState(
     val templates:   List<SmsTemplateDto>  = emptyList(),
     val selectedProvider: String = "all",
     val searchQuery:      String         = "",
-    val currentPage:        Int     = 1,
-    val hasMore:            Boolean = true,
     val isInitialLoading:   Boolean = true,
-    val isLoadingMore:      Boolean = false,
+    val isLoadingMoreHistory: Boolean = false,
     val isRefreshing:       Boolean = false,
     val lastUpdatedAtMs:    Long?   = null,
     val startDate: String? = null,
     val endDate: String? = null,
+    val historyTier: HistoryLoadTier = HistoryLoadTier.INITIAL_20,
     val errorMessage: String? = null,
-    val selectedQuickDays: Int? = DEFAULT_QUICK_DAYS,
     val refreshSkipped: Boolean = false
 ) {
-    companion object {
-        const val DEFAULT_QUICK_DAYS = 2
+    fun nextHistoryDays(): Int? = when (historyTier) {
+        HistoryLoadTier.INITIAL_20 -> 7
+        HistoryLoadTier.DAYS_7 -> 15
+        HistoryLoadTier.DAYS_15 -> 21
+        HistoryLoadTier.DAYS_21 -> 30
+        else -> null
     }
+
+    val canLoadMoreHistory: Boolean
+        get() = nextHistoryDays() != null && !isInitialLoading && !isLoadingMoreHistory
 }
 
-// =============================================================================
-// ViewModel
-// =============================================================================
 @OptIn(FlowPreview::class)
 class TransactionSearchViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -62,7 +70,6 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
     }
 
     private val repository = PaymentRepository()
-    private val prefs      = application.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
     private val connectionEngine = ConnectionEngine.getInstance(application)
 
     val connectionBanner = connectionEngine.banner
@@ -89,19 +96,11 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
         val provider: String,
         val startDate: String?,
         val endDate: String?,
+        val tier: String,
         val items: List<TransactionItem>
     )
 
     init {
-        val defaultRange = quickDateRange(TransactionSearchState.DEFAULT_QUICK_DAYS)
-        _state.update {
-            it.copy(
-                selectedQuickDays = TransactionSearchState.DEFAULT_QUICK_DAYS,
-                startDate = defaultRange.first,
-                endDate = defaultRange.second
-            )
-        }
-
         val cached = PrefsHelper.getSmsTemplatesCache(application)
         var initialTemplates = emptyList<SmsTemplateDto>()
         if (cached.isNotEmpty()) {
@@ -127,15 +126,19 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                 .map { it.hasInternet }
                 .distinctUntilChanged()
                 .filter { it }
-                .collect {
-                    loadFirstPage()
-                }
+                .collect { loadInitialHistory() }
         }
     }
 
-    private fun historyFilterKey(): Triple<String, String?, String?> {
+    private fun currentCacheKey(): HistoryCacheBundle {
         val s = _state.value
-        return Triple(s.selectedProvider, s.startDate, s.endDate)
+        return HistoryCacheBundle(
+            provider = s.selectedProvider,
+            startDate = s.startDate,
+            endDate = s.endDate,
+            tier = s.historyTier.name,
+            items = emptyList()
+        )
     }
 
     private fun restoreHistoryFromLocalCache(): Boolean {
@@ -144,8 +147,13 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
         return try {
             val type = object : TypeToken<HistoryCacheBundle>() {}.type
             val bundle = GsonUtils.gson.fromJson<HistoryCacheBundle>(bundleJson, type) ?: return false
-            val (provider, start, end) = historyFilterKey()
-            if (bundle.provider != provider || bundle.startDate != start || bundle.endDate != end) {
+            val key = currentCacheKey()
+            if (
+                bundle.provider != key.provider
+                || bundle.startDate != key.startDate
+                || bundle.endDate != key.endDate
+                || bundle.tier != key.tier
+            ) {
                 return false
             }
             if (bundle.items.isEmpty()) return false
@@ -166,10 +174,16 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
 
     private fun saveHistoryToLocalCache(items: List<TransactionItem>) {
         if (items.isEmpty()) return
-        val (provider, start, end) = historyFilterKey()
+        val s = _state.value
         try {
             val json = GsonUtils.gson.toJson(
-                HistoryCacheBundle(provider = provider, startDate = start, endDate = end, items = items)
+                HistoryCacheBundle(
+                    provider = s.selectedProvider,
+                    startDate = s.startDate,
+                    endDate = s.endDate,
+                    tier = s.historyTier.name,
+                    items = items
+                )
             )
             PrefsHelper.setTransactionHistoryBundle(getApplication(), json)
         } catch (_: Exception) {}
@@ -207,69 +221,98 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
 
     fun onProviderFilterChanged(filter: String) {
         if (_state.value.selectedProvider == filter) return
-
         _state.update {
             it.copy(
                 selectedProvider = filter,
                 rawList          = emptyList(),
                 displayList      = emptyList(),
-                currentPage      = 1,
-                hasMore          = true,
+                startDate        = null,
+                endDate          = null,
+                historyTier      = HistoryLoadTier.INITIAL_20,
                 isInitialLoading = true,
                 errorMessage     = null
             )
         }
-        fetchPage(page = 1)
+        fetchInitialPage()
     }
 
-    fun onDateRangeChanged(start: String?, end: String?, quickDays: Int? = null) {
+    fun onDateRangeChanged(start: String?, end: String?) {
         _state.update {
             it.copy(
                 startDate        = start,
                 endDate          = end,
-                selectedQuickDays = quickDays,
+                historyTier      = if (start != null && end != null) HistoryLoadTier.CUSTOM else HistoryLoadTier.INITIAL_20,
                 rawList          = emptyList(),
                 displayList      = emptyList(),
-                currentPage      = 1,
-                hasMore          = true,
                 isInitialLoading = true,
                 errorMessage     = null
             )
         }
-        fetchPage(page = 1)
+        if (start != null && end != null) {
+            fetchDatedHistory(replaceList = true, markRefreshing = false)
+        } else {
+            fetchInitialPage()
+        }
     }
 
-    private fun loadFirstPage() {
+    private fun loadInitialHistory() {
         if (_state.value.rawList.isEmpty()) {
             restoreHistoryFromLocalCache()
         }
+        if (_state.value.historyTier == HistoryLoadTier.CUSTOM) return
         _state.update {
             it.copy(
-                currentPage      = 1,
-                hasMore          = true,
                 isInitialLoading = it.rawList.isEmpty(),
                 errorMessage     = null
             )
         }
         fetchTemplates()
-        fetchPage(page = 1)
+        if (_state.value.historyTier == HistoryLoadTier.INITIAL_20 && _state.value.startDate == null) {
+            fetchInitialPage()
+        }
     }
 
-    fun loadNextPage() {
+    fun loadMoreHistory() {
         val current = _state.value
-        if (current.isLoadingMore || !current.hasMore || current.isInitialLoading || current.isRefreshing || current.rawList.isEmpty()) return
+        val nextDays = current.nextHistoryDays() ?: return
+        if (current.isLoadingMoreHistory || current.isInitialLoading) return
 
-        _state.update { it.copy(isLoadingMore = true) }
-        fetchPage(page = current.currentPage + 1)
+        val range = quickDateRange(nextDays)
+        val newTier = when (nextDays) {
+            7 -> HistoryLoadTier.DAYS_7
+            15 -> HistoryLoadTier.DAYS_15
+            21 -> HistoryLoadTier.DAYS_21
+            30 -> HistoryLoadTier.DAYS_30
+            else -> return
+        }
+
+        _state.update {
+            it.copy(
+                startDate = range.first,
+                endDate = range.second,
+                historyTier = newTier,
+                isLoadingMoreHistory = true,
+                errorMessage = null
+            )
+        }
+        fetchDatedHistory(replaceList = true, markRefreshing = false)
     }
 
     fun onRefresh(): Boolean {
         return RefreshCooldown.tryRefresh {
             _state.update {
-                it.copy(isRefreshing = true, refreshSkipped = false)
+                it.copy(
+                    isRefreshing = true,
+                    refreshSkipped = false,
+                    startDate = null,
+                    endDate = null,
+                    historyTier = HistoryLoadTier.INITIAL_20,
+                    rawList = emptyList(),
+                    displayList = emptyList()
+                )
             }
             fetchTemplates()
-            fetchPage(page = 1, isManualRefresh = true)
+            fetchInitialPage(isManualRefresh = true)
         }
     }
 
@@ -285,115 +328,140 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
         return Pair(startStr, endStr)
     }
 
-    private fun fetchPage(page: Int, isManualRefresh: Boolean = false) {
+    private fun fetchInitialPage(isManualRefresh: Boolean = false) {
         viewModelScope.launch {
             val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
             if (token.isEmpty()) {
                 _state.update {
                     it.copy(
                         isInitialLoading = false,
-                        isLoadingMore    = false,
-                        errorMessage     = "লগইন সেশন পাওয়া যায়নি।"
+                        isRefreshing = false,
+                        errorMessage = "লগইন সেশন পাওয়া যায়নি।"
                     )
                 }
                 return@launch
             }
 
             val provider = _state.value.selectedProvider
-            val historyLastSync = if (page == 1) {
+            val historyLastSync = if (!isManualRefresh) {
                 PrefsHelper.getHistoryLastSync(getApplication()).takeIf { it > 0L }
-            } else {
-                null
-            }
-            if (page == 1 && historyLastSync != null) {
-                android.util.Log.i(
-                    "TransactionSearchVM",
-                    "Sending X-History-Last-Sync=$historyLastSync (manual=$isManualRefresh)"
-                )
-            }
-            val result   = repository.fetchTransactionHistory(
-                token    = token,
-                page     = page,
-                limit    = PAGE_SIZE,
+            } else null
+
+            val result = repository.fetchTransactionHistory(
+                token = token,
+                page = 1,
+                limit = PAGE_SIZE,
                 provider = provider,
-                startDate = _state.value.startDate,
-                endDate = _state.value.endDate,
+                startDate = null,
+                endDate = null,
                 historyLastSync = historyLastSync
             )
 
             result.fold(
-                onSuccess = { pageResult ->
-                    if (pageResult.cacheHit && page == 1) {
-                        android.util.Log.i(
-                            "TransactionSearchVM",
-                            "History cache hit — skipped payload (version=${pageResult.historyVersion})"
-                        )
-                        if (_state.value.rawList.isEmpty()) {
-                            restoreHistoryFromLocalCache()
-                        }
-                        applyLocalFilter()
-                        _state.update { current ->
-                            current.copy(
-                                isInitialLoading = false,
-                                isLoadingMore    = false,
-                                isRefreshing     = false,
-                                refreshSkipped   = isManualRefresh,
-                                errorMessage     = null
-                            )
-                        }
-                        pageResult.historyVersion?.let {
-                            PrefsHelper.setHistoryLastSync(getApplication(), it)
-                        }
-                        return@launch
-                    }
+                onSuccess = { pageResult -> handleFetchSuccess(pageResult, replaceList = true, isManualRefresh = isManualRefresh) },
+                onFailure = { error -> handleFetchFailure(error) }
+            )
+        }
+    }
 
-                    val newItems = pageResult.items
-                    pageResult.historyVersion?.let {
-                        PrefsHelper.setHistoryLastSync(getApplication(), it)
-                    }
-
-                    _state.update { current ->
-                        val merged = if (page == 1) newItems else current.rawList + newItems
-                        val refreshed = isManualRefresh || current.isRefreshing
-                        val updatedAt = if (page == 1 && refreshed) {
-                            BangladeshTimeUtil.latestTransactionEpochMs(merged)
-                                ?: System.currentTimeMillis()
-                        } else {
-                            BangladeshTimeUtil.latestTransactionEpochMs(merged)
-                                ?: current.lastUpdatedAtMs
-                                ?: System.currentTimeMillis()
-                        }
-                        current.copy(
-                            rawList          = merged,
-                            currentPage      = page,
-                            hasMore          = if (current.startDate != null && current.endDate != null) {
-                                false
-                            } else {
-                                pageResult.hasMore && newItems.size >= PAGE_SIZE
-                            },
-                            isInitialLoading = false,
-                            isLoadingMore    = false,
-                            isRefreshing     = false,
-                            refreshSkipped   = false,
-                            lastUpdatedAtMs  = updatedAt,
-                            errorMessage     = null
-                        )
-                    }
-                    if (page == 1) {
-                        saveHistoryToLocalCache(_state.value.rawList)
-                    }
-                    applyLocalFilter()
-                },
-                onFailure = { error ->
-                    _state.update {
-                        it.copy(
-                            isInitialLoading = false,
-                            isLoadingMore    = false,
-                            isRefreshing     = false,
-                            errorMessage     = error.message ?: "ডেটা লোড ব্যর্থ হয়েছে"
-                        )
-                    }
+    private fun fetchDatedHistory(replaceList: Boolean, markRefreshing: Boolean) {
+        viewModelScope.launch {
+            val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
+            if (token.isEmpty()) {
+                _state.update {
+                    it.copy(
+                        isInitialLoading = false,
+                        isLoadingMoreHistory = false,
+                        isRefreshing = false,
+                        errorMessage = "লগইন সেশন পাওয়া যায়নি।"
+                    )
                 }
+                return@launch
+            }
+
+            val s = _state.value
+            val result = repository.fetchTransactionHistory(
+                token = token,
+                page = 1,
+                limit = PAGE_SIZE,
+                provider = s.selectedProvider,
+                startDate = s.startDate,
+                endDate = s.endDate,
+                historyLastSync = null
+            )
+
+            result.fold(
+                onSuccess = { pageResult ->
+                    handleFetchSuccess(
+                        pageResult,
+                        replaceList = replaceList,
+                        isManualRefresh = markRefreshing
+                    )
+                },
+                onFailure = { error -> handleFetchFailure(error) }
+            )
+        }
+    }
+
+    private fun handleFetchSuccess(
+        pageResult: TransactionHistoryResult,
+        replaceList: Boolean,
+        isManualRefresh: Boolean
+    ) {
+        if (pageResult.cacheHit && _state.value.historyTier == HistoryLoadTier.INITIAL_20) {
+            if (_state.value.rawList.isEmpty()) {
+                restoreHistoryFromLocalCache()
+            }
+            applyLocalFilter()
+            _state.update { current ->
+                current.copy(
+                    isInitialLoading = false,
+                    isLoadingMoreHistory = false,
+                    isRefreshing = false,
+                    refreshSkipped = isManualRefresh,
+                    errorMessage = null
+                )
+            }
+            pageResult.historyVersion?.let {
+                PrefsHelper.setHistoryLastSync(getApplication(), it)
+            }
+            return
+        }
+
+        val newItems = pageResult.items
+        pageResult.historyVersion?.let {
+            PrefsHelper.setHistoryLastSync(getApplication(), it)
+        }
+
+        _state.update { current ->
+            val merged = if (replaceList) newItems else current.rawList + newItems
+            val refreshed = isManualRefresh || current.isRefreshing
+            val updatedAt = if (refreshed || current.lastUpdatedAtMs == null) {
+                BangladeshTimeUtil.latestTransactionEpochMs(merged) ?: System.currentTimeMillis()
+            } else {
+                BangladeshTimeUtil.latestTransactionEpochMs(merged) ?: current.lastUpdatedAtMs
+            }
+            current.copy(
+                rawList = merged,
+                isInitialLoading = false,
+                isLoadingMoreHistory = false,
+                isRefreshing = false,
+                refreshSkipped = false,
+                lastUpdatedAtMs = updatedAt,
+                errorMessage = null
+            )
+        }
+        saveHistoryToLocalCache(_state.value.rawList)
+        applyLocalFilter()
+    }
+
+    private fun handleFetchFailure(error: Throwable) {
+        _state.update {
+            it.copy(
+                isInitialLoading = false,
+                isLoadingMoreHistory = false,
+                isRefreshing = false,
+                errorMessage = error.message ?: "ডেটা লোড ব্যর্থ হয়েছে"
             )
         }
     }
@@ -432,4 +500,3 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
         }
     }
 }
-

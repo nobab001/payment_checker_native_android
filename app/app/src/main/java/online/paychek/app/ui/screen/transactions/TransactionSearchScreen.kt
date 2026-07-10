@@ -92,15 +92,12 @@ fun TransactionSearchScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     val datePickerState = rememberDateRangePickerState()
 
-    val shouldLoadMore = remember {
+    val scrolledToBottom = remember {
         derivedStateOf {
             val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             val totalItems  = listState.layoutInfo.totalItemsCount
-            lastVisible >= totalItems - 3 && totalItems > 0
+            totalItems > 0 && lastVisible >= totalItems - 1
         }
-    }
-    LaunchedEffect(shouldLoadMore.value) {
-        if (shouldLoadMore.value) viewModel.loadNextPage()
     }
 
     LaunchedEffect(state.refreshSkipped) {
@@ -128,67 +125,9 @@ fun TransactionSearchScreen(
             onDone        = { focusManager.clearFocus() },
             isDateActive  = state.startDate != null || state.endDate != null,
             onDateClick   = { showDatePicker = true },
-            onClearDate   = { viewModel.onDateRangeChanged(null, null, null) },
+            onClearDate   = { viewModel.onDateRangeChanged(null, null) },
             modifier      = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val quickDaysList = listOf(2, 7, 15, 21, 30)
-            quickDaysList.forEach { days ->
-                val isSelected = state.selectedQuickDays == days
-                val chipBgColor = if (isSelected) AccentCyan.copy(alpha = 0.18f) else HistCard
-                val chipBorderColor = if (isSelected) AccentCyan else TextMuted.copy(alpha = 0.25f)
-                val chipTextColor = if (isSelected) AccentCyan else TextMuted
-
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .border(
-                            width = 1.dp,
-                            color = chipBorderColor,
-                            shape = RoundedCornerShape(20.dp)
-                        )
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(chipBgColor)
-                        .clickable {
-                            if (isSelected) {
-                                viewModel.onDateRangeChanged(null, null, null)
-                            } else {
-                                val range = calculateDateRange(days)
-                                viewModel.onDateRangeChanged(range.first, range.second, days)
-                            }
-                        }
-                        .padding(horizontal = 6.dp, vertical = 6.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        if (isSelected) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                tint = AccentCyan,
-                                modifier = Modifier.size(12.dp)
-                            )
-                        }
-                        Text(
-                            text = "$days দিন",
-                            color = chipTextColor,
-                            fontSize = 11.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                        )
-                    }
-                }
-            }
-        }
 
         M3FilterChipsRow(
             templates = state.templates,
@@ -282,24 +221,30 @@ fun TransactionSearchScreen(
                 }
             }
 
-            // ─── Loading More Spinner ───────────────────────────────────
-            if (state.isLoadingMore) {
+            if (
+                !state.isInitialLoading &&
+                state.errorMessage == null &&
+                state.displayList.isNotEmpty() &&
+                scrolledToBottom.value &&
+                (state.nextHistoryDays() != null || state.isLoadingMoreHistory)
+            ) {
                 item {
-                    Box(
-                        modifier         = Modifier.fillMaxWidth().padding(16.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            color       = AccentCyan,
-                            modifier    = Modifier.size(28.dp),
-                            strokeWidth = 2.dp
-                        )
-                    }
+                    LoadMoreHistoryButton(
+                        nextDays = state.nextHistoryDays() ?: 0,
+                        isLoading = state.isLoadingMoreHistory,
+                        onClick = { viewModel.loadMoreHistory() },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                    )
                 }
             }
 
             // ─── End of List Footer ─────────────────────────────────────
-            if (!state.isInitialLoading && !state.hasMore && state.displayList.isNotEmpty()) {
+            if (
+                !state.isInitialLoading &&
+                !state.canLoadMoreHistory &&
+                state.displayList.isNotEmpty() &&
+                state.historyTier != HistoryLoadTier.CUSTOM
+            ) {
                 item {
                     Box(
                         modifier         = Modifier.fillMaxWidth().padding(vertical = 16.dp),
@@ -329,7 +274,7 @@ fun TransactionSearchScreen(
                         if (startMillis != null && endMillis != null) {
                             val startStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(startMillis))
                             val endStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(endMillis))
-                            viewModel.onDateRangeChanged(startStr, endStr, null)
+                            viewModel.onDateRangeChanged(startStr, endStr)
                         }
                     }
                 ) { Text("OK") }
@@ -942,6 +887,42 @@ private fun HistoryErrorCard(
 }
 
 // =============================================================================
+// Load More History Button
+// =============================================================================
+@Composable
+private fun LoadMoreHistoryButton(
+    nextDays: Int,
+    isLoading: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = !isLoading,
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, AccentCyan.copy(alpha = 0.5f)),
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = AccentCyan
+        )
+    ) {
+        if (isLoading) {
+            CircularProgressIndicator(
+                color = AccentCyan,
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+        Text(
+            text = if (nextDays > 0) "আরো history দেখুন ($nextDays দিন)" else "আরো history দেখুন",
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp
+        )
+    }
+}
+
+// =============================================================================
 // Utility — Timestamp Format
 // =============================================================================
 private fun formatTrxTimestamp(raw: String): String {
@@ -965,16 +946,3 @@ private fun formatTrxTimestamp(raw: String): String {
         raw.take(16)
     }
 }
-
-// =============================================================================
-// Component 9 — Date Range Filter Row
-// =============================================================================
-
-private fun calculateDateRange(days: Int): Pair<String, String> {
-    val cal = java.util.Calendar.getInstance()
-    val endStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time)
-    cal.add(java.util.Calendar.DAY_OF_YEAR, -(days - 1))
-    val startStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time)
-    return Pair(startStr, endStr)
-}
-
