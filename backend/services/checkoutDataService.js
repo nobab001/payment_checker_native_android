@@ -63,9 +63,16 @@ async function fetchSecureCheckoutRows(userId) {
        AND ssb.sim_slot = gm.sim_slot
        AND ssb.is_active = 1
        AND (
-         ssb.phone_number = gm.number
-         OR RIGHT(REPLACE(REPLACE(REPLACE(ssb.phone_number, ' ', ''), '-', ''), '+', ''), 11)
-          = RIGHT(REPLACE(REPLACE(REPLACE(gm.number, ' ', ''), '-', ''), '+', ''), 11)
+         CONVERT(ssb.phone_number USING utf8mb4) COLLATE utf8mb4_unicode_ci
+           = CONVERT(gm.number USING utf8mb4) COLLATE utf8mb4_unicode_ci
+         OR CONVERT(
+           RIGHT(REPLACE(REPLACE(REPLACE(ssb.phone_number, ' ', ''), '-', ''), '+', ''), 11)
+           USING utf8mb4
+         ) COLLATE utf8mb4_unicode_ci
+           = CONVERT(
+           RIGHT(REPLACE(REPLACE(REPLACE(gm.number, ' ', ''), '-', ''), '+', ''), 11)
+           USING utf8mb4
+         ) COLLATE utf8mb4_unicode_ci
        )
       LEFT JOIN checkout_view_templates cvt ON cvt.sms_template_id = t.id
       LEFT JOIN registered_devices rd
