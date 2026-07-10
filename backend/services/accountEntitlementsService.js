@@ -27,8 +27,24 @@ const ADDON_EXTRA_COLUMNS = [
 
 let schemaReady = false;
 
+const ALLOWED_TABLES = new Set(['users', 'subscription_plans', 'addon_plans']);
+
+function assertSafeIdentifier(name, label) {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(name)) {
+    throw new Error(`Invalid ${label}: ${name}`);
+  }
+}
+
 async function ensureColumn(table, column, ddl) {
-  const rows = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM \`${table}\` LIKE ?`, column);
+  assertSafeIdentifier(table, 'table');
+  assertSafeIdentifier(column, 'column');
+  if (!ALLOWED_TABLES.has(table)) {
+    throw new Error(`Table not allowed for migration: ${table}`);
+  }
+
+  const rows = await prisma.$queryRawUnsafe(
+    `SHOW COLUMNS FROM \`${table}\` LIKE '${column}'`
+  );
   if (!rows.length) {
     await prisma.$executeRawUnsafe(`ALTER TABLE \`${table}\` ADD COLUMN ${ddl}`);
   }
