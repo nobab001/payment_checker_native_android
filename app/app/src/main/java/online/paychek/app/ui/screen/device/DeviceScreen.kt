@@ -30,6 +30,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -2439,73 +2440,83 @@ private fun AccountNumbersSheet(
     onDelete: (AccountNumberDto) -> Unit,
     onClose: () -> Unit
 ) {
-    Column(
+    val maxSheetHeight = LocalConfiguration.current.screenHeightDp.dp * 0.88f
+
+    LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(max = maxSheetHeight)
             .padding(horizontal = 20.dp)
-            .padding(bottom = 32.dp)
+            .padding(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text("সক্রিয় নাম্বার", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("সক্রিয় নাম্বার", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text(
+                        "একাউন্টের সব অ্যাক্টিভ SIM নাম্বার",
+                        color = TextMuted,
+                        fontSize = 12.sp
+                    )
+                }
+                Row {
+                    IconButton(onClick = onRefresh) {
+                        Icon(Icons.Default.Refresh, "রিফ্রেশ", tint = AccentCyan)
+                    }
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.Default.Close, "বন্ধ", tint = TextMuted)
+                    }
+                }
+            }
+        }
+
+        item {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(AccentCyan.copy(alpha = 0.1f))
+                    .padding(10.dp)
+            ) {
                 Text(
-                    "একাউন্টের সব অ্যাক্টিভ SIM নাম্বার",
-                    color = TextMuted,
-                    fontSize = 12.sp
+                    "চেকআউটে নাম্বার লুকাতে API Center → চেকআউট নাম্বার মেনু ব্যবহার করুন। এখানে মুছলে সার্ভার থেকে সম্পূর্ণ ডিলিট হবে।",
+                    color = AccentCyan,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
                 )
             }
-            Row {
-                IconButton(onClick = onRefresh) {
-                    Icon(Icons.Default.Refresh, "রিফ্রেশ", tint = AccentCyan)
-                }
-                IconButton(onClick = onClose) {
-                    Icon(Icons.Default.Close, "বন্ধ", tint = TextMuted)
-                }
-            }
         }
-
-        Spacer(Modifier.height(8.dp))
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(AccentCyan.copy(alpha = 0.1f))
-                .padding(10.dp)
-        ) {
-            Text(
-                "চেকআউটে নাম্বার লুকাতে API Center → চেকআউট নাম্বার মেনু ব্যবহার করুন। এখানে মুছলে সার্ভার থেকে সম্পূর্ণ ডিলিট হবে।",
-                color = AccentCyan,
-                fontSize = 11.sp,
-                lineHeight = 15.sp
-            )
-        }
-
-        Spacer(Modifier.height(12.dp))
 
         when {
             isLoading -> {
-                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = AccentCyan)
+                item {
+                    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = AccentCyan)
+                    }
                 }
             }
             numbers.isEmpty() -> {
-                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.SimCard, null, tint = TextMuted, modifier = Modifier.size(40.dp))
-                        Spacer(Modifier.height(8.dp))
-                        Text("কোনো সক্রিয় নাম্বার নেই", color = TextMuted, fontSize = 13.sp)
+                item {
+                    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.SimCard, null, tint = TextMuted, modifier = Modifier.size(40.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("কোনো সক্রিয় নাম্বার নেই", color = TextMuted, fontSize = 13.sp)
+                        }
                     }
                 }
             }
             else -> {
-                numbers.forEach { item ->
+                items(
+                    items = numbers,
+                    key = { "${it.phoneNumber}_${it.deviceId}_${it.simSlot}" }
+                ) { item ->
                     AccountNumberRow(item = item, onDelete = { onDelete(item) })
-                    Spacer(Modifier.height(8.dp))
                 }
             }
         }
