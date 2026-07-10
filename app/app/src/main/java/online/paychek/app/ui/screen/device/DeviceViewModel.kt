@@ -176,7 +176,10 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     private fun saveMethodsToCache(methods: List<GatewayMethod>) {
         try {
             val json = online.paychek.app.utils.GsonUtils.gson.toJson(methods)
-            online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(getApplication(), json)
+            val ok = online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(getApplication(), json)
+            if (!ok) {
+                android.util.Log.e("DeviceViewModel", "Gateway methods cache save/verify failed")
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -217,7 +220,44 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                         }
 
                         if (body.unchanged == true || body.data == null) {
-                            _state.update { it.copy(isLoading = false) }
+                            // Server says unchanged — if local cache empty, force full refetch
+                            val localEmpty = !online.paychek.app.data.local.prefs.PrefsHelper
+                                .hasGatewayMethodsCache(getApplication()) && _state.value.methods.isEmpty()
+                            if (localEmpty) {
+                                online.paychek.app.data.local.prefs.PrefsHelper
+                                    .setGatewayMethodsLastSync(getApplication(), 0L)
+                                runCatching { api.getGatewayMethods("Bearer $token", 0L) }
+                                    .onSuccess { fullRes ->
+                                        val fullBody = fullRes.body()
+                                        if (fullRes.isSuccessful && fullBody?.success == true && fullBody.data != null) {
+                                            fullBody.dataVersion?.takeIf { it > 0 }?.let {
+                                                online.paychek.app.data.local.prefs.PrefsHelper
+                                                    .setGatewayMethodsLastSync(getApplication(), it)
+                                            }
+                                            val sorted = fullBody.data.sortedBy { it.priority }
+                                            val sim1Num = sorted.find { it.simSlot == 1 && !it.number.isNullOrEmpty() }?.number
+                                                ?: _state.value.sim1Number
+                                            val sim2Num = sorted.find { it.simSlot == 2 && !it.number.isNullOrEmpty() }?.number
+                                                ?: _state.value.sim2Number
+                                            lastConfirmedLookupNumber[1] = sim1Num
+                                            lastConfirmedLookupNumber[2] = sim2Num
+                                            _state.update {
+                                                it.copy(
+                                                    methods = sorted,
+                                                    sim1Number = sim1Num,
+                                                    sim2Number = sim2Num,
+                                                    isLoading = false
+                                                )
+                                            }
+                                            saveMethodsToCache(sorted)
+                                        } else {
+                                            _state.update { it.copy(isLoading = false) }
+                                        }
+                                    }
+                                    .onFailure { _state.update { it.copy(isLoading = false) } }
+                            } else {
+                                _state.update { it.copy(isLoading = false) }
+                            }
                             validateAndSyncSimToggles()
                             performDropSync()
                             return@onSuccess
@@ -1417,12 +1457,39 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                             _state.update { it.copy(templates = list, isTemplatesLoading = false) }
                             try {
                                 val json = online.paychek.app.utils.GsonUtils.gson.toJson(list)
-                                online.paychek.app.data.local.prefs.PrefsHelper.setSmsTemplatesCache(getApplication(), json)
+                                val ok = online.paychek.app.data.local.prefs.PrefsHelper
+                                    .setSmsTemplatesCache(getApplication(), json)
+                                if (!ok) {
+                                    android.util.Log.e("DeviceViewModel", "SMS templates cache save/verify failed")
+                                }
                             } catch (e: Exception) {
                                 e.printStackTrace()
                             }
                         } else {
-                            _state.update { it.copy(isTemplatesLoading = false) }
+                            // unchanged / null payload — force full fetch if local cache empty
+                            val localEmpty = !online.paychek.app.data.local.prefs.PrefsHelper
+                                .hasSmsTemplatesCache(getApplication()) && _state.value.templates.isEmpty()
+                            if (localEmpty) {
+                                runCatching { api.getTemplates("Bearer $token", 0L) }
+                                    .onSuccess { fullRes ->
+                                        val fullList = fullRes.body()?.templates
+                                        if (fullRes.isSuccessful && fullRes.body()?.success == true && fullList != null) {
+                                            fullRes.body()?.dataVersion?.takeIf { it > 0 }?.let {
+                                                online.paychek.app.data.local.prefs.PrefsHelper
+                                                    .setGatewayMethodsLastSync(getApplication(), it)
+                                            }
+                                            _state.update { it.copy(templates = fullList, isTemplatesLoading = false) }
+                                            val json = online.paychek.app.utils.GsonUtils.gson.toJson(fullList)
+                                            online.paychek.app.data.local.prefs.PrefsHelper
+                                                .setSmsTemplatesCache(getApplication(), json)
+                                        } else {
+                                            _state.update { it.copy(isTemplatesLoading = false) }
+                                        }
+                                    }
+                                    .onFailure { _state.update { it.copy(isTemplatesLoading = false) } }
+                            } else {
+                                _state.update { it.copy(isTemplatesLoading = false) }
+                            }
                         }
                         performDropSync()
                     } else {

@@ -21,6 +21,7 @@ class PaychekApp : Application() {
         Executors.newSingleThreadExecutor().execute {
             try {
                 SecurePreferences.warmUp(this)
+                online.paychek.app.data.local.prefs.PrefsHelper.migrateCachesFromSecureStoreIfNeeded(this)
             } catch (e: Exception) {
                 Log.w(TAG, "Background warm-up failed: ${e.message}")
             }

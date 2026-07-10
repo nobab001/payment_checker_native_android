@@ -2,25 +2,20 @@ package online.paychek.app.data.local.prefs
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import online.paychek.app.config.AppConfig
+import online.paychek.app.utils.SecurePreferences
 
 /**
- * PrefsHelper — Centralized SharedPreferences Wrapper
- * ====================================================
- * Single access point for all SharedPreferences reads/writes in the app.
+ * PrefsHelper — plain SharedPreferences for non-sensitive flags and caches.
  *
- * Rules:
- *  - All key constants live in AppConfig, not here.
- *  - EncryptedSharedPreferences (SecurePreferences) handles the HMAC secret
- *    and auth token — those are NOT accessed through PrefsHelper.
- *  - This class wraps the plain (non-encrypted) preferences only.
- *  - All methods are synchronous — call from IO dispatcher if needed.
- *
- * Encryption boundary:
- *  Sensitive (token, secretKey) -> SecurePreferences (EncryptedSharedPreferences)
- *  Non-sensitive (flags, cache) -> PrefsHelper (plain SharedPreferences)
+ * Gateway methods + SMS templates are NOT secrets — they must live in plain prefs.
+ * Storing large JSON via Android Keystore AES previously failed silently on many devices.
  */
 object PrefsHelper {
+
+    private const val TAG = "PrefsHelper"
+    private const val KEY_CACHE_MIGRATED_V1 = "pcu_cache_plain_migrated_v1"
 
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
@@ -55,25 +50,88 @@ object PrefsHelper {
     }
 
     // -------------------------------------------------------------------------
-    // Gateway method cache (JSON string)
+    // Gateway method + SMS template cache (plain JSON)
     // -------------------------------------------------------------------------
 
-    fun getGatewayMethodsCache(context: Context): String {
-        val decrypted = online.paychek.app.utils.SecurePreferences.decrypt(context, AppConfig.KEY_GATEWAY_METHODS_CACHE)
-        return decrypted.ifEmpty { "[]" }
+    /**
+     * One-time migrate Keystore-encrypted caches → plain prefs, then drop secure copies.
+     */
+    fun migrateCachesFromSecureStoreIfNeeded(context: Context) {
+        val p = prefs(context)
+        if (p.getBoolean(KEY_CACHE_MIGRATED_V1, false)) return
+
+        try {
+            val methods = SecurePreferences.decrypt(context, AppConfig.KEY_GATEWAY_METHODS_CACHE)
+            val templates = SecurePreferences.decrypt(context, AppConfig.KEY_SMS_TEMPLATES_CACHE)
+            val editor = p.edit()
+            if (methods.isNotBlank() && p.getString(AppConfig.KEY_GATEWAY_METHODS_CACHE, null).isNullOrBlank()) {
+                editor.putString(AppConfig.KEY_GATEWAY_METHODS_CACHE, methods)
+            }
+            if (templates.isNotBlank() && p.getString(AppConfig.KEY_SMS_TEMPLATES_CACHE, null).isNullOrBlank()) {
+                editor.putString(AppConfig.KEY_SMS_TEMPLATES_CACHE, templates)
+            }
+            editor.putBoolean(KEY_CACHE_MIGRATED_V1, true).commit()
+
+            SecurePreferences.remove(context, AppConfig.KEY_GATEWAY_METHODS_CACHE)
+            SecurePreferences.remove(context, AppConfig.KEY_SMS_TEMPLATES_CACHE)
+            Log.i(TAG, "Migrated gateway/template caches to plain prefs")
+        } catch (e: Exception) {
+            Log.w(TAG, "Cache migration failed: ${e.message}")
+            p.edit().putBoolean(KEY_CACHE_MIGRATED_V1, true).apply()
+        }
     }
 
-    fun setGatewayMethodsCache(context: Context, json: String) {
-        online.paychek.app.utils.SecurePreferences.encrypt(context, AppConfig.KEY_GATEWAY_METHODS_CACHE, json)
+    fun getGatewayMethodsCache(context: Context): String {
+        migrateCachesFromSecureStoreIfNeeded(context)
+        val raw = prefs(context).getString(AppConfig.KEY_GATEWAY_METHODS_CACHE, null)
+        return if (raw.isNullOrBlank()) "[]" else raw
+    }
+
+    /** @return true if value was persisted and verified */
+    fun setGatewayMethodsCache(context: Context, json: String): Boolean {
+        migrateCachesFromSecureStoreIfNeeded(context)
+        return writeAndVerify(context, AppConfig.KEY_GATEWAY_METHODS_CACHE, json)
     }
 
     fun getSmsTemplatesCache(context: Context): String {
-        val decrypted = online.paychek.app.utils.SecurePreferences.decrypt(context, AppConfig.KEY_SMS_TEMPLATES_CACHE)
-        return decrypted.ifEmpty { "[]" }
+        migrateCachesFromSecureStoreIfNeeded(context)
+        val raw = prefs(context).getString(AppConfig.KEY_SMS_TEMPLATES_CACHE, null)
+        return if (raw.isNullOrBlank()) "[]" else raw
     }
 
-    fun setSmsTemplatesCache(context: Context, json: String) {
-        online.paychek.app.utils.SecurePreferences.encrypt(context, AppConfig.KEY_SMS_TEMPLATES_CACHE, json)
+    /** @return true if value was persisted and verified */
+    fun setSmsTemplatesCache(context: Context, json: String): Boolean {
+        migrateCachesFromSecureStoreIfNeeded(context)
+        return writeAndVerify(context, AppConfig.KEY_SMS_TEMPLATES_CACHE, json)
+    }
+
+    fun hasGatewayMethodsCache(context: Context): Boolean {
+        val raw = getGatewayMethodsCache(context)
+        return raw.isNotBlank() && raw != "[]"
+    }
+
+    fun hasSmsTemplatesCache(context: Context): Boolean {
+        val raw = getSmsTemplatesCache(context)
+        return raw.isNotBlank() && raw != "[]"
+    }
+
+    private fun writeAndVerify(context: Context, key: String, value: String): Boolean {
+        return try {
+            val ok = prefs(context).edit().putString(key, value).commit()
+            if (!ok) {
+                Log.e(TAG, "commit() failed for $key")
+                return false
+            }
+            val readBack = prefs(context).getString(key, null)
+            val verified = readBack == value
+            if (!verified) {
+                Log.e(TAG, "verify failed for $key (len=${value.length})")
+            }
+            verified
+        } catch (e: Exception) {
+            Log.e(TAG, "write failed for $key: ${e.message}", e)
+            false
+        }
     }
 
     fun getGatewayMethodsLastSync(context: Context): Long {
@@ -118,7 +176,7 @@ object PrefsHelper {
     }
 
     // -------------------------------------------------------------------------
-    // Device ID (hardware-derived, non-sensitive)
+    // Device ID
     // -------------------------------------------------------------------------
 
     fun getDeviceId(context: Context): String? =
@@ -127,11 +185,6 @@ object PrefsHelper {
     fun setDeviceId(context: Context, deviceId: String) {
         prefs(context).edit().putString(AppConfig.KEY_DEVICE_ID, deviceId).apply()
     }
-
-    // -------------------------------------------------------------------------
-    // WorkManager tracking — last successful queue flush timestamp
-    // Lets the UI show "last synced: X minutes ago" without querying Room.
-    // -------------------------------------------------------------------------
 
     private const val KEY_LAST_WORKER_SYNC_MS = "pcu_last_worker_sync_ms"
 
@@ -142,11 +195,6 @@ object PrefsHelper {
         prefs(context).edit().putLong(KEY_LAST_WORKER_SYNC_MS, timestampMs).apply()
     }
 
-    // -------------------------------------------------------------------------
-    // Convenience: clear session-only flags on logout
-    // (permanent device settings like SIM config are retained)
-    // -------------------------------------------------------------------------
-
     fun clearSessionData(context: Context) {
         prefs(context).edit()
             .remove(AppConfig.KEY_PIN_VERIFIED)
@@ -156,6 +204,10 @@ object PrefsHelper {
             .remove("sms_history_last_sync_v1")
             .remove("txn_history_bundle_v1")
             .remove(AppConfig.KEY_DASHBOARD_STATS_CACHE)
+            .remove("gateway_methods_last_sync_v2")
             .apply()
+        // Legacy Keystore copies (if any)
+        SecurePreferences.remove(context, AppConfig.KEY_GATEWAY_METHODS_CACHE)
+        SecurePreferences.remove(context, AppConfig.KEY_SMS_TEMPLATES_CACHE)
     }
 }
