@@ -56,6 +56,7 @@ class SmsMonitorService : Service() {
     private var smsReceiver: SmsReceiver? = null
     private var screenReceiver: BroadcastReceiver? = null
     private var socket: Socket? = null
+    @Volatile private var socketListenersRegistered = false
     private var connectivityJob: Job? = null
 
     // সর্বশেষ সফল পেমেন্টের সময় (notification-এ দেখানোর জন্য)
@@ -274,7 +275,26 @@ class SmsMonitorService : Service() {
         return null
     }
 
+    private fun teardownSocket() {
+        try {
+            socket?.off()
+            socket?.disconnect()
+        } catch (e: Exception) {
+            Log.w(TAG, "Socket teardown error: ${e.message}")
+        }
+        socket = null
+        socketListenersRegistered = false
+    }
+
     private fun startSocketConnection() {
+        synchronized(this) {
+            if (socket?.connected() == true) {
+                Log.d(TAG, "Socket already connected — skip duplicate connect")
+                return
+            }
+            teardownSocket()
+        }
+
         try {
             val token = SecurePreferences.decrypt(this, AppConfig.KEY_AUTH_TOKEN)
             if (token.isEmpty()) return
@@ -518,6 +538,7 @@ class SmsMonitorService : Service() {
         connectivityJob = null
         socket?.disconnect()
         socket?.off()
+        teardownSocket()
         serviceScope.cancel()
 
         if (!userInitiatedStop && online.paychek.app.data.local.prefs.PrefsHelper.isSmsServiceActive(this)) {

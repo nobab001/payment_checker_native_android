@@ -26,6 +26,9 @@ const io = new Server(server, {
   cors: { origin: '*' }
 });
 
+// One live socket per device room — duplicate connects from service restarts are dropped.
+const deviceSocketIds = new Map();
+
 // Setup Socket.IO Multi-Device Isolation + number health (ONLINE on connect, GRACE on disconnect)
 io.on('connection', (socket) => {
   const userId = socket.handshake.query.userId;
@@ -38,8 +41,19 @@ io.on('connection', (socket) => {
   }
 
   const roomName = `${userId}:${deviceId}`;
+
+  const previousSocketId = deviceSocketIds.get(roomName);
+  if (previousSocketId && previousSocketId !== socket.id) {
+    const stale = io.sockets.sockets.get(previousSocketId);
+    if (stale) {
+      console.log(`[Socket.IO] Replacing stale socket for ${roomName}`);
+      stale.disconnect(true);
+    }
+  }
+  deviceSocketIds.set(roomName, socket.id);
+
   socket.join(roomName);
-  console.log(`[Socket.IO] Device connected and locked to room: ${roomName}`);
+  console.log(`[Socket.IO] Device connected and locked to room: ${roomName} (socket=${socket.id})`);
 
   numberHealth.onDeviceSocketConnect(userId, deviceId).catch((err) => {
     console.warn('[Socket.IO] connect health update failed:', err.message);
@@ -53,7 +67,10 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log(`[Socket.IO] Device disconnected from room: ${roomName}`);
+    if (deviceSocketIds.get(roomName) === socket.id) {
+      deviceSocketIds.delete(roomName);
+    }
+    console.log(`[Socket.IO] Device disconnected from room: ${roomName} (socket=${socket.id})`);
     numberHealth.scheduleSocketDisconnect(userId, deviceId);
   });
 });
