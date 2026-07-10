@@ -152,13 +152,6 @@ function isLegacyCustomSenderPlanName(name) {
   return typeof name === 'string' && name.toLowerCase().includes('custom sender');
 }
 
-function formatDateYmd(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
 async function findAddonPlanIdByName(planName) {
   const normalized = String(planName || '').trim();
   if (!normalized) return null;
