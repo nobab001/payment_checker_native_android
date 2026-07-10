@@ -76,7 +76,9 @@ private enum class HomeTab(
 @Composable
 private fun CustomBottomBar(
     selectedTab: HomeTab,
-    onTabSelect: (HomeTab) -> Unit
+    onTabSelect: (HomeTab) -> Unit,
+    hasWebsitePermission: Boolean = true,
+    onApiTabLocked: () -> Unit = {}
 ) {
     val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     NavigationBar(
@@ -90,15 +92,27 @@ private fun CustomBottomBar(
     ) {
         HomeTab.entries.forEach { tab ->
             val isSelected = tab == selectedTab
+            val isApiLocked = tab == HomeTab.API && !hasWebsitePermission
             NavigationBarItem(
                 selected = isSelected,
-                onClick = { onTabSelect(tab) },
+                onClick = {
+                    if (isApiLocked) onApiTabLocked()
+                    else onTabSelect(tab)
+                },
                 icon = {
-                    Icon(
-                        imageVector = tab.icon,
-                        contentDescription = tab.label,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    if (isApiLocked) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = tab.label,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = tab.icon,
+                            contentDescription = tab.label,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 },
                 label = {
                     Text(
@@ -136,10 +150,17 @@ fun HomeScreen(
     var isAccessibilityEnabled by remember { mutableStateOf(true) }
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
+    var entitlements by remember {
+        mutableStateOf(online.paychek.app.utils.AccountEntitlementsStore.readCached(context))
+    }
+    var showWebsitePermissionDialog by remember { mutableStateOf(false) }
+
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
             if (state == androidx.lifecycle.Lifecycle.State.RESUMED) {
                 isAccessibilityEnabled = online.paychek.app.utils.AccessibilityHelper.isAccessibilityServiceEnabled(context)
+                val refreshed = online.paychek.app.utils.AccountEntitlementsStore.refresh(context)
+                if (refreshed != null) entitlements = refreshed
             }
         }
     }
@@ -740,6 +761,8 @@ fun HomeScreen(
         bottomBar = {
             CustomBottomBar(
                 selectedTab = selectedTab,
+                hasWebsitePermission = entitlements.hasWebsite,
+                onApiTabLocked = { showWebsitePermissionDialog = true },
                 onTabSelect = { tab ->
                     selectedTab = tab
                 }
@@ -815,12 +838,49 @@ fun HomeScreen(
                     HomeTab.SEARCH -> TransactionSearchScreen(
                         modifier = Modifier.fillMaxSize()
                     )
-                    HomeTab.API -> ApiIntegrationScreen(
-                        onNavigateToCheckout = onNavigateToApiCenter,
-                        onOpenWebsite = { id -> onNavigate(AppNavKey.WebsiteSettings(id)) },
-                        onNavigateToDocs = { onNavigate(AppNavKey.ApiDocs) },
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    HomeTab.API -> {
+                        if (entitlements.hasWebsite) {
+                            ApiIntegrationScreen(
+                                onNavigateToCheckout = onNavigateToApiCenter,
+                                onOpenWebsite = { id -> onNavigate(AppNavKey.WebsiteSettings(id)) },
+                                onNavigateToDocs = { onNavigate(AppNavKey.ApiDocs) },
+                                onNavigateToSubscription = { onNavigate(AppNavKey.SubscriptionPackages()) },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Icon(Icons.Default.Lock, null, tint = Color(0xFFF59E0B), modifier = Modifier.size(52.dp))
+                                    Text(
+                                        "ওয়েবসাইট/API ফিচার",
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp
+                                    )
+                                    Text(
+                                        "আপনার বর্তমান প্যাকেজে ওয়েবসাইট যোগ করার পারমিশন নেই। সাবস্ক্রিপশন প্যাকেজ কিনুন।",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 13.sp,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Button(
+                                        onClick = { onNavigate(AppNavKey.SubscriptionPackages()) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo)
+                                    ) {
+                                        Text("প্যাকেজ দেখুন")
+                                    }
+                                }
+                            }
+                        }
+                    }
                     HomeTab.PROFILE -> ProfileSettingsScreen(
                         onNavigateBack = { selectedTab = HomeTab.HOME },
                         onNavigateToSubscription = { onNavigate(AppNavKey.SubscriptionPackages()) },
@@ -829,6 +889,25 @@ fun HomeScreen(
                 }
             }
         }
+    }
+
+    if (showWebsitePermissionDialog) {
+        AlertDialog(
+            onDismissRequest = { showWebsitePermissionDialog = false },
+            title = { Text("পারমিশন প্রয়োজন", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("ওয়েবসাইট/API ফিচার ব্যবহার করতে সাবস্ক্রিপশন প্যাকেজ প্রয়োজন।")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showWebsitePermissionDialog = false
+                    onNavigate(AppNavKey.SubscriptionPackages())
+                }) { Text("প্যাকেজ দেখুন") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showWebsitePermissionDialog = false }) { Text("বন্ধ") }
+            }
+        )
     }
 }
 

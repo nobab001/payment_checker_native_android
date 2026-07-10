@@ -32,6 +32,9 @@ import androidx.compose.material.icons.filled.Edit
 import online.paychek.app.data.remote.dto.PlanFeatureDto
 import online.paychek.app.ui.components.plan.PlanFeaturesDefaults
 import online.paychek.app.ui.components.plan.PlanFeaturesEditorDialog
+import online.paychek.app.ui.components.plan.PlanPackagePreviewDialog
+import online.paychek.app.ui.components.plan.addonPermissionLines
+import online.paychek.app.ui.components.plan.subscriptionPermissionLines
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 
@@ -91,6 +94,8 @@ fun BillingConfigScreen(
     var showAddonFeaturesEditor by remember { mutableStateOf(false) }
 
     var adminPlanTab by remember { mutableStateOf(0) }
+    var previewSubscriptionPlan by remember { mutableStateOf<SubscriptionPlanDto?>(null) }
+    var previewAddonPlan by remember { mutableStateOf<AddonPlanDto?>(null) }
     val filteredAdminPlans = remember(uiState.plans, adminPlanTab) {
         when (adminPlanTab) {
             0 -> uiState.plans.filter { it.planCategory == "personal" || it.planCategory.isBlank() }
@@ -846,6 +851,14 @@ fun BillingConfigScreen(
             fontSize = 11.sp
         )
 
+        uiState.addonPlans.firstOrNull()?.let { firstAddon ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = { previewAddonPlan = firstAddon }) {
+                    Text("বিস্তারিত — ${firstAddon.planName}")
+                }
+            }
+        }
+
         if (uiState.addonPlans.isEmpty()) {
             Text("কোনো অ্যাড-অন প্যাকেজ নেই। + বাটনে ক্লিক করে তৈরি করুন।", color = TextSecondary, fontSize = 12.sp)
         } else {
@@ -875,6 +888,10 @@ fun BillingConfigScreen(
                         ) {
                             Text(addon.planName, fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 15.sp)
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(
+                                    onClick = { previewAddonPlan = addon },
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                ) { Text("বিস্তারিত", fontSize = 11.sp) }
                                 Text("৳${addon.price}", fontWeight = FontWeight.Bold, color = Color(0xFF22D3EE), fontSize = 15.sp)
                                 IconButton(
                                     onClick = {
@@ -952,6 +969,15 @@ fun BillingConfigScreen(
             Tab(selected = adminPlanTab == 2, onClick = { adminPlanTab = 2 }, text = { Text("পেমেন্ট গেটওয়ে") })
         }
 
+        val categoryPreviewPlan = filteredAdminPlans.firstOrNull()
+        if (categoryPreviewPlan != null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = { previewSubscriptionPlan = categoryPreviewPlan }) {
+                    Text("বিস্তারিত — ${categoryPreviewPlan.planName}")
+                }
+            }
+        }
+
         if (filteredAdminPlans.isEmpty()) {
             Text("এই ক্যাটাগরিতে কোনো প্ল্যান নেই।", color = TextSecondary, fontSize = 12.sp)
         } else {
@@ -989,6 +1015,10 @@ fun BillingConfigScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
+                                TextButton(
+                                    onClick = { previewSubscriptionPlan = plan },
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                ) { Text("বিস্তারিত", fontSize = 11.sp) }
                                 Text("৳${plan.price}", fontWeight = FontWeight.Bold, color = Color(0xFF22D3EE), fontSize = 15.sp)
                                 IconButton(
                                     onClick = {
@@ -1013,5 +1043,74 @@ fun BillingConfigScreen(
                 }
             }
         }
+    }
+
+    previewSubscriptionPlan?.let { plan ->
+        val features = PlanFeaturesDefaults.subscriptionFeatures(
+            maxSites = plan.maxSites,
+            maxDevices = plan.maxDevices,
+            existing = plan.features
+        )
+        PlanPackagePreviewDialog(
+            title = plan.planName,
+            subtitle = "মেয়াদ: ${plan.durationDays} দিন | সাইট: ${plan.maxSites} | ডিভাইস: ${plan.maxDevices}",
+            price = plan.price,
+            features = features,
+            permissionLines = subscriptionPermissionLines(
+                permTemplate = plan.permTemplate,
+                permWebsite = plan.permWebsite,
+                permDevice = plan.permDevice,
+                permCustomSender = plan.isCustomSenderAllowed
+            ),
+            onDismiss = { previewSubscriptionPlan = null },
+            onEdit = {
+                previewSubscriptionPlan = null
+                editingPlan = plan
+                planName = plan.planName
+                planPrice = plan.price.toString()
+                planMaxSites = plan.maxSites.toString()
+                planMaxDevices = plan.maxDevices.toString()
+                planDurationDays = plan.durationDays.toString()
+                planIsCustomSenderAllowed = plan.isCustomSenderAllowed == 1
+                planCategory = plan.planCategory.ifBlank { "personal" }
+                planPermTemplate = plan.permTemplate == 1
+                planPermWebsite = plan.permWebsite == 1
+                planPermDevice = plan.permDevice == 1
+                planFeatures = plan.features.orEmpty()
+                showCreatePlanDialog = true
+            }
+        )
+    }
+
+    previewAddonPlan?.let { addon ->
+        val features = PlanFeaturesDefaults.addonFeatures(
+            durationDays = addon.durationDays,
+            description = addon.description,
+            existing = addon.features
+        )
+        PlanPackagePreviewDialog(
+            title = addon.planName,
+            subtitle = addon.description ?: "কাস্টম সেন্ডার অ্যাড-অন",
+            price = addon.price,
+            features = features,
+            permissionLines = addonPermissionLines(
+                maxDevices = addon.maxDevices,
+                permCustomSender = addon.permCustomSender,
+                permDevice = addon.permDevice
+            ),
+            onDismiss = { previewAddonPlan = null },
+            onEdit = {
+                previewAddonPlan = null
+                editingAddon = addon
+                addonName = addon.planName
+                addonPrice = addon.price.toString()
+                addonDurationDays = addon.durationDays.toString()
+                addonDescription = addon.description.orEmpty()
+                addonIsActive = addon.isActive == 1
+                addonMaxDevices = addon.maxDevices.toString()
+                addonFeatures = addon.features.orEmpty()
+                showCreateAddonDialog = true
+            }
+        )
     }
 }

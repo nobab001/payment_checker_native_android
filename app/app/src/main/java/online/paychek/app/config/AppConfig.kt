@@ -37,6 +37,12 @@ object AppConfig {
     const val KEY_IS_OWNER_DEVICE     = "pcu_is_owner_device"
     const val KEY_DEVICE_SPECIFIC_PIN = "pcu_device_specific_pin"
     const val KEY_HAS_CUSTOM_SENDER_ADDON = "pcu_has_custom_sender_addon"
+    const val KEY_PERM_CUSTOM_SENDER    = "pcu_perm_custom_sender"
+    const val KEY_PERM_TEMPLATE         = "pcu_perm_template"
+    const val KEY_PERM_WEBSITE          = "pcu_perm_website"
+    const val KEY_PERM_DEVICE           = "pcu_perm_device"
+    const val KEY_EFF_MAX_DEVICES       = "pcu_eff_max_devices"
+    const val KEY_EFF_MAX_SITES         = "pcu_eff_max_sites"
     const val KEY_DASHBOARD_STATS_CACHE   = "pcu_dashboard_stats_cache_v1"
 
     // -----------------------------------------------------------------------

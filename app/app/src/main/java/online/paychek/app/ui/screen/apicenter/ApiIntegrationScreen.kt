@@ -55,18 +55,23 @@ fun ApiIntegrationScreen(
     onNavigateToCheckout: () -> Unit,
     onOpenWebsite: (Int) -> Unit,
     onNavigateToDocs: () -> Unit = {},
+    onNavigateToSubscription: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: WebsiteViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var entitlements by remember { mutableStateOf(online.paychek.app.utils.AccountEntitlementsStore.readCached(context)) }
     var showWizard by remember { mutableStateOf(false) }
     var editSite by remember { mutableStateOf<online.paychek.app.data.remote.dto.WebsiteDto?>(null) }
     var deleteSite by remember { mutableStateOf<online.paychek.app.data.remote.dto.WebsiteDto?>(null) }
     var deletePinError by remember { mutableStateOf<String?>(null) }
     val isDark = ApiBg == Color(0xFF0B0E14)
 
-    LaunchedEffect(Unit) { viewModel.loadWebsites() }
+    LaunchedEffect(Unit) {
+        viewModel.loadWebsites()
+        entitlements = online.paychek.app.utils.AccountEntitlementsStore.refresh(context) ?: entitlements
+    }
     LaunchedEffect(state.infoMessage) {
         state.infoMessage?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show(); viewModel.clearMessages() }
     }
@@ -110,11 +115,13 @@ fun ApiIntegrationScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showWizard = true },
-                containerColor = AccentCyan,
-                contentColor = Color(0xFF0B0E14)
-            ) { Icon(Icons.Default.Add, "Add Website") }
+            if (entitlements.hasWebsite) {
+                FloatingActionButton(
+                    onClick = { showWizard = true },
+                    containerColor = AccentCyan,
+                    contentColor = Color(0xFF0B0E14)
+                ) { Icon(Icons.Default.Add, "Add Website") }
+            }
         },
         modifier = modifier
     ) { padding ->
@@ -152,6 +159,29 @@ fun ApiIntegrationScreen(
                 }
             }
 
+            if (!entitlements.hasWebsite) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF59E0B).copy(alpha = 0.12f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = adaptivePadding(12.dp, 16.dp), vertical = 8.dp)
+                ) {
+                    Row(
+                        Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Default.Lock, null, tint = Color(0xFFF59E0B))
+                        Column(Modifier.weight(1f)) {
+                            Text("ওয়েবসাইট পারমিশন নেই", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("নতুন ওয়েবসাইট যোগ করতে সাবস্ক্রিপশন প্যাকেজ কিনুন।", fontSize = 11.sp, color = TextMuted)
+                        }
+                        TextButton(onClick = onNavigateToSubscription) { Text("প্যাকেজ") }
+                    }
+                }
+            }
+
             Text(
                 "ওয়েবসাইট তালিকা",
                 Modifier.padding(horizontal = adaptivePadding(14.dp, 18.dp), vertical = 4.dp),
@@ -168,7 +198,17 @@ fun ApiIntegrationScreen(
                         Icon(Icons.Default.Language, null, tint = TextMuted, modifier = Modifier.size(52.dp))
                         Spacer(Modifier.height(10.dp))
                         Text("এখনো কোনো ওয়েবসাইট নেই", color = TextMuted, fontWeight = FontWeight.SemiBold)
-                        Text("নিচের + বাটনে ক্লিক করে যোগ করুন", color = TextMuted, fontSize = 12.sp)
+                        Text(
+                            if (entitlements.hasWebsite) "নিচের + বাটনে ক্লিক করে যোগ করুন"
+                            else "ওয়েবসাইট যোগ করতে সাবস্ক্রিপশন প্যাকেজ প্রয়োজন",
+                            color = TextMuted, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        if (!entitlements.hasWebsite) {
+                            Spacer(Modifier.height(8.dp))
+                            Button(onClick = onNavigateToSubscription, colors = ButtonDefaults.buttonColors(containerColor = AccentCyan)) {
+                                Text("প্যাকেজ দেখুন", color = Color(0xFF0B0E14))
+                            }
+                        }
                     }
                 }
             } else {

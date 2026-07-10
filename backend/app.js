@@ -219,6 +219,13 @@ server.listen(PORT, async () => {
 
     console.log('[DB] ✅ Database check complete!');
 
+    try {
+      const { migrateAllUserEntitlements } = require('./scripts/migrateUserEntitlements');
+      await migrateAllUserEntitlements();
+    } catch (entErr) {
+      console.warn('[Entitlements] Startup migration skipped:', entErr.message);
+    }
+
   } catch (dbErr) {
     console.error('[DB] Failed to initialize database setup:', dbErr);
   }

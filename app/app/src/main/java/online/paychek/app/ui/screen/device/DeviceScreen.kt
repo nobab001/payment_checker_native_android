@@ -110,6 +110,7 @@ fun DeviceScreen(
         lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
             if (state == androidx.lifecycle.Lifecycle.State.RESUMED) {
                 isAccessibilityEnabled = online.paychek.app.utils.AccessibilityHelper.isAccessibilityServiceEnabled(context)
+                viewModel.refreshAccountEntitlements()
                 viewModel.loadGatewayMethods()
                 viewModel.loadTemplates()
                 viewModel.syncPhysicalSimNumbers()
@@ -1202,6 +1203,18 @@ fun DeviceScreen(
                     }
                 }
             }
+        }
+
+        if (state.showPermissionDialog) {
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissPermissionDialog() },
+                title = { Text("পারমিশন প্রয়োজন", fontWeight = FontWeight.Bold) },
+                text = { Text(state.permissionDialogMessage ?: "এই ফিচারের জন্য আপনার প্যাকেজে পারমিশন নেই।") },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.dismissPermissionDialog() }) { Text("ঠিক আছে") }
+                },
+                containerColor = GwCard
+            )
         }
 
         // Premium Upgrade Gated Feature Dialog (403 Handled)

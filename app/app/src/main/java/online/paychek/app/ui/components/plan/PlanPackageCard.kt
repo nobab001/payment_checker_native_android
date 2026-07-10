@@ -28,6 +28,7 @@ fun PlanPackageCard(
     buyButtonTextColor: Color = if (highlighted) Color.Black else Color.White,
     isPurchasing: Boolean = false,
     onBuyClick: (() -> Unit)? = null,
+    onDetailsClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val cardColor = MaterialTheme.colorScheme.surface
@@ -69,12 +70,23 @@ fun PlanPackageCard(
                         fontWeight = FontWeight.Medium
                     )
                 }
-                Text(
-                    text = "৳${price.toInt()}",
-                    fontWeight = FontWeight.Black,
-                    fontSize = 24.sp,
-                    color = accent
-                )
+                Column(horizontalAlignment = Alignment.End) {
+                    if (onDetailsClick != null) {
+                        TextButton(
+                            onClick = onDetailsClick,
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Text("বিস্তারিত", fontSize = 12.sp, color = accent)
+                        }
+                    }
+                    Text(
+                        text = "৳${price.toInt()}",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 24.sp,
+                        color = accent
+                    )
+                }
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

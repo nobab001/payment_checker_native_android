@@ -95,6 +95,11 @@ interface PaymentApiService {
         @Body request: PurchaseAddonRequest
     ): Response<PurchaseAddonResponse>
 
+    @GET("v1/account/entitlements")
+    suspend fun getAccountEntitlements(
+        @Header("Authorization") token: String
+    ): Response<AccountEntitlementsResponse>
+
     @GET("custom-archives")
     suspend fun getCustomArchives(
         @Header("Authorization") token: String,

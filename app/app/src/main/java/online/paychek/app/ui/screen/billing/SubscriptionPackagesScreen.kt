@@ -22,6 +22,9 @@ import online.paychek.app.data.remote.dto.AddonPlanDto
 import online.paychek.app.data.repository.PaymentRepository
 import online.paychek.app.ui.components.plan.PlanFeaturesDefaults
 import online.paychek.app.ui.components.plan.PlanPackageCard
+import online.paychek.app.ui.components.plan.PlanPackagePreviewDialog
+import online.paychek.app.ui.components.plan.addonPermissionLines
+import online.paychek.app.ui.components.plan.subscriptionPermissionLines
 import online.paychek.app.ui.theme.RoyalIndigo
 import online.paychek.app.utils.SecurePreferences
 import kotlinx.coroutines.launch
@@ -47,6 +50,8 @@ fun SubscriptionPackagesScreen(
     var addonPlans by remember { mutableStateOf<List<AddonPlanDto>>(emptyList()) }
     var selectedTab by remember { mutableStateOf(initialTab.coerceIn(0, 3)) }
     var purchasingAddonId by remember { mutableStateOf<Int?>(null) }
+    var previewSubscription by remember { mutableStateOf<SubscriptionPlanDto?>(null) }
+    var previewAddon by remember { mutableStateOf<AddonPlanDto?>(null) }
 
     fun reloadPlans() {
         coroutineScope.launch {
@@ -208,7 +213,8 @@ fun SubscriptionPackagesScreen(
                                         highlighted = isPremium,
                                         buyButtonText = "Buy Now",
                                         buyButtonTextColor = if (isPremium) Color.Black else Color.White,
-                                        onBuyClick = onNavigateToPaymentMock
+                                        onBuyClick = onNavigateToPaymentMock,
+                                        onDetailsClick = { previewSubscription = plan }
                                     )
                                 }
                             }
@@ -246,6 +252,7 @@ fun SubscriptionPackagesScreen(
                                         buyButtonText = "এখনই কিনুন (Buy Now)",
                                         buyButtonTextColor = Color.Black,
                                         isPurchasing = purchasingAddonId == addon.id,
+                                        onDetailsClick = { previewAddon = addon },
                                         onBuyClick = {
                                             val planId = addon.id ?: return@PlanPackageCard
                                             purchasingAddonId = planId
@@ -282,5 +289,46 @@ fun SubscriptionPackagesScreen(
                 }
             }
         }
+    }
+
+    previewSubscription?.let { plan ->
+        val features = PlanFeaturesDefaults.subscriptionFeatures(
+            maxSites = plan.maxSites,
+            maxDevices = plan.maxDevices,
+            existing = plan.features
+        )
+        PlanPackagePreviewDialog(
+            title = plan.planName,
+            subtitle = "মেয়াদ: ${plan.durationDays} দিন | সাইট: ${plan.maxSites} | ডিভাইস: ${plan.maxDevices}",
+            price = plan.price,
+            features = features,
+            permissionLines = subscriptionPermissionLines(
+                permTemplate = plan.permTemplate,
+                permWebsite = plan.permWebsite,
+                permDevice = plan.permDevice,
+                permCustomSender = plan.isCustomSenderAllowed
+            ),
+            onDismiss = { previewSubscription = null }
+        )
+    }
+
+    previewAddon?.let { addon ->
+        val features = PlanFeaturesDefaults.addonFeatures(
+            durationDays = addon.durationDays,
+            description = addon.description,
+            existing = addon.features
+        )
+        PlanPackagePreviewDialog(
+            title = addon.planName,
+            subtitle = addon.description ?: "কাস্টম সেন্ডার অ্যাড-অন",
+            price = addon.price,
+            features = features,
+            permissionLines = addonPermissionLines(
+                maxDevices = addon.maxDevices,
+                permCustomSender = addon.permCustomSender,
+                permDevice = addon.permDevice
+            ),
+            onDismiss = { previewAddon = null }
+        )
     }
 }

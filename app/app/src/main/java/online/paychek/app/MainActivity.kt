@@ -168,6 +168,7 @@ class MainActivity : FragmentActivity() {
                         SecurePreferences.encrypt(this@MainActivity, AppConfig.KEY_DEVICE_SPECIFIC_PIN, device.deviceSpecificPin)
                     }
                 }
+                online.paychek.app.utils.AccountEntitlementsStore.refresh(this@MainActivity)
             } catch (_: Exception) {
                 // Best-effort cache heal
             }

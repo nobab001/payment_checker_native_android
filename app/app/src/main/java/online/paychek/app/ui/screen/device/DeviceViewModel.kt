@@ -71,6 +71,10 @@ data class DeviceUiState(
     val showPremiumUpgradeDialog: Boolean     = false,
     val dialogErrorMessage: String?           = null,
     val hasCustomSenderPermission: Boolean    = false,
+    val hasTemplatePermission: Boolean        = false,
+    val hasDevicePermission: Boolean          = true,
+    val showPermissionDialog: Boolean         = false,
+    val permissionDialogMessage: String?      = null,
     val pendingSimConflict: SimConflictUi?      = null,
 
     // Account-wide active numbers modal
@@ -151,7 +155,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
         val cachedSim1Num = cachedList.find { it.simSlot == 1 && !it.number.isNullOrEmpty() }?.number ?: ""
         val cachedSim2Num = cachedList.find { it.simSlot == 2 && !it.number.isNullOrEmpty() }?.number ?: ""
-        val cachedCustomSenderPermission = prefs.getBoolean(AppConfig.KEY_HAS_CUSTOM_SENDER_ADDON, false)
+        val cachedEnt = online.paychek.app.utils.AccountEntitlementsStore.readCached(application)
 
         RetrofitClient.init(application)
         connectionEngine.startMonitoring(viewModelScope)
@@ -165,13 +169,15 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 sim1Number = cachedSim1Num,
                 sim2Number = cachedSim2Num,
                 isLoading = cachedList.isEmpty(),
-                hasCustomSenderPermission = cachedCustomSenderPermission
+                hasCustomSenderPermission = cachedEnt.hasCustomSender,
+                hasTemplatePermission = cachedEnt.hasTemplate,
+                hasDevicePermission = cachedEnt.hasDevice
             ) 
         }
         lastConfirmedLookupNumber[1] = cachedSim1Num
         lastConfirmedLookupNumber[2] = cachedSim2Num
 
-        loadCustomSenderPermission()
+        loadAccountEntitlements()
 
         viewModelScope.launch {
             connectionEngine.status
@@ -568,10 +574,23 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setSubTab(index: Int) {
+        if (index == 1 && !_state.value.hasDevicePermission) {
+            _state.update {
+                it.copy(
+                    showPermissionDialog = true,
+                    permissionDialogMessage = "আপনার প্যাকেজে ডিভাইস ম্যানেজমেন্টের পারমিশন নেই।"
+                )
+            }
+            return
+        }
         _state.update { it.copy(selectedSubTab = index, errorMessage = null) }
         if (index == 1) {
             loadChildDevices()
         }
+    }
+
+    fun dismissPermissionDialog() {
+        _state.update { it.copy(showPermissionDialog = false, permissionDialogMessage = null) }
     }
 
     fun loadChildDevices() {
@@ -1595,6 +1614,15 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun toggleTemplate(simSlot: Int, template: SmsTemplateDto) {
+        if (!_state.value.hasTemplatePermission) {
+            _state.update {
+                it.copy(
+                    showPermissionDialog = true,
+                    permissionDialogMessage = "আপনার প্যাকেজে টেমপ্লেট যোগ করার পারমিশন নেই।"
+                )
+            }
+            return
+        }
         val existingMethod = _state.value.methods.find { it.simSlot == simSlot && it.templateId == template.id }
         if (existingMethod != null) {
             toggleMethod(existingMethod)
@@ -1698,24 +1726,21 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         onAllowed(simSlot)
     }
 
-    private fun loadCustomSenderPermission() {
+    private fun loadAccountEntitlements() {
         viewModelScope.launch {
-            val token = getToken() ?: return@launch
-            runCatching { RetrofitClient.profileApiService.getProfile("Bearer $token") }
-                .onSuccess { res ->
-                    if (res.isSuccessful && res.body()?.success == true) {
-                        val user = res.body()!!.user
-                        val allowed = isCustomSenderPermissionActive(
-                            hasAddon = user.hasCustomSenderAddon,
-                            endsAt = user.customSenderEndsAt,
-                            role = user.role
-                        )
-                        prefs.edit().putBoolean(AppConfig.KEY_HAS_CUSTOM_SENDER_ADDON, allowed).apply()
-                        _state.update { it.copy(hasCustomSenderPermission = allowed) }
-                    }
-                }
+            val ent = online.paychek.app.utils.AccountEntitlementsStore.refresh(getApplication())
+                ?: online.paychek.app.utils.AccountEntitlementsStore.readCached(getApplication())
+            _state.update {
+                it.copy(
+                    hasCustomSenderPermission = ent.hasCustomSender,
+                    hasTemplatePermission = ent.hasTemplate,
+                    hasDevicePermission = ent.hasDevice
+                )
+            }
         }
     }
+
+    fun refreshAccountEntitlements() = loadAccountEntitlements()
 
     fun addCustomSender(
         simSlot: Int,
