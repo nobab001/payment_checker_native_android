@@ -19,27 +19,21 @@ import online.paychek.app.ui.screen.admin.BillingConfigScreen
 import online.paychek.app.ui.screen.profile.ProfileSettingsScreen
 import online.paychek.app.ui.screen.sync.SyncSettingsScreen
 import online.paychek.app.utils.SecurePreferences
+import online.paychek.app.utils.SessionFlags
 
 @Composable
 fun MainNavigation() {
     val context = androidx.compose.ui.platform.LocalContext.current
     
-    // Dynamically determine the start destination based on saved session state
+    // Fast start destination — plain SessionFlags (no Keystore on first frame)
     val startDestination = androidx.compose.runtime.remember(context) {
-        val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
-        val profileComplete = SecurePreferences.decrypt(context, "pcu_profile_complete")
-        val contact = SecurePreferences.decrypt(context, "pcu_contact")
-        val role = SecurePreferences.decrypt(context, "pcu_user_role")
-        
-        if (token.isNotEmpty()) {
-            if (profileComplete == "false") {
-                NavKey.Signup(contact, token)
+        if (SessionFlags.hasAuth(context)) {
+            if (!SessionFlags.isProfileComplete(context)) {
+                NavKey.Signup(SessionFlags.contact(context), "")
+            } else if (SessionFlags.userRole(context) == "admin") {
+                NavKey.AdminDashboard
             } else {
-                if (role == "admin") {
-                    NavKey.AdminDashboard
-                } else {
-                    NavKey.Home
-                }
+                NavKey.Home
             }
         } else {
             NavKey.Login
@@ -154,6 +148,7 @@ fun MainNavigation() {
                         SecurePreferences.remove(context, "pcu_user_role")
                         SecurePreferences.remove(context, "pcu_profile_complete")
                         SecurePreferences.remove(context, "pcu_contact")
+                        SessionFlags.clear(context)
                         backStack.add(NavKey.Login)
                     },
                     onOpenUserSettings = { userId ->

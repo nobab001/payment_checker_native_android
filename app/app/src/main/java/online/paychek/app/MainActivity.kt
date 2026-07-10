@@ -15,13 +15,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
 import com.scottyab.rootbeer.RootBeer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import online.paychek.app.config.AppConfig
 import online.paychek.app.ui.screen.auth.pin.SecurityGateScreen
 import online.paychek.app.ui.screen.device.RemoteLockScreen
 import online.paychek.app.ui.theme.AppTheme
-import online.paychek.app.utils.SecurePreferences
+import online.paychek.app.utils.SessionFlags
 
+/**
+ * Cold-start optimized:
+ *  - No Keystore decrypt / RootBeer on the main thread before first frame
+ *  - Session lock uses plain [SessionFlags] (instant after reboot)
+ *  - Root check runs after UI is shown
+ */
 class MainActivity : FragmentActivity() {
     private var isAppLocked by mutableStateOf(false)
     private var isAppDeactivated by mutableStateOf(false)
@@ -36,54 +46,16 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // ─────────────────────────────────────────────────────────────────
-        // ROOT DETECTION — Layer 1: RootBeer
-        // সবার আগে চলে — Root পাওয়া গেলে App চলবে না।
-        //
-        // RootBeer checks:
-        //  • su binary presence (Magisk, SuperSU, etc.)
-        //  • Dangerous system properties (ro.debuggable, etc.)
-        //  • Test-keys build signature
-        //  • Known root app packages
-        //
-        // Future Layer 2 (optional): Play Integrity API
-        //   → isDeviceIntegrityMet() check যোগ করা যাবে independently
-        //   → Play Services dependency — তাই এখন optional রাখা হয়েছে
-        // ─────────────────────────────────────────────────────────────────
-        val rootBeer = RootBeer(this)
-        if (rootBeer.isRooted) {
-            AlertDialog.Builder(this)
-                .setTitle("নিরাপত্তা সতর্কতা")
-                .setMessage(
-                    "এই ডিভাইসে Root সনাক্ত হয়েছে।\n\n" +
-                    "নিরাপত্তার কারণে Paychek এই ডিভাইসে চলতে পারবে না। " +
-                    "Root করা ডিভাইসে আপনার HMAC Secret Key এবং পেমেন্ট " +
-                    "তথ্য নিরাপদ নাও থাকতে পারে।"
-                )
-                .setCancelable(false)
-                .setPositiveButton("বন্ধ করুন") { _, _ ->
-                    finishAffinity() // সব Activity বন্ধ করো
-                }
-                .show()
-            return // বাকি onCreate চালানো হবে না
-        }
-
         val sharedPrefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
         sharedPrefs.registerOnSharedPreferenceChangeListener(prefListener)
         isAppDeactivated = !sharedPrefs.getBoolean("pcu_is_app_active", true)
 
-        // Lock the app on start if a token exists and profile is complete
-        val hasToken = SecurePreferences.decrypt(this, AppConfig.KEY_AUTH_TOKEN).isNotEmpty()
-        val isProfileComplete = SecurePreferences.decrypt(this, "pcu_profile_complete") != "false"
-        if (hasToken && isProfileComplete) {
+        // Fast path — plain prefs only (no Android Keystore)
+        if (SessionFlags.hasAuth(this) && SessionFlags.isProfileComplete(this)) {
             isAppLocked = true
         }
 
         enableEdgeToEdge()
-
-        online.paychek.app.data.remote.api.RetrofitClient.init(applicationContext)
-        online.paychek.app.services.connectivity.ConnectionEngine.init(applicationContext)
-
         setContent {
             AppTheme {
                 Surface(
@@ -97,13 +69,35 @@ class MainActivity : FragmentActivity() {
                             RemoteLockScreen(modifier = Modifier.fillMaxSize())
                         } else if (isAppLocked) {
                             SecurityGateScreen(
-                                onUnlockSuccess = {
-                                    isAppLocked = false
-                                },
+                                onUnlockSuccess = { isAppLocked = false },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
                     }
+                }
+            }
+        }
+
+        // Root check AFTER first frame — RootBeer is slow on cold boot
+        lifecycleScope.launch(Dispatchers.Default) {
+            val rooted = try {
+                RootBeer(this@MainActivity).isRooted
+            } catch (_: Exception) {
+                false
+            }
+            if (rooted) {
+                withContext(Dispatchers.Main) {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("নিরাপত্তা সতর্কতা")
+                        .setMessage(
+                            "এই ডিভাইসে Root সনাক্ত হয়েছে।\n\n" +
+                                "নিরাপত্তার কারণে Paychek এই ডিভাইসে চলতে পারবে না। " +
+                                "Root করা ডিভাইসে আপনার HMAC Secret Key এবং পেমেন্ট " +
+                                "তথ্য নিরাপদ নাও থাকতে পারে।"
+                        )
+                        .setCancelable(false)
+                        .setPositiveButton("বন্ধ করুন") { _, _ -> finishAffinity() }
+                        .show()
                 }
             }
         }
@@ -116,15 +110,13 @@ class MainActivity : FragmentActivity() {
     override fun onStart() {
         val wasRequesting = isRequestingPermission
         super.onStart()
-        val hasToken = SecurePreferences.decrypt(this, AppConfig.KEY_AUTH_TOKEN).isNotEmpty()
-        val isProfileComplete = SecurePreferences.decrypt(this, "pcu_profile_complete") != "false"
-        
+
         val sharedPrefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
         val lastBackgroundTime = sharedPrefs.getLong("last_background_time", 0)
-        val currentTime = System.currentTimeMillis()
-        val timePassedMs = currentTime - lastBackgroundTime
-        
-        if (hasToken && isProfileComplete && wasStopped && !wasRequesting && timePassedMs > 300000) {
+        val timePassedMs = System.currentTimeMillis() - lastBackgroundTime
+
+        val hasSession = SessionFlags.hasAuth(this) && SessionFlags.isProfileComplete(this)
+        if (hasSession && wasStopped && !wasRequesting && timePassedMs > 300000) {
             isAppLocked = true
         }
         wasStopped = false
@@ -148,4 +140,3 @@ class MainActivity : FragmentActivity() {
         sharedPrefs.unregisterOnSharedPreferenceChangeListener(prefListener)
     }
 }
-

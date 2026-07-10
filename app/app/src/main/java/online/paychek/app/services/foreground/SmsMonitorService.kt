@@ -92,7 +92,7 @@ class SmsMonitorService : Service() {
             return START_NOT_STICKY
         }
 
-        // Foreground notification চালু করা
+        // Foreground notification FIRST — Android requires this within ~5s of startForegroundService
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
                 NOTIFICATION_ID,
@@ -104,19 +104,16 @@ class SmsMonitorService : Service() {
             startForeground(NOTIFICATION_ID, buildNotification())
         }
 
-        // CPU Wakelock নেওয়া (পুনরায় নবায়ন সহ)
+        // Lightweight sync work on main; heavy recovery off the service thread
+        registerSmsReceiver()
+        registerScreenReceiver()
         acquireWakeLock()
         startWakeLockRenewal()
 
-        // SMS BroadcastReceiver রেজিস্টার করা
-        registerSmsReceiver()
-        registerScreenReceiver()
-
-        // ── Offline recovery: WorkManager + network observer + startup flush ──
-        startOfflineRecovery()
-
-        // ── Push-Driven Cache Sync ─────────────────────────────
-        startSocketConnection()
+        serviceScope.launch {
+            startOfflineRecovery()
+            startSocketConnection()
+        }
 
         return START_STICKY // সিস্টেম kill করলে নিজে পুনরায় চালু হবে
     }

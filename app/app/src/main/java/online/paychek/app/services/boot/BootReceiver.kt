@@ -8,18 +8,11 @@ import android.util.Log
 import online.paychek.app.config.AppConfig
 import online.paychek.app.services.foreground.SmsMonitorService
 import online.paychek.app.services.sync.SmsPollWorker
-import online.paychek.app.utils.SecurePreferences
+import online.paychek.app.utils.SessionFlags
 
 /**
- * BootReceiver — ফোন রিস্টার্টের পর SMS Monitoring Service স্বয়ংক্রিয়ভাবে চালু করে।
- *
- * কখন চালু হয়:
- *  • android.intent.action.BOOT_COMPLETED — সাধারণ রিবুটের পর
- *  • android.intent.action.MY_PACKAGE_REPLACED — অ্যাপ আপডেটের পর
- *  • android.intent.action.LOCKED_BOOT_COMPLETED — Encrypted storage unlock হওয়ার আগে
- *
- * শর্ত: AppConfig.KEY_SMS_SERVICE_ACTIVE == true হলেই শুধু সার্ভিস চালু করবে।
- * ব্যবহারকারী নিজে সার্ভিস বন্ধ রাখলে রিবুটের পর আপনাআপনি চালু হবে না।
+ * BootReceiver — starts SMS monitoring after reboot without Keystore decrypt.
+ * Uses plain [SessionFlags] so boot is not blocked by Android Keystore unlock.
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -29,47 +22,43 @@ class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
-        Log.i(TAG, "Boot broadcast ধরা হয়েছে — Action: $action")
+        Log.i(TAG, "Boot broadcast — Action: $action")
 
         val isBootEvent = action == Intent.ACTION_BOOT_COMPLETED ||
-                action == Intent.ACTION_MY_PACKAGE_REPLACED ||
-                action == "android.intent.action.LOCKED_BOOT_COMPLETED"
+            action == Intent.ACTION_MY_PACKAGE_REPLACED ||
+            action == "android.intent.action.LOCKED_BOOT_COMPLETED"
 
         if (!isBootEvent) return
 
-        // SharedPreferences থেকে চেক — ব্যবহারকারী কি সার্ভিস চালু রেখেছিলেন?
-        val prefs      = context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
-        val isEnabled  = prefs.getBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, false)
-        val hasToken   = SecurePreferences.decrypt(context, AppConfig.KEY_AUTH_TOKEN).isNotEmpty()
+        val prefs = context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+        val isEnabled = prefs.getBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, false)
+        val hasAuth = SessionFlags.hasAuth(context)
 
         if (!isEnabled) {
-            Log.i(TAG, "SMS Service বন্ধ ছিল — boot-এ চালু করা হচ্ছে না")
+            Log.i(TAG, "SMS Service was off — skip boot start")
             return
         }
 
-        if (!hasToken) {
-            Log.w(TAG, "Auth Token নেই — ব্যবহারকারী লগইন করেননি, সার্ভিস বাতিল")
+        if (!hasAuth) {
+            Log.w(TAG, "No auth session flag — skip boot start")
             return
         }
 
-        // সব শর্ত পূরণ হলে Foreground Service চালু করা
         try {
             val serviceIntent = Intent(context, SmsMonitorService::class.java).apply {
                 this.action = SmsMonitorService.ACTION_START
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                // Android 8+ — startForegroundService() ব্যবহার করতে হবে
                 context.startForegroundService(serviceIntent)
             } else {
                 context.startService(serviceIntent)
             }
 
-            Log.i(TAG, "✅ Boot-এ SMS Monitor Service চালু করা হয়েছে")
+            Log.i(TAG, "SMS Monitor Service started on boot")
             SmsPollWorker.schedule(context.applicationContext)
-
         } catch (e: Exception) {
-            Log.e(TAG, "Boot-এ Service চালু করতে ব্যর্থ: ${e.message}")
+            Log.e(TAG, "Boot service start failed: ${e.message}")
         }
     }
 }
