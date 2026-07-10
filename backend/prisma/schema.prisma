@@ -433,17 +433,28 @@ model subscription_plans {
   max_devices              Int
   is_custom_sender_allowed Int      @default(0) @db.TinyInt
   duration_days            Int?     @default(365)
+  plan_category            String   @default("personal") @db.VarChar(32)
+  perm_template            Int      @default(1) @db.TinyInt
+  perm_website             Int      @default(1) @db.TinyInt
+  perm_device              Int      @default(1) @db.TinyInt
+  features_json            String?  @db.Text
   created_at               DateTime @default(now()) @db.Timestamp(0)
 }
 
 model addon_plans {
-  id            Int      @id @default(autoincrement())
-  plan_name     String   @unique(map: "uniq_addon_plan_name") @db.VarChar(100)
-  price         Decimal  @default(0.00) @db.Decimal(10, 2)
-  duration_days Int      @default(30)
-  description   String?  @db.Text
-  is_active     Int      @default(1) @db.TinyInt
-  created_at    DateTime @default(now()) @db.Timestamp(0)
+  id                Int      @id @default(autoincrement())
+  plan_name         String   @unique(map: "uniq_addon_plan_name") @db.VarChar(100)
+  price             Decimal  @default(0.00) @db.Decimal(10, 2)
+  duration_days     Int      @default(30)
+  description       String?  @db.Text
+  is_active         Int      @default(1) @db.TinyInt
+  max_devices       Int      @default(2)
+  perm_custom_sender Int     @default(1) @db.TinyInt
+  perm_template     Int      @default(0) @db.TinyInt
+  perm_website      Int      @default(0) @db.TinyInt
+  perm_device       Int      @default(1) @db.TinyInt
+  features_json     String?  @db.Text
+  created_at        DateTime @default(now()) @db.Timestamp(0)
 }
 
 model user_credentials {
@@ -477,6 +488,13 @@ model users {
   gmail_enabled           Int                  @default(0) @db.TinyInt
   has_custom_sender_addon Int                  @default(0) @db.TinyInt
   custom_sender_ends_at   DateTime?            @db.Date
+  active_addon_plan_id    Int?
+  perm_custom_sender      Int                  @default(0) @db.TinyInt
+  perm_template           Int                  @default(0) @db.TinyInt
+  perm_website            Int                  @default(0) @db.TinyInt
+  perm_device             Int                  @default(0) @db.TinyInt
+  eff_max_devices         Int                  @default(1)
+  eff_max_sites           Int                  @default(1)
   fcm_token               String?              @db.VarChar(512)
   secretKey          String?              @db.VarChar(128)
   secretKeyVersion   Int                  @default(1) @db.UnsignedInt
