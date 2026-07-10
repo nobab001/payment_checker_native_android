@@ -45,7 +45,7 @@ fun SubscriptionPackagesScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var plans by remember { mutableStateOf<List<SubscriptionPlanDto>>(emptyList()) }
     var addonPlans by remember { mutableStateOf<List<AddonPlanDto>>(emptyList()) }
-    var selectedTab by remember { mutableStateOf(initialTab.coerceIn(0, 1)) }
+    var selectedTab by remember { mutableStateOf(initialTab.coerceIn(0, 3)) }
     var purchasingAddonId by remember { mutableStateOf<Int?>(null) }
 
     fun reloadPlans() {
@@ -113,28 +113,48 @@ fun SubscriptionPackagesScreen(
                 .padding(innerPadding)
                 .background(PackBg)
         ) {
-            TabRow(
+            ScrollableTabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = PackBg,
                 contentColor = Color(0xFF22D3EE),
+                edgePadding = 8.dp,
                 indicator = { tabPositions ->
-                    TabRowDefaults.SecondaryIndicator(
-                        modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                        color = Color(0xFF22D3EE)
-                    )
+                    if (selectedTab < tabPositions.size) {
+                        TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                            color = Color(0xFF22D3EE)
+                        )
+                    }
                 },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
             ) {
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("মূল প্যাকেজসমূহ", fontWeight = FontWeight.Bold, fontSize = 14.sp) }
+                    text = { Text("পার্সোনাল", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("অ্যাড-অন ফিচার", fontWeight = FontWeight.Bold, fontSize = 14.sp) }
+                    text = { Text("পার্সোনাল বিজনেস", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                 )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    text = { Text("পেমেন্ট গেটওয়ে", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                )
+                Tab(
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
+                    text = { Text("কাস্টম সেন্ডার", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                )
+            }
+
+            val categoryPlans = when (selectedTab) {
+                0 -> plans.filter { it.planCategory == "personal" || it.planCategory.isBlank() }
+                1 -> plans.filter { it.planCategory == "personal_business" }
+                2 -> plans.filter { it.planCategory == "payment_gateway" }
+                else -> emptyList()
             }
 
             Box(
@@ -143,7 +163,7 @@ fun SubscriptionPackagesScreen(
                     .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                if (selectedTab == 0) {
+                if (selectedTab < 3) {
                     when {
                         isLoading -> CircularProgressIndicator(color = Color(0xFF22D3EE))
                         errorMessage != null -> {
@@ -164,8 +184,8 @@ fun SubscriptionPackagesScreen(
                                 ) { Text("পুনরায় চেষ্টা করুন") }
                             }
                         }
-                        plans.isEmpty() -> {
-                            Text("কোনো প্যাকেজ পাওয়া যায়নি।", color = TextM, fontSize = 14.sp)
+                        categoryPlans.isEmpty() -> {
+                            Text("এই ক্যাটাগরিতে কোনো প্যাকেজ নেই।", color = TextM, fontSize = 14.sp)
                         }
                         else -> {
                             LazyColumn(
@@ -173,7 +193,7 @@ fun SubscriptionPackagesScreen(
                                 contentPadding = PaddingValues(16.dp),
                                 verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
-                                items(plans, key = { it.planName }) { plan ->
+                                items(categoryPlans, key = { it.planName }) { plan ->
                                     val isPremium = plan.planName.equals("Premium", ignoreCase = true)
                                     val features = PlanFeaturesDefaults.subscriptionFeatures(
                                         maxSites = plan.maxSites,

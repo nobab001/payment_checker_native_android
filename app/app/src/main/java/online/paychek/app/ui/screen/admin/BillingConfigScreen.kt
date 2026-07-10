@@ -58,6 +58,10 @@ fun BillingConfigScreen(
     var planMaxDevices by remember { mutableStateOf("") }
     var planIsCustomSenderAllowed by remember { mutableStateOf(false) }
     var planDurationDays by remember { mutableStateOf("365") }
+    var planCategory by remember { mutableStateOf("personal") }
+    var planPermTemplate by remember { mutableStateOf(true) }
+    var planPermWebsite by remember { mutableStateOf(true) }
+    var planPermDevice by remember { mutableStateOf(true) }
 
     // PIN Verification Dialog states
     var showPinDialog by remember { mutableStateOf(false) }
@@ -80,10 +84,20 @@ fun BillingConfigScreen(
     var addonDurationDays by remember { mutableStateOf("30") }
     var addonDescription by remember { mutableStateOf("") }
     var addonIsActive by remember { mutableStateOf(true) }
+    var addonMaxDevices by remember { mutableStateOf("2") }
     var planFeatures by remember { mutableStateOf<List<PlanFeatureDto>>(emptyList()) }
     var addonFeatures by remember { mutableStateOf<List<PlanFeatureDto>>(emptyList()) }
     var showPlanFeaturesEditor by remember { mutableStateOf(false) }
     var showAddonFeaturesEditor by remember { mutableStateOf(false) }
+
+    var adminPlanTab by remember { mutableStateOf(0) }
+    val filteredAdminPlans = remember(uiState.plans, adminPlanTab) {
+        when (adminPlanTab) {
+            0 -> uiState.plans.filter { it.planCategory == "personal" || it.planCategory.isBlank() }
+            1 -> uiState.plans.filter { it.planCategory == "personal_business" }
+            else -> uiState.plans.filter { it.planCategory == "payment_gateway" }
+        }
+    }
 
     LaunchedEffect(uiState.configs) {
         trialDays = uiState.configs["trial_days"] ?: "7"
@@ -220,6 +234,51 @@ fun BillingConfigScreen(
                             onCheckedChange = { planIsCustomSenderAllowed = it }
                         )
                     }
+                    OutlinedTextField(
+                        value = when (planCategory) {
+                            "personal_business" -> "পার্সোনাল বিজনেস"
+                            "payment_gateway" -> "পেমেন্ট গেটওয়ে"
+                            else -> "পার্সোনাল"
+                        },
+                        onValueChange = { },
+                        readOnly = true,
+                        label = { Text("ক্যাটাগরি") },
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            planCategory = when (planCategory) {
+                                "personal" -> "personal_business"
+                                "personal_business" -> "payment_gateway"
+                                else -> "personal"
+                            }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        )
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("টেমপ্লেট পারমিশন", color = TextPrimary, fontSize = 13.sp)
+                        Switch(checked = planPermTemplate, onCheckedChange = { planPermTemplate = it })
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("ওয়েবসাইট পারমিশন", color = TextPrimary, fontSize = 13.sp)
+                        Switch(checked = planPermWebsite, onCheckedChange = { planPermWebsite = it })
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("ডিভাইস পারমিশন", color = TextPrimary, fontSize = 13.sp)
+                        Switch(checked = planPermDevice, onCheckedChange = { planPermDevice = it })
+                    }
                 }
             },
             confirmButton = {
@@ -243,6 +302,10 @@ fun BillingConfigScreen(
                                     maxDevices = md,
                                     isCustomSenderAllowed = if (planIsCustomSenderAllowed) 1 else 0,
                                     durationDays = dd,
+                                    planCategory = planCategory,
+                                    permTemplate = if (planPermTemplate) 1 else 0,
+                                    permWebsite = if (planPermWebsite) 1 else 0,
+                                    permDevice = if (planPermDevice) 1 else 0,
                                     features = featuresToSave
                                 )
                             ) { success ->
@@ -390,6 +453,17 @@ fun BillingConfigScreen(
                             unfocusedTextColor = TextPrimary
                         )
                     )
+                    OutlinedTextField(
+                        value = addonMaxDevices,
+                        onValueChange = { addonMaxDevices = it },
+                        label = { Text("সর্বোচ্চ ডিভাইস") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        )
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -419,6 +493,11 @@ fun BillingConfigScreen(
                                 durationDays = addonDurationDays.toIntOrNull() ?: 30,
                                 description = addonDescription.trim().ifEmpty { null },
                                 isActive = if (addonIsActive) 1 else 0,
+                                maxDevices = addonMaxDevices.toIntOrNull() ?: 2,
+                                permCustomSender = 1,
+                                permTemplate = 0,
+                                permWebsite = 0,
+                                permDevice = 1,
                                 features = featuresToSave
                             )
                         ) { success ->
@@ -845,6 +924,10 @@ fun BillingConfigScreen(
                     planMaxDevices = ""
                     planDurationDays = "365"
                     planIsCustomSenderAllowed = false
+                    planCategory = "personal"
+                    planPermTemplate = true
+                    planPermWebsite = true
+                    planPermDevice = true
                     planFeatures = emptyList()
                     showCreatePlanDialog = true
                 },
@@ -858,10 +941,21 @@ fun BillingConfigScreen(
             }
         }
 
-        if (uiState.plans.isEmpty()) {
-            Text("কোনো সাবস্ক্রিপশন প্ল্যান পাওয়া যায়নি।", color = TextSecondary, fontSize = 12.sp)
+        ScrollableTabRow(
+            selectedTabIndex = adminPlanTab,
+            containerColor = CardBackground,
+            contentColor = MaterialTheme.colorScheme.primary,
+            edgePadding = 0.dp
+        ) {
+            Tab(selected = adminPlanTab == 0, onClick = { adminPlanTab = 0 }, text = { Text("পার্সোনাল") })
+            Tab(selected = adminPlanTab == 1, onClick = { adminPlanTab = 1 }, text = { Text("পার্সোনাল বিজনেস") })
+            Tab(selected = adminPlanTab == 2, onClick = { adminPlanTab = 2 }, text = { Text("পেমেন্ট গেটওয়ে") })
+        }
+
+        if (filteredAdminPlans.isEmpty()) {
+            Text("এই ক্যাটাগরিতে কোনো প্ল্যান নেই।", color = TextSecondary, fontSize = 12.sp)
         } else {
-            uiState.plans.forEach { plan ->
+            filteredAdminPlans.forEach { plan ->
                 Card(
                     colors = CardDefaults.cardColors(containerColor = CardBackground),
                     shape = RoundedCornerShape(12.dp),
@@ -876,6 +970,10 @@ fun BillingConfigScreen(
                             planMaxDevices = plan.maxDevices.toString()
                             planDurationDays = plan.durationDays.toString()
                             planIsCustomSenderAllowed = plan.isCustomSenderAllowed == 1
+                            planCategory = plan.planCategory.ifBlank { "personal" }
+                            planPermTemplate = plan.permTemplate == 1
+                            planPermWebsite = plan.permWebsite == 1
+                            planPermDevice = plan.permDevice == 1
                             planFeatures = plan.features.orEmpty()
                             showCreatePlanDialog = true
                         }

@@ -1,4 +1,5 @@
 const prisma = require('../db/prisma');
+const { syncUserEntitlements, ensureEntitlementSchema } = require('../services/accountEntitlementsService');
 
 let addonPlansTableReady = false;
 
@@ -45,6 +46,7 @@ async function ensureAddonPlansTable() {
 }
 
 async function ensurePlanFeaturesColumns() {
+  await ensureEntitlementSchema();
   const subCols = await prisma.$queryRaw`SHOW COLUMNS FROM subscription_plans LIKE 'features_json'`;
   if (!subCols.length) {
     await prisma.$executeRawUnsafe('ALTER TABLE subscription_plans ADD COLUMN features_json TEXT NULL');
@@ -110,6 +112,10 @@ function mapSubscriptionPlanRow(row) {
     max_devices: Number(row.max_devices),
     is_custom_sender_allowed: Number(row.is_custom_sender_allowed || 0),
     duration_days: Number(row.duration_days || 365),
+    plan_category: row.plan_category || 'personal',
+    perm_template: Number(row.perm_template ?? 1),
+    perm_website: Number(row.perm_website ?? 1),
+    perm_device: Number(row.perm_device ?? 1),
   };
   return {
     ...plan,
@@ -125,6 +131,11 @@ function mapAddonPlanRow(row) {
     duration_days: Number(row.duration_days || 30),
     description: row.description || null,
     is_active: Number(row.is_active ?? 1),
+    max_devices: Number(row.max_devices ?? 2),
+    perm_custom_sender: Number(row.perm_custom_sender ?? 1),
+    perm_template: Number(row.perm_template ?? 0),
+    perm_website: Number(row.perm_website ?? 0),
+    perm_device: Number(row.perm_device ?? 1),
   };
   return {
     ...plan,
@@ -260,6 +271,8 @@ async function purchaseSubscription(req, res) {
 
     console.log(`[Subscription] ✅ User ${userId} purchased "${plan.plan_name}". Expiry stacked to: ${formattedExpiry} (+${durationDays} days)`);
 
+    await syncUserEntitlements(userId);
+
     return res.json({
       success: true,
       message: `${plan.plan_name} প্যাকেজটি সফলভাবে সক্রিয় করা হয়েছে। মেয়াদ: ${formattedExpiry}`,
@@ -303,7 +316,8 @@ async function listPlans(req, res) {
   try {
     await ensurePlanFeaturesColumns();
     const rows = await prisma.$queryRaw`
-      SELECT id, plan_name, price, max_sites, max_devices, is_custom_sender_allowed, duration_days, features_json
+      SELECT id, plan_name, price, max_sites, max_devices, is_custom_sender_allowed, duration_days, features_json,
+             plan_category, perm_template, perm_website, perm_device
       FROM subscription_plans
       ORDER BY price ASC
     `;
@@ -328,7 +342,8 @@ async function listAddonPlans(req, res) {
   try {
     await ensureAddonPlansTable();
     const rows = await prisma.$queryRaw`
-      SELECT id, plan_name, price, duration_days, description, is_active, features_json
+      SELECT id, plan_name, price, duration_days, description, is_active, features_json,
+             max_devices, perm_custom_sender, perm_template, perm_website, perm_device
       FROM addon_plans
       WHERE is_active = 1
       ORDER BY price ASC
@@ -347,7 +362,8 @@ async function listAddonPlansAdmin(req, res) {
   try {
     await ensureAddonPlansTable();
     const rows = await prisma.$queryRaw`
-      SELECT id, plan_name, price, duration_days, description, is_active, features_json, created_at
+      SELECT id, plan_name, price, duration_days, description, is_active, features_json, created_at,
+             max_devices, perm_custom_sender, perm_template, perm_website, perm_device
       FROM addon_plans
       ORDER BY price ASC
     `;
@@ -372,6 +388,11 @@ async function saveAddonPlan(req, res) {
       description,
       is_active,
       features,
+      max_devices,
+      perm_custom_sender,
+      perm_template,
+      perm_website,
+      perm_device,
     } = req.body;
 
     const normalizedName = String(plan_name || '').trim();
@@ -383,6 +404,12 @@ async function saveAddonPlan(req, res) {
     const featuresJson = serializeFeatures(features);
     const planId = id ? parseInt(id, 10) : null;
     const existingId = await findAddonPlanIdByName(normalizedName);
+
+    const maxDev = parseInt(max_devices, 10) || 2;
+    const permCustom = perm_custom_sender === false || perm_custom_sender === 0 ? 0 : 1;
+    const permTpl = perm_template === true || perm_template === 1 ? 1 : 0;
+    const permWeb = perm_website === true || perm_website === 1 ? 1 : 0;
+    const permDev = perm_device === false || perm_device === 0 ? 0 : 1;
 
     if (planId) {
       if (existingId && existingId !== planId) {
@@ -399,7 +426,12 @@ async function saveAddonPlan(req, res) {
             duration_days = ${parseInt(duration_days, 10) || 30},
             description = ${description || null},
             is_active = ${activeVal},
-            features_json = ${featuresJson}
+            features_json = ${featuresJson},
+            max_devices = ${maxDev},
+            perm_custom_sender = ${permCustom},
+            perm_template = ${permTpl},
+            perm_website = ${permWeb},
+            perm_device = ${permDev}
         WHERE id = ${planId}
       `;
     } else {
@@ -411,8 +443,10 @@ async function saveAddonPlan(req, res) {
         });
       }
       await prisma.$executeRaw`
-        INSERT INTO addon_plans (plan_name, price, duration_days, description, is_active, features_json)
-        VALUES (${normalizedName}, ${Number(price)}, ${parseInt(duration_days, 10) || 30}, ${description || null}, ${activeVal}, ${featuresJson})
+        INSERT INTO addon_plans (plan_name, price, duration_days, description, is_active, features_json,
+          max_devices, perm_custom_sender, perm_template, perm_website, perm_device)
+        VALUES (${normalizedName}, ${Number(price)}, ${parseInt(duration_days, 10) || 30}, ${description || null}, ${activeVal}, ${featuresJson},
+          ${maxDev}, ${permCustom}, ${permTpl}, ${permWeb}, ${permDev})
       `;
     }
 
@@ -455,7 +489,10 @@ async function deleteAddonPlan(req, res) {
 async function createPlan(req, res) {
   try {
     await ensurePlanFeaturesColumns();
-    const { id, plan_name, price, max_sites, max_devices, duration_days, is_custom_sender_allowed, features } = req.body;
+    const {
+      id, plan_name, price, max_sites, max_devices, duration_days, is_custom_sender_allowed, features,
+      plan_category, perm_template, perm_website, perm_device,
+    } = req.body;
 
     if (!plan_name || price === undefined || max_sites === undefined || max_devices === undefined) {
       return res.status(400).json({ success: false, error: 'Missing required plan fields.' });
@@ -470,6 +507,12 @@ async function createPlan(req, res) {
       duration_days: duration_days || 365,
     };
     const featuresJson = serializeFeatures(features);
+    const category = ['personal', 'personal_business', 'payment_gateway'].includes(plan_category)
+      ? plan_category
+      : 'personal';
+    const permTpl = perm_template === false || perm_template === 0 ? 0 : 1;
+    const permWeb = perm_website === false || perm_website === 0 ? 0 : 1;
+    const permDev = perm_device === false || perm_device === 0 ? 0 : 1;
 
     let planId = id ? parseInt(id, 10) : null;
 
@@ -491,7 +534,11 @@ async function createPlan(req, res) {
 
     await prisma.$executeRaw`
       UPDATE subscription_plans
-      SET features_json = ${featuresJson}
+      SET features_json = ${featuresJson},
+          plan_category = ${category},
+          perm_template = ${permTpl},
+          perm_website = ${permWeb},
+          perm_device = ${permDev}
       WHERE id = ${planId}
     `;
 
@@ -561,8 +608,11 @@ async function purchaseCustomSenderAddon(req, res) {
       data: {
         has_custom_sender_addon: 1,
         custom_sender_ends_at: newCustomSenderExpiry,
+        active_addon_plan_id: planId,
       },
     });
+
+    await syncUserEntitlements(userId);
 
     console.log(`[Subscription] ✅ User ${userId} purchased addon "${plan.plan_name}" (id=${planId}). Expiry: ${formattedExpiry}`);
 
@@ -578,6 +628,17 @@ async function purchaseCustomSenderAddon(req, res) {
   }
 }
 
+async function getAccountEntitlements(req, res) {
+  try {
+    const userId = req.user.userId;
+    const ent = await syncUserEntitlements(userId);
+    return res.json({ success: true, entitlements: ent });
+  } catch (error) {
+    console.error('[Billing Controller] getAccountEntitlements error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   updateFcmToken,
   purchaseSubscription,
@@ -589,4 +650,5 @@ module.exports = {
   createPlan,
   deletePlan,
   purchaseCustomSenderAddon,
+  getAccountEntitlements,
 };

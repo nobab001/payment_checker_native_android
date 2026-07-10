@@ -199,6 +199,10 @@ data class SubscriptionPlanDto(
     @SerializedName("max_devices") val maxDevices: Int,
     @SerializedName("is_custom_sender_allowed") val isCustomSenderAllowed: Int = 0,
     @SerializedName("duration_days") val durationDays: Int = 365,
+    @SerializedName("plan_category") val planCategory: String = "personal",
+    @SerializedName("perm_template") val permTemplate: Int = 1,
+    @SerializedName("perm_website") val permWebsite: Int = 1,
+    @SerializedName("perm_device") val permDevice: Int = 1,
     @SerializedName("features") val features: List<PlanFeatureDto>? = null
 )
 
@@ -214,6 +218,11 @@ data class AddonPlanDto(
     @SerializedName("duration_days") val durationDays: Int = 30,
     @SerializedName("description") val description: String? = null,
     @SerializedName("is_active") val isActive: Int = 1,
+    @SerializedName("max_devices") val maxDevices: Int = 2,
+    @SerializedName("perm_custom_sender") val permCustomSender: Int = 1,
+    @SerializedName("perm_template") val permTemplate: Int = 0,
+    @SerializedName("perm_website") val permWebsite: Int = 0,
+    @SerializedName("perm_device") val permDevice: Int = 1,
     @SerializedName("features") val features: List<PlanFeatureDto>? = null
 )
 

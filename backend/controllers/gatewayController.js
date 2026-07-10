@@ -2,6 +2,7 @@ const prisma = require('../db/prisma');
 const dataSyncCache = require('../services/dataSyncCache');
 const layoutHelper = require('../services/checkoutLayoutHelper');
 const numberHealth = require('../services/numberHealthService');
+const { getUserEntitlements, requirePermission } = require('../services/accountEntitlementsService');
 
 let simBindingsTableReady = false;
 
@@ -646,6 +647,13 @@ async function addGatewayMethod(req, res) {
       return res.status(400).json({ error: 'sim_slot এবং provider আবশ্যক' });
     }
 
+    if (template_id) {
+      const perm = await requirePermission(userId, 'perm_template');
+      if (!perm.ok) {
+        return res.status(403).json({ success: false, error: 'PERMISSION_DENIED', message: perm.message });
+      }
+    }
+
     const maxPriorityRow = await prisma.gateway_methods.aggregate({
       where: { user_id: String(userId), device_id: String(deviceId) },
       _max: { priority: true }
@@ -720,6 +728,10 @@ function generateCustomRegex(smsText) {
 async function addCustomTemplate(req, res) {
   try {
     const userId = req.user.userId;
+    const perm = await requirePermission(userId, 'perm_template');
+    if (!perm.ok) {
+      return res.status(403).json({ success: false, error: 'PERMISSION_DENIED', message: perm.message });
+    }
     const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
     const methodId = parseInt(req.params.id);
     const { full_sms } = req.body;
@@ -860,11 +872,10 @@ async function addCustomSender(req, res) {
       return res.status(400).json({ error: 'sender_id আবশ্যক' });
     }
 
-    // Verify user authorization for custom sender feature:
-    // User must either have has_custom_sender_addon === 1 OR their active subscription plan must allow custom sender.
+    // Verify user authorization for custom sender feature via account entitlements.
     const user = await prisma.users.findUnique({
       where: { id: userId },
-      select: { is_paid: true, active_plan_name: true, role: true, has_custom_sender_addon: true, custom_sender_ends_at: true }
+      select: { role: true },
     });
 
     if (!user) {
@@ -874,15 +885,9 @@ async function addCustomSender(req, res) {
     let isAllowed = false;
     if (user.role === 'admin') {
       isAllowed = true;
-    } else if (user.has_custom_sender_addon === 1) {
-      if (user.custom_sender_ends_at) {
-        const endsAt = new Date(user.custom_sender_ends_at);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        isAllowed = endsAt >= today;
-      } else {
-        isAllowed = true;
-      }
+    } else {
+      const perm = await requirePermission(userId, 'perm_custom_sender');
+      isAllowed = perm.ok;
     }
 
     if (!isAllowed) {

@@ -30,6 +30,7 @@ const crypto = require('crypto');
 const { encryptOtp, decryptOtp } = require('../utils/otpCrypto');
 const numberHealth = require('../services/numberHealthService');
 const { fetchGatewayMethodsForUser } = require('./gatewayController');
+const { getUserEntitlements } = require('../services/accountEntitlementsService');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_987654321';
 const TRIAL_DEFAULT_DAYS = parseInt(process.env.TRIAL_DEFAULT_DAYS || '7', 10);
@@ -705,25 +706,16 @@ async function verifyOtp(req, res) {
       const isParent = userDevicesCount[0].count === 0 ? 1 : 0;
 
       if (isParent === 0) {
-        if (user.is_paid === 0 || user.active_plan_name === 'FREE_LEVEL') {
+        const ent = await getUserEntitlements(user.id);
+        if (!ent || ent.perm_device !== 1) {
           return res.status(403).json({
             success: false,
-            error: 'LIMIT_EXCEEDED',
-            message: '👑 লিমিট শেষ! আরও সাইট বা ডিভাইস যুক্ত করতে অনুগ্রহ করে আপনার প্যাকেজটি আপগ্রেড করুন।'
+            error: 'PERMISSION_DENIED',
+            message: 'আপনার প্যাকেজে নতুন ডিভাইস যোগ করার পারমিশন নেই।',
           });
         }
-        
-        let maxDevices = 1;
-        if (user.active_plan_name === 'Trial Package') {
-          const configVal = await query("SELECT config_value FROM global_config WHERE config_key = 'trial_max_devices' LIMIT 1");
-          maxDevices = configVal.length > 0 ? parseInt(configVal[0].config_value, 10) : 1;
-        } else {
-          const plans = await query(
-            "SELECT max_devices FROM subscription_plans WHERE plan_name = ? LIMIT 1",
-            [user.active_plan_name]
-          );
-          maxDevices = plans.length > 0 ? plans[0].max_devices : 1;
-        }
+
+        const maxDevices = ent.eff_max_devices || 1;
         
         if (userDevicesCount[0].count >= maxDevices) {
           return res.status(403).json({

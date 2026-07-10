@@ -20,6 +20,7 @@ const merchantCache = require('../services/merchantCache');
 const layoutHelper = require('../services/checkoutLayoutHelper');
 const checkoutData = require('../services/checkoutDataService');
 const websiteLogoService = require('../services/websiteLogoService');
+const { getUserEntitlements, requirePermission } = require('../services/accountEntitlementsService');
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -79,18 +80,10 @@ function toWebsiteDto(row) {
   };
 }
 
-/** Resolve the max number of sites permitted for a user based on plan. */
-async function resolveMaxSites(user) {
-  if (user.active_plan_name === 'Trial Package') {
-    const configVal = await prisma.global_config.findUnique({
-      where: { config_key: 'trial_max_sites' },
-    });
-    return configVal ? parseInt(configVal.config_value, 10) : 1;
-  }
-  const plan = await prisma.subscription_plans.findUnique({
-    where: { plan_name: user.active_plan_name || '' },
-  });
-  return plan ? plan.max_sites : 1;
+/** Resolve max sites from cached account entitlements. */
+async function resolveMaxSites(userId) {
+  const ent = await getUserEntitlements(userId);
+  return ent?.eff_max_sites || 0;
 }
 
 const GLOBAL_CHECKOUT_KEY_PREFIX = 'merchant_global_checkout_';
@@ -192,16 +185,16 @@ async function createWebsite(req, res) {
     }
 
     const isAdmin = user.role === 'admin';
-    if (!isAdmin && (!user.is_paid || user.active_plan_name === 'FREE_LEVEL')) {
-      return res.status(402).json({
-        success: false,
-        error: 'SUBSCRIPTION_REQUIRED',
-        message: 'ওয়েবসাইট যুক্ত করতে একটি সাবস্ক্রিপশন প্যাকেজ কিনুন।',
-      });
-    }
-
     if (!isAdmin) {
-      const maxSites = await resolveMaxSites(user);
+      const perm = await requirePermission(userId, 'perm_website');
+      if (!perm.ok) {
+        return res.status(403).json({
+          success: false,
+          error: 'PERMISSION_DENIED',
+          message: perm.message,
+        });
+      }
+      const maxSites = await resolveMaxSites(userId);
       const currentSites = await prisma.gateway_layouts.count({ where: { user_id: userId } });
       if (currentSites >= maxSites) {
         return res.status(403).json({
