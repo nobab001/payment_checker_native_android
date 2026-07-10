@@ -182,21 +182,20 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 _state.update { it.copy(uiState = DashboardUiState.Loading) }
             }
 
-            try {
-                // Non-blocking — do not delay dashboard paint for offline flush
-                viewModelScope.launch {
-                    try {
-                        FlushOfflineQueueUseCase(getApplication()).execute()
-                    } catch (_: Exception) { }
-                }
+            // Non-blocking — do not delay dashboard paint for offline flush
+            viewModelScope.launch {
+                try {
+                    FlushOfflineQueueUseCase(getApplication()).execute()
+                } catch (_: Exception) { }
+            }
 
-                val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
-                if (token.isEmpty()) {
-                    _state.update {
-                        it.copy(uiState = DashboardUiState.Error("লগইন সেশন পাওয়া যায়নি। পুনরায় লগইন করুন।"))
-                    }
-                    return@launch
+            val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
+            if (token.isEmpty()) {
+                _state.update {
+                    it.copy(uiState = DashboardUiState.Error("লগইন সেশন পাওয়া যায়নি। পুনরায় লগইন করুন।"))
                 }
+                return@launch
+            }
 
             val connection = connectionEngine.probe()
             if (!connection.hasInternet) {
