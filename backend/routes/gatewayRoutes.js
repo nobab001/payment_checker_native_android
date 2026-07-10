@@ -1,8 +1,15 @@
 const express    = require('express');
 const router     = express.Router();
 const gw         = require('../controllers/gatewayController');
+const hb         = require('../controllers/heartbeatController');
 const auth       = require('../middleware/auth');
 const billing    = require('../middleware/billing');
+
+// POST /api/gateway/heartbeat → device number health ping (~60s)
+router.post('/gateway/heartbeat',              auth, billing, hb.postHeartbeat);
+
+// GET  /api/gateway/numbers/health?numbers=017..,018..
+router.get('/gateway/numbers/health',          auth, billing, hb.getNumbersHealth);
 
 // GET  /api/gateway/methods           → সব মেথড লোড (priority অনুযায়ী)
 router.get('/gateway/methods',               auth, billing, gw.getGatewayMethods);

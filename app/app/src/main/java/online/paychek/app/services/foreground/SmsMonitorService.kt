@@ -21,6 +21,7 @@ import online.paychek.app.data.local.AppDatabase
 import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.services.connectivity.ConnectivityService
 import online.paychek.app.services.sms.SmsReceiver
+import online.paychek.app.services.sync.NumberHeartbeatEngine
 import online.paychek.app.services.sync.PingEngine
 import online.paychek.app.services.sync.SmsPollWorker
 import online.paychek.app.services.sync.SyncWorker
@@ -113,6 +114,7 @@ class SmsMonitorService : Service() {
         serviceScope.launch {
             startOfflineRecovery()
             startSocketConnection()
+            NumberHeartbeatEngine.start(this@SmsMonitorService)
         }
 
         return START_STICKY // সিস্টেম kill করলে নিজে পুনরায় চালু হবে
@@ -276,6 +278,7 @@ class SmsMonitorService : Service() {
             socket?.on(Socket.EVENT_CONNECT) {
                 Log.i(TAG, "Socket.IO Connected to Room: $userId:$deviceId")
                 SmsReceiver.syncPendingQueue(this@SmsMonitorService)
+                NumberHeartbeatEngine.start(this@SmsMonitorService)
             }
             
             socket?.on("sync_gateway_methods") { args ->
@@ -479,6 +482,7 @@ class SmsMonitorService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.i(TAG, "Foreground service onDestroy")
+        NumberHeartbeatEngine.stop()
         wakeLockRenewJob?.cancel()
         wakeLockRenewJob = null
         releaseWakeLock()

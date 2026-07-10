@@ -283,4 +283,22 @@ data class SlotLookupResponse(
     @SerializedName("message") val message: String? = null
 )
 
+data class HeartbeatNumberItem(
+    @SerializedName("sim_slot") val simSlot: Int,
+    @SerializedName("phone_number") val phoneNumber: String
+)
+
+data class HeartbeatRequest(
+    @SerializedName("numbers") val numbers: List<HeartbeatNumberItem>,
+    @SerializedName("sms_service_active") val smsServiceActive: Boolean = true,
+    @SerializedName("battery_percent") val batteryPercent: Int? = null
+)
+
+data class HeartbeatResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("skipped") val skipped: Boolean? = null,
+    @SerializedName("server_time") val serverTime: Long? = null,
+    @SerializedName("numbers") val numbers: List<String>? = null,
+    @SerializedName("states") val states: Map<String, String>? = null
+)
 

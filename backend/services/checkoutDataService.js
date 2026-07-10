@@ -5,6 +5,7 @@
 
 const prisma = require('../db/prisma');
 const layoutHelper = require('./checkoutLayoutHelper');
+const numberHealth = require('./numberHealthService');
 
 const CATEGORY_TAB = {
   SEND_MONEY: 'send_money',
@@ -143,8 +144,11 @@ function applyNumberOrderOverrides(gateways, numberOrderJson, options = {}) {
 async function buildSecureCheckoutData(userId, numberOrderJson = null, options = {}) {
   const rows = await fetchSecureCheckoutRows(userId);
 
+  // Server-side health filter + automatic failover ordering (ONLINE → GRACE)
+  const healthyRows = await numberHealth.applyHealthToCheckoutRows(userId, rows);
+
   const providerCounts = {};
-  rows.forEach((g) => {
+  healthyRows.forEach((g) => {
     const cat = inferCategory({ category: g.category, template_name: g.template_name });
     const tab = categoryToTab(cat);
     const p = g.provider;
@@ -152,7 +156,7 @@ async function buildSecureCheckoutData(userId, numberOrderJson = null, options =
     providerCounts[key] = (providerCounts[key] || 0) + 1;
   });
 
-  let gateways = rows.map((g) => formatRow(g, providerCounts));
+  let gateways = healthyRows.map((g) => formatRow(g, providerCounts));
   gateways = applyNumberOrderOverrides(gateways, numberOrderJson, options);
 
   const gatewaysByCategory = {

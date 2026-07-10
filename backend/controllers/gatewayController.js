@@ -1,6 +1,7 @@
 const prisma = require('../db/prisma');
 const dataSyncCache = require('../services/dataSyncCache');
 const layoutHelper = require('../services/checkoutLayoutHelper');
+const numberHealth = require('../services/numberHealthService');
 
 let simBindingsTableReady = false;
 
@@ -1348,6 +1349,7 @@ async function setSlotActive(req, res) {
     }
 
     await upsertSlotBinding(userId, deviceId, simSlot, cleanNum, isActive);
+    await numberHealth.setNumberDisabled(userId, cleanNum, !isActive);
 
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
     await emitGatewaySync(req, userId, deviceId, data);
