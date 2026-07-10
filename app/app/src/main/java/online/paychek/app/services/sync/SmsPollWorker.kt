@@ -3,7 +3,6 @@ package online.paychek.app.services.sync
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.telephony.SubscriptionManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.work.BackoffPolicy
@@ -22,6 +21,7 @@ import online.paychek.app.data.local.prefs.PrefsHelper
 import online.paychek.app.data.remote.dto.GatewayMethod
 import online.paychek.app.domain.usecase.sms.ProcessIncomingSmsUseCase
 import online.paychek.app.services.sms.SmsInboxScanner
+import online.paychek.app.utils.SimSlotHelper
 import online.paychek.app.utils.SmsParser
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -177,8 +177,8 @@ class SmsPollWorker(
                 val cleanSender = candidate.sender.trim().lowercase(Locale.US)
 
                 // ── SIM slot resolve করা ─────────────────────────────────
-                val simSlot   = resolveSimSlotFromSubId(candidate.subscriptionId)
-                val simNumber = resolveSimNumberFromSubId(candidate.subscriptionId)
+                val simSlot   = SimSlotHelper.resolveSimSlot(context, candidate.subscriptionId)
+                val simNumber = SimSlotHelper.resolveSimNumber(context, candidate.subscriptionId)
 
                 // ── SIM slot filter (বৈধ skip → handled) ─────────────────
                 val simAllowed = if (simSlot != null) {
@@ -201,7 +201,7 @@ class SmsPollWorker(
                             } else {
                                 val targetSender = method.senderId?.trim()?.lowercase(Locale.US)
                                     ?: method.provider.lowercase(Locale.US)
-                                cleanSender.contains(targetSender)
+                                cleanSender == targetSender
                             }
                         ) &&
                         (
@@ -209,7 +209,7 @@ class SmsPollWorker(
                             method.senderNumber.isNullOrBlank() ||
                             run {
                                 val targetSenderNumber = method.senderNumber.trim().lowercase(Locale.US)
-                                cleanSender.contains(targetSenderNumber)
+                                cleanSender == targetSenderNumber
                             }
                         ) &&
                         (
@@ -322,39 +322,6 @@ class SmsPollWorker(
 
         Log.i(TAG, "[Guard-2] Poll complete — ${candidates.size} candidates | $processedCount নতুন queued | cursor→$committableId${if (cursorBlocked) " (blocked, বাকিগুলো পরের poll-এ retry হবে)" else ""}")
         return Result.success()
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // SIM slot utilities (ContentProvider subscription ID → physical slot)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    private fun resolveSimSlotFromSubId(subscriptionId: Int): Int? {
-        if (subscriptionId == -1) return null
-        return try {
-            val sm = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE)
-                as SubscriptionManager
-            val info = sm.getActiveSubscriptionInfo(subscriptionId) ?: return null
-            (info.simSlotIndex + 1).takeIf { it in 1..2 }
-        } catch (e: Exception) {
-            Log.w(TAG, "[Guard-2] SIM slot resolve ব্যর্থ: ${e.message}")
-            null
-        }
-    }
-
-    private fun resolveSimNumberFromSubId(subscriptionId: Int): String? {
-        if (subscriptionId == -1) return null
-        return try {
-            val sm = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE)
-                as SubscriptionManager
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                sm.getPhoneNumber(subscriptionId).takeIf { it.isNotBlank() }
-            } else {
-                @Suppress("DEPRECATION")
-                sm.getActiveSubscriptionInfo(subscriptionId)?.number?.takeIf { it.isNotBlank() }
-            }
-        } catch (e: Exception) {
-            null
-        }
     }
 
     private fun parseIsoDateToMillis(isoString: String): Long {

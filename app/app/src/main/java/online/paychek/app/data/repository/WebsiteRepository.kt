@@ -46,6 +46,23 @@ class WebsiteRepository(private val context: Context) {
         else Result.failure(Exception(body?.error ?: parseError(r)))
     }
 
+    suspend fun uploadWebsiteLogo(id: Int, pngBytes: ByteArray): Result<WebsiteDto> = safeCall {
+        val mediaType = okhttp3.MediaType.parse("image/png")
+        val body = okhttp3.RequestBody.create(mediaType, pngBytes)
+        val part = okhttp3.MultipartBody.Part.createFormData("logo", "logo.png", body)
+        val r = api.uploadWebsiteLogo(bearer(), id, part)
+        val resp = r.body()
+        if (r.isSuccessful && resp?.success == true && resp.website != null) Result.success(resp.website)
+        else Result.failure(Exception(resp?.message ?: resp?.error ?: parseError(r)))
+    }
+
+    suspend fun deleteWebsiteLogo(id: Int): Result<WebsiteDto> = safeCall {
+        val r = api.deleteWebsiteLogo(bearer(), id)
+        val resp = r.body()
+        if (r.isSuccessful && resp?.success == true && resp.website != null) Result.success(resp.website)
+        else Result.failure(Exception(resp?.message ?: resp?.error ?: parseError(r)))
+    }
+
     suspend fun getGlobalCheckout(): Result<GlobalCheckoutResponse> = safeCall {
         val r = api.getGlobalCheckout(bearer())
         if (r.isSuccessful && r.body()?.success == true) Result.success(r.body()!!)

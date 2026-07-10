@@ -90,7 +90,12 @@ app.use((req, res, next) => {
 
 // Root check route
 app.get('/health', (req, res) => {
-  res.json({ status: 'UP', timestamp: new Date() });
+  res.json({ status: 'UP', env: process.env.APP_ENV || 'unknown', timestamp: new Date().toISOString() });
+});
+
+// Alias for load balancers / staging probes
+app.get('/payment/health', (req, res) => {
+  res.redirect(307, '/api/v1/payment/health');
 });
 
 // Mount Authentication & Device Trial Routes
@@ -107,16 +112,17 @@ app.use('/api/admin', adminRoutes);
 // path; the merchant payment APIs authenticate via X-API-Key (not JWT), so they
 // must be matched first.
 const paymentFlowController = require('./controllers/paymentFlowController');
+const callbackRateLimiter = require('./middleware/callbackRateLimiter');
 app.use('/api/v1/pay', require('./routes/paymentFlowRoutes'));           // merchant S2S: init + status
-// Public, browser-facing checkout entry (routes to PayCheck checkout or official gateway)
+app.use('/api/v1/payment', require('./routes/paymentMetricsRoutes'));   // health / metrics
 app.get('/pay/:token', paymentFlowController.redirectPayment);
-// Official gateway completion callback (accepts GET or POST from the gateway)
+app.post('/api/payment/bkash/callback', callbackRateLimiter, paymentFlowController.bkashCallback);
 app.all('/api/pay/:token/gateway-callback', paymentFlowController.officialGatewayCallback);
 
 app.use('/api/v1', billingRoutes);
 app.use('/api/v1/websites', require('./routes/websiteRoutes'));
 
-// Demo Merchant application (test harness — consumes PayCheck APIs)
+// Demo Merchant application (v1 test harness — consumes PayCheck, does not modify payment/)
 demoMerchant.mount(app);
 
 // General 404 Route handler
@@ -144,6 +150,18 @@ cron.schedule('0 0 * * *', async () => {
 
 // Mount Calendar-Based Subscription Expiry Guard & FCM Reminder Scheduler
 require('./cron/billingScheduler');
+
+// Phase-3B.5: expire stale payment sessions every 5 minutes
+const { runSessionCleanup } = require('./payment/workers/session-cleanup-worker');
+cron.schedule('*/5 * * * *', () => {
+  runSessionCleanup().catch((err) => console.error('[CRON] session cleanup:', err.message));
+});
+
+// Phase-3B.5: merchant callback outbox worker every 15 seconds
+const { runOutboxWorker } = require('./payment/workers/outbox-worker');
+cron.schedule('*/15 * * * * *', () => {
+  runOutboxWorker().catch((err) => console.error('[CRON] outbox worker:', err.message));
+});
 
 // Mount BullMQ Background Worker for SMS Processing
 require('./workers/smsWorker');

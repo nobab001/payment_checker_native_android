@@ -19,8 +19,14 @@ import online.paychek.app.data.repository.PaymentRepository
 import online.paychek.app.services.foreground.SmsMonitorService
 import online.paychek.app.domain.usecase.sync.FlushOfflineQueueUseCase
 import online.paychek.app.utils.SecurePreferences
-import online.paychek.app.utils.NetworkConnectivityObserver
+import kotlinx.coroutines.delay
+import online.paychek.app.services.connectivity.ConnectionEngine
+import online.paychek.app.services.connectivity.ConnectionBanner
+import online.paychek.app.services.connectivity.ConnectionStatus
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.stateIn
 
 // =============================================================================
@@ -66,13 +72,29 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val repository = PaymentRepository()
     private val prefs      = application.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
-    private val connectivityObserver = NetworkConnectivityObserver(application)
+    private val connectionEngine = ConnectionEngine.getInstance(application)
 
-    val isNetworkAvailable = connectivityObserver.observe()
+    val connectionStatus = connectionEngine.status
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = connectivityObserver.isNetworkAvailable()
+            initialValue = ConnectionStatus()
+        )
+
+    val connectionBanner = connectionEngine.banner
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = null
+        )
+
+    /** True when layers 1+2 pass (actual internet, not just API success). */
+    val hasInternet = connectionEngine.status
+        .map { it.hasInternet }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = false
         )
 
     private val _state = MutableStateFlow(DashboardScreenState())
@@ -105,16 +127,47 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             ) 
         }
 
+        restoreCachedDashboardStats()
+
+        connectionEngine.startMonitoring(viewModelScope)
+
         viewModelScope.launch {
-            isNetworkAvailable.collect { available ->
-                if (available) {
+            connectionEngine.status
+                .map { it.hasInternet }
+                .distinctUntilChanged()
+                .filter { it }
+                .collect {
                     loadDashboardStats()
                     loadPlans()
-                    if (defaultTab == 1) {
+                    if (_state.value.selectedTab == 1) {
                         loadCustomArchives()
                     }
                 }
+        }
+    }
+
+    private fun restoreCachedDashboardStats() {
+        val cachedJson = online.paychek.app.data.local.prefs.PrefsHelper
+            .getDashboardStatsCache(getApplication())
+        if (cachedJson.isBlank() || cachedJson == "[]") return
+        try {
+            val stats = online.paychek.app.utils.GsonUtils.gson
+                .fromJson(cachedJson, DashboardStats::class.java)
+            _state.update {
+                it.copy(uiState = DashboardUiState.Success(stats))
             }
+        } catch (_: Exception) {
+            // Ignore corrupt cache
+        }
+    }
+
+    private fun cacheDashboardStats(stats: DashboardStats) {
+        try {
+            val json = online.paychek.app.utils.GsonUtils.gson.toJson(stats)
+            online.paychek.app.data.local.prefs.PrefsHelper
+                .setDashboardStatsCache(getApplication(), json)
+        } catch (_: Exception) {
+            // Ignore cache write errors
         }
     }
 
@@ -124,12 +177,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun loadDashboardStats() {
         viewModelScope.launch {
-            _state.update { it.copy(uiState = DashboardUiState.Loading) }
+            val hasCachedStats = _state.value.uiState is DashboardUiState.Success
+            if (!hasCachedStats && !_state.value.isRefreshing) {
+                _state.update { it.copy(uiState = DashboardUiState.Loading) }
+            }
 
-            // Trigger offline queue flush silently
             try {
                 FlushOfflineQueueUseCase(getApplication()).execute()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 // Ignore sync errors here
             }
 
@@ -141,77 +196,116 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 return@launch
             }
 
-            val lastSync = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsLastSync(getApplication())
-            val result = repository.fetchDashboardStats(token, lastSync)
-            result.fold(
-                onSuccess = { stats ->
-                    prefs.edit().putString("pcu_account_level", stats.activePlanName).apply()
-                    
-                    if (!stats.secretKey.isNullOrBlank()) {
-                        SecurePreferences.encrypt(
-                            getApplication(),
-                            online.paychek.app.services.sms.SmsReceiver.KEY_HMAC_SECRET,
-                            stats.secretKey
-                        )
-                    }
+            val connection = connectionEngine.probe()
+            if (!connection.hasInternet) {
+                restoreCachedDashboardStats()
+                _state.update { it.copy(isRefreshing = false) }
+                return@launch
+            }
+            if (!connection.hasServer) {
+                restoreCachedDashboardStats()
+                _state.update { it.copy(isRefreshing = false) }
+                return@launch
+            }
 
-                    val serverSyncTime = stats.dataVersion ?: stats.gatewayMethodsLastSync ?: 0L
-                    if (serverSyncTime > 0) {
-                        online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsLastSync(
-                            getApplication(),
-                            serverSyncTime
-                        )
-                    }
+            val lastSync = online.paychek.app.data.local.prefs.PrefsHelper
+                .getGatewayMethodsLastSync(getApplication())
+            var lastError: String? = null
 
-                    // Sync gateway methods cache if provided by server
-                    if (stats.gatewayMethods != null) {
-                        try {
-                            val jsonStr = online.paychek.app.utils.GsonUtils.gson.toJson(stats.gatewayMethods)
-                            online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(getApplication(), jsonStr)
-                            android.util.Log.i("DashboardViewModel", "✅ Dashboard Sync: Updated gateway methods cache (size=${stats.gatewayMethods.size}). Version=$serverSyncTime")
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
-                    } else if (stats.cacheHit == true) {
-                        android.util.Log.i("DashboardViewModel", "✅ Dashboard Sync: Cache hit — skipped method/template payload (version=$serverSyncTime)")
-                    }
+            repeat(3) { attempt ->
+                if (attempt > 0) {
+                    connectionEngine.reportApiSyncFailure(
+                        message = lastError ?: "ডেটা সিঙ্ক ব্যর্থ",
+                        isRetrying = true
+                    )
+                    delay(1_000L * attempt)
+                }
 
-                    // Sync global templates cache if provided by server
-                    if (stats.globalTemplates != null) {
-                        try {
-                            val jsonTemplates = online.paychek.app.utils.GsonUtils.gson.toJson(stats.globalTemplates)
-                            online.paychek.app.data.local.prefs.PrefsHelper.setSmsTemplatesCache(getApplication(), jsonTemplates)
-                            android.util.Log.i("DashboardViewModel", "✅ Dashboard Sync: Updated SMS templates cache (size=${stats.globalTemplates.size}) from stats.")
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
+                val result = repository.fetchDashboardStats(token, lastSync)
+                result.fold(
+                    onSuccess = { stats ->
+                        connectionEngine.clearApiSyncBanner()
+                        applyDashboardStats(stats)
+                        return@launch
+                    },
+                    onFailure = { error ->
+                        lastError = error.message ?: "ডেটা সিঙ্ক ব্যর্থ"
                     }
+                )
+            }
 
-                    val templatesForUi = stats.globalTemplates
-                        ?: _state.value.globalTemplates
+            restoreCachedDashboardStats()
+            connectionEngine.reportApiSyncFailure(
+                message = lastError ?: "ডেটা সিঙ্ক ব্যর্থ। পুনরায় চেষ্টা করুন।",
+                isRetrying = false
+            )
+            if (!hasCachedStats) {
+                _state.update {
+                    it.copy(
+                        uiState = DashboardUiState.Error(lastError ?: "ডেটা লোড ব্যর্থ হয়েছে"),
+                        isRefreshing = false
+                    )
+                }
+            } else {
+                _state.update { it.copy(isRefreshing = false) }
+            }
+        }
+    }
 
-                    _state.update {
-                        it.copy(
-                            uiState         = DashboardUiState.Success(stats),
-                            isRefreshing    = false,
-                            globalTemplates = templatesForUi,
-                            lastUpdatedAtMs = if (it.isRefreshing) {
-                                System.currentTimeMillis()
-                            } else {
-                                BangladeshTimeUtil.latestTransactionEpochMs(stats.recentTransactions)
-                                    ?: it.lastUpdatedAtMs
-                                    ?: System.currentTimeMillis()
-                            }
-                        )
-                    }
-                },
-                onFailure = { error ->
-                    _state.update {
-                        it.copy(
-                            uiState      = DashboardUiState.Error(error.message ?: "ডেটা লোড ব্যর্থ হয়েছে"),
-                            isRefreshing = false
-                        )
-                    }
+    private fun applyDashboardStats(stats: DashboardStats) {
+        prefs.edit().putString("pcu_account_level", stats.activePlanName).apply()
+
+        if (!stats.secretKey.isNullOrBlank()) {
+            SecurePreferences.encrypt(
+                getApplication(),
+                online.paychek.app.services.sms.SmsReceiver.KEY_HMAC_SECRET,
+                stats.secretKey
+            )
+        }
+
+        val serverSyncTime = stats.dataVersion ?: stats.gatewayMethodsLastSync ?: 0L
+        if (serverSyncTime > 0) {
+            online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsLastSync(
+                getApplication(),
+                serverSyncTime
+            )
+        }
+
+        if (stats.gatewayMethods != null) {
+            try {
+                val jsonStr = online.paychek.app.utils.GsonUtils.gson.toJson(stats.gatewayMethods)
+                online.paychek.app.data.local.prefs.PrefsHelper
+                    .setGatewayMethodsCache(getApplication(), jsonStr)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        if (stats.globalTemplates != null) {
+            try {
+                val jsonTemplates = online.paychek.app.utils.GsonUtils.gson.toJson(stats.globalTemplates)
+                online.paychek.app.data.local.prefs.PrefsHelper
+                    .setSmsTemplatesCache(getApplication(), jsonTemplates)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        cacheDashboardStats(stats)
+
+        val templatesForUi = stats.globalTemplates ?: _state.value.globalTemplates
+
+        _state.update {
+            it.copy(
+                uiState = DashboardUiState.Success(stats),
+                isRefreshing = false,
+                globalTemplates = templatesForUi,
+                lastUpdatedAtMs = if (it.isRefreshing) {
+                    System.currentTimeMillis()
+                } else {
+                    BangladeshTimeUtil.latestTransactionEpochMs(stats.recentTransactions)
+                        ?: it.lastUpdatedAtMs
+                        ?: System.currentTimeMillis()
                 }
             )
         }

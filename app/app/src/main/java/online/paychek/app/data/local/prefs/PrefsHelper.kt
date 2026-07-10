@@ -99,6 +99,13 @@ object PrefsHelper {
         prefs(context).edit().putString("txn_history_bundle_v1", json).apply()
     }
 
+    fun getDashboardStatsCache(context: Context): String =
+        prefs(context).getString(AppConfig.KEY_DASHBOARD_STATS_CACHE, "").orEmpty()
+
+    fun setDashboardStatsCache(context: Context, json: String) {
+        prefs(context).edit().putString(AppConfig.KEY_DASHBOARD_STATS_CACHE, json).apply()
+    }
+
     // -------------------------------------------------------------------------
     // Session PIN flag
     // -------------------------------------------------------------------------
@@ -148,6 +155,7 @@ object PrefsHelper {
             .remove(KEY_LAST_WORKER_SYNC_MS)
             .remove("sms_history_last_sync_v1")
             .remove("txn_history_bundle_v1")
+            .remove(AppConfig.KEY_DASHBOARD_STATS_CACHE)
             .apply()
     }
 }

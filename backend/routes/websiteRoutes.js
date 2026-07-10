@@ -9,6 +9,7 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const websiteController = require('../controllers/websiteController');
+const { logoUpload } = require('../middleware/websiteUploadMiddleware');
 
 const authenticateToken = auth.authenticateToken || auth;
 
@@ -27,6 +28,10 @@ router.delete('/:id', websiteController.deleteWebsite);
 
 // Secret rotation (returned once)
 router.post('/:id/regenerate-secret', websiteController.regenerateSecret);
+
+// Merchant branding logo (multipart upload — replaces legacy logo URL field)
+router.post('/:id/branding/logo', logoUpload.single('logo'), websiteController.uploadWebsiteLogo);
+router.delete('/:id/branding/logo', websiteController.deleteWebsiteLogo);
 
 // Checkout-only number ordering / enable-disable
 router.put('/:id/number-order', websiteController.updateNumberOrder);

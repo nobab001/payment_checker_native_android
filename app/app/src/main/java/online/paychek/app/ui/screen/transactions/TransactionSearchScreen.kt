@@ -36,7 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import online.paychek.app.data.remote.dto.TransactionItem
-import online.paychek.app.ui.components.ConnectivityBanner
+import online.paychek.app.ui.components.ConnectionStatusBanner
 import online.paychek.app.ui.components.LastUpdateRow
 import online.paychek.app.utils.adaptivePadding
 import online.paychek.app.utils.adaptiveTextSize
@@ -83,7 +83,8 @@ fun TransactionSearchScreen(
     viewModel: TransactionSearchViewModel = viewModel()
 ) {
     val state        by viewModel.state.collectAsStateWithLifecycle()
-    val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsStateWithLifecycle()
+    val connectionBanner by viewModel.connectionBanner.collectAsStateWithLifecycle()
+    val hasInternet by viewModel.hasInternet.collectAsStateWithLifecycle()
     val listState    = rememberLazyListState()
     val focusManager = LocalFocusManager.current
     val context      = LocalContext.current
@@ -114,8 +115,8 @@ fun TransactionSearchScreen(
             .fillMaxSize()
             .background(HistBg)
     ) {
-        if (!isNetworkAvailable) {
-            ConnectivityBanner()
+        connectionBanner?.let { banner ->
+            ConnectionStatusBanner(banner = banner)
         }
 
         SearchTopBar()
@@ -237,7 +238,7 @@ fun TransactionSearchScreen(
             }
 
             // ─── Error State ────────────────────────────────────────────
-            if (isNetworkAvailable) {
+            if (hasInternet) {
                 state.errorMessage?.let { msg ->
                     item {
                         HistoryErrorCard(

@@ -5,6 +5,8 @@
 
 const { listRegistryEntries } = require('../registry/provider-registry');
 const { getProvider } = require('../registry/provider-factory');
+const { getDeadQueue } = require('../retry/retry-engine');
+const { getSnapshot: getCircuitSnapshot } = require('../reliability/circuit-breaker');
 const { logPayment } = require('../logging/trace-logger');
 
 const STAGES = Object.freeze([
@@ -86,10 +88,28 @@ async function getMonitoringSnapshot() {
   };
 }
 
+async function getDashboardMetrics() {
+  const providers = await runProviderProbes();
+  const { getPendingCount, getDeadCount } = require('../reliability/merchant-callback-outbox');
+  const [outboxPending, outboxDead] = await Promise.all([
+    getPendingCount(),
+    getDeadCount(),
+  ]);
+  return {
+    at: new Date().toISOString(),
+    latencies: snapshotLatencies(),
+    providers,
+    circuitBreakers: getCircuitSnapshot(),
+    retryDeadQueue: getDeadQueue().length,
+    outbox: { pending: outboxPending, dead: outboxDead },
+  };
+}
+
 module.exports = {
   STAGES,
   recordLatency,
   snapshotLatencies,
   runProviderProbes,
   getMonitoringSnapshot,
+  getDashboardMetrics,
 };

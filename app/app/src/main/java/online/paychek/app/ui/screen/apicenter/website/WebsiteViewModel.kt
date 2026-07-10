@@ -50,14 +50,17 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
         val officialGateways: List<OfficialGatewayDto> = emptyList(),
         val checkoutTabs: Map<String, CheckoutTabDto> = emptyMap(),
         val providerBranding: Map<String, ProviderBrandingDto> = emptyMap(),
-        val isSaving: Boolean = false
+        val isSaving: Boolean = false,
+        val logoUploading: Boolean = false,
+        val logoUploadError: String? = null,
     )
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
     private var autoSaveJob: Job? = null
+    private var lastLogoUploadBytes: ByteArray? = null
 
-    fun clearMessages() = _state.update { it.copy(error = null, infoMessage = null) }
+    fun clearMessages() = _state.update { it.copy(error = null, infoMessage = null, logoUploadError = null) }
 
     fun dismissSecretReveal() = _state.update { it.copy(revealedSecret = null, createdWebsite = null) }
 
@@ -127,10 +130,70 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.updateWebsite(id, request)
                 .onSuccess { w ->
-                    _state.update { it.copy(isSaving = false, selected = w, infoMessage = "সেটিংস সংরক্ষণ হয়েছে।") }
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            selected = w,
+                            websites = it.websites.map { site -> if (site.id == id) w else site },
+                            infoMessage = "সেটিংস সংরক্ষণ হয়েছে।"
+                        )
+                    }
                     onDone()
                 }
                 .onFailure { e -> _state.update { it.copy(isSaving = false, error = e.message) } }
+        }
+    }
+
+    /** Upload a cropped company logo (PNG bytes) via multipart — replaces URL-based branding. */
+    fun uploadWebsiteLogo(websiteId: Int, pngBytes: ByteArray) {
+        lastLogoUploadBytes = pngBytes
+        _state.update { it.copy(logoUploading = true, logoUploadError = null, error = null) }
+        viewModelScope.launch {
+            repo.uploadWebsiteLogo(websiteId, pngBytes)
+                .onSuccess { w ->
+                    _state.update {
+                        it.copy(
+                            logoUploading = false,
+                            logoUploadError = null,
+                            selected = w,
+                            websites = it.websites.map { site -> if (site.id == websiteId) w else site },
+                            infoMessage = "কোম্পানি লোগো আপলোড হয়েছে।"
+                        )
+                    }
+                }
+                .onFailure { e ->
+                    _state.update {
+                        it.copy(logoUploading = false, logoUploadError = e.message ?: "লোগো আপলোড ব্যর্থ হয়েছে।")
+                    }
+                }
+        }
+    }
+
+    fun retryLogoUpload(websiteId: Int) {
+        val bytes = lastLogoUploadBytes ?: return
+        uploadWebsiteLogo(websiteId, bytes)
+    }
+
+    fun deleteWebsiteLogo(websiteId: Int) {
+        _state.update { it.copy(logoUploading = true, logoUploadError = null, error = null) }
+        viewModelScope.launch {
+            repo.deleteWebsiteLogo(websiteId)
+                .onSuccess { w ->
+                    lastLogoUploadBytes = null
+                    _state.update {
+                        it.copy(
+                            logoUploading = false,
+                            selected = w,
+                            websites = it.websites.map { site -> if (site.id == websiteId) w else site },
+                            infoMessage = "কোম্পানি লোগো মুছে ফেলা হয়েছে।"
+                        )
+                    }
+                }
+                .onFailure { e ->
+                    _state.update {
+                        it.copy(logoUploading = false, logoUploadError = e.message ?: "লোগো মুছতে ব্যর্থ হয়েছে।")
+                    }
+                }
         }
     }
 

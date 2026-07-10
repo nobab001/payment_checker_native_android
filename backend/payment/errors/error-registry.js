@@ -151,7 +151,10 @@ function toApiError(payCode) {
  * @param {import('../shared/provider-errors').ProviderError} err
  */
 function fromProviderError(err) {
-  const entry = resolveError(err.code) || resolveError(err.message);
+  const key = typeof err === 'string'
+    ? err
+    : (err?.payCode || err?.code || err?.message);
+  const entry = resolveError(key) || resolveError(err?.message);
   if (entry) {
     return { body: toApiError(entry.code), httpStatus: entry.httpStatus };
   }

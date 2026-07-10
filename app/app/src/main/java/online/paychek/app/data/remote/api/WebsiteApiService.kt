@@ -46,6 +46,20 @@ interface WebsiteApiService {
         @Body request: UpdateWebsiteRequest
     ): Response<WebsiteUpdateResponse>
 
+    @Multipart
+    @POST("v1/websites/{id}/branding/logo")
+    suspend fun uploadWebsiteLogo(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Part logo: okhttp3.MultipartBody.Part
+    ): Response<WebsiteLogoResponse>
+
+    @DELETE("v1/websites/{id}/branding/logo")
+    suspend fun deleteWebsiteLogo(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int
+    ): Response<WebsiteLogoResponse>
+
     @HTTP(method = "DELETE", path = "v1/websites/{id}", hasBody = true)
     suspend fun deleteWebsite(
         @Header("Authorization") token: String,

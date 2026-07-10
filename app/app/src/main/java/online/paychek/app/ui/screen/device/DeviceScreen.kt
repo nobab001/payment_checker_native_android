@@ -52,7 +52,7 @@ import online.paychek.app.data.remote.dto.SmsTemplateDto
 import online.paychek.app.ui.common.RemoteImage
 import androidx.compose.ui.layout.ContentScale
 import online.paychek.app.ui.theme.*
-import online.paychek.app.ui.components.ConnectivityBanner
+import online.paychek.app.ui.components.ConnectionStatusBanner
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import androidx.compose.foundation.BorderStroke
@@ -109,6 +109,7 @@ fun DeviceScreen(
                 isAccessibilityEnabled = online.paychek.app.utils.AccessibilityHelper.isAccessibilityServiceEnabled(context)
                 viewModel.loadGatewayMethods()
                 viewModel.loadTemplates()
+                viewModel.syncPhysicalSimNumbers()
             }
         }
     }
@@ -125,7 +126,8 @@ fun DeviceScreen(
     }
 
     val state       by viewModel.state.collectAsStateWithLifecycle()
-    val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsStateWithLifecycle()
+    val connectionBanner by viewModel.connectionBanner.collectAsStateWithLifecycle()
+    val hasInternet by viewModel.hasInternet.collectAsStateWithLifecycle()
     val haptic      = LocalHapticFeedback.current
     val sheetState  = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -239,8 +241,8 @@ fun DeviceScreen(
             .fillMaxSize()
             .background(GwBg)
     ) {
-        if (!isNetworkAvailable) {
-            ConnectivityBanner()
+        connectionBanner?.let { banner ->
+            ConnectionStatusBanner(banner = banner)
         }
 
         if (!isAccessibilityEnabled) {
@@ -355,7 +357,7 @@ fun DeviceScreen(
             }
 
             if (!state.isLoading && currentSubTab == 0) {
-                val isOffline = !isNetworkAvailable
+                val isOffline = !hasInternet
                 if (state.errorMessage != null && !isOffline) {
                     item {
                         ErrorBanner(
@@ -417,7 +419,7 @@ fun DeviceScreen(
 
             if (currentSubTab == 1) {
                 // ─── Others Device Sub-Tab ─────────────────────────────────────────
-                val isOffline = !isNetworkAvailable
+                val isOffline = !hasInternet
                 if (state.isChildDevicesLoading) {
                     items(3) { DeviceSkeletonCard() }
                 } else if (state.errorMessage != null && !isOffline) {

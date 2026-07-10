@@ -11,7 +11,7 @@ import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.dto.TransactionItem
 import online.paychek.app.data.repository.PaymentRepository
 import online.paychek.app.utils.SecurePreferences
-import online.paychek.app.utils.NetworkConnectivityObserver
+import online.paychek.app.services.connectivity.ConnectionEngine
 import online.paychek.app.utils.RefreshCooldown
 import online.paychek.app.utils.BangladeshTimeUtil
 import online.paychek.app.data.remote.api.RetrofitClient
@@ -63,13 +63,21 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
 
     private val repository = PaymentRepository()
     private val prefs      = application.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
-    private val connectivityObserver = NetworkConnectivityObserver(application)
+    private val connectionEngine = ConnectionEngine.getInstance(application)
 
-    val isNetworkAvailable = connectivityObserver.observe()
+    val connectionBanner = connectionEngine.banner
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = connectivityObserver.isNetworkAvailable()
+            initialValue = null
+        )
+
+    val hasInternet = connectionEngine.status
+        .map { it.hasInternet }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = false
         )
 
     private val _state = MutableStateFlow(TransactionSearchState())
@@ -107,17 +115,21 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
 
         restoreHistoryFromLocalCache()
 
+        connectionEngine.startMonitoring(viewModelScope)
+
         _searchQuery
             .debounce(300)
             .onEach { applyLocalFilter() }
             .launchIn(viewModelScope)
 
         viewModelScope.launch {
-            isNetworkAvailable.collect { available ->
-                if (available) {
+            connectionEngine.status
+                .map { it.hasInternet }
+                .distinctUntilChanged()
+                .filter { it }
+                .collect {
                     loadFirstPage()
                 }
-            }
         }
     }
 

@@ -2,11 +2,14 @@ package online.paychek.app.ui.screen.apicenter.website
 
 import android.content.ClipData
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -20,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.toClipEntry
@@ -34,6 +38,11 @@ import kotlinx.coroutines.launch
 import online.paychek.app.data.remote.dto.CheckoutTabToggle
 import online.paychek.app.data.remote.dto.OfficialGatewayDto
 import online.paychek.app.data.remote.dto.UpdateWebsiteRequest
+import online.paychek.app.ui.common.CropFrameShape
+import online.paychek.app.ui.common.ImageCropperDialog
+import online.paychek.app.ui.common.RemoteImage
+import online.paychek.app.ui.common.bitmapToPngBytes
+import online.paychek.app.ui.common.decodeUriToBitmap
 
 private val AccentCyan = Color(0xFF22D3EE)
 private val AccentGreen = Color(0xFF10B981)
@@ -58,6 +67,7 @@ fun WebsiteSettingsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val site = state.selected
 
     LaunchedEffect(websiteId) { viewModel.loadWebsiteDetail(websiteId) }
@@ -72,7 +82,8 @@ fun WebsiteSettingsScreen(
 
     // Editable fields
     var companyName by remember(site?.id) { mutableStateOf(site?.companyName ?: "") }
-    var logoUrl by remember(site?.id) { mutableStateOf(site?.logoUrl ?: "") }
+    LaunchedEffect(site?.companyName) { companyName = site?.companyName ?: "" }
+    val logoUrl = site?.logoUrl
     var theme by remember(site?.id) { mutableStateOf(site?.checkoutTheme?.takeIf { it.startsWith("design-") } ?: "design-1") }
     var checkoutMode by remember(site?.id) { mutableStateOf(site?.checkoutMode ?: "transaction") }
     var successUrl by remember(site?.id) { mutableStateOf(site?.successUrl ?: "") }
@@ -90,6 +101,32 @@ fun WebsiteSettingsScreen(
         CHECKOUT_TAB_KEYS.forEach { (key, _) ->
             state.checkoutTabs[key]?.let { tabStates[key]?.value = it.enabled }
         }
+    }
+
+    var bitmapToCrop by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    val galleryPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            scope.launch { bitmapToCrop = decodeUriToBitmap(context, uri) }
+        }
+    }
+    val cameraPicker = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bmp ->
+        if (bmp != null) bitmapToCrop = bmp
+    }
+
+    bitmapToCrop?.let { bmp ->
+        ImageCropperDialog(
+            bitmap = bmp,
+            title = "কোম্পানি লোগো সাজান",
+            subtitle = "১:১ স্কোয়ার লোগো — জুম, কেন্টার ও ক্রপ করে সেভ করুন",
+            frameShape = CropFrameShape.Square,
+            onDismiss = { bitmapToCrop = null },
+            onCropSuccess = { cropped ->
+                bitmapToCrop = null
+                if (site != null) {
+                    viewModel.uploadWebsiteLogo(site.id, bitmapToPngBytes(cropped))
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -182,7 +219,6 @@ fun WebsiteSettingsScreen(
                                 site.id,
                                 UpdateWebsiteRequest(
                                     companyName = companyName,
-                                    logoUrl = logoUrl,
                                     checkoutTheme = theme,
                                     checkoutMode = checkoutMode,
                                     checkoutTabs = CHECKOUT_TAB_KEYS.associate { (key, _) ->
@@ -228,7 +264,16 @@ fun WebsiteSettingsScreen(
             // Branding
             SettingsCard(card, isDark, "ব্র্যান্ডিং", Icons.Default.Palette) {
                 EditField("Company Name", companyName) { companyName = it }
-                EditField("Logo URL", logoUrl) { logoUrl = it }
+                BrandingLogoSection(
+                    logoUrl = logoUrl,
+                    companyName = companyName,
+                    isUploading = state.logoUploading,
+                    uploadError = state.logoUploadError,
+                    onPickGallery = { galleryPicker.launch("image/*") },
+                    onPickCamera = { cameraPicker.launch(null) },
+                    onRemoveLogo = { viewModel.deleteWebsiteLogo(site.id) },
+                    onRetryUpload = { viewModel.retryLogoUpload(site.id) }
+                )
             }
 
             // Merchant identity (read-only)
@@ -294,7 +339,6 @@ fun WebsiteSettingsScreen(
                         site.id,
                         UpdateWebsiteRequest(
                             companyName = companyName,
-                            logoUrl = logoUrl,
                             successUrl = successUrl,
                             cancelUrl = cancelUrl,
                             callbackUrl = callbackUrl,
@@ -684,6 +728,117 @@ private fun OfficialGatewaysSection(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun BrandingLogoSection(
+    logoUrl: String?,
+    companyName: String,
+    isUploading: Boolean,
+    uploadError: String?,
+    onPickGallery: () -> Unit,
+    onPickCamera: () -> Unit,
+    onRemoveLogo: () -> Unit,
+    onRetryUpload: () -> Unit
+) {
+    val hasLogo = !logoUrl.isNullOrBlank()
+    val initial = companyName.trim().take(1).uppercase().ifBlank { "P" }
+
+    Text(
+        "কোম্পানি লোগো",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold
+    )
+    Spacer(Modifier.height(8.dp))
+
+    Box(
+        modifier = Modifier
+            .size(96.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            .border(1.dp, Color(0xFF3A3F4A), RoundedCornerShape(16.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (hasLogo) {
+            RemoteImage(
+                url = logoUrl,
+                contentDescription = "Company logo preview",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp)
+                    .clip(RoundedCornerShape(12.dp)),
+                contentScale = ContentScale.Fit,
+                fallback = {
+                    Text(initial, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = AccentCyan)
+                }
+            )
+        } else {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.Image, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(32.dp))
+                Text("লোগো আপলোড করুন", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (isUploading) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f)),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = AccentCyan, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
+            }
+        }
+    }
+
+    if (isUploading) {
+        Spacer(Modifier.height(8.dp))
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = AccentCyan)
+        Text("লোগো আপলোড হচ্ছে…", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+
+    uploadError?.let { err ->
+        Spacer(Modifier.height(6.dp))
+        Text(err, color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+        TextButton(onClick = onRetryUpload, enabled = !isUploading) {
+            Text("আবার চেষ্টা করুন", fontSize = 12.sp)
+        }
+    }
+
+    Spacer(Modifier.height(10.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(
+            onClick = onPickGallery,
+            enabled = !isUploading,
+            modifier = Modifier.weight(1f)
+        ) {
+            Icon(Icons.Default.PhotoLibrary, null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(if (hasLogo) "পরিবর্তন" else "গ্যালারি", fontSize = 12.sp)
+        }
+        OutlinedButton(
+            onClick = onPickCamera,
+            enabled = !isUploading,
+            modifier = Modifier.weight(1f)
+        ) {
+            Icon(Icons.Default.PhotoCamera, null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("ক্যামেরা", fontSize = 12.sp)
+        }
+    }
+    if (hasLogo) {
+        Spacer(Modifier.height(6.dp))
+        OutlinedButton(
+            onClick = onRemoveLogo,
+            enabled = !isUploading,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+        ) {
+            Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("লোগো মুছুন", fontSize = 12.sp)
         }
     }
 }

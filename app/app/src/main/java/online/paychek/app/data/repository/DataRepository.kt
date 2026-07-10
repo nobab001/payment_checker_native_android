@@ -2,6 +2,7 @@ package online.paychek.app.data.repository
 
 import online.paychek.app.data.remote.dto.*
 import online.paychek.app.data.remote.api.RetrofitClient
+import online.paychek.app.utils.ApiErrorMapper
 
 /**
  * PaymentRepository — পেমেন্ট ও Dashboard সংক্রান্ত সকল ডেটা অ্যাক্সেস
@@ -32,10 +33,10 @@ class PaymentRepository {
                     Result.failure(Exception("Stats লোড ব্যর্থ: ${body?.success}"))
                 }
             } else {
-                Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code())))
             }
         } catch (e: Exception) {
-            Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e)))
         }
     }
 
@@ -86,10 +87,10 @@ class PaymentRepository {
                     Result.failure(Exception("Transaction লোড ব্যর্থ"))
                 }
             } else {
-                Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "Transaction লোড ব্যর্থ")))
             }
         } catch (e: Exception) {
-            Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "Transaction লোড ব্যর্থ")))
         }
     }
 
@@ -105,10 +106,10 @@ class PaymentRepository {
                     Result.failure(Exception(body?.message ?: "FCM টোকেন আপডেট ব্যর্থ হয়েছে"))
                 }
             } else {
-                Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "Transaction লোড ব্যর্থ")))
             }
         } catch (e: Exception) {
-            Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "Transaction লোড ব্যর্থ")))
         }
     }
 
@@ -123,10 +124,10 @@ class PaymentRepository {
                     Result.failure(Exception("প্ল্যান লোড ব্যর্থ হয়েছে"))
                 }
             } else {
-                Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "Transaction লোড ব্যর্থ")))
             }
         } catch (e: Exception) {
-            Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "Transaction লোড ব্যর্থ")))
         }
     }
 
@@ -141,10 +142,10 @@ class PaymentRepository {
                     Result.failure(Exception(body?.message ?: "প্যাকেজ ক্রয় ব্যর্থ হয়েছে"))
                 }
             } else {
-                Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "Transaction লোড ব্যর্থ")))
             }
         } catch (e: Exception) {
-            Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "Transaction লোড ব্যর্থ")))
         }
     }
 
@@ -159,10 +160,10 @@ class PaymentRepository {
                     Result.failure(Exception(body?.message ?: "স্ট্যাটাস পরিবর্তন ব্যর্থ হয়েছে"))
                 }
             } else {
-                Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "Transaction লোড ব্যর্থ")))
             }
         } catch (e: Exception) {
-            Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "Transaction লোড ব্যর্থ")))
         }
     }
 
@@ -177,10 +178,10 @@ class PaymentRepository {
                     Result.failure(Exception("কাস্টম আর্কাইভ লোড ব্যর্থ"))
                 }
             } else {
-                Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "Transaction লোড ব্যর্থ")))
             }
         } catch (e: Exception) {
-            Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "Transaction লোড ব্যর্থ")))
         }
     }
 
@@ -195,10 +196,10 @@ class PaymentRepository {
                     Result.failure(Exception("অ্যাড-অন প্যাকেজ লোড ব্যর্থ হয়েছে"))
                 }
             } else {
-                Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "Transaction লোড ব্যর্থ")))
             }
         } catch (e: Exception) {
-            Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "Transaction লোড ব্যর্থ")))
         }
     }
 
@@ -213,10 +214,10 @@ class PaymentRepository {
                     Result.failure(Exception(body?.message ?: "অ্যাড-অন ক্রয় ব্যর্থ হয়েছে"))
                 }
             } else {
-                Result.failure(Exception("Server Error ${response.code()}: ${response.message()}"))
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "Transaction লোড ব্যর্থ")))
             }
         } catch (e: Exception) {
-            Result.failure(Exception("নেটওয়ার্ক সমস্যা: ${e.message}"))
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "Transaction লোড ব্যর্থ")))
         }
     }
 }

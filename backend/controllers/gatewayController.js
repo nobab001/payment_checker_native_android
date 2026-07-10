@@ -252,6 +252,40 @@ async function deactivateBindingById(bindingId) {
   `;
 }
 
+async function resolveProfileForPhoneNumber(userId, deviceId, simSlot, phoneNumber) {
+  const deviceSlot = await fetchDeviceSlotProfile(userId, deviceId, simSlot, phoneNumber);
+  if (deviceSlot?.length) return deviceSlot;
+
+  const global = await fetchGlobalProfileForNumber(userId, phoneNumber);
+  if (global?.length) return global;
+
+  const localMethods = await prisma.gateway_methods.findMany({
+    where: {
+      user_id: String(userId),
+      device_id: String(deviceId),
+      sim_slot: simSlot,
+      number: phoneNumber,
+    },
+    orderBy: [{ priority: 'asc' }],
+  });
+  if (localMethods.length) return localMethods;
+
+  return fetchMethodsProfileForNumber(userId, phoneNumber);
+}
+
+async function fetchLiveMethodsForBinding(userId, binding, phoneNumber) {
+  if (!binding) return [];
+  return prisma.gateway_methods.findMany({
+    where: {
+      user_id: String(userId),
+      device_id: String(binding.device_id),
+      sim_slot: Number(binding.sim_slot),
+      number: phoneNumber,
+    },
+    orderBy: [{ priority: 'asc' }],
+  });
+}
+
 async function applyProfileToSlot(userId, deviceId, simSlot, phoneNumber, profileMethods, enabledDefault = 1) {
   await prisma.gateway_methods.deleteMany({
     where: {
@@ -1093,6 +1127,9 @@ async function lookupSlotNumber(req, res) {
     const savedProfile = await fetchDeviceSlotProfile(userId, deviceId, simSlot, cleanNum);
     let profileSource = savedProfile;
     if (!profileSource?.length) {
+      profileSource = await fetchGlobalProfileForNumber(userId, cleanNum);
+    }
+    if (!profileSource?.length) {
       const localMethods = await prisma.gateway_methods.findMany({
         where: {
           user_id: String(userId),
@@ -1105,10 +1142,7 @@ async function lookupSlotNumber(req, res) {
       if (localMethods.length) {
         profileSource = localMethods;
       } else {
-        const globalProfile = await fetchGlobalProfileForNumber(userId, cleanNum);
-        profileSource = globalProfile?.length
-          ? globalProfile
-          : await fetchMethodsProfileForNumber(userId, cleanNum);
+        profileSource = await fetchMethodsProfileForNumber(userId, cleanNum);
       }
     }
 
@@ -1218,14 +1252,23 @@ async function forceShiftSlot(req, res) {
     await ensureSimBindingsTable();
 
     const currentSlotBinding = await findSlotBinding(userId, deviceId, simSlot);
+    const otherDeviceBindings = await findBindingsForPhoneOnOtherDevices(userId, deviceId, cleanNum);
+
+    // Capture template profile BEFORE deactivating anything (disabled rows lose is_enabled).
+    for (const binding of otherDeviceBindings) {
+      await saveDeviceSlotProfile(userId, binding.device_id, binding.sim_slot, cleanNum);
+    }
+
+    let profileMethods = await resolveProfileForPhoneNumber(userId, deviceId, simSlot, cleanNum);
+    if (!profileMethods.length && otherDeviceBindings[0]) {
+      profileMethods = await fetchLiveMethodsForBinding(userId, otherDeviceBindings[0], cleanNum);
+    }
 
     if (currentSlotBinding?.phone_number && currentSlotBinding.phone_number !== cleanNum) {
       await deactivatePhoneGlobally(userId, currentSlotBinding.phone_number);
     }
 
     await deactivatePhoneGlobally(userId, cleanNum);
-
-    const otherDeviceBindings = await findBindingsForPhoneOnOtherDevices(userId, deviceId, cleanNum);
 
     for (const binding of otherDeviceBindings) {
       await prisma.gateway_methods.updateMany({
@@ -1240,11 +1283,6 @@ async function forceShiftSlot(req, res) {
       await touchDeviceSync(userId, binding.device_id);
     }
 
-    let profileMethods = await fetchMethodsProfileForNumber(userId, cleanNum);
-    if (!profileMethods.length) {
-      const globalProfile = await fetchGlobalProfileForNumber(userId, cleanNum);
-      if (globalProfile?.length) profileMethods = globalProfile;
-    }
     await applyProfileToSlot(userId, deviceId, simSlot, cleanNum, profileMethods, 1);
     await upsertSlotBinding(userId, deviceId, simSlot, cleanNum, true);
     await saveDeviceSlotProfile(userId, deviceId, simSlot, cleanNum);

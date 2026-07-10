@@ -19,6 +19,7 @@ const prisma = require('../db/prisma');
 const merchantCache = require('../services/merchantCache');
 const layoutHelper = require('../services/checkoutLayoutHelper');
 const checkoutData = require('../services/checkoutDataService');
+const websiteLogoService = require('../services/websiteLogoService');
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -346,7 +347,7 @@ async function updateWebsiteSettings(req, res) {
       website_name: 'site_name',
       site_name: 'site_name',
       company_name: 'company_name',
-      logo_url: 'logo_url',
+      // logo_url is managed exclusively via POST/DELETE /branding/logo (multipart upload).
       checkout_theme: 'checkout_theme',
       success_url: 'success_url',
       cancel_url: 'cancel_url',
@@ -849,6 +850,97 @@ async function deleteOfficialGateway(req, res) {
   }
 }
 
+/**
+ * POST /api/v1/websites/:id/branding/logo — multipart logo upload (field: logo).
+ * Replaces any previously managed on-disk logo; external legacy URLs are overwritten in DB.
+ */
+async function uploadWebsiteLogo(req, res) {
+  try {
+    const userId = req.user.userId;
+    const row = await findOwnedWebsite(req.params.id, userId);
+    if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
+
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, error: 'NO_FILE', message: 'লোগো ফাইল পাঠানো হয়নি।' });
+    }
+
+    const oldPath = row.logo_url;
+    let relPath;
+    try {
+      relPath = await websiteLogoService.saveWebsiteLogo(
+        req.file.buffer,
+        req.file.mimetype,
+        userId,
+        row.id
+      );
+    } catch (e) {
+      const code = e.message || 'UPLOAD_FAILED';
+      const status = code === 'FILE_TOO_LARGE' ? 413
+        : (code === 'INVALID_FILE_TYPE' || code === 'INVALID_IMAGE_CONTENT') ? 415
+          : 400;
+      return res.status(status).json({
+        success: false,
+        error: code,
+        message: code === 'FILE_TOO_LARGE' ? 'ফাইল সর্বোচ্চ ৫ MB হতে পারে।'
+          : 'অবৈধ ছবি ফরম্যাট। PNG, JPG, JPEG বা WEBP ব্যবহার করুন।',
+      });
+    }
+
+    if (oldPath && websiteLogoService.isManagedLogoPath(oldPath, userId, row.id)) {
+      websiteLogoService.deleteLogoFile(oldPath);
+    }
+
+    const updated = await prisma.gateway_layouts.update({
+      where: { id: row.id },
+      data: { logo_url: relPath, updated_at: new Date() },
+    });
+    merchantCache.invalidate(row.api_key);
+
+    return res.json({
+      success: true,
+      message: 'কোম্পানি লোগো আপলোড হয়েছে।',
+      logoPath: relPath,
+      logoUrl: relPath,
+      website: toWebsiteDto(updated),
+    });
+  } catch (error) {
+    console.error('[Website] uploadWebsiteLogo error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/**
+ * DELETE /api/v1/websites/:id/branding/logo — remove stored logo (managed file + DB path).
+ * Legacy external URLs are cleared from DB only (remote file is not deleted).
+ */
+async function deleteWebsiteLogo(req, res) {
+  try {
+    const userId = req.user.userId;
+    const row = await findOwnedWebsite(req.params.id, userId);
+    if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
+
+    const oldPath = row.logo_url;
+    if (oldPath && websiteLogoService.isManagedLogoPath(oldPath, userId, row.id)) {
+      websiteLogoService.deleteLogoFile(oldPath);
+    }
+
+    const updated = await prisma.gateway_layouts.update({
+      where: { id: row.id },
+      data: { logo_url: null, updated_at: new Date() },
+    });
+    merchantCache.invalidate(row.api_key);
+
+    return res.json({
+      success: true,
+      message: 'কোম্পানি লোগো মুছে ফেলা হয়েছে।',
+      website: toWebsiteDto(updated),
+    });
+  } catch (error) {
+    console.error('[Website] deleteWebsiteLogo error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   createWebsite,
   listWebsites,
@@ -865,6 +957,8 @@ module.exports = {
   listOfficialGateways,
   upsertOfficialGateway,
   deleteOfficialGateway,
+  uploadWebsiteLogo,
+  deleteWebsiteLogo,
   // exported for reuse in admin permission controller / callback dispatcher
   _helpers: { sha256, toWebsiteDto },
 };

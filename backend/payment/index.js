@@ -3,8 +3,10 @@
  * Checkout UI is FROZEN — only backend controllers should import from here.
  */
 const { registerDefaultListeners } = require('./events/listeners');
+const { registerAuditListeners } = require('./events/listeners/audit-listener');
 
 registerDefaultListeners();
+registerAuditListeners();
 
 module.exports = {
   core: {
@@ -27,6 +29,7 @@ module.exports = {
     cache: require('./registry/provider-cache'),
   },
   engine: require('./engine/payment-engine'),
+  flow: require('./engine/payment-flow-engine'),
   context: require('./engine/payment-context'),
   logging: {
     ...require('./logging/trace-logger'),

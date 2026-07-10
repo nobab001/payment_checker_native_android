@@ -3,10 +3,8 @@ package online.paychek.app.services.sms
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.PowerManager
 import android.provider.Telephony
-import android.telephony.SubscriptionManager
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +16,7 @@ import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.data.remote.dto.GatewayMethod
 import online.paychek.app.domain.usecase.sms.ProcessIncomingSmsUseCase
 import online.paychek.app.utils.SecurePreferences
+import online.paychek.app.utils.SimSlotHelper
 import online.paychek.app.utils.SmsParser
 import java.util.Locale
 import java.util.regex.Pattern
@@ -46,7 +45,6 @@ class SmsReceiver(
 
     companion object {
         private const val TAG = "SmsReceiver"
-        private const val EXTRA_SUBSCRIPTION_ID = "subscription"
         // EncryptedSharedPreferences key for per-user secretKey
         const val KEY_HMAC_SECRET = "pcu_hmac_secret_key_v2"
 
@@ -231,10 +229,10 @@ class SmsReceiver(
             val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
             if (messages.isNullOrEmpty()) return
 
-            // SIM Slot identification
-            val subscriptionId = intent.getIntExtra(EXTRA_SUBSCRIPTION_ID, -1)
-            val simSlot        = resolveSimSlot(context, subscriptionId) // 1, 2, or null
-            val simNumber      = resolveSimNumber(context, subscriptionId)
+            // SIM Slot identification (multi-OEM extras)
+            val subscriptionId = SimSlotHelper.resolveSubscriptionId(intent)
+            val simSlot        = SimSlotHelper.resolveSimSlotFromIntent(context, intent)
+            val simNumber      = SimSlotHelper.resolveSimNumber(context, subscriptionId)
 
             // Load config and gateway method cache from SharedPreferences
             val prefs = context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
@@ -273,7 +271,7 @@ class SmsReceiver(
                 emptyList()
             }
 
-            Log.d(TAG, "Incoming SMS — From: $sender | SIM Slot: $simSlot | Length: ${body.length}")
+            Log.d(TAG, "Incoming SMS — From: $sender | SIM Slot: $simSlot | SubId: $subscriptionId | Length: ${body.length}")
 
             val cleanSender = sender.trim().lowercase(Locale.US)
 
@@ -287,22 +285,22 @@ class SmsReceiver(
                 // Step 1: Method must be enabled and SIM slot must match
                 method.isEnabled == 1 &&
                 (simSlot == null || method.simSlot == simSlot) &&
-                // Step 2: Sender ID match
+                // Step 2: Sender ID match (exact — no prefix/substring)
                 (
                     if (method.templateId == null) {
                         cleanSender == method.provider.trim().lowercase(Locale.US)
                     } else {
                         val targetSender = method.senderId?.trim()?.lowercase(Locale.US) ?: method.provider.lowercase(Locale.US)
-                        cleanSender.contains(targetSender)
+                        cleanSender == targetSender
                     }
                 ) &&
-                // Step 3: Sender Number match (if configured)
+                // Step 3: Sender Number match (if configured; exact)
                 (
                     isArchiveMode ||
                     method.senderNumber.isNullOrBlank() ||
                     run {
                         val targetSenderNumber = method.senderNumber.trim().lowercase(Locale.US)
-                        cleanSender.contains(targetSenderNumber)
+                        cleanSender == targetSenderNumber
                     }
                 ) &&
                 // Step 4: SMS Body keyword conditions (skip for custom/archive senders)
@@ -419,58 +417,6 @@ class SmsReceiver(
             } else null
         } catch (e: Exception) {
             Log.e(TAG, "Error parsing with custom regex: ${e.message}")
-            null
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // subscriptionId -> Physical SIM Slot (1 or 2)
-    // -------------------------------------------------------------------------
-    private fun resolveSimSlot(context: Context, subscriptionId: Int): Int? {
-        if (subscriptionId == -1) return null
-        return try {
-            val subscriptionManager =
-                context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                val info = subscriptionManager.getActiveSubscriptionInfo(subscriptionId)
-                    ?: return null
-                (info.simSlotIndex + 1).takeIf { it in 1..2 }
-            } else {
-                null
-            }
-        } catch (e: SecurityException) {
-            Log.w(TAG, "No permission to read SIM slot: ${e.message}")
-            null
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not resolve SIM slot: ${e.message}")
-            null
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // subscriptionId -> SIM phone number (null if unavailable)
-    // -------------------------------------------------------------------------
-    private fun resolveSimNumber(context: Context, subscriptionId: Int): String? {
-        if (subscriptionId == -1) return null
-        return try {
-            val subscriptionManager =
-                context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                val info = subscriptionManager.getActiveSubscriptionInfo(subscriptionId)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    subscriptionManager.getPhoneNumber(subscriptionId).takeIf { it.isNotBlank() }
-                } else {
-                    @Suppress("DEPRECATION")
-                    info?.number?.takeIf { it.isNotBlank() }
-                }
-            } else {
-                null
-            }
-        } catch (e: SecurityException) {
-            null
-        } catch (e: Exception) {
             null
         }
     }

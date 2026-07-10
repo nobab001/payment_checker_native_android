@@ -48,7 +48,7 @@ const PROVIDER_REGISTRY = Object.freeze({
     adapter: 'bkash-live',
     aliases: ['bkash_live', 'bkash_merchant', 'bkash'],
     supports: buildSupports({ otp: true, pin: true, commission: true, typeCallback: true, webhook: true }),
-    callbackPath: '/payment/callback/bkash',
+    callbackPath: '/api/payment/bkash/callback',
     sessionTimeout: 1800,
     dbProviderKey: 'bkash_merchant',
     priority: 100,

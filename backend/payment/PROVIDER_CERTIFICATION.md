@@ -55,10 +55,10 @@
 | Registry Entry | ✅ |
 | Adapter stub | ✅ |
 | Health / Ping stub | ✅ |
-| Verify | ⬜ Phase-3B |
-| Normalize | ⬜ Phase-3B |
-| Callback | ⬜ Phase-3B |
-| Retry | ⬜ Phase-3B |
-| Full lifecycle E2E | ⬜ Phase-3B |
+| Verify | ✅ template + api stub |
+| Normalize | ✅ |
+| Callback | ✅ |
+| Retry | ✅ MerchantCallbackV1 |
+| Full lifecycle E2E | ⬜ manual QA |
 
 **Do not enable other LIVE providers for production until `bkash_live` row is 100%.**

@@ -58,16 +58,19 @@ import kotlinx.coroutines.withContext
 
 private val CropAccent = Color(0xFF22D3EE)
 
+/** Circular (provider icons) or square 1:1 (merchant branding logos). */
+enum class CropFrameShape { Circle, Square }
+
 /**
- * Circular crop + pinch/zoom + pan dialog. The user positions the logo/icon
- * inside a round frame and the exact framed region is exported as a square
- * bitmap, so "what you see is what gets saved to the server".
+ * Circular or square crop + pinch/zoom + pan dialog. The user positions the logo
+ * inside the frame and the exact framed region is exported as a square bitmap.
  */
 @Composable
 fun ImageCropperDialog(
     bitmap: android.graphics.Bitmap,
     title: String = "লোগো সাজান",
     subtitle: String = "আঙ্গুল দিয়ে জুম/ড্র্যাগ করে অথবা নিচের বাটন দিয়ে ছোট-বড় করুন",
+    frameShape: CropFrameShape = CropFrameShape.Circle,
     onDismiss: () -> Unit,
     onCropSuccess: (android.graphics.Bitmap) -> Unit
 ) {
@@ -83,6 +86,7 @@ fun ImageCropperDialog(
     val baseScale = remember(bitmap) { minOf(viewportSizePx / imgWidth, viewportSizePx / imgHeight) }
     val baseTranslateX = remember(bitmap) { (viewportSizePx - imgWidth * baseScale) / 2f }
     val baseTranslateY = remember(bitmap) { (viewportSizePx - imgHeight * baseScale) / 2f }
+    val frameShapeComposable = if (frameShape == CropFrameShape.Circle) CircleShape else RoundedCornerShape(4.dp)
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -121,8 +125,8 @@ fun ImageCropperDialog(
                     Box(
                         modifier = Modifier
                             .size(300.dp)
-                            .clip(CircleShape)
-                            .border(2.dp, CropAccent, CircleShape)
+                            .clip(frameShapeComposable)
+                            .border(2.dp, CropAccent, frameShapeComposable)
                             .background(Color.Black)
                             .clipToBounds()
                             .pointerInput(Unit) {
@@ -149,10 +153,10 @@ fun ImageCropperDialog(
                     }
                 }
 
-                // Zoom slider buttons (explicit small/large control)
+                // Zoom + center controls
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedButton(
@@ -165,7 +169,18 @@ fun ImageCropperDialog(
                     ) {
                         Icon(Icons.Default.Remove, contentDescription = "Zoom out")
                     }
-                    Text("জুম", color = Color(0xFF94A3B8), fontSize = 13.sp)
+                    OutlinedButton(
+                        onClick = {
+                            scale = 1f
+                            offset = Offset.Zero
+                        },
+                        border = BorderStroke(1.dp, CropAccent),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = CropAccent),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.height(52.dp)
+                    ) {
+                        Text("কেন্টার", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
                     OutlinedButton(
                         onClick = { scale = (scale + 0.2f).coerceIn(0.5f, 6f) },
                         border = BorderStroke(1.dp, CropAccent),
@@ -261,6 +276,22 @@ private fun cropBitmap(
     val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
     canvas.drawBitmap(source, matrix, paint)
     return cropped
+}
+
+/** Encode cropped bitmap as PNG bytes for multipart upload. */
+fun bitmapToPngBytes(bmp: android.graphics.Bitmap, maxDim: Int = 512): ByteArray {
+    val scaled = if (bmp.width > maxDim || bmp.height > maxDim) {
+        val ratio = minOf(maxDim.toFloat() / bmp.width, maxDim.toFloat() / bmp.height)
+        android.graphics.Bitmap.createScaledBitmap(
+            bmp,
+            (bmp.width * ratio).toInt().coerceAtLeast(1),
+            (bmp.height * ratio).toInt().coerceAtLeast(1),
+            true
+        )
+    } else bmp
+    val out = java.io.ByteArrayOutputStream()
+    scaled.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+    return out.toByteArray()
 }
 
 /** Encode a bitmap to a raw base64 PNG string (accepted by the upload endpoint). */

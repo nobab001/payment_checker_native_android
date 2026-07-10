@@ -15,9 +15,12 @@ import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.data.remote.dto.*
 import online.paychek.app.utils.SecurePreferences
-import online.paychek.app.utils.NetworkConnectivityObserver
+import online.paychek.app.services.connectivity.ConnectionEngine
 import online.paychek.app.utils.DeviceIdHelper
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 // =============================================================================
@@ -83,13 +86,21 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
     private val api   = RetrofitClient.gatewayApiService
     private val prefs = application.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
-    private val connectivityObserver = NetworkConnectivityObserver(application)
+    private val connectionEngine = ConnectionEngine.getInstance(application)
 
-    val isNetworkAvailable = connectivityObserver.observe()
+    val connectionBanner = connectionEngine.banner
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = connectivityObserver.isNetworkAvailable()
+            initialValue = null
+        )
+
+    val hasInternet = connectionEngine.status
+        .map { it.hasInternet }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = false
         )
 
     private val _state = MutableStateFlow(DeviceUiState())
@@ -128,8 +139,9 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         val cachedCustomSenderPermission = prefs.getBoolean(AppConfig.KEY_HAS_CUSTOM_SENDER_ADDON, false)
 
         RetrofitClient.init(application)
+        connectionEngine.startMonitoring(viewModelScope)
 
-        _state.update { 
+        _state.update {
             it.copy(
                 sim1Enabled = sim1, 
                 sim2Enabled = sim2, 
@@ -147,15 +159,17 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         loadCustomSenderPermission()
 
         viewModelScope.launch {
-            isNetworkAvailable.collect { available ->
-                if (available) {
+            connectionEngine.status
+                .map { it.hasInternet }
+                .distinctUntilChanged()
+                .filter { it }
+                .collect {
                     loadGatewayMethods()
                     loadTemplates()
                     if (_state.value.selectedSubTab == 1) {
                         loadChildDevices()
                     }
                 }
-            }
         }
     }
 
@@ -165,6 +179,26 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
             online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(getApplication(), json)
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    /** Drop all cached gateway methods for one SIM slot (before loading a new number profile). */
+    private fun clearSlotLocalCache(simSlot: Int) {
+        _state.update { current ->
+            val updated = current.methods.filter { it.simSlot != simSlot }
+            saveMethodsToCache(updated)
+            current.copy(methods = updated)
+        }
+    }
+
+    private fun applyServerMethods(serverData: List<GatewayMethod>) {
+        saveMethodsToCache(serverData)
+        val sim1Num = serverData.find { it.simSlot == 1 && !it.number.isNullOrEmpty() }?.number
+            ?: _state.value.sim1Number
+        val sim2Num = serverData.find { it.simSlot == 2 && !it.number.isNullOrEmpty() }?.number
+            ?: _state.value.sim2Number
+        _state.update {
+            it.copy(methods = serverData, sim1Number = sim1Num, sim2Number = sim2Num)
         }
     }
 
@@ -321,6 +355,14 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val token = getToken() ?: return@launch
             if (newValue) {
+                val lookupOk = performSlotLookup(simSlot, phoneNumber)
+                if (!lookupOk) {
+                    if (_state.value.pendingSimConflict == null) {
+                        validateAndSyncSimToggles()
+                    }
+                    return@launch
+                }
+
                 val slotMethods = _state.value.methods.filter { it.simSlot == simSlot && it.isEnabled == 1 }
                 val bulkItems = slotMethods.map { method ->
                     BulkSyncMethodItem(
@@ -365,6 +407,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                             saveMethodsToCache(newData)
                             _state.update { it.copy(methods = newData) }
                         }
+                        enableSimSlot(simSlot)
                     } else {
                         revertSimToggle(simSlot)
                         setError("সিম সক্রিয় করতে ব্যর্থ হয়েছে")
@@ -988,20 +1031,6 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun autoDetectSimNumbers() {
-        viewModelScope.launch {
-            delay(500L) // Small delay to let OS permission state sync
-            val context = getApplication<Application>().applicationContext
-            val (sim1Num, sim2Num) = DeviceIdHelper.getSimNumbers(context)
-            if (!sim1Num.isNullOrBlank() && _state.value.sim1Number.isBlank()) {
-                onSimNumberChanged(1, sim1Num)
-            }
-            if (!sim2Num.isNullOrBlank() && _state.value.sim2Number.isBlank()) {
-                onSimNumberChanged(2, sim2Num)
-            }
-        }
-    }
-
     private var sim1NumberDebounceJob: Job? = null
     private var sim2NumberDebounceJob: Job? = null
     private var isApplyingProfile = false
@@ -1018,6 +1047,49 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         }
         _state.update {
             if (simSlot == 1) it.copy(sim1Enabled = false) else it.copy(sim2Enabled = false)
+        }
+    }
+
+    private fun enableSimSlot(simSlot: Int) {
+        prefs.edit().apply {
+            if (simSlot == 1) putBoolean(AppConfig.KEY_SIM1_ENABLED, true)
+            else putBoolean(AppConfig.KEY_SIM2_ENABLED, true)
+            apply()
+        }
+        _state.update {
+            if (simSlot == 1) it.copy(sim1Enabled = true) else it.copy(sim2Enabled = true)
+        }
+    }
+
+    /** After physical SIM swap, refresh slot numbers from the device when they changed. */
+    fun syncPhysicalSimNumbers() {
+        viewModelScope.launch {
+            delay(300L)
+            val context = getApplication<Application>().applicationContext
+            val (physicalSim1, physicalSim2) = DeviceIdHelper.getSimNumbers(context)
+            val stateVal = _state.value
+
+            physicalSim1?.takeIf { it.length == 11 && it != stateVal.sim1Number }?.let { num ->
+                onSimNumberChanged(1, num)
+            }
+            physicalSim2?.takeIf { it.length == 11 && it != stateVal.sim2Number }?.let { num ->
+                onSimNumberChanged(2, num)
+            }
+        }
+    }
+
+    fun autoDetectSimNumbers() {
+        viewModelScope.launch {
+            delay(500L) // Small delay to let OS permission state sync
+            val context = getApplication<Application>().applicationContext
+            val (sim1Num, sim2Num) = DeviceIdHelper.getSimNumbers(context)
+            if (!sim1Num.isNullOrBlank() && _state.value.sim1Number.isBlank()) {
+                onSimNumberChanged(1, sim1Num)
+            }
+            if (!sim2Num.isNullOrBlank() && _state.value.sim2Number.isBlank()) {
+                onSimNumberChanged(2, sim2Num)
+            }
+            syncPhysicalSimNumbers()
         }
     }
 
@@ -1140,6 +1212,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 it.copy(sim2Number = revertNum, pendingSimConflict = null)
             }
         }
+        loadGatewayMethods()
     }
 
     fun confirmForceShift() {
@@ -1161,18 +1234,18 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 if (res.isSuccessful && res.body()?.success == true) {
                     val body = res.body()!!
                     body.data?.let { newData ->
-                        saveMethodsToCache(newData)
-                        val sim1Num = newData.find { it.simSlot == 1 && !it.number.isNullOrEmpty() }?.number ?: _state.value.sim1Number
-                        val sim2Num = newData.find { it.simSlot == 2 && !it.number.isNullOrEmpty() }?.number ?: _state.value.sim2Number
-                        _state.update {
-                            it.copy(
-                                methods = newData,
-                                sim1Number = sim1Num,
-                                sim2Number = sim2Num,
-                                successMessage = body.message ?: "সিম সফলভাবে স্থানান্তরিত হয়েছে।"
-                            )
-                        }
+                        applyServerMethods(newData)
                         lastConfirmedLookupNumber[conflict.simSlot] = conflict.phoneNumber
+                    }
+                    enableSimSlot(conflict.simSlot)
+                    online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsLastSync(
+                        getApplication(),
+                        0L,
+                    )
+                    loadTemplates(force = true)
+                    loadGatewayMethods()
+                    _state.update {
+                        it.copy(successMessage = body.message ?: "সিম সফলভাবে স্থানান্তরিত হয়েছে।")
                     }
                     validateAndSyncSimToggles()
                     viewModelScope.launch {
@@ -1189,45 +1262,60 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private suspend fun lookupSlotNumber(simSlot: Int, cleanNum: String) {
-        if (isApplyingProfile) return
-        val token = getToken() ?: return
-        runCatching {
+    private suspend fun performSlotLookup(simSlot: Int, cleanNum: String): Boolean {
+        if (isApplyingProfile) return false
+        val token = getToken() ?: return false
+        return runCatching {
             api.lookupSlotNumber(
                 "Bearer $token",
                 SlotLookupRequest(simSlot = simSlot, phoneNumber = cleanNum)
             )
-        }.onSuccess { res ->
-            if (!res.isSuccessful) {
-                setError("নম্বর যাচাই ব্যর্থ হয়েছে (${res.code()})")
-                return@onSuccess
-            }
-            val body = res.body() ?: return@onSuccess
-            if (body.hasConflict == true) {
-                _state.update {
-                    it.copy(
-                        pendingSimConflict = SimConflictUi(
-                            simSlot = simSlot,
-                            phoneNumber = cleanNum,
-                            runningDeviceName = body.runningDeviceName ?: "অন্য ডিভাইস"
-                        )
-                    )
+        }.fold(
+            onSuccess = { res ->
+                if (!res.isSuccessful) {
+                    setError("নম্বর যাচাই ব্যর্থ হয়েছে (${res.code()})")
+                    return@fold false
                 }
-                return@onSuccess
+                val body = res.body() ?: return@fold false
+                if (body.hasConflict == true) {
+                    _state.update {
+                        it.copy(
+                            pendingSimConflict = SimConflictUi(
+                                simSlot = simSlot,
+                                phoneNumber = cleanNum,
+                                runningDeviceName = body.runningDeviceName ?: "অন্য ডিভাইস"
+                            )
+                        )
+                    }
+                    return@fold false
+                }
+
+                clearSlotLocalCache(simSlot)
+
+                if (!body.data.isNullOrEmpty()) {
+                    applyServerMethods(body.data)
+                } else {
+                    mergeSlotNumbersFromServer(body.data)
+                }
+
+                if (body.applyProfile == true && !body.cachedMethods.isNullOrEmpty()) {
+                    applyProfileFromLookup(simSlot, cleanNum, body.cachedMethods)
+                } else {
+                    lastConfirmedLookupNumber[simSlot] = cleanNum
+                }
+
+                validateAndSyncSimToggles()
+                true
+            },
+            onFailure = { exception ->
+                setError("নেটওয়ার্ক সমস্যা: ${exception.message}")
+                false
             }
+        )
+    }
 
-            mergeSlotNumbersFromServer(body.data)
-
-            if (body.applyProfile == true && !body.cachedMethods.isNullOrEmpty()) {
-                applyProfileFromLookup(simSlot, cleanNum, body.cachedMethods)
-            } else {
-                lastConfirmedLookupNumber[simSlot] = cleanNum
-            }
-
-            validateAndSyncSimToggles()
-        }.onFailure { exception ->
-            setError("নেটওয়ার্ক সমস্যা: ${exception.message}")
-        }
+    private suspend fun lookupSlotNumber(simSlot: Int, cleanNum: String) {
+        performSlotLookup(simSlot, cleanNum)
     }
 
     private fun mergeSlotNumbersFromServer(serverData: List<GatewayMethod>?) {
@@ -1267,16 +1355,18 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         }.onSuccess { res ->
             if (res.isSuccessful && res.body()?.success == true) {
                 res.body()?.data?.let { newData ->
-                    saveMethodsToCache(newData)
-                    _state.update { it.copy(methods = newData) }
+                    applyServerMethods(newData)
                 }
                 lastConfirmedLookupNumber[simSlot] = phoneNumber
+                loadTemplates(force = true)
             }
         }
         isApplyingProfile = false
     }
 
     fun validateAndSyncSimToggles() {
+        if (_state.value.pendingSimConflict != null) return
+
         val stateVal = _state.value
         val sim1Num = stateVal.sim1Number
         val sim2Num = stateVal.sim2Number

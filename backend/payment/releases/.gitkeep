@@ -1,0 +1,11 @@
+# Payment Platform — Release Evidence Archive
+
+Per-release evidence bundles live in subfolders:
+
+```
+releases/v3.0.1-pilot-YYYYMMDD/
+```
+
+See `../RELEASE_EVIDENCE_PACKAGE.md` for required contents.
+
+**Do not commit secrets or unredacted PII.**

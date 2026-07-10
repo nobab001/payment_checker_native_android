@@ -18,6 +18,17 @@ function keyFor(idempotencyKey) {
   return `${PREFIX}${idempotencyKey}`;
 }
 
+const REDIS_OP_TIMEOUT_MS = parseInt(process.env.REDIS_OP_TIMEOUT_MS || '500', 10);
+
+function withRedisTimeout(promise) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('REDIS_TIMEOUT')), REDIS_OP_TIMEOUT_MS);
+    }),
+  ]);
+}
+
 function memoryGet(key) {
   const row = memoryStore.get(key);
   if (!row) return null;
@@ -36,7 +47,7 @@ async function check(idempotencyKey) {
 
   const redisKey = keyFor(idempotencyKey);
   try {
-    const raw = await getRedisClient().get(redisKey);
+    const raw = await withRedisTimeout(getRedisClient().get(redisKey));
     if (raw) {
       const parsed = JSON.parse(raw);
       return {
@@ -68,7 +79,9 @@ async function lock(idempotencyKey, ttlSec = DEFAULT_LOCK_TTL_SEC) {
   const payload = JSON.stringify({ status: 'processing', at: Date.now() });
 
   try {
-    const ok = await getRedisClient().set(redisKey, payload, 'NX', 'EX', ttlSec);
+    const ok = await withRedisTimeout(
+      getRedisClient().set(redisKey, payload, 'NX', 'EX', ttlSec),
+    );
     return { acquired: ok === 'OK' };
   } catch (_) {
     const existing = memoryGet(redisKey);
@@ -91,7 +104,7 @@ async function complete(idempotencyKey, result = {}, ttlSec = DEFAULT_COMPLETE_T
   const payload = JSON.stringify({ status: 'completed', result, at: Date.now() });
 
   try {
-    await getRedisClient().set(redisKey, payload, 'EX', ttlSec);
+    await withRedisTimeout(getRedisClient().set(redisKey, payload, 'EX', ttlSec));
   } catch (_) {
     memoryStore.set(redisKey, { status: 'completed', result, at: Date.now() });
   }

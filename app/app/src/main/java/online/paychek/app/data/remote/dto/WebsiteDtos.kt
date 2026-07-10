@@ -164,6 +164,22 @@ data class ListWebsitesResponse(
     @SerializedName("websites") val websites: List<WebsiteDto> = emptyList()
 )
 
+data class WebsiteUpdateResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("website") val website: WebsiteDto? = null,
+    @SerializedName("error") val error: String? = null
+)
+
+/** Response for POST/DELETE /websites/:id/branding/logo */
+data class WebsiteLogoResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("logoPath") val logoPath: String? = null,
+    @SerializedName("logoUrl") val logoUrl: String? = null,
+    @SerializedName("website") val website: WebsiteDto? = null,
+    @SerializedName("error") val error: String? = null
+)
+
 data class WebsiteDetailResponse(
     @SerializedName("success") val success: Boolean = false,
     @SerializedName("website") val website: WebsiteDto? = null,
@@ -182,12 +198,6 @@ data class CheckoutTabDto(
     @SerializedName("icon") val icon: String? = null,
     @SerializedName("iconUrl") val iconUrl: String? = null,
     @SerializedName("category") val category: String? = null
-)
-
-data class WebsiteUpdateResponse(
-    @SerializedName("success") val success: Boolean = false,
-    @SerializedName("website") val website: WebsiteDto? = null,
-    @SerializedName("error") val error: String? = null
 )
 
 data class RegenerateSecretResponse(

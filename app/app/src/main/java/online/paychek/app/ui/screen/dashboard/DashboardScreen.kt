@@ -61,7 +61,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import online.paychek.app.data.remote.dto.DashboardStats
 import online.paychek.app.data.remote.dto.TransactionItem
-import online.paychek.app.ui.components.ConnectivityBanner
+import online.paychek.app.ui.components.ConnectionStatusBanner
 import online.paychek.app.ui.components.LastUpdateRow
 import online.paychek.app.utils.BatteryOptimizationHelper
 import online.paychek.app.utils.adaptivePadding
@@ -105,7 +105,8 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = viewModel()
 ) {
     val screenState by viewModel.state.collectAsStateWithLifecycle()
-    val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsStateWithLifecycle()
+    val connectionBanner by viewModel.connectionBanner.collectAsStateWithLifecycle()
+    val hasInternet by viewModel.hasInternet.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     fun ensureBackgroundSmsReady() {
@@ -286,8 +287,8 @@ fun DashboardScreen(
                 .fillMaxSize()
                 .background(DashBg)
         ) {
-        if (!isNetworkAvailable) {
-            ConnectivityBanner()
+        connectionBanner?.let { banner ->
+            ConnectionStatusBanner(banner = banner)
         }
 
         if (!isAccessibilityEnabled) {
@@ -653,24 +654,36 @@ fun DashboardScreen(
                 // - search এ কিছু type করলে stats cards HIDE হবে
                 if (searchQuery.isEmpty()) {
                     item {
-                        val isOffline = !isNetworkAvailable
-                        if (isOffline) {
-                            StatsGrid(stats = null, isOffline = true)
-                        } else {
-                            AnimatedContent(
-                                targetState = screenState.uiState,
-                                transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) },
-                                modifier = Modifier.padding(bottom = 4.dp),
-                                label = "DashboardUiState"
-                            ) { uiState ->
-                                when (uiState) {
-                                    is DashboardUiState.Loading -> StatsLoadingPlaceholder()
-                                    is DashboardUiState.Error   -> ErrorCard(
-                                        message  = uiState.message,
-                                        onRetry  = { viewModel.loadDashboardStats() }
-                                    )
-                                    is DashboardUiState.Success -> StatsGrid(stats = uiState.stats, isOffline = false)
+                        val cachedStats = (screenState.uiState as? DashboardUiState.Success)?.stats
+                        AnimatedContent(
+                            targetState = screenState.uiState,
+                            transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) },
+                            modifier = Modifier.padding(bottom = 4.dp),
+                            label = "DashboardUiState"
+                        ) { uiState ->
+                            when (uiState) {
+                                is DashboardUiState.Loading -> {
+                                    if (cachedStats != null) {
+                                        StatsGrid(stats = cachedStats, isOffline = !hasInternet, isStale = true)
+                                    } else {
+                                        StatsLoadingPlaceholder()
+                                    }
                                 }
+                                is DashboardUiState.Error -> {
+                                    if (cachedStats != null) {
+                                        StatsGrid(stats = cachedStats, isOffline = !hasInternet, isStale = true)
+                                    } else {
+                                        ErrorCard(
+                                            message = uiState.message,
+                                            onRetry = { viewModel.loadDashboardStats() }
+                                        )
+                                    }
+                                }
+                                is DashboardUiState.Success -> StatsGrid(
+                                    stats = uiState.stats,
+                                    isOffline = !hasInternet,
+                                    isStale = !hasInternet
+                                )
                             }
                         }
                     }
@@ -1114,15 +1127,17 @@ private fun DashboardHeaderBlock(
 private fun StatsGrid(
     stats: DashboardStats?,
     isOffline: Boolean = false,
+    isStale: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val fmt = DecimalFormat("#,##0.00")
-    val todayEarningsVal = if (isOffline || stats == null) "--" else "৳ ${fmt.format(stats.todayEarnings)}"
-    val totalEarningsVal = if (isOffline || stats == null) "--" else "৳ ${fmt.format(stats.totalEarnings)}"
-    val totalTransactionsVal = if (isOffline || stats == null) "--" else "${stats.totalTransactions}"
-    val activeDevicesVal = if (isOffline || stats == null) "--" else "${stats.activeDevices} টি"
-    val todayTransactionsBadge = if (isOffline || stats == null) null else "${stats.todayTransactions} টি"
-    val totalTransactionsBadge = if (isOffline || stats == null) null else (if (stats.unusedCount > 0) "${stats.unusedCount} নতুন" else null)
+    val showPlaceholder = stats == null
+    val todayEarningsVal = if (showPlaceholder) "--" else "৳ ${fmt.format(stats!!.todayEarnings)}"
+    val totalEarningsVal = if (showPlaceholder) "--" else "৳ ${fmt.format(stats!!.totalEarnings)}"
+    val totalTransactionsVal = if (showPlaceholder) "--" else "${stats!!.totalTransactions}"
+    val activeDevicesVal = if (showPlaceholder) "--" else "${stats!!.activeDevices} টি"
+    val todayTransactionsBadge = if (showPlaceholder) null else "${stats!!.todayTransactions} টি"
+    val totalTransactionsBadge = if (showPlaceholder) null else (if (stats!!.unusedCount > 0) "${stats.unusedCount} নতুন" else null)
 
     Column(
         modifier            = modifier.padding(horizontal = 16.dp),

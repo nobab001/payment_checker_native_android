@@ -154,6 +154,26 @@ const PaymentEngine = {
 
     return RedirectService.liveInitJson(redirectUrl);
   },
+
+  // ── Phase-3B flow methods (delegate to PaymentFlowEngine) ──
+  initMerchantPayment(req, res) {
+    return require('./payment-flow-engine').initMerchantPayment(req, res);
+  },
+  redirectPayment(req, res) {
+    return require('./payment-flow-engine').redirectPayment(req, res);
+  },
+  bkashCallback(req, res) {
+    return require('./payment-flow-engine').bkashCallback(req, res);
+  },
+  legacyGatewayCallback(req, res) {
+    return require('./payment-flow-engine').legacyGatewayCallback(req, res);
+  },
+  paymentStatus(req, res) {
+    return require('./payment-flow-engine').paymentStatus(req, res);
+  },
+  completeSessionByToken(token, opts) {
+    return require('./payment-flow-engine').completeSessionByToken(token, opts);
+  },
 };
 
 module.exports = PaymentEngine;
