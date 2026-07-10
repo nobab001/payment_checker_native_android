@@ -3,7 +3,10 @@ package online.paychek.app
 import android.app.Application
 import android.util.Log
 import online.paychek.app.data.remote.api.RetrofitClient
+import online.paychek.app.data.local.prefs.PrefsHelper
 import online.paychek.app.services.connectivity.ConnectionEngine
+import online.paychek.app.services.foreground.SmsServiceGuard
+import online.paychek.app.services.sync.SmsPollWorker
 import online.paychek.app.utils.SecurePreferences
 import java.util.concurrent.Executors
 
@@ -21,7 +24,11 @@ class PaychekApp : Application() {
         Executors.newSingleThreadExecutor().execute {
             try {
                 SecurePreferences.warmUp(this)
-                online.paychek.app.data.local.prefs.PrefsHelper.migrateCachesFromSecureStoreIfNeeded(this)
+                PrefsHelper.migrateCachesFromSecureStoreIfNeeded(this)
+                if (PrefsHelper.isSmsServiceActive(this)) {
+                    SmsServiceGuard.scheduleWatchdog(this)
+                    SmsPollWorker.schedule(this)
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "Background warm-up failed: ${e.message}")
             }

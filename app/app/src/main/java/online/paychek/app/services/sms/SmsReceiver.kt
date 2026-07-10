@@ -242,6 +242,10 @@ class SmsReceiver(
 
             // Load config and gateway method cache from SharedPreferences
             val prefs = context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+            if (!prefs.getBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, false)) {
+                Log.d(TAG, "SMS ignored: monitor service disabled by user")
+                return
+            }
             val sim1Enabled = prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, true)
             val sim2Enabled = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, true)
 

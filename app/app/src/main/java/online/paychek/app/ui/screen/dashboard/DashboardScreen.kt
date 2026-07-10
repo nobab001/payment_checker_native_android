@@ -127,6 +127,7 @@ fun DashboardScreen(
         lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
             if (state == androidx.lifecycle.Lifecycle.State.RESUMED) {
                 isAccessibilityEnabled = online.paychek.app.utils.AccessibilityHelper.isAccessibilityServiceEnabled(context)
+                viewModel.ensureSmsServiceRunning()
             }
         }
     }

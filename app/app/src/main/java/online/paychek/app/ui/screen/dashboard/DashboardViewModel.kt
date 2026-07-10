@@ -2,8 +2,6 @@ package online.paychek.app.ui.screen.dashboard
 
 import android.app.Application
 import android.content.Context
-import android.content.Intent
-import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,7 +14,7 @@ import online.paychek.app.utils.RefreshCooldown
 import online.paychek.app.utils.BangladeshTimeUtil
 import online.paychek.app.data.remote.dto.*
 import online.paychek.app.data.repository.PaymentRepository
-import online.paychek.app.services.foreground.SmsMonitorService
+import online.paychek.app.services.foreground.SmsServiceGuard
 import online.paychek.app.domain.usecase.sync.FlushOfflineQueueUseCase
 import online.paychek.app.utils.SecurePreferences
 import kotlinx.coroutines.delay
@@ -144,6 +142,24 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
         }
+
+        viewModelScope.launch {
+            ensureSmsServiceRunning()
+        }
+    }
+
+    /**
+     * Prefs ON কিন্তু সার্ভিস মরে গেলে (OEM kill) আবার চালু করে; UI সিঙ্ক রাখে।
+     */
+    fun ensureSmsServiceRunning() {
+        val context = getApplication<Application>().applicationContext
+        val prefOn = prefs.getBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, false)
+        if (!prefOn) {
+            _state.update { it.copy(isServiceActive = false) }
+            return
+        }
+        val running = SmsServiceGuard.ensureRunningAndSync(context)
+        _state.update { it.copy(isServiceActive = running) }
     }
 
     private fun restoreCachedDashboardStats() {
@@ -352,29 +368,22 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun toggleSmsService(enable: Boolean) {
         val context = getApplication<Application>().applicationContext
 
-        val serviceIntent = Intent(context, SmsMonitorService::class.java).apply {
-            action = if (enable) SmsMonitorService.ACTION_START else SmsMonitorService.ACTION_STOP
-        }
-
         try {
             if (enable) {
-                // Android 8+ এর জন্য startForegroundService() আবশ্যক
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(serviceIntent)
-                } else {
-                    context.startService(serviceIntent)
-                }
+                SmsServiceGuard.startService(context)
+                SmsServiceGuard.scheduleWatchdog(context)
             } else {
-                context.startService(serviceIntent) // ACTION_STOP signal
+                SmsServiceGuard.stopService(context)
+                SmsServiceGuard.cancelWatchdog(context)
             }
 
-            // SharedPrefs আপডেট — BootReceiver এটি রিবুটের পর পড়বে
             prefs.edit()
                 .putBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, enable)
                 .apply()
 
-            // UI state তাৎক্ষণিক আপডেট
-            _state.update { it.copy(isServiceActive = enable) }
+            _state.update {
+                it.copy(isServiceActive = enable && SmsServiceGuard.isServiceAlive())
+            }
 
         } catch (e: Exception) {
             // Service চালু করতে ব্যর্থ হলে (বিরল ক্ষেত্রে)

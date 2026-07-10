@@ -64,6 +64,14 @@ class SmsMonitorService : Service() {
     companion object {
         private const val TAG = "SmsMonitorService"
 
+        /** True while service process is alive (more reliable than ActivityManager). */
+        @Volatile
+        var isAlive: Boolean = false
+
+        /** Set when user explicitly toggles OFF — blocks auto-restart in onDestroy. */
+        @Volatile
+        var userInitiatedStop: Boolean = false
+
         const val NOTIFICATION_ID   = 991
         const val CHANNEL_ID        = "sms_monitor_channel"
         private const val CHANNEL_NAME = "SMS ট্র্যাকিং সার্ভিস"
@@ -89,9 +97,14 @@ class SmsMonitorService : Service() {
         Log.i(TAG, "onStartCommand — Action: $action")
 
         if (action == ACTION_STOP) {
+            userInitiatedStop = true
+            isAlive = false
             stopMonitoring()
             return START_NOT_STICKY
         }
+
+        userInitiatedStop = false
+        isAlive = true
 
         // Foreground notification FIRST — Android requires this within ~5s of startForegroundService
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -115,6 +128,7 @@ class SmsMonitorService : Service() {
             startOfflineRecovery()
             startSocketConnection()
             NumberHeartbeatEngine.start(this@SmsMonitorService)
+            online.paychek.app.services.foreground.SmsServiceGuard.scheduleWatchdog(this@SmsMonitorService)
         }
 
         return START_STICKY // সিস্টেম kill করলে নিজে পুনরায় চালু হবে
@@ -469,6 +483,7 @@ class SmsMonitorService : Service() {
 
     private fun stopMonitoring() {
         Log.i(TAG, "SMS Monitoring সার্ভিস বন্ধ হচ্ছে")
+        isAlive = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -482,6 +497,7 @@ class SmsMonitorService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.i(TAG, "Foreground service onDestroy")
+        isAlive = false
         NumberHeartbeatEngine.stop()
         wakeLockRenewJob?.cancel()
         wakeLockRenewJob = null
@@ -493,5 +509,11 @@ class SmsMonitorService : Service() {
         socket?.disconnect()
         socket?.off()
         serviceScope.cancel()
+
+        if (!userInitiatedStop && online.paychek.app.data.local.prefs.PrefsHelper.isSmsServiceActive(this)) {
+            Log.w(TAG, "Unexpected service death — scheduling recovery")
+            online.paychek.app.services.foreground.SmsServiceGuard.enqueueImmediateRecovery(this)
+        }
+        userInitiatedStop = false
     }
 }

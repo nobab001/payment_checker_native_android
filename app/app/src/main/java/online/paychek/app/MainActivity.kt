@@ -125,6 +125,9 @@ class MainActivity : FragmentActivity() {
     override fun onResume() {
         super.onResume()
         isRequestingPermission = false
+        if (SessionFlags.hasAuth(this) && SessionFlags.isProfileComplete(this)) {
+            online.paychek.app.services.foreground.SmsServiceGuard.startIfEnabled(this)
+        }
     }
 
     override fun onStop() {
