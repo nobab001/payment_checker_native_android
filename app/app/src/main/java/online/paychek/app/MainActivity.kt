@@ -129,6 +129,9 @@ class MainActivity : FragmentActivity() {
         isRequestingPermission = false
         if (SessionFlags.hasAuth(this) && SessionFlags.isProfileComplete(this)) {
             online.paychek.app.services.foreground.SmsServiceGuard.startIfEnabled(this)
+            if (online.paychek.app.utils.AccessibilityHelper.isAccessibilityServiceEnabled(this)) {
+                online.paychek.app.services.foreground.SmsServiceGuard.scheduleWatchdog(this)
+            }
             healDeviceConfigCache()
         }
     }

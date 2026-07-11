@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,10 +16,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import online.paychek.app.services.foreground.SmsServiceGuard
-import online.paychek.app.utils.BackgroundSetupStep
+import online.paychek.app.utils.AccessibilityHelper
 import online.paychek.app.utils.BatteryOptimizationHelper
 import online.paychek.app.utils.OemBackgroundHelper
 
+/**
+ * সব ফোনে একই ২-ধাপ সেটআপ — অন্য পেমেন্ট অ্যাপের মতো:
+ * ১. Accessibility ON  ২. Battery Unrestricted
+ */
 @Composable
 fun BackgroundPersistenceCard(
     isServiceActive: Boolean,
@@ -26,23 +31,24 @@ fun BackgroundPersistenceCard(
     onRefreshService: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    var steps by remember { mutableStateOf(OemBackgroundHelper.getRequiredSteps(context)) }
+    var accessibilityOk by remember { mutableStateOf(AccessibilityHelper.isAccessibilityServiceEnabled(context)) }
+    var batteryOk by remember { mutableStateOf(BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)) }
     val serviceAlive = SmsServiceGuard.isServiceAlive()
-    val batteryOk = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
 
-    LaunchedEffect(isServiceActive, batteryOk) {
-        steps = OemBackgroundHelper.getRequiredSteps(context)
+    LaunchedEffect(isServiceActive) {
+        accessibilityOk = AccessibilityHelper.isAccessibilityServiceEnabled(context)
+        batteryOk = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
     }
 
-    if (!isServiceActive && steps.isEmpty()) return
-
-    val showWarning = isServiceActive && (!serviceAlive || steps.isNotEmpty() || !batteryOk)
-    if (!showWarning && steps.isEmpty()) return
+    val allReady = accessibilityOk && batteryOk
+    if (!isServiceActive && allReady) return
+    if (isServiceActive && allReady && serviceAlive) return
 
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFF59E0B).copy(alpha = 0.12f)
+            containerColor = if (allReady) Color(0xFF10B981).copy(alpha = 0.1f)
+            else Color(0xFFF59E0B).copy(alpha = 0.12f)
         ),
         shape = RoundedCornerShape(16.dp)
     ) {
@@ -51,50 +57,43 @@ fun BackgroundPersistenceCard(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Default.Warning, null, tint = Color(0xFFF59E0B))
+                Icon(
+                    if (allReady) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    null,
+                    tint = if (allReady) Color(0xFF10B981) else Color(0xFFF59E0B)
+                )
                 Column {
+                    Text("ব্যাকগ্রাউন্ড গার্ড", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Text(
-                        "ব্যাকগ্রাউন্ড সেটআপ (${OemBackgroundHelper.vendorLabel()})",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                    Text(
-                        if (!serviceAlive && isServiceActive) {
-                            "সার্ভিস বন্ধ হয়ে গেছে — নিচের সেটিংস সম্পন্ন করুন"
-                        } else {
-                            "লক স্ক্রিনে ২৪/৭ চালু রাখতে এই ধাপগুলো প্রয়োজন"
-                        },
+                        if (allReady && serviceAlive) "২৪ ঘণ্টা সক্রিয় — ${OemBackgroundHelper.vendorLabel()}"
+                        else if (!serviceAlive && isServiceActive) "সেটিংস ঠিক আছে কিন্তু সার্ভিস বন্ধ — পুনরায় চালু করুন"
+                        else "অন্য পেমেন্ট অ্যাপের মতো নিচের ২টি সেটিংস করুন",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            if (!serviceAlive && isServiceActive) {
+            SetupRow(
+                done = accessibilityOk,
+                title = "১. Accessibility চালু",
+                subtitle = "Paychek Background Guard → ON",
+                onSetup = { AccessibilityHelper.openAccessibilitySettings(context) }
+            )
+            SetupRow(
+                done = batteryOk,
+                title = "২. Battery Unrestricted",
+                subtitle = "অপ্টিমাইজ করবেন না / Unrestricted",
+                onSetup = { OemBackgroundHelper.openBatteryUnrestrictedSettings(context) }
+            )
+
+            if (isServiceActive && (!serviceAlive || !allReady)) {
                 Button(
                     onClick = onRefreshService,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22D3EE)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("সার্ভিস পুনরায় চালু করুন", color = Color(0xFF0B0E14), fontWeight = FontWeight.Bold)
-                }
-            }
-
-            steps.forEach { step ->
-                BackgroundStepRow(
-                    step = step,
-                    onOpen = { OemBackgroundHelper.openStep(context, step.id) },
-                    onDone = {
-                        OemBackgroundHelper.acknowledgeStep(context, step.id)
-                        steps = OemBackgroundHelper.getRequiredSteps(context)
-                    }
-                )
-            }
-
-            if (steps.isEmpty() && serviceAlive) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
-                    Text("ব্যাকগ্রাউন্ড সেটআপ সম্পন্ন — সার্ভিস সচল", fontSize = 12.sp, color = Color(0xFF10B981))
+                    Text("সার্ভিস চালু করুন", color = Color(0xFF0B0E14), fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -102,23 +101,30 @@ fun BackgroundPersistenceCard(
 }
 
 @Composable
-private fun BackgroundStepRow(
-    step: BackgroundSetupStep,
-    onOpen: () -> Unit,
-    onDone: () -> Unit
+private fun SetupRow(
+    done: Boolean,
+    title: String,
+    subtitle: String,
+    onSetup: () -> Unit
 ) {
-    Column(
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(step.title, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-        Text(step.description, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 15.sp)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onOpen, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
-                Text("সেটিংস খুলুন", fontSize = 11.sp)
-            }
-            TextButton(onClick = onDone, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
-                Text("সম্পন্ন ✓", fontSize = 11.sp)
+        Icon(
+            if (done) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+            null,
+            tint = if (done) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            Text(subtitle, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (!done) {
+            TextButton(onClick = onSetup, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text("সেটআপ", fontSize = 11.sp)
             }
         }
     }

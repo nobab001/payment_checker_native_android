@@ -7,7 +7,6 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
-import online.paychek.app.config.AppConfig
 
 enum class OemVendor {
     SAMSUNG,
@@ -33,7 +32,6 @@ data class BackgroundSetupStep(
  */
 object OemBackgroundHelper {
     private const val TAG = "OemBackgroundHelper"
-    private const val PREF_OEM_PREFIX = "pcu_oem_step_"
 
     fun detectVendor(): OemVendor {
         val brand = Build.BRAND.orEmpty().lowercase()
@@ -71,102 +69,54 @@ object OemBackgroundHelper {
     fun getRequiredSteps(context: Context): List<BackgroundSetupStep> {
         val steps = mutableListOf<BackgroundSetupStep>()
 
+        if (!AccessibilityHelper.isAccessibilityServiceEnabled(context)) {
+            steps += BackgroundSetupStep(
+                id = "accessibility",
+                title = "Accessibility চালু করুন",
+                description = "Settings → Accessibility → Paychek Background Guard → ON করুন।"
+            )
+        }
+
         if (!BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)) {
             steps += BackgroundSetupStep(
                 id = "battery_exempt",
-                title = "ব্যাটারি অপ্টিমাইজেশন বন্ধ",
-                description = "সেটিংসে গিয়ে Paychek-কে \"অপ্টিমাইজ করবেন না\" বা Unrestricted দিন।"
+                title = "Battery Unrestricted",
+                description = "Settings → Apps → Paychek → Battery → Unrestricted / অপ্টিমাইজ করবেন না।"
             )
         }
 
-        when (detectVendor()) {
-            OemVendor.SAMSUNG -> {
-                steps += BackgroundSetupStep(
-                    id = "samsung_unrestricted",
-                    title = "Samsung — ব্যাকগ্রাউন্ড সীমাহীন",
-                    description = "Settings → Apps → Paychek → Battery → Unrestricted (সীমাহীন) সিলেক্ট করুন।"
-                )
-                steps += BackgroundSetupStep(
-                    id = "samsung_never_sleeping",
-                    title = "Samsung — Sleeping apps থেকে বাদ",
-                    description = "Settings → Battery → Background usage limits → Never sleeping apps-এ Paychek যোগ করুন।"
-                )
-            }
-            OemVendor.VIVO -> {
-                steps += BackgroundSetupStep(
-                    id = "vivo_autostart",
-                    title = "Vivo — Autostart চালু",
-                    description = "Settings → Apps → Autostart → Paychek ON করুন।"
-                )
-                steps += BackgroundSetupStep(
-                    id = "vivo_high_bg",
-                    title = "Vivo — High background power",
-                    description = "Settings → Battery → Background power consumption management → Paychek-কে Allow দিন।"
-                )
-            }
-            OemVendor.OPPO, OemVendor.REALME -> {
-                steps += BackgroundSetupStep(
-                    id = "oppo_autostart",
-                    title = "Autostart চালু",
-                    description = "Settings → App Management → Auto launch → Paychek চালু করুন।"
-                )
-            }
-            OemVendor.XIAOMI -> {
-                steps += BackgroundSetupStep(
-                    id = "xiaomi_autostart",
-                    title = "Xiaomi — Autostart",
-                    description = "Security → Permissions → Autostart → Paychek চালু করুন।"
-                )
-                steps += BackgroundSetupStep(
-                    id = "xiaomi_no_restrict",
-                    title = "Xiaomi — No restrictions",
-                    description = "Settings → Apps → Paychek → Battery saver → No restrictions।"
-                )
-            }
-            else -> Unit
-        }
-
-        return steps.filter { !isStepAcknowledged(context, it.id) }
+        return steps
     }
 
-    fun isStepAcknowledged(context: Context, stepId: String): Boolean {
-        if (stepId == "battery_exempt" && BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)) {
-            return true
-        }
-        return context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
-            .getBoolean(PREF_OEM_PREFIX + stepId, false)
-    }
-
-    fun acknowledgeStep(context: Context, stepId: String) {
-        context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean(PREF_OEM_PREFIX + stepId, true)
-            .apply()
-    }
-
-    fun needsBackgroundSetup(context: Context): Boolean = getRequiredSteps(context).isNotEmpty()
-
-    fun openStep(context: Context, stepId: String): Boolean {
+    /** সব ফোনে battery unrestricted পেজ খোলার চেষ্টা — Samsung/Vivo সহ */
+    fun openBatteryUnrestrictedSettings(context: Context): Boolean {
         val pkg = context.packageName
-        val intents = when (stepId) {
-            "battery_exempt" -> listOf(
-                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                    data = Uri.parse("package:$pkg")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-            )
-            "samsung_unrestricted", "samsung_never_sleeping" -> samsungIntents(pkg)
-            "vivo_autostart", "vivo_high_bg" -> vivoIntents(pkg)
-            "oppo_autostart" -> oppoIntents(pkg)
-            "xiaomi_autostart", "xiaomi_no_restrict" -> xiaomiIntents(pkg)
+        val intents = when (detectVendor()) {
+            OemVendor.SAMSUNG -> samsungIntents(pkg)
+            OemVendor.VIVO -> listOf(appDetailsIntent(pkg)) + vivoIntents(pkg)
+            OemVendor.XIAOMI -> xiaomiIntents(pkg)
+            OemVendor.OPPO, OemVendor.REALME -> oppoIntents(pkg)
             else -> listOf(appDetailsIntent(pkg))
         }
-
         for (intent in intents) {
             if (launchIntent(context, intent)) return true
         }
         return launchIntent(context, appDetailsIntent(pkg))
     }
+
+    fun openStep(context: Context, stepId: String): Boolean {
+        return when (stepId) {
+            "accessibility" -> {
+                AccessibilityHelper.openAccessibilitySettings(context)
+                true
+            }
+            "battery_exempt" -> openBatteryUnrestrictedSettings(context)
+            else -> openBatteryUnrestrictedSettings(context)
+        }
+    }
+
+    fun needsBackgroundSetup(context: Context): Boolean =
+        !AccessibilityHelper.isBackgroundReady(context)
 
     private fun appDetailsIntent(pkg: String) = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
         data = Uri.parse("package:$pkg")

@@ -64,8 +64,8 @@ import online.paychek.app.data.remote.dto.TransactionItem
 import online.paychek.app.ui.components.ConnectionStatusBanner
 import online.paychek.app.ui.components.LastUpdateRow
 import online.paychek.app.ui.components.background.BackgroundPersistenceCard
+import online.paychek.app.utils.AccessibilityHelper
 import online.paychek.app.utils.BatteryOptimizationHelper
-import online.paychek.app.utils.OemBackgroundHelper
 import online.paychek.app.utils.adaptivePadding
 import online.paychek.app.utils.adaptiveTextSize
 import online.paychek.app.utils.screenWidth
@@ -112,11 +112,20 @@ fun DashboardScreen(
     val context = LocalContext.current
 
     fun ensureBackgroundSmsReady() {
+        if (!AccessibilityHelper.isAccessibilityServiceEnabled(context)) {
+            AccessibilityHelper.openAccessibilitySettings(context)
+            android.widget.Toast.makeText(
+                context,
+                "Accessibility চালু করুন — Paychek Background Guard",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            return
+        }
         if (!BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)) {
             BatteryOptimizationHelper.requestExemptionIfNeeded(context)
             android.widget.Toast.makeText(
                 context,
-                "স্ক্রিন বন্ধ থাকলে SMS ধরতে ব্যাটারি অপটিমাইজেশন বন্ধ করুন",
+                "Battery → Unrestricted / অপ্টিমাইজ করবেন না সিলেক্ট করুন",
                 android.widget.Toast.LENGTH_LONG
             ).show()
         }
@@ -138,11 +147,14 @@ fun DashboardScreen(
     var hasShownReminder by remember { mutableStateOf(false) }
     var showExpiryReminderDialog by remember { mutableStateOf(false) }
     var checkoutPlanName by remember { mutableStateOf<String?>(null) }
-    var showBackgroundSetup by remember { mutableStateOf(false) }
 
-    LaunchedEffect(screenState.isServiceActive) {
-        if (screenState.isServiceActive && OemBackgroundHelper.needsBackgroundSetup(context)) {
-            showBackgroundSetup = true
+    LaunchedEffect(screenState.isServiceActive, lifecycleOwner) {
+        lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
+            if (state == androidx.lifecycle.Lifecycle.State.RESUMED && screenState.isServiceActive) {
+                if (AccessibilityHelper.isBackgroundReady(context)) {
+                    viewModel.ensureSmsServiceRunning()
+                }
+            }
         }
     }
 
@@ -217,31 +229,6 @@ fun DashboardScreen(
                 android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
                 checkoutPlanName = null
                 viewModel.loadDashboardStats()
-            }
-        )
-    }
-
-    if (showBackgroundSetup && OemBackgroundHelper.isAggressiveOem()) {
-        AlertDialog(
-            onDismissRequest = { showBackgroundSetup = false },
-            title = { Text("ব্যাকগ্রাউন্ড সেটআপ প্রয়োজন", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "${OemBackgroundHelper.vendorLabel()} ফোনে লক স্ক্রিনে অ্যাপ চালু রাখতে অতিরিক্ত সেটিংস দরকার। নিচের কার্ড থেকে প্রতিটি ধাপ সম্পন্ন করুন।",
-                        fontSize = 13.sp
-                    )
-                    Text(
-                        "• Battery → Unrestricted\n• Autostart ON\n• Sleeping apps থেকে বাদ",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showBackgroundSetup = false }) {
-                    Text("বুঝেছি")
-                }
             }
         )
     }
@@ -444,10 +431,22 @@ fun DashboardScreen(
                                 ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
                                 if (hasReceiveSms && hasReadSms) {
-                                    viewModel.toggleSmsService(true)
-                                    ensureBackgroundSmsReady()
-                                    if (OemBackgroundHelper.isAggressiveOem()) {
-                                        showBackgroundSetup = true
+                                    if (!AccessibilityHelper.isAccessibilityServiceEnabled(context)) {
+                                        AccessibilityHelper.openAccessibilitySettings(context)
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "প্রথমে Accessibility চালু করুন (Paychek Background Guard)",
+                                            android.widget.Toast.LENGTH_LONG
+                                        ).show()
+                                    } else if (!BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)) {
+                                        BatteryOptimizationHelper.requestExemptionIfNeeded(context)
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "Battery → Unrestricted সিলেক্ট করুন",
+                                            android.widget.Toast.LENGTH_LONG
+                                        ).show()
+                                    } else {
+                                        viewModel.toggleSmsService(true)
                                     }
                                 } else {
                                     online.paychek.app.MainActivity.isRequestingPermission = true

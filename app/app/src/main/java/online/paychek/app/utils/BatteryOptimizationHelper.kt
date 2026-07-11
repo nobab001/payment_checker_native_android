@@ -28,6 +28,8 @@ object BatteryOptimizationHelper {
      */
     fun requestExemptionIfNeeded(context: Context): Boolean {
         if (isIgnoringBatteryOptimizations(context)) return true
+        // Samsung/Vivo সহ সব ফোনে আগে OEM battery পেজ খোলার চেষ্টা, না হলে স্ট্যান্ডার্ড
+        if (OemBackgroundHelper.openBatteryUnrestrictedSettings(context)) return false
         return try {
             val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                 data = Uri.parse("package:${context.packageName}")
