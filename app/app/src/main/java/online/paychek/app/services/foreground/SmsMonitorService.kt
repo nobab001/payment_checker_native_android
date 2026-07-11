@@ -25,6 +25,7 @@ import online.paychek.app.services.sync.NumberHeartbeatEngine
 import online.paychek.app.services.sync.PingEngine
 import online.paychek.app.services.sync.SmsPollWorker
 import online.paychek.app.services.sync.SyncWorker
+import online.paychek.app.utils.OemBackgroundHelper
 import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.utils.SmsParser
 import org.json.JSONArray
@@ -129,6 +130,7 @@ class SmsMonitorService : Service() {
             startOfflineRecovery()
             startSocketConnection()
             online.paychek.app.services.foreground.SmsServiceGuard.scheduleWatchdog(this@SmsMonitorService)
+            ServiceKeepAliveScheduler.schedule(this@SmsMonitorService)
         }
 
         return START_STICKY // সিস্টেম kill করলে নিজে পুনরায় চালু হবে
@@ -457,13 +459,19 @@ class SmsMonitorService : Service() {
     // ─────────────────────────────────────────────────────────────────────────
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val importance = if (OemBackgroundHelper.isAggressiveOem()) {
+                NotificationManager.IMPORTANCE_DEFAULT
+            } else {
+                NotificationManager.IMPORTANCE_LOW
+            }
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_LOW
+                importance
             ).apply {
                 description = "ব্যাকগ্রাউন্ডে পেমেন্ট SMS ট্র্যাক করে রাখে"
                 setShowBadge(false)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
                 .createNotificationChannel(channel)
@@ -471,14 +479,20 @@ class SmsMonitorService : Service() {
     }
 
     private fun buildNotification(statusText: String = "পেমেন্ট SMS ব্যাকগ্রাউন্ডে ট্র্যাক হচ্ছে..."): Notification {
+        val priority = if (OemBackgroundHelper.isAggressiveOem()) {
+            NotificationCompat.PRIORITY_DEFAULT
+        } else {
+            NotificationCompat.PRIORITY_LOW
+        }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("💳 Paychek — সক্রিয়")
             .setContentText(statusText)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setOngoing(true)  // সোয়াইপ করে বন্ধ করা যাবে না
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .setPriority(priority)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
     }
 
@@ -504,7 +518,9 @@ class SmsMonitorService : Service() {
                 @Suppress("DEPRECATION")
                 wakeLock?.release()
             }
-            wakeLock?.acquire(10 * 60 * 1000L)
+            wakeLock?.acquire(
+                if (OemBackgroundHelper.isAggressiveOem()) 15 * 60 * 1000L else 10 * 60 * 1000L
+            )
             Log.d(TAG, "WakeLock acquired/renewed ✅")
         } catch (e: Exception) {
             Log.e(TAG, "WakeLock acquire failed: ${e.message}")
@@ -533,6 +549,14 @@ class SmsMonitorService : Service() {
     // ─────────────────────────────────────────────────────────────────────────
     private fun formatTime(epochMs: Long): String =
         SimpleDateFormat("hh:mm a", Locale.forLanguageTag("bn-BD")).format(Date(epochMs))
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        if (userInitiatedStop || !online.paychek.app.data.local.prefs.PrefsHelper.isSmsServiceActive(this)) return
+        Log.w(TAG, "Task removed — scheduling service recovery")
+        online.paychek.app.services.foreground.SmsServiceGuard.enqueueImmediateRecovery(this)
+        ServiceKeepAliveScheduler.schedule(this)
+    }
 
     override fun onDestroy() {
         super.onDestroy()

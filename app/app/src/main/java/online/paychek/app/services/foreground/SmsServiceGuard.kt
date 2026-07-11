@@ -14,6 +14,7 @@ import online.paychek.app.config.AppConfig
 import online.paychek.app.data.local.prefs.PrefsHelper
 import online.paychek.app.services.sync.SmsPollWorker
 import online.paychek.app.services.sync.SmsServiceWatchWorker
+import online.paychek.app.utils.OemBackgroundHelper
 import java.util.concurrent.TimeUnit
 
 /**
@@ -23,6 +24,8 @@ object SmsServiceGuard {
     private const val TAG = "SmsServiceGuard"
     private const val WATCH_WORK_NAME = "paychek_sms_service_watch"
     private const val RECOVER_WORK_NAME = "paychek_sms_service_recover"
+
+    private fun watchdogIntervalMinutes(): Long = 15L // WorkManager periodic minimum
 
     fun isServiceAlive(): Boolean = SmsMonitorService.isAlive
 
@@ -65,19 +68,22 @@ object SmsServiceGuard {
     /** Periodic watchdog — restarts service if prefs say ON but process was killed. */
     fun scheduleWatchdog(context: Context) {
         if (!PrefsHelper.isSmsServiceActive(context)) return
-        val request = PeriodicWorkRequestBuilder<SmsServiceWatchWorker>(15, TimeUnit.MINUTES).build()
+        val minutes = watchdogIntervalMinutes()
+        val request = PeriodicWorkRequestBuilder<SmsServiceWatchWorker>(minutes, TimeUnit.MINUTES).build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             WATCH_WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.UPDATE,
             request
         )
         SmsPollWorker.schedule(context)
-        Log.d(TAG, "Service watchdog scheduled")
+        ServiceKeepAliveScheduler.schedule(context)
+        Log.d(TAG, "Service watchdog scheduled (${minutes}min) + keep-alive alarm")
     }
 
     fun cancelWatchdog(context: Context) {
         WorkManager.getInstance(context).cancelUniqueWork(WATCH_WORK_NAME)
         WorkManager.getInstance(context).cancelUniqueWork(RECOVER_WORK_NAME)
+        ServiceKeepAliveScheduler.cancel(context)
     }
 
     /** One-shot recovery after unexpected service death. */

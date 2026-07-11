@@ -63,7 +63,9 @@ import online.paychek.app.data.remote.dto.DashboardStats
 import online.paychek.app.data.remote.dto.TransactionItem
 import online.paychek.app.ui.components.ConnectionStatusBanner
 import online.paychek.app.ui.components.LastUpdateRow
+import online.paychek.app.ui.components.background.BackgroundPersistenceCard
 import online.paychek.app.utils.BatteryOptimizationHelper
+import online.paychek.app.utils.OemBackgroundHelper
 import online.paychek.app.utils.adaptivePadding
 import online.paychek.app.utils.adaptiveTextSize
 import online.paychek.app.utils.screenWidth
@@ -136,6 +138,13 @@ fun DashboardScreen(
     var hasShownReminder by remember { mutableStateOf(false) }
     var showExpiryReminderDialog by remember { mutableStateOf(false) }
     var checkoutPlanName by remember { mutableStateOf<String?>(null) }
+    var showBackgroundSetup by remember { mutableStateOf(false) }
+
+    LaunchedEffect(screenState.isServiceActive) {
+        if (screenState.isServiceActive && OemBackgroundHelper.needsBackgroundSetup(context)) {
+            showBackgroundSetup = true
+        }
+    }
 
     var showSmsPermissionRationaleDialog by remember { mutableStateOf(false) }
 
@@ -208,6 +217,31 @@ fun DashboardScreen(
                 android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
                 checkoutPlanName = null
                 viewModel.loadDashboardStats()
+            }
+        )
+    }
+
+    if (showBackgroundSetup && OemBackgroundHelper.isAggressiveOem()) {
+        AlertDialog(
+            onDismissRequest = { showBackgroundSetup = false },
+            title = { Text("ব্যাকগ্রাউন্ড সেটআপ প্রয়োজন", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "${OemBackgroundHelper.vendorLabel()} ফোনে লক স্ক্রিনে অ্যাপ চালু রাখতে অতিরিক্ত সেটিংস দরকার। নিচের কার্ড থেকে প্রতিটি ধাপ সম্পন্ন করুন।",
+                        fontSize = 13.sp
+                    )
+                    Text(
+                        "• Battery → Unrestricted\n• Autostart ON\n• Sleeping apps থেকে বাদ",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showBackgroundSetup = false }) {
+                    Text("বুঝেছি")
+                }
             }
         )
     }
@@ -412,6 +446,9 @@ fun DashboardScreen(
                                 if (hasReceiveSms && hasReadSms) {
                                     viewModel.toggleSmsService(true)
                                     ensureBackgroundSmsReady()
+                                    if (OemBackgroundHelper.isAggressiveOem()) {
+                                        showBackgroundSetup = true
+                                    }
                                 } else {
                                     online.paychek.app.MainActivity.isRequestingPermission = true
                                     smsPermissionsLauncher.launch(
@@ -426,6 +463,14 @@ fun DashboardScreen(
                             viewModel.toggleSmsService(false)
                         }
                     }
+                )
+            }
+
+            item {
+                BackgroundPersistenceCard(
+                    isServiceActive = screenState.isServiceActive,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    onRefreshService = { viewModel.ensureSmsServiceRunning() }
                 )
             }
 

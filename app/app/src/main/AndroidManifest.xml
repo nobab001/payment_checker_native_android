@@ -80,6 +80,11 @@
             </intent-filter>
         </receiver>
 
+        <!-- Keep-alive alarm — Samsung/Vivo OEM kill-এর পর দ্রুত service restart -->
+        <receiver
+            android:name=".services.foreground.KeepAliveAlarmReceiver"
+            android:exported="false" />
+
         <!-- SMS Foreground Service
              foregroundServiceType:
                dataSync    — backend sync (offline queue upload)
