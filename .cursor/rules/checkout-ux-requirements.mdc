@@ -1,0 +1,127 @@
+---
+description: PayCheck Checkout UX — Normal Mode, Vibe Mode, Merchant Live. No breaking changes. Preserves frozen Payment Engine + Checkout UI contracts.
+globs: backend/public/checkout*.html,backend/public/js/checkout/**,backend/controllers/checkoutController.js,backend/routes/checkoutRoutes.js
+alwaysApply: false
+---
+
+# PayCheck Checkout UX — Requirements & Rules
+
+## Non-Negotiables (General)
+
+- **Backward compatibility** — existing merchant integrations MUST keep working.
+- **No breaking API changes** — do not rename/remove existing checkout endpoints or response shapes.
+- **Checkout UI preserved** — `backend/public/checkout.html` + `backend/public/js/checkout/**` are the customer-facing surface; extend, do not rewrite architecture.
+- **Payment Engine preserved** — `backend/payment/**` is frozen; checkout calls it via existing routes (`/api/checkout/:apiKey/live-init`, `/api/v1/pay/*`), never duplicate payment logic inside checkout JS.
+- **Provider Engine preserved** — provider registry, live adapters, callback engine unchanged from checkout layer.
+- **Premium UX** — mobile-first, accessible (focus trap, ESC close), smooth animations, Bengali copy where user-facing.
+- **Production quality** — idempotent verify, no race regressions, graceful errors, no silent failures on verify/vibe.
+
+## Architecture Layers
+
+```
+Customer Browser (checkout.html + js/checkout/*)
+    │  fetch layout, verify, vibe-init, live-init
+    ▼
+checkoutController.js  ← business: verify, vibe match, claim-check
+    │  SMS worker matchVibeForHistory
+    ▼
+sms_history + checkout_vibe_requests + gateway_layouts
+    │
+    ▼ (Merchant Live only)
+payment/ engine  ← live-init → session → redirect → callback (DO NOT MODIFY from checkout tasks)
+```
+
+**Separation rule:** `InteractionController` and `js/checkout/interaction/*` = **UX only**. `app.js` = bootstrap + verify/vibe/live glue. `checkoutController.js` = server truth.
+
+## Checkout Modes (`gateway_layouts.checkout_mode`)
+
+| Mode | DB value | Customer flow |
+|------|----------|---------------|
+| **Normal** | `transaction` (default) | Copy number → pay in app → enter **TrxID** → verify |
+| **Vibe** | `merchant_vibe` | Enter **sender number** first → checkout → auto-wait → manual TrxID fallback |
+| **Merchant Live** | via `data-live` providers | Tap live provider → `POST /api/checkout/:apiKey/live-init` → redirect to payment engine (unchanged) |
+
+## UX Rules (critical)
+
+```
+UX RULE — Vibe Mode:
+Never ask the customer for Transaction ID before giving
+Automatic Verification a chance.
+Manual verification must always be a fallback,
+never the primary action, in Vibe Mode.
+
+Normal Mode — Primary Action: Transaction ID Verification (Verify Payment modal via FAB)
+Vibe Mode — Primary Action: Automatic Verification | Fallback: Transaction ID (after 45s or "Verify Manually")
+Merchant Live — Primary Action: Merchant Gateway | No Verification UI when SIM copy unavailable
+
+Bangla-first + language switch:
+- Default language is Bangla.
+- Switcher "বাংলা | EN" is instant, no reload.
+- Store in LocalStorage and re-apply on load.
+```
+
+## Acceptance Criteria
+
+### Normal Mode ✓
+
+| Criterion | Implementation anchor |
+|-----------|----------------------|
+| Customer can always submit Transaction ID | `#verify-fab` → `#verify-modal` → `#trx-input` + `triggerVerification()` |
+| Popup can reopen | `BottomSheetController.open/close` — provider sheet reopens freely |
+| Floating button works | `#verify-fab` labeled **Verify Payment** with receipt icon (🧾) |
+| Mobile responsive | `checkout.html` clamp/grid; bottom sheet + verify modal |
+
+### Vibe Mode ✓
+
+| Criterion | Implementation anchor |
+|-----------|----------------------|
+| Sender number collected before Checkout | `#vibe-step` → `vibe-init` |
+| Automatic verification waits | `#vibe-auto-panel` + `#vibe-waiting-main` + poll — **no TrxID visible initially** |
+| Manual fallback exists | After 45s timer OR "Verify Manually" → **Automatic \| Manual** tabs → Manual shows TrxID |
+| Automatic success when payment detected | SMS worker → `matchVibeForHistory` → poll redirect |
+| Copy number timer in popup | `#sheet-wait-footer` — "Waiting for payment 00:45" + manual link |
+
+### Merchant Live ✓
+
+| Criterion | Rule |
+|-----------|------|
+| Existing behavior unchanged | `LiveController` + `startLivePay` → `live-init` only; never alter payment session/callback flow |
+| No UI regression on live providers | `data-live` attribute delegation unchanged |
+
+## API Contract (frozen — additive only)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/checkout/:apiKey` | GET | Layout + mode + tabs |
+| `/api/checkout/verify` | POST | TrxID verify `{ apiKey, trxId, amount, session? }` |
+| `/api/checkout/:apiKey/vibe-init` | POST | Vibe wait `{ customerNumber, amount }` |
+| `/api/checkout/vibe-status/:id` | GET | Poll vibe request |
+| `/api/checkout/:apiKey/live-init` | POST | Merchant live redirect |
+| `/api/transactions/claim-check` | POST | B2B claim (unchanged) |
+
+New fields/responses: **additive only** (optional keys). Never remove or rename existing keys.
+
+## UI Components (do not break)
+
+- `HeaderComponent`, `CheckoutRenderer`, `TabController`, `AccordionController`
+- `BottomSheetController` — provider detail popup (mobile)
+- `CopyController` — copy number
+- `SkeletonController`, `ErrorController` — loading/error states
+- `VerifyUxController` — FAB, modal, vibe auto/manual tabs, wait timer
+- Verify modal — Normal mode primary; Vibe manual fallback only
+
+## When Implementing Changes
+
+1. Read `CHECKOUT_UX_SPEC.md` in `backend/public/js/checkout/`.
+2. Run checkout manually on mobile viewport (375px) before marking done.
+3. Test all three paths: Normal verify, Vibe auto+manual, Live redirect.
+4. Do **not** modify `backend/payment/**` for checkout UX tasks.
+5. Do **not** change `MerchantCallbackV1` or webhook shapes from checkout layer.
+
+## Definition of Done
+
+- All acceptance criteria above pass manually.
+- No regression on existing `checkout_mode=transaction` merchants.
+- Vibe merchants: number step → wait → match OR manual TrxID.
+- Live merchants: redirect flow identical to pre-change behavior.
+- Lighthouse/accessibility: focusable controls, ESC closes sheet, aria on dialog.
