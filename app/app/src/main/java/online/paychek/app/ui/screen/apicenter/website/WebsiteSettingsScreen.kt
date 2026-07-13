@@ -301,6 +301,19 @@ fun WebsiteSettingsScreen(
                 EditField("Webhook URL", webhookUrl) { webhookUrl = it }
             }
 
+            // Live merchant accounts (API credentials — multi-account)
+            MerchantAccountsSection(
+                card = card,
+                isDark = isDark,
+                accounts = state.merchantAccounts,
+                onCreate = { req -> viewModel.createMerchantAccount(site.id, req) },
+                onUpdate = { acctId, req -> viewModel.updateMerchantAccount(site.id, acctId, req) },
+                onToggle = { acctId, active -> viewModel.toggleMerchantAccount(site.id, acctId, active) },
+                onSetDefault = { acctId -> viewModel.setDefaultMerchantAccount(site.id, acctId) },
+                onDuplicate = { acctId -> viewModel.duplicateMerchantAccount(site.id, acctId) },
+                onDelete = { acctId -> viewModel.deleteMerchantAccount(site.id, acctId) }
+            )
+
             // Official (redirect-based) payment gateways
             OfficialGatewaysSection(
                 card = card, isDark = isDark,

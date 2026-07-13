@@ -134,6 +134,64 @@ class WebsiteRepository(private val context: Context) {
         else Result.failure(Exception(parseError(r)))
     }
 
+    // ── Live merchant accounts (multi-account credentials) ────────────────────
+    suspend fun listMerchantAccounts(id: Int): Result<List<MerchantAccountDto>> = safeCall {
+        val r = api.listMerchantAccounts(bearer(), id)
+        if (r.isSuccessful && r.body()?.success == true) Result.success(r.body()?.merchantAccounts ?: emptyList())
+        else Result.failure(Exception(parseError(r)))
+    }
+
+    suspend fun createMerchantAccount(id: Int, request: CreateMerchantAccountRequest): Result<MerchantAccountDto> = safeCall {
+        val r = api.createMerchantAccount(bearer(), id, request)
+        val body = r.body()
+        if (r.isSuccessful && body?.success == true && body.merchantAccount != null) Result.success(body.merchantAccount)
+        else Result.failure(Exception(body?.message ?: body?.error ?: parseError(r)))
+    }
+
+    suspend fun updateMerchantAccount(id: Int, accountId: Int, request: UpdateMerchantAccountRequest): Result<MerchantAccountDto> = safeCall {
+        val r = api.updateMerchantAccount(bearer(), id, accountId, request)
+        val body = r.body()
+        if (r.isSuccessful && body?.success == true && body.merchantAccount != null) Result.success(body.merchantAccount)
+        else Result.failure(Exception(body?.message ?: body?.error ?: parseError(r)))
+    }
+
+    suspend fun toggleMerchantAccount(id: Int, accountId: Int, active: Boolean): Result<MerchantAccountDto> = safeCall {
+        val r = api.toggleMerchantAccount(bearer(), id, accountId, mapOf("isActive" to active))
+        val body = r.body()
+        if (r.isSuccessful && body?.success == true && body.merchantAccount != null) Result.success(body.merchantAccount)
+        else Result.failure(Exception(body?.message ?: body?.error ?: parseError(r)))
+    }
+
+    suspend fun setDefaultMerchantAccount(id: Int, accountId: Int): Result<MerchantAccountDto> = safeCall {
+        val r = api.setDefaultMerchantAccount(bearer(), id, accountId)
+        val body = r.body()
+        if (r.isSuccessful && body?.success == true && body.merchantAccount != null) Result.success(body.merchantAccount)
+        else Result.failure(Exception(body?.message ?: body?.error ?: parseError(r)))
+    }
+
+    suspend fun duplicateMerchantAccount(id: Int, accountId: Int): Result<MerchantAccountDto> = safeCall {
+        val r = api.duplicateMerchantAccount(bearer(), id, accountId)
+        val body = r.body()
+        if (r.isSuccessful && body?.success == true && body.merchantAccount != null) Result.success(body.merchantAccount)
+        else Result.failure(Exception(body?.message ?: body?.error ?: parseError(r)))
+    }
+
+    suspend fun deleteMerchantAccount(id: Int, accountId: Int): Result<Unit> = safeCall {
+        val r = api.deleteMerchantAccount(bearer(), id, accountId)
+        if (r.isSuccessful && r.body()?.success == true) Result.success(Unit)
+        else Result.failure(Exception(parseError(r)))
+    }
+
+    suspend fun uploadMerchantAccountLogo(id: Int, accountId: Int, pngBytes: ByteArray): Result<MerchantAccountDto> = safeCall {
+        val mediaType = okhttp3.MediaType.parse("image/png")
+        val body = okhttp3.RequestBody.create(mediaType, pngBytes)
+        val part = okhttp3.MultipartBody.Part.createFormData("logo", "logo.png", body)
+        val r = api.uploadMerchantAccountLogo(bearer(), id, accountId, part)
+        val resp = r.body()
+        if (r.isSuccessful && resp?.success == true && resp.merchantAccount != null) Result.success(resp.merchantAccount)
+        else Result.failure(Exception(resp?.message ?: resp?.error ?: parseError(r)))
+    }
+
     private inline fun <T> safeCall(block: () -> Result<T>): Result<T> =
         try { block() } catch (e: Exception) { Result.failure(e) }
 

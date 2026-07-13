@@ -27,12 +27,19 @@ function parseConfig(merchantConfig) {
   } catch (_) {
     cfg = {};
   }
+  // Prefer config_json; fall back to flat merchant_accounts fields from gateway-config-loader.
+  const appKey = cfg.appKey || cfg.app_key || merchantConfig?.app_key || merchantConfig?.appKey || '';
+  const appSecret = cfg.appSecret || cfg.app_secret || merchantConfig?.app_secret || merchantConfig?.appSecret || '';
+  const username = cfg.username || merchantConfig?.username || '';
+  const password = cfg.password || merchantConfig?.password || '';
+  const hasApi = !!(appKey && appSecret && username && password);
+  const modeRaw = (cfg.mode || (hasApi ? 'api' : 'template')).toLowerCase();
   return {
-    mode: (cfg.mode || 'template').toLowerCase(),
-    appKey: cfg.appKey || cfg.app_key || '',
-    appSecret: cfg.appSecret || cfg.app_secret || '',
-    username: cfg.username || '',
-    password: cfg.password || '',
+    mode: modeRaw,
+    appKey,
+    appSecret,
+    username,
+    password,
     callbackSecret: cfg.callbackSecret || cfg.callback_secret || '',
     signatureHeader: cfg.signatureHeader || 'x-signature',
   };

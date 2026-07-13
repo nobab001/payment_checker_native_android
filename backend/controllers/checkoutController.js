@@ -86,11 +86,11 @@ async function getCheckoutLayout(req, res) {
       livePayment: true,
     }));
 
-    // Merchant accounts (multi-account support for live payments
+    // Merchant accounts (multi-account support for live payments)
     const merchantAccountRows = await prisma.merchant_accounts.findMany({
       where: { website_id: layout.id, is_active: 1 },
       orderBy: [{ priority: 'asc' }, { id: 'desc' }],
-    });
+    }).catch(() => []);
     // Group by provider
     const merchantAccountsByProvider = {};
     for (const acct of merchantAccountRows) {

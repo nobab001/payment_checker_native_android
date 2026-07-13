@@ -59,8 +59,8 @@ function gatewayToNumber(g) {
   };
 }
 
-function buildProviderFields({ tabId, provider, variant, type, displayName, instruction, sortOrder, templateId, liveProviderKey }) {
-  const id = buildStableProviderId({ provider, variant, type });
+function buildProviderFields({ tabId, provider, variant, type, displayName, instruction, sortOrder, templateId, liveProviderKey, merchantAccountId, logoUrl, stableId }) {
+  const id = stableId || buildStableProviderId({ provider, variant, type });
   return {
     id,
     tabId,
@@ -76,6 +76,8 @@ function buildProviderFields({ tabId, provider, variant, type, displayName, inst
       templateId: templateId ?? null,
       liveProviderKey: liveProviderKey ?? null,
       liveRedirect: type !== PROVIDER_TYPE.SIM,
+      merchantAccountId: merchantAccountId ?? null,
+      logoUrl: logoUrl || null,
     }),
   };
 }
@@ -117,6 +119,27 @@ function createOfficialProvider(og) {
     instruction: defaultInstruction,
     sortOrder: Number.MAX_SAFE_INTEGER - 1,
     liveProviderKey: providerName,
+  });
+}
+
+/** One live card per active merchant account (multi-account / multi-provider). */
+function createMerchantAccountProvider(acct, providerSlug) {
+  const tabId = 'payment';
+  const type = inferOfficialType(providerSlug);
+  const variant = inferOfficialVariant(type, tabId);
+  const baseId = buildStableProviderId({ provider: providerSlug, variant, type });
+  return buildProviderFields({
+    tabId,
+    provider: providerSlug,
+    variant,
+    type,
+    displayName: acct.merchantName || providerSlug || 'Live Payment',
+    instruction: 'লাইভ পেমেন্ট — মার্চেন্ট গেটওয়ে দিয়ে সরাসরি পরিশোধ করুন।',
+    sortOrder: Number.isFinite(Number(acct.priority)) ? Number(acct.priority) : Number.MAX_SAFE_INTEGER - 2,
+    liveProviderKey: providerSlug,
+    merchantAccountId: acct.id,
+    logoUrl: acct.logoUrl || null,
+    stableId: `${baseId}_acct_${acct.id}`,
   });
 }
 
@@ -209,6 +232,33 @@ export function buildCheckoutModel(apiData, amountStr) {
     ensureTabBucket(tabTree, tabId, tabsById).providers.push(liveProv);
   }
 
+  // Multi-account live merchants → one card each (hybrid + live tabs that include payment)
+  const merchantAccountsGroups = apiData.merchantAccountsGroups || [];
+  const hasMerchantAccounts = merchantAccountsGroups.some((g) => (g.accounts || []).length > 0);
+  if (hasMerchantAccounts && !tabsById.payment) {
+    const paymentTab = (apiData.checkoutTabsAll && apiData.checkoutTabsAll.payment)
+      || { id: 'payment', label: 'Payment', enabled: true, icon: '📱' };
+    tabs.push({ ...paymentTab, id: 'payment', enabled: true });
+    tabsById.payment = tabs[tabs.length - 1];
+    tabTree.payment = { tab: tabsById.payment, providers: [] };
+  }
+  for (const group of merchantAccountsGroups) {
+    const providerSlug = group.provider || '';
+    for (const acct of group.accounts || []) {
+      if (!acct || !acct.id) continue;
+      const liveProv = createMerchantAccountProvider(acct, providerSlug);
+      const tabId = liveProv.tabId;
+      if (!tabsById[tabId]) {
+        // Ensure payment tab bucket exists even if disabled in hybrid — still show if payment enabled
+        continue;
+      }
+      const key = bucketKey(tabId, liveProv.id);
+      if (providerIndex.has(key)) continue;
+      providerIndex.set(key, liveProv);
+      ensureTabBucket(tabTree, tabId, tabsById).providers.push(liveProv);
+    }
+  }
+
   for (const bucket of Object.values(tabTree)) {
     bucket.providers = sortProviders(bucket.providers.map(finalizeProvider));
     bucket.providers = filterRenderableProviders(bucket.providers);
@@ -236,6 +286,7 @@ export function buildCheckoutModel(apiData, amountStr) {
     design: designFromApi(apiData.checkoutDesign || apiData.checkoutTheme),
     checkoutMode: apiData.checkoutMode || 'transaction',
     officialGateways,
+    merchantAccountsGroups,
     providerBranding: apiData.providerBranding || {},
     tabs,
     tabTree,

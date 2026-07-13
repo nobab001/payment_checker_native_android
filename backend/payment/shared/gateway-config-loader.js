@@ -40,26 +40,38 @@ async function loadOfficialGateway(websiteId, providerIdOrAlias, merchantAccount
     });
     if (!acct) return null;
 
-    // Decrypt the credentials
-    const config = {
+    const appKey = acct.app_key || acct.api_key || '';
+    const appSecret = decrypt(acct.app_secret_enc) || decrypt(acct.api_secret_enc) || '';
+    const username = acct.username || '';
+    const password = decrypt(acct.password_enc) || '';
+    const hasApiCreds = !!(appKey && appSecret && username && password);
+
+    // Shape matches website_official_gateways + bkash-live parseConfig (config_json).
+    return {
       id: acct.id,
       provider: acct.provider,
       merchantName: acct.merchant_name,
       display_name: acct.merchant_name,
-      redirect_url_template: acct.base_url,
-      config_json: null,
+      redirect_url_template: acct.base_url || '',
       website_id: acct.website_id,
       api_key: acct.api_key,
       api_secret: decrypt(acct.api_secret_enc),
-      username: acct.username,
-      password: decrypt(acct.password_enc),
-      app_key: acct.app_key,
-      app_secret: decrypt(acct.app_secret_enc),
+      username,
+      password,
+      app_key: appKey,
+      app_secret: appSecret,
       base_url: acct.base_url,
       callback_url: acct.callback_url,
       notes: acct.notes,
+      config_json: JSON.stringify({
+        mode: hasApiCreds ? 'api' : 'template',
+        appKey,
+        appSecret,
+        username,
+        password,
+        callbackSecret: '',
+      }),
     };
-    return config;
   }
 
   // Fallback: load legacy official gateway

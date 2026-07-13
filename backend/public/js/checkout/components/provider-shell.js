@@ -10,6 +10,11 @@ function liveKey(provider) {
   return provider.metadata?.liveProviderKey || provider.provider || '';
 }
 
+function merchantIdAttr(provider) {
+  const mid = provider.metadata?.merchantAccountId;
+  return mid != null && mid !== '' ? ` data-merchant-id="${esc(String(mid))}"` : '';
+}
+
 /** Provider header: logo + display name (merchant branding stays in HeaderComponent). */
 export function renderProviderHeader(provider, branding, { logoPx = 40, className = 'group-title provider-header' } = {}) {
   return `<div class="${className}" style="display:flex;align-items:center;gap:10px">
@@ -21,7 +26,8 @@ export function renderProviderHeader(provider, branding, { logoPx = 40, classNam
 /** Card grid tile — logo + name only (numbers live in detail section). */
 export function renderProviderCardPreview(provider, branding) {
   const tid = templateId(provider);
-  const logoUrl = tid != null ? (branding['t' + tid]?.logoUrl || '') : '';
+  const logoUrl = (provider.metadata?.logoUrl)
+    || (tid != null ? (branding['t' + tid]?.logoUrl || '') : '');
   const c = provColor(provider.provider);
   const isRedirect = provider.type !== PROVIDER_TYPE.SIM;
   const logoInner = hasImg(logoUrl)
@@ -30,7 +36,7 @@ export function renderProviderCardPreview(provider, branding) {
       ? `<div class="logo" style="background:var(--purple)">⚡</div>`
       : `<div class="logo" style="background:${esc(c)}">${esc(provInitial(provider.provider))}</div>`;
 
-  const liveAttr = isRedirect ? ` data-live="${esc(liveKey(provider))}"` : '';
+  const liveAttr = isRedirect ? ` data-live="${esc(liveKey(provider))}"${merchantIdAttr(provider)}` : '';
   const extraClass = isRedirect ? ' live-prov-card' : ' provider-card';
   const idAttr = ` data-provider-id="${esc(provider.id)}"`;
 
@@ -48,10 +54,13 @@ export function renderProviderLiveBody(provider) {
       ? 'ব্যাংক ট্রান্সফার — অফিসিয়াল গেটওয়ে'
       : 'কার্ড পেমেন্ট — অফিসিয়াল গেটওয়ে';
 
-  return `<div class="live-card" data-live="${esc(liveKey(provider))}" data-provider-type="${esc(provider.type)}">
-    <div style="flex:1">
-      <div style="font-weight:700">${esc(provider.displayName)}</div>
-      <span class="live-badge">${esc(badge)}</span>
+  return `<div class="live-card" data-live="${esc(liveKey(provider))}"${merchantIdAttr(provider)} data-provider-type="${esc(provider.type)}">
+    <div style="flex:1;display:flex;align-items:center;gap:10px">
+      ${provider.metadata?.logoUrl ? `<img src="${esc(safeImgSrc(provider.metadata.logoUrl))}" alt="" style="width:28px;height:28px;border-radius:6px;object-fit:cover" onerror="this.remove()">` : ''}
+      <div style="flex:1">
+        <div style="font-weight:700">${esc(provider.displayName)}</div>
+        <span class="live-badge">${esc(badge)}</span>
+      </div>
     </div><span aria-hidden="true">→</span>
   </div>`;
 }

@@ -13,9 +13,12 @@ import kotlinx.coroutines.launch
 import online.paychek.app.data.remote.dto.ActiveNumberDto
 import online.paychek.app.data.remote.dto.CheckoutTabDto
 import online.paychek.app.data.remote.dto.CommissionDto
+import online.paychek.app.data.remote.dto.CreateMerchantAccountRequest
+import online.paychek.app.data.remote.dto.MerchantAccountDto
 import online.paychek.app.data.remote.dto.NumberOrderItem
 import online.paychek.app.data.remote.dto.OfficialGatewayDto
 import online.paychek.app.data.remote.dto.ProviderBrandingDto
+import online.paychek.app.data.remote.dto.UpdateMerchantAccountRequest
 import online.paychek.app.data.remote.dto.UpdateWebsiteRequest
 import online.paychek.app.data.remote.dto.UpsertCommissionRequest
 import online.paychek.app.data.remote.dto.UpsertOfficialGatewayRequest
@@ -48,6 +51,8 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
         val checkoutNumbers: List<ActiveNumberDto> = emptyList(),
         // Official (redirect-based) payment gateways configured for this website
         val officialGateways: List<OfficialGatewayDto> = emptyList(),
+        // Live merchant accounts (API credentials — multi-account per provider)
+        val merchantAccounts: List<MerchantAccountDto> = emptyList(),
         val checkoutTabs: Map<String, CheckoutTabDto> = emptyMap(),
         val providerBranding: Map<String, ProviderBrandingDto> = emptyMap(),
         val isSaving: Boolean = false,
@@ -119,6 +124,9 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     repo.listOfficialGateways(id).onSuccess { gws ->
                         _state.update { it.copy(officialGateways = gws) }
+                    }
+                    repo.listMerchantAccounts(id).onSuccess { accts ->
+                        _state.update { it.copy(merchantAccounts = accts) }
                     }
                 }
                 .onFailure { e -> _state.update { it.copy(isLoading = false, error = e.message) } }
@@ -374,6 +382,89 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
             repo.deleteOfficialGateway(id, gatewayId)
                 .onSuccess {
                     repo.listOfficialGateways(id).onSuccess { gws -> _state.update { s -> s.copy(officialGateways = gws) } }
+                }
+                .onFailure { e -> _state.update { it.copy(error = e.message) } }
+        }
+    }
+
+    // ── Live merchant accounts (API credentials) ──────────────────────────────
+    private fun refreshMerchantAccounts(websiteId: Int) {
+        viewModelScope.launch {
+            repo.listMerchantAccounts(websiteId).onSuccess { list ->
+                _state.update { it.copy(merchantAccounts = list) }
+            }
+        }
+    }
+
+    fun createMerchantAccount(websiteId: Int, request: CreateMerchantAccountRequest) {
+        if (request.merchantName.isBlank()) {
+            _state.update { it.copy(error = "মার্চেন্ট নাম লিখুন।") }
+            return
+        }
+        _state.update { it.copy(isSaving = true, error = null) }
+        viewModelScope.launch {
+            repo.createMerchantAccount(websiteId, request)
+                .onSuccess {
+                    _state.update { it.copy(isSaving = false, infoMessage = "মার্চেন্ট অ্যাকাউন্ট যোগ হয়েছে।") }
+                    refreshMerchantAccounts(websiteId)
+                }
+                .onFailure { e -> _state.update { it.copy(isSaving = false, error = e.message) } }
+        }
+    }
+
+    fun updateMerchantAccount(websiteId: Int, accountId: Int, request: UpdateMerchantAccountRequest) {
+        _state.update { it.copy(isSaving = true, error = null) }
+        viewModelScope.launch {
+            repo.updateMerchantAccount(websiteId, accountId, request)
+                .onSuccess {
+                    _state.update { it.copy(isSaving = false, infoMessage = "মার্চেন্ট অ্যাকাউন্ট আপডেট হয়েছে।") }
+                    refreshMerchantAccounts(websiteId)
+                }
+                .onFailure { e -> _state.update { it.copy(isSaving = false, error = e.message) } }
+        }
+    }
+
+    fun toggleMerchantAccount(websiteId: Int, accountId: Int, active: Boolean) {
+        viewModelScope.launch {
+            repo.toggleMerchantAccount(websiteId, accountId, active)
+                .onSuccess { refreshMerchantAccounts(websiteId) }
+                .onFailure { e -> _state.update { it.copy(error = e.message) } }
+        }
+    }
+
+    fun setDefaultMerchantAccount(websiteId: Int, accountId: Int) {
+        viewModelScope.launch {
+            repo.setDefaultMerchantAccount(websiteId, accountId)
+                .onSuccess { refreshMerchantAccounts(websiteId) }
+                .onFailure { e -> _state.update { it.copy(error = e.message) } }
+        }
+    }
+
+    fun duplicateMerchantAccount(websiteId: Int, accountId: Int) {
+        viewModelScope.launch {
+            repo.duplicateMerchantAccount(websiteId, accountId)
+                .onSuccess {
+                    _state.update { it.copy(infoMessage = "অ্যাকাউন্ট ডুপ্লিকেট হয়েছে — ক্রেডেনশিয়াল আবার দিন।") }
+                    refreshMerchantAccounts(websiteId)
+                }
+                .onFailure { e -> _state.update { it.copy(error = e.message) } }
+        }
+    }
+
+    fun deleteMerchantAccount(websiteId: Int, accountId: Int) {
+        viewModelScope.launch {
+            repo.deleteMerchantAccount(websiteId, accountId)
+                .onSuccess { refreshMerchantAccounts(websiteId) }
+                .onFailure { e -> _state.update { it.copy(error = e.message) } }
+        }
+    }
+
+    fun uploadMerchantAccountLogo(websiteId: Int, accountId: Int, pngBytes: ByteArray) {
+        viewModelScope.launch {
+            repo.uploadMerchantAccountLogo(websiteId, accountId, pngBytes)
+                .onSuccess {
+                    _state.update { it.copy(infoMessage = "মার্চেন্ট লোগো আপলোড হয়েছে।") }
+                    refreshMerchantAccounts(websiteId)
                 }
                 .onFailure { e -> _state.update { it.copy(error = e.message) } }
         }

@@ -241,7 +241,7 @@ fun WebsiteCheckoutLiveEditor(
                     }
                 } else {
                     Text(
-                        "Live মোডে অফিসিয়াল গেটওয়ে যোগ/লিস্ট নিচের \"অফিসিয়াল পেমেন্ট (রিডাইরেক্ট)\" সেকশনে পাওয়া যাবে।",
+                        "Live মোডে নিচের \"লাইভ মার্চেন্ট অ্যাকাউন্ট\" সেকশনে App Key / Secret / Username / Password দিন। একটা চালু = সরাসরি পেমেন্ট; একাধিক চালু = কার্ড লিস্ট।",
                         fontSize = 10.sp, color = Color.Gray
                     )
                 }
