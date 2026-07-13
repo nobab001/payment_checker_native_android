@@ -75,6 +75,83 @@ data class OfficialGatewayDto(
     @SerializedName("isActive") val isActive: Boolean = true
 )
 
+/** Live merchant account DTO (multiple per provider per website). */
+data class MerchantAccountDto(
+    @SerializedName("id") val id: Int = 0,
+    @SerializedName("websiteId") val websiteId: Int,
+    @SerializedName("provider") val provider: String,
+    @SerializedName("merchantName") val merchantName: String,
+    @SerializedName("merchantRef") val merchantRef: String? = null,
+    @SerializedName("logoUrl") val logoUrl: String? = null,
+    @SerializedName("apiKey") val apiKey: String? = null,
+    @SerializedName("apiSecretMask") val apiSecretMask: String? = null,
+    @SerializedName("hasApiSecret") val hasApiSecret: Boolean = false,
+    @SerializedName("username") val username: String? = null,
+    @SerializedName("hasPassword") val hasPassword: Boolean = false,
+    @SerializedName("passwordMask") val passwordMask: String? = null,
+    @SerializedName("appKey") val appKey: String? = null,
+    @SerializedName("hasAppSecret") val hasAppSecret: Boolean = false,
+    @SerializedName("appSecretMask") val appSecretMask: String? = null,
+    @SerializedName("baseUrl") val baseUrl: String? = null,
+    @SerializedName("callbackUrl") val callbackUrl: String? = null,
+    @SerializedName("isActive") val isActive: Boolean = true,
+    @SerializedName("isDefault") val isDefault: Boolean = false,
+    @SerializedName("priority") val priority: Int = 0,
+    @SerializedName("notes") val notes: String? = null,
+    @SerializedName("createdAt") val createdAt: String? = null,
+    @SerializedName("updatedAt") val updatedAt: String? = null
+)
+
+/** Create merchant account request. */
+data class CreateMerchantAccountRequest(
+    @SerializedName("provider") val provider: String,
+    @SerializedName("merchantName") val merchantName: String,
+    @SerializedName("merchantRef") val merchantRef: String? = null,
+    @SerializedName("apiKey") val apiKey: String? = null,
+    @SerializedName("apiSecret") val apiSecret: String? = null,
+    @SerializedName("username") val username: String? = null,
+    @SerializedName("password") val password: String? = null,
+    @SerializedName("appKey") val appKey: String? = null,
+    @SerializedName("appSecret") val appSecret: String? = null,
+    @SerializedName("baseUrl") val baseUrl: String? = null,
+    @SerializedName("callbackUrl") val callbackUrl: String? = null,
+    @SerializedName("priority") val priority: Int = 0,
+    @SerializedName("notes") val notes: String? = null,
+    @SerializedName("isActive") val isActive: Boolean = true,
+    @SerializedName("isDefault") val isDefault: Boolean = false
+)
+
+/** Update merchant account request. */
+data class UpdateMerchantAccountRequest(
+    @SerializedName("merchantName") val merchantName: String? = null,
+    @SerializedName("merchantRef") val merchantRef: String? = null,
+    @SerializedName("provider") val provider: String? = null,
+    @SerializedName("apiKey") val apiKey: String? = null,
+    @SerializedName("apiSecret") val apiSecret: String? = null,
+    @SerializedName("username") val username: String? = null,
+    @SerializedName("password") val password: String? = null,
+    @SerializedName("appKey") val appKey: String? = null,
+    @SerializedName("appSecret") val appSecret: String? = null,
+    @SerializedName("baseUrl") val baseUrl: String? = null,
+    @SerializedName("callbackUrl") val callbackUrl: String? = null,
+    @SerializedName("priority") val priority: Int? = null,
+    @SerializedName("notes") val notes: String? = null,
+    @SerializedName("isActive") val isActive: Boolean? = null
+)
+
+data class MerchantAccountListResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("merchantAccounts") val merchantAccounts: List<MerchantAccountDto> = emptyList()
+)
+
+data class MerchantAccountResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("merchantAccount") val merchantAccount: MerchantAccountDto? = null,
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("logoUrl") val logoUrl: String? = null,
+    @SerializedName("error") val error: String? = null
+)
+
 // ── Requests ─────────────────────────────────────────────────────────────────
 
 data class CreateWebsiteRequest(

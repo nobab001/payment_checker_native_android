@@ -172,6 +172,83 @@ fun WebsiteCheckoutLiveEditor(
             .border(1.dp, Purple.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
             .background(Color(0xFFF8FAFC))
     ) {
+        // ── Editable controls FIRST: Payment Mode (Hybrid/Live) → Checkout Mode →
+        //    Design → Tabs. Numbers preview is rendered below these controls. ──
+        if (editable) {
+            // Derive the payment mode from checkoutMode. 'live' => Live, everything
+            // else (transaction / merchant_vibe / hybrid) is treated as Hybrid.
+            val isLive = checkoutMode == "live"
+            Column(
+                Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Payment mode: Hybrid vs Live
+                Text("পেমেন্ট মোড", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Purple)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ModeButton(
+                        label = "Hybrid",
+                        selected = !isLive,
+                        onClick = {
+                            // Restore to a hybrid experience; default sub-mode is transaction.
+                            if (checkoutMode == "live") onCheckoutModeChange("hybrid")
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    ModeButton(
+                        label = "Live",
+                        selected = isLive,
+                        onClick = { onCheckoutModeChange("live") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Text(
+                    if (isLive) "Live মোড: শুধুমাত্র অফিসিয়াল পেমেন্ট গেটওয়ে দেখানো হবে।"
+                    else "Hybrid মোড: বর্তমান ট্রানজেকশন/ভাইব চেকআউট + অফিসিয়াল গেটওয়ে (থাকলে)।",
+                    fontSize = 10.sp, color = Color.Gray
+                )
+
+                if (!isLive) {
+                    // Hybrid sub-mode: Transaction vs Vibe
+                    Text("চেকআউট মোড", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Purple)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = checkoutMode != "merchant_vibe",
+                            onClick = { onCheckoutModeChange("transaction") },
+                            label = { Text("Transaction", fontSize = 11.sp) }
+                        )
+                        FilterChip(
+                            selected = checkoutMode == "merchant_vibe",
+                            onClick = { onCheckoutModeChange("merchant_vibe") },
+                            label = { Text("Vibe", fontSize = 11.sp) }
+                        )
+                    }
+                    Text("ডিজাইন", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Purple)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("design-1" to "১", "design-2" to "২", "design-3" to "৩").forEach { (id, lbl) ->
+                            FilterChip(selected = design == id || (id == "design-3" && (design == "design-4" || design == "design-5")), onClick = { onDesignChange(id) }, label = { Text(lbl) })
+                        }
+                    }
+                    Text("ট্যাব", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Purple)
+                    allTabs.forEach { (key, label, icon) ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("${tabIconText(icon)} $label", Modifier.weight(1f), fontSize = 12.sp)
+                            Switch(
+                                checked = tabStates[key] != false,
+                                onCheckedChange = { onTabToggle(key, it) },
+                                modifier = Modifier.height(32.dp)
+                            )
+                        }
+                    }
+                } else {
+                    Text(
+                        "Live মোডে অফিসিয়াল গেটওয়ে যোগ/লিস্ট নিচের \"অফিসিয়াল পেমেন্ট (রিডাইরেক্ট)\" সেকশনে পাওয়া যাবে।",
+                        fontSize = 10.sp, color = Color.Gray
+                    )
+                }
+            }
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        }
+
         // Mini checkout header
         Box(
             Modifier.fillMaxWidth().background(Purple).padding(12.dp)
@@ -259,41 +336,7 @@ fun WebsiteCheckoutLiveEditor(
             }
         }
 
-        if (editable) {
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("চেকআউট মোড", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Purple)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = checkoutMode == "transaction",
-                        onClick = { onCheckoutModeChange("transaction") },
-                        label = { Text("Transaction", fontSize = 11.sp) }
-                    )
-                    FilterChip(
-                        selected = checkoutMode == "merchant_vibe",
-                        onClick = { onCheckoutModeChange("merchant_vibe") },
-                        label = { Text("Vibe", fontSize = 11.sp) }
-                    )
-                }
-                Text("ডিজাইন", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Purple)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("design-1" to "১", "design-2" to "২", "design-3" to "৩").forEach { (id, lbl) ->
-                        FilterChip(selected = design == id || (id == "design-3" && (design == "design-4" || design == "design-5")), onClick = { onDesignChange(id) }, label = { Text(lbl) })
-                    }
-                }
-                Text("ট্যাব", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Purple)
-                allTabs.forEach { (key, label, icon) ->
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("${tabIconText(icon)} $label", Modifier.weight(1f), fontSize = 12.sp)
-                        Switch(
-                            checked = tabStates[key] != false,
-                            onCheckedChange = { onTabToggle(key, it) },
-                            modifier = Modifier.height(32.dp)
-                        )
-                    }
-                }
-            }
-        } else if (checkoutMode == "merchant_vibe") {
+        if (!editable && checkoutMode == "merchant_vibe") {
             Text(
                 "Vibe Mode: গ্রাহক প্রথমে নিজের নাম্বার দেবে",
                 Modifier.padding(12.dp), fontSize = 11.sp, color = Color.Gray
@@ -488,4 +531,30 @@ private fun EmptyNumbers() {
         "এই ট্যাবে কোনো অফিশিয়াল পার্সেবল নাম্বার নেই — শুধু is_active=1 ও is_parseable=1 টেমপ্লেট দেখায়",
         Modifier.padding(16.dp), fontSize = 11.sp, color = Color.Gray, textAlign = androidx.compose.ui.text.style.TextAlign.Center
     )
+}
+
+/** Big segmented button used for the Hybrid / Live payment-mode selector. */
+@Composable
+private fun ModeButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (selected) Purple else Color.White)
+            .border(1.5.dp, if (selected) Purple else Color(0xFFCBD5E1), RoundedCornerShape(12.dp))
+            .clickable { onClick() }
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            color = if (selected) Color.White else Purple,
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp
+        )
+    }
 }

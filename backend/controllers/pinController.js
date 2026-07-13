@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const prisma = require('../db/prisma');
 const { sendOtpDispatch } = require('./authController');
@@ -97,7 +98,7 @@ async function resetPinSendOtp(req, res) {
       return res.status(404).json({ error: 'এই নম্বর বা ইমেইল দিয়ে কোনো অ্যাকাউন্ট নেই।' });
     }
 
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpCode = crypto.randomInt(100000, 1000000).toString();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
     
     await prisma.otps.create({
@@ -211,7 +212,11 @@ async function verifyPin(req, res) {
     }
 
     if (req.user.role === 'admin') {
-      const adminPin = process.env.ADMIN_PIN || '5566';
+      const adminPin = process.env.ADMIN_PIN;
+      if (!adminPin) {
+        console.error('[PIN] ADMIN_PIN environment variable is not set - rejecting admin PIN verification.');
+        return res.status(500).json({ success: false, error: 'Admin PIN not configured.' });
+      }
       if (pin === adminPin) {
          return res.json({ success: true, message: 'পিন সফলভাবে যাচাই করা হয়েছে।' });
       } else {

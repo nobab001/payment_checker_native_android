@@ -113,18 +113,26 @@ class BkashLiveProvider extends BaseProvider {
 
   /**
    * Verify inbound callback signature (template + api modes).
+   *
+   * SECURITY: fail-closed. Previously, when no callback secret was configured
+   * this returned `true` for an unsigned callback — letting anyone mark a
+   * session paid by hitting the callback URL. Now, if no secret material
+   * (config callbackSecret rotation set OR merchant api_secret fallback) is
+   * available, OR the signature is missing, we REJECT.
+   *
    * @param {Object} payload — flat key/values from query/body
    * @param {string} signature
    * @param {Object} cfg
+   * @param {string} [fallbackSecret]
    */
   verifySignature(payload, signature, cfg, fallbackSecret) {
-    const callbackSecrets = getCallbackSecrets(cfg);
-    if (!signature) {
-      return callbackSecrets.length === 0;
-    }
-    const secrets = [...callbackSecrets];
+    const secrets = [...getCallbackSecrets(cfg)];
     if (fallbackSecret) secrets.push(String(fallbackSecret));
-    if (!secrets.length) return true;
+
+    // No secret material at all → cannot authenticate this callback → reject.
+    if (!secrets.length) return false;
+    if (!signature) return false;
+
     for (const secret of secrets) {
       if (this._matchSignature(payload, signature, secret)) return true;
     }
@@ -145,7 +153,8 @@ class BkashLiveProvider extends BaseProvider {
   /** Parse gateway callback request into raw normalized input. */
   async callback(req) {
     const src = { ...req.query, ...req.body };
-    const statusRaw = String(src.status || src.paymentStatus || 'success').toLowerCase();
+    // SECURITY: no default 'success'. An absent status is treated as non-success.
+    const statusRaw = String(src.status || src.paymentStatus || '').toLowerCase();
     const success = ['success', 'completed', 'complete'].includes(statusRaw);
     const trxId = src.trxId || src.trx_id || src.transactionId || src.paymentID || null;
     const sessionToken = src.token || src.merchantInvoiceNumber || src.order_id || null;

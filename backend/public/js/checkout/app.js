@@ -137,6 +137,9 @@ async function fetchLayout() {
 
     if (checkoutModel.checkoutMode === 'merchant_vibe') {
       document.getElementById('vibe-step')?.classList.remove('hidden');
+    } else if (checkoutModel.checkoutMode === 'live') {
+      document.getElementById('checkout-main')?.classList.remove('hidden');
+      renderLivePaymentPage();
     } else {
       document.getElementById('checkout-main')?.classList.remove('hidden');
       if (first) renderCheckoutFull();
@@ -226,11 +229,142 @@ function stopVibe() {
   VerifyUxController.onVibeStopped();
 }
 
-async function startLivePay(provider) {
+/**
+ * Live mode: renders the dedicated "Live Payment" page with smart auto-routing.
+ * 1. If only 1 active provider with only 1 merchant → auto-redirect.
+ * 2. If multiple providers → show provider selection.
+ * 3. If single provider with multiple merchants → show merchant selection.
+ */
+function renderLivePaymentPage() {
+  const groups = checkoutModel?.merchantAccountsGroups || [];
+  const content = document.getElementById('pay-content');
+  if (!content) return;
+
+  // First, count total active providers and total merchants
+  const totalProviders = groups.length;
+  const totalMerchants = groups.reduce((sum, g) => sum + (g.accounts?.length || 0), 0);
+
+  if (totalMerchants === 0) {
+    content.innerHTML = `<div class="checkout-empty" data-empty-state>
+      <div class="checkout-empty-illus" aria-hidden="true">💳</div>
+      <p class="checkout-empty-msg">কোনো লাইভ পেমেন্ট গেটওয়ে যুক্ত নেই।</p>
+    </div>`;
+    return;
+  }
+
+  // Case 1: Only one provider, and only one merchant → auto-redirect
+  if (totalProviders === 1 && groups[0].accounts.length === 1) {
+    const singleAcct = groups[0].accounts[0];
+    content.innerHTML = `<div class="live-pay-loading" style="text-align:center;padding:32px 16px;">
+      <div class="checkout-empty-illus" aria-hidden="true">🔒</div>
+      <p style="margin-top:12px;color:#475569;">${escapeHtml(singleAcct.merchantName || singleAcct.provider)} এ রিডাইরেক্ট হচ্ছে…</p>
+    </div>`;
+    startLivePay(groups[0].provider, singleAcct.id);
+    return;
+  }
+
+  // Case 2: Multiple providers → show provider selection
+  if (totalProviders > 1) {
+    renderProviderSelection(groups, content);
+    return;
+  }
+
+  // Case 3: Single provider, multiple merchants → show merchant selection
+  renderMerchantSelection(groups[0].provider, groups[0].accounts, content);
+}
+
+function renderProviderSelection(groups, contentEl) {
+  const providerCards = groups.map((group) => {
+    const { provider, accounts } = group;
+    const defaultAcct = accounts.find(a => a.isDefault) || accounts[0];
+    return `
+    <button type="button" class="live-pay-card" data-provider="${escapeHtml(provider)}"
+      style="display:flex;align-items:center;gap:12px;width:100%;padding:16px;margin-bottom:12px;
+             border:1.5px solid #e2e8f0;border-radius:14px;background:#fff;cursor:pointer;text-align:left;">
+      ${defaultAcct.logoUrl ? `<img src="${escapeHtml(defaultAcct.logoUrl)}" alt="" style="width:36px;height:36px;border-radius:8px;object-fit:cover;">` : `<span aria-hidden="true" style="font-size:32px;">💳</span>`}
+      <div style="flex:1;">
+        <div style="font-weight:600;color:#0f172a;">${escapeHtml(provider)}</div>
+        <div style="font-size:13px;color:#94a3b8;">${accounts.length} account(s)</div>
+      </div>
+      <span aria-hidden="true" style="color:#94a3b8;">›</span>
+    </button>`;
+  }).join('');
+
+  contentEl.innerHTML = `<div class="live-pay-list" style="padding:8px 4px;">
+    <p style="margin:0 0 12px;color:#475569;font-weight:600;">পেমেন্ট প্রোভাইডার নির্বাচন করুন</p>
+    ${providerCards}
+  </div>`;
+
+  contentEl.querySelectorAll('[data-provider]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const provider = btn.getAttribute('data-provider');
+      const group = (checkoutModel?.merchantAccountsGroups || []).find(g => g.provider === provider);
+      if (!group) return;
+
+      if (group.accounts.length === 1) {
+        // Only one merchant → auto-redirect
+        btn.disabled = true;
+        startLivePay(provider, group.accounts[0].id);
+      } else {
+        // Multiple merchants → show merchant selection
+        renderMerchantSelection(provider, group.accounts, contentEl);
+      }
+    });
+  });
+}
+
+function renderMerchantSelection(provider, accounts, contentEl) {
+  const merchantCards = accounts.map((acct) => `
+    <button type="button" class="live-pay-card" data-merchant-id="${acct.id}"
+      style="display:flex;align-items:center;gap:12px;width:100%;padding:16px;margin-bottom:12px;
+             border:1.5px solid #e2e8f0;border-radius:14px;background:#fff;cursor:pointer;text-align:left;">
+      ${acct.logoUrl ? `<img src="${escapeHtml(acct.logoUrl)}" alt="" style="width:36px;height:36px;border-radius:8px;object-fit:cover;">` : `<span aria-hidden="true" style="font-size:32px;">💳</span>`}
+      <div style="flex:1;">
+        <div style="font-weight:600;color:#0f172a;">${escapeHtml(acct.merchantName || provider)}</div>
+        ${acct.merchantRef ? `<div style="font-size:13px;color:#94a3b8;">${escapeHtml(acct.merchantRef)}</div>` : ''}
+        ${acct.isDefault ? `<div style="font-size:12px;color:#16a34a;font-weight:500;">Default</div>` : ''}
+      </div>
+      <span aria-hidden="true" style="color:#94a3b8;">›</span>
+    </button>`).join('');
+
+  contentEl.innerHTML = `<div class="live-pay-list" style="padding:8px 4px;">
+    <button type="button" class="btn-back" style="display:flex;align-items:center;gap:8px;border:none;background:none;color:#475569;margin-bottom:12px;cursor:pointer;padding:4px 0;">
+      <span aria-hidden="true">←</span>
+      <span>Back</span>
+    </button>
+    <p style="margin:0 0 12px;color:#475569;font-weight:600;">মার্চেন্ট নির্বাচন করুন</p>
+    ${merchantCards}
+  </div>`;
+
+  // Back button
+  contentEl.querySelector('.btn-back').addEventListener('click', () => {
+    renderLivePaymentPage();
+  });
+
+  // Merchant cards
+  contentEl.querySelectorAll('[data-merchant-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      const merchantAccountId = parseInt(btn.getAttribute('data-merchant-id'), 10);
+      startLivePay(provider, merchantAccountId);
+    });
+  });
+}
+
+function escapeHtml(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+async function startLivePay(provider, merchantAccountId) {
   try {
+    const body = { provider, amount: parseFloat(amount) };
+    if (merchantAccountId != null) body.merchantAccountId = merchantAccountId;
+
     const r = await fetch(`/api/checkout/${apiKey}/live-init`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, amount: parseFloat(amount) }),
+      body: JSON.stringify(body),
     });
     const res = await r.json();
     if (res.success && res.redirectUrl) window.location.href = res.redirectUrl;

@@ -39,6 +39,7 @@ function buildContextFromLiveInitRequest(req) {
     amount: parseFloat(req.body?.amount),
     currency: 'BDT',
     provider: { raw: req.body?.provider, id: null },
+    merchantAccountId: req.body?.merchantAccountId,
     ip: req.ip,
     http: { baseUrl, protocol: req.protocol, host: req.get('host') },
     metadata: { custom: {}, extra: {} },

@@ -59,6 +59,10 @@ class SmsReceiver(
          *
          * Schedule: 30s -> 2min -> 10min -> 1hr -> 6hr (cap)
          */
+        // Transient (server-down) failure-এর ছোট fixed backoff — server ফিরলে দ্রুত flush নিশ্চিত করে।
+        // PingEngine-ও fail হলে ৫s পর পর প্রাথমিক দ্রুত রিট্রাই করে; দুটো সামঞ্জস্যপূর্ণ রাখতে ৫s।
+        private const val TRANSIENT_RETRY_MS = 5_000L
+
         fun calculateNextRetryMs(retryCount: Int, nowMs: Long): Long {
             val delayMs = when (retryCount) {
                 0    -> 30_000L       // 30 seconds
@@ -101,7 +105,10 @@ class SmsReceiver(
                 val dao = db.pendingSmsDao()
                 val nowMs = System.currentTimeMillis()
 
-                dao.markExhaustedRetriesAsPermanentlyFailed(nowMs)
+                // দ্রষ্টব্য: retryCount-ভিত্তিক permanent-fail আর করা হয় না। server outage transient,
+                // তাই আগের build-এ retryCount≥10 হয়ে ভুলভাবে আটকে থাকা আইটেমগুলোও এখানে পুনরুদ্ধার
+                // করা হয় (permanent-fail কেবল server 422 unparseable-এর জন্য)।
+                dao.recoverOutageFailedItems()
 
                 val pendingItems = dao.getPendingItemsForRetry(nowMs)
                 if (pendingItems.isEmpty()) return true
@@ -195,12 +202,10 @@ class SmsReceiver(
             item: online.paychek.app.data.local.entity.PendingSmsEntity,
             nowMs: Long
         ) {
-            if (item.retryCount + 1 >= 10) {
-                dao.markPermanentlyFailed(item.id, nowMs)
-            } else {
-                val nextRetry = calculateNextRetryMs(item.retryCount, nowMs)
-                dao.markRetryFailed(item.id, nowMs, nextRetry)
-            }
+            // Server outage / network / 5xx হলো transient global failure — per-item দোষ নয়।
+            // তাই retryCount বাড়ানো হয় না (কখনো drop হবে না); শুধু ছোট fixed backoff (30s)
+            // দেওয়া হয় যাতে PingEngine server-return টের পেলে দ্রুত সব একসাথে flush করতে পারে।
+            dao.markTransientFailure(item.id, nowMs, nowMs + TRANSIENT_RETRY_MS)
         }
     }
 

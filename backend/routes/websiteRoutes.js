@@ -46,4 +46,14 @@ router.get('/:id/official-gateways', websiteController.listOfficialGateways);
 router.post('/:id/official-gateways', websiteController.upsertOfficialGateway);
 router.delete('/:id/official-gateways/:gatewayId', websiteController.deleteOfficialGateway);
 
+// Live merchant accounts (multiple accounts per provider — credential vault)
+router.get('/:id/merchant-accounts', websiteController.listMerchantAccounts);
+router.post('/:id/merchant-accounts', websiteController.createMerchantAccount);
+router.patch('/:id/merchant-accounts/:accountId', websiteController.updateMerchantAccount);
+router.delete('/:id/merchant-accounts/:accountId', websiteController.deleteMerchantAccount);
+router.post('/:id/merchant-accounts/:accountId/toggle', websiteController.toggleMerchantAccount);
+router.post('/:id/merchant-accounts/:accountId/default', websiteController.setDefaultMerchantAccount);
+router.post('/:id/merchant-accounts/:accountId/duplicate', websiteController.duplicateMerchantAccount);
+router.post('/:id/merchant-accounts/:accountId/logo', logoUpload.single('logo'), websiteController.uploadMerchantAccountLogo);
+
 module.exports = router;

@@ -766,9 +766,17 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                     templatesRes.body()?.templates ?: emptyList()
                 } else emptyList()
                 _state.update {
+                    // সার্ভারের gateway_methods থেকে প্রতিটি slot-এর নাম্বার বের করে remote
+                    // edit ফিল্ডে বসাই — যাতে "আদার্স ডিভাইস" সেটিংসে শুধু টেমপ্লেট নয়,
+                    // নাম্বারও লোড হয়। সার্ভারে নাম্বার থাকলে সেটাই প্রাধান্য পায়; না থাকলে
+                    // আগের (GET /v1/devices থেকে আসা) নাম্বার অপরিবর্তিত রাখি।
+                    val serverSim1 = methods.firstOrNull { m -> m.simSlot == 1 && !m.number.isNullOrBlank() }?.number
+                    val serverSim2 = methods.firstOrNull { m -> m.simSlot == 2 && !m.number.isNullOrBlank() }?.number
                     it.copy(
                         remoteGatewayMethods = methods,
                         remoteTemplates = templates,
+                        remoteDeviceEditSim1Number = serverSim1 ?: it.remoteDeviceEditSim1Number,
+                        remoteDeviceEditSim2Number = serverSim2 ?: it.remoteDeviceEditSim2Number,
                         isRemoteGatewayLoading = false
                     )
                 }
@@ -1185,6 +1193,10 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     private var sim1NumberDebounceJob: Job? = null
     private var sim2NumberDebounceJob: Job? = null
     private var isApplyingProfile = false
+    // লগইন/রিস্টোরে toggle লোকালি ON থাকলেও ব্যাকএন্ডে is_active সেট নাও থাকতে পারে —
+    // সেশন প্রতি একবার valid+ON slot গুলো সার্ভারে re-activate করা হয়। মাঝপথে ডুপ্লিকেট চলা এড়াতে guard।
+    private var isReactivatingSlots = false
+    private val reactivatedSlotsThisSession = mutableSetOf<Int>()
 
     private fun isSimSlotActive(simSlot: Int): Boolean {
         return if (simSlot == 1) _state.value.sim1Enabled else _state.value.sim2Enabled
@@ -1523,26 +1535,108 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         val sim2Num = stateVal.sim2Number
         val methods = stateVal.methods
 
+        // ---------------------------------------------------------------------
+        // CHURN GUARD: টেমপ্লেট/মেথড এখনো সার্ভার থেকে পুরোপুরি লোড হয়নি এমন
+        // অবস্থায় SIM জোর করে OFF করলে বারবার ON→OFF churn হয় (ইউজারের অভিযোগ)।
+        // তাই — মেথড লিস্ট খালি থাকলে বা টেমপ্লেট এখনো লোড হচ্ছে/খালি থাকলে
+        // toggle-এ হাত দিই না; শুধু re-activate পাস চালিয়ে যাই।
+        // ---------------------------------------------------------------------
+        val dataNotReady = methods.isEmpty() ||
+            stateVal.isTemplatesLoading ||
+            stateVal.templates.isEmpty()
+
         val hasActiveMethodSim1 = methods.any { it.simSlot == 1 && it.isEnabled == 1 }
         val hasActiveMethodSim2 = methods.any { it.simSlot == 2 && it.isEnabled == 1 }
 
         val isSim1Valid = sim1Num.length == 11 && hasActiveMethodSim1
         val isSim2Valid = sim2Num.length == 11 && hasActiveMethodSim2
 
-        val newSim1Enabled = if (isSim1Valid) stateVal.sim1Enabled else false
-        val newSim2Enabled = if (isSim2Valid) stateVal.sim2Enabled else false
+        if (!dataNotReady) {
+            val newSim1Enabled = if (isSim1Valid) stateVal.sim1Enabled else false
+            val newSim2Enabled = if (isSim2Valid) stateVal.sim2Enabled else false
 
-        if (newSim1Enabled != stateVal.sim1Enabled || newSim2Enabled != stateVal.sim2Enabled) {
-            prefs.edit().apply {
-                putBoolean(AppConfig.KEY_SIM1_ENABLED, newSim1Enabled)
-                putBoolean(AppConfig.KEY_SIM2_ENABLED, newSim2Enabled)
-                apply()
+            if (newSim1Enabled != stateVal.sim1Enabled || newSim2Enabled != stateVal.sim2Enabled) {
+                prefs.edit().apply {
+                    putBoolean(AppConfig.KEY_SIM1_ENABLED, newSim1Enabled)
+                    putBoolean(AppConfig.KEY_SIM2_ENABLED, newSim2Enabled)
+                    apply()
+                }
+                _state.update {
+                    it.copy(
+                        sim1Enabled = newSim1Enabled,
+                        sim2Enabled = newSim2Enabled
+                    )
+                }
             }
-            _state.update {
-                it.copy(
-                    sim1Enabled = newSim1Enabled,
-                    sim2Enabled = newSim2Enabled
-                )
+        }
+
+        // লগইন/রিস্টোরে যে slot গুলো ON + বৈধ, সেগুলো ব্যাকএন্ডে re-activate করে
+        // sim_slot_bindings.is_active=1 নিশ্চিত করা হয় (নাহলে চেকআউট পেজে দেখা যায় না)।
+        reactivateOnlineSlots(
+            sim1On = _state.value.sim1Enabled && isSim1Valid,
+            sim2On = _state.value.sim2Enabled && isSim2Valid
+        )
+    }
+
+    /**
+     * প্রতি সেশনে একবার — লোকালি ON এবং বৈধ slot গুলো সার্ভারে re-activate করে।
+     * ম্যানুয়াল toggle ছাড়া (যেমন লগইন-রিস্টোর) is_active সার্ভারে 0 থেকে যেত;
+     * এখানে conflict-safe ভাবে bulk-sync(activateBinding=true) কল করে তা 1 করা হয়।
+     */
+    private fun reactivateOnlineSlots(sim1On: Boolean, sim2On: Boolean) {
+        if (isReactivatingSlots) return
+        if (_state.value.pendingSimConflict != null) return
+
+        val targets = buildList {
+            if (sim1On && 1 !in reactivatedSlotsThisSession) add(1)
+            if (sim2On && 2 !in reactivatedSlotsThisSession) add(2)
+        }
+        if (targets.isEmpty()) return
+
+        isReactivatingSlots = true
+        viewModelScope.launch {
+            try {
+                val token = getToken() ?: return@launch
+                for (simSlot in targets) {
+                    val stateVal = _state.value
+                    val phoneNumber = if (simSlot == 1) stateVal.sim1Number else stateVal.sim2Number
+                    if (phoneNumber.length != 11) continue
+
+                    val bulkItems = stateVal.methods
+                        .filter { it.simSlot == simSlot && it.isEnabled == 1 }
+                        .map { method ->
+                            BulkSyncMethodItem(
+                                templateId = method.templateId,
+                                provider = method.provider,
+                                isEnabled = method.isEnabled
+                            )
+                        }
+                    if (bulkItems.isEmpty()) continue
+
+                    runCatching {
+                        api.bulkSyncSlotMethods(
+                            "Bearer $token",
+                            BulkSyncRequest(
+                                simSlot = simSlot,
+                                phoneNumber = phoneNumber,
+                                methods = bulkItems,
+                                replaceSlot = false,
+                                activateBinding = true
+                            )
+                        )
+                    }.onSuccess { res ->
+                        val body = res.body()
+                        if (res.isSuccessful && body?.success == true && body.hasConflict != true) {
+                            reactivatedSlotsThisSession.add(simSlot)
+                            body.data?.let { newData ->
+                                saveMethodsToCache(newData)
+                                _state.update { it.copy(methods = newData) }
+                            }
+                        }
+                    }
+                }
+            } finally {
+                isReactivatingSlots = false
             }
         }
     }
@@ -1679,9 +1773,15 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     private fun performDropSync() {
         val currentTemplates = _state.value.templates
         val currentMethods = _state.value.methods
-        
-        // Skip check if templates are still loading or empty (unless loading has finished)
-        if (currentTemplates.isEmpty() && _state.value.isTemplatesLoading) return
+
+        // ---------------------------------------------------------------------
+        // DROP GUARD: টেমপ্লেট লিস্ট এখনো লোড হচ্ছে বা খালি থাকা অবস্থায় কোনো
+        // method কে "unknown template" ধরে drop করা যাবে না — আংশিক লোডে বৈধ
+        // method drop হয়ে SIM OFF হয়ে যায় (churn-এর অন্যতম কারণ)। শুধু টেমপ্লেট
+        // সম্পূর্ণ লোড ও non-empty হলেই drop যুক্তিসঙ্গত।
+        // ---------------------------------------------------------------------
+        if (_state.value.isTemplatesLoading) return
+        if (currentTemplates.isEmpty()) return
         
         val activeTemplateIds = currentTemplates.mapNotNull { it.id }.toSet()
         

@@ -14,6 +14,8 @@ debug/
 # Node dependencies
 backend/node_modules/
 backend/.env
+backend/.paychek_scan_test.txt
+app/.kotlin/
 
 # OS files
 Thumbs.db

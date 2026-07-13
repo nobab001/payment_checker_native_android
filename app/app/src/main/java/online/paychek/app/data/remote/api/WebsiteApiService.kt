@@ -120,4 +120,66 @@ interface WebsiteApiService {
         @Path("id") id: Int,
         @Path("gatewayId") gatewayId: Int
     ): Response<SimpleWebsiteActionResponse>
+
+    // ── Live merchant accounts (multiple per provider) ─────────────────────────
+    @GET("v1/websites/{id}/merchant-accounts")
+    suspend fun listMerchantAccounts(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Query("provider") provider: String? = null,
+        @Query("q") search: String? = null
+    ): Response<MerchantAccountListResponse>
+
+    @POST("v1/websites/{id}/merchant-accounts")
+    suspend fun createMerchantAccount(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Body request: CreateMerchantAccountRequest
+    ): Response<MerchantAccountResponse>
+
+    @PATCH("v1/websites/{id}/merchant-accounts/{accountId}")
+    suspend fun updateMerchantAccount(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Path("accountId") accountId: Int,
+        @Body request: UpdateMerchantAccountRequest
+    ): Response<MerchantAccountResponse>
+
+    @POST("v1/websites/{id}/merchant-accounts/{accountId}/toggle")
+    suspend fun toggleMerchantAccount(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Path("accountId") accountId: Int,
+        @Body request: Map<String, Boolean>? = null
+    ): Response<MerchantAccountResponse>
+
+    @POST("v1/websites/{id}/merchant-accounts/{accountId}/default")
+    suspend fun setDefaultMerchantAccount(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Path("accountId") accountId: Int
+    ): Response<MerchantAccountResponse>
+
+    @POST("v1/websites/{id}/merchant-accounts/{accountId}/duplicate")
+    suspend fun duplicateMerchantAccount(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Path("accountId") accountId: Int
+    ): Response<MerchantAccountResponse>
+
+    @DELETE("v1/websites/{id}/merchant-accounts/{accountId}")
+    suspend fun deleteMerchantAccount(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Path("accountId") accountId: Int
+    ): Response<SimpleWebsiteActionResponse>
+
+    @Multipart
+    @POST("v1/websites/{id}/merchant-accounts/{accountId}/logo")
+    suspend fun uploadMerchantAccountLogo(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Path("accountId") accountId: Int,
+        @Part logo: okhttp3.MultipartBody.Part
+    ): Response<MerchantAccountResponse>
 }

@@ -370,7 +370,11 @@ async function updateWebsiteSettings(req, res) {
 
     if (b.checkout_mode !== undefined) {
       const mode = String(b.checkout_mode);
-      if (!['transaction', 'merchant_vibe'].includes(mode)) {
+      // 'hybrid' = full experience (transaction + vibe + optional official gateways),
+      // 'live'   = official gateways only.
+      // Legacy values 'transaction' / 'merchant_vibe' are still accepted for
+      // backward compatibility with older app builds.
+      if (!['transaction', 'merchant_vibe', 'hybrid', 'live'].includes(mode)) {
         return res.status(400).json({ success: false, error: 'INVALID_CHECKOUT_MODE' });
       }
       data.checkout_mode = mode;
@@ -562,7 +566,7 @@ async function saveGlobalCheckout(req, res) {
       return res.status(400).json({ success: false, error: 'INVALID_CHECKOUT_THEME' });
     }
     const mode = String(b.checkout_mode || b.checkoutMode || 'transaction');
-    if (!['transaction', 'merchant_vibe'].includes(mode)) {
+    if (!['transaction', 'merchant_vibe', 'hybrid', 'live'].includes(mode)) {
       return res.status(400).json({ success: false, error: 'INVALID_CHECKOUT_MODE' });
     }
 
@@ -843,6 +847,374 @@ async function deleteOfficialGateway(req, res) {
   }
 }
 
+// ── Live Merchant Accounts (multiple per provider) ───────────────────────────
+// Full merchant credential vault. Multiple accounts per provider per website.
+// Sensitive fields are AES-encrypted at rest and NEVER returned in plaintext —
+// only a masked hint + a boolean "has value" flag are exposed.
+
+const merchantCrypto = require('../utils/merchantCrypto');
+
+// Providers supported for live merchant accounts. Kept permissive so future
+// providers work without code change — validated only as a non-empty slug.
+function normalizeProviderSlug(raw) {
+  return String(raw || '').trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+/** Serialize a merchant_accounts row into a safe DTO (secrets masked, never raw). */
+function toMerchantAccountDto(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    websiteId: row.website_id,
+    provider: row.provider,
+    merchantName: row.merchant_name,
+    merchantRef: row.merchant_ref || null,
+    logoUrl: row.logo_url || null,
+    apiKey: row.api_key || null,
+    apiSecretMask: merchantCrypto.mask(row.api_secret_enc),
+    hasApiSecret: merchantCrypto.hasSecret(row.api_secret_enc),
+    username: row.username || null,
+    hasPassword: merchantCrypto.hasSecret(row.password_enc),
+    passwordMask: merchantCrypto.mask(row.password_enc),
+    appKey: row.app_key || null,
+    hasAppSecret: merchantCrypto.hasSecret(row.app_secret_enc),
+    appSecretMask: merchantCrypto.mask(row.app_secret_enc),
+    baseUrl: row.base_url || null,
+    callbackUrl: row.callback_url || null,
+    isActive: !!row.is_active,
+    isDefault: !!row.is_default,
+    priority: row.priority || 0,
+    notes: row.notes || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * Build the writable data object from a request body.
+ * @param {object} b request body
+ * @param {boolean} isCreate on update, absent secret fields are left untouched;
+ *        an explicit empty string clears them.
+ */
+function buildMerchantData(b, isCreate) {
+  const data = {};
+  if (b.merchant_name !== undefined || b.merchantName !== undefined) {
+    data.merchant_name = String(b.merchant_name ?? b.merchantName ?? '').trim();
+  }
+  if (b.merchant_ref !== undefined || b.merchantRef !== undefined) {
+    const v = b.merchant_ref ?? b.merchantRef;
+    data.merchant_ref = v ? String(v).trim() : null;
+  }
+  if (b.api_key !== undefined || b.apiKey !== undefined) {
+    const v = b.api_key ?? b.apiKey;
+    data.api_key = v ? String(v).trim() : null;
+  }
+  if (b.username !== undefined) data.username = b.username ? String(b.username).trim() : null;
+  if (b.app_key !== undefined || b.appKey !== undefined) {
+    const v = b.app_key ?? b.appKey;
+    data.app_key = v ? String(v).trim() : null;
+  }
+  if (b.base_url !== undefined || b.baseUrl !== undefined) {
+    const v = b.base_url ?? b.baseUrl;
+    data.base_url = v ? String(v).trim() : null;
+  }
+  if (b.callback_url !== undefined || b.callbackUrl !== undefined) {
+    const v = b.callback_url ?? b.callbackUrl;
+    data.callback_url = v ? String(v).trim() : null;
+  }
+  if (b.notes !== undefined) data.notes = b.notes ? String(b.notes) : null;
+  if (b.priority !== undefined) data.priority = parseInt(b.priority, 10) || 0;
+  if (b.is_active !== undefined || b.isActive !== undefined) {
+    data.is_active = (b.is_active ?? b.isActive) ? 1 : 0;
+  }
+
+  // Sensitive fields: encrypt on write. On update, only touch when the key is
+  // present in the payload (absent = keep existing; '' = clear).
+  const apiSecret = b.api_secret ?? b.apiSecret;
+  if (apiSecret !== undefined) data.api_secret_enc = apiSecret ? merchantCrypto.encrypt(String(apiSecret)) : '';
+  const password = b.password;
+  if (password !== undefined) data.password_enc = password ? merchantCrypto.encrypt(String(password)) : '';
+  const appSecret = b.app_secret ?? b.appSecret;
+  if (appSecret !== undefined) data.app_secret_enc = appSecret ? merchantCrypto.encrypt(String(appSecret)) : '';
+
+  return data;
+}
+
+/** GET /api/v1/websites/:id/merchant-accounts — list all accounts for a website. */
+async function listMerchantAccounts(req, res) {
+  try {
+    const userId = req.user.userId;
+    const row = await findOwnedWebsite(req.params.id, userId);
+    if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
+
+    const q = (req.query.q || '').trim().toLowerCase();
+    const providerFilter = normalizeProviderSlug(req.query.provider || '');
+    const where = { website_id: row.id };
+    if (providerFilter) where.provider = providerFilter;
+
+    let accounts = await prisma.merchant_accounts.findMany({
+      where,
+      orderBy: [{ provider: 'asc' }, { priority: 'asc' }, { id: 'asc' }],
+    });
+    if (q) {
+      accounts = accounts.filter((a) =>
+        (a.merchant_name || '').toLowerCase().includes(q) ||
+        (a.provider || '').toLowerCase().includes(q) ||
+        (a.merchant_ref || '').toLowerCase().includes(q));
+    }
+    return res.json({ success: true, merchantAccounts: accounts.map(toMerchantAccountDto) });
+  } catch (error) {
+    console.error('[Website] listMerchantAccounts error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/** POST /api/v1/websites/:id/merchant-accounts — create a new merchant account. */
+async function createMerchantAccount(req, res) {
+  try {
+    const userId = req.user.userId;
+    const row = await findOwnedWebsite(req.params.id, userId);
+    if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
+
+    const b = req.body || {};
+    const provider = normalizeProviderSlug(b.provider);
+    if (!provider) return res.status(400).json({ success: false, error: 'PROVIDER_REQUIRED' });
+
+    const data = buildMerchantData(b, true);
+    if (!data.merchant_name) {
+      return res.status(400).json({ success: false, error: 'MERCHANT_NAME_REQUIRED' });
+    }
+    data.provider = provider;
+    data.website_id = row.id;
+    if (data.is_active === undefined) data.is_active = 1;
+
+    // First account of a provider becomes its default automatically.
+    const existing = await prisma.merchant_accounts.count({
+      where: { website_id: row.id, provider },
+    });
+    const wantDefault = (b.is_default ?? b.isDefault) ? true : (existing === 0);
+
+    const created = await prisma.merchant_accounts.create({ data });
+    if (wantDefault) {
+      await prisma.merchant_accounts.updateMany({
+        where: { website_id: row.id, provider, id: { not: created.id } },
+        data: { is_default: 0 },
+      });
+      await prisma.merchant_accounts.update({ where: { id: created.id }, data: { is_default: 1 } });
+      created.is_default = 1;
+    }
+    merchantCache.invalidate(row.api_key);
+    return res.status(201).json({ success: true, merchantAccount: toMerchantAccountDto(created) });
+  } catch (error) {
+    console.error('[Website] createMerchantAccount error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/** Resolve a merchant account owned by the user for a website. */
+async function findOwnedMerchantAccount(websiteRow, accountId) {
+  const id = parseInt(accountId, 10);
+  if (!Number.isFinite(id)) return null;
+  const acct = await prisma.merchant_accounts.findUnique({ where: { id } });
+  if (!acct || acct.website_id !== websiteRow.id) return null;
+  return acct;
+}
+
+/** PATCH /api/v1/websites/:id/merchant-accounts/:accountId — update an account. */
+async function updateMerchantAccount(req, res) {
+  try {
+    const userId = req.user.userId;
+    const row = await findOwnedWebsite(req.params.id, userId);
+    if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
+    const acct = await findOwnedMerchantAccount(row, req.params.accountId);
+    if (!acct) return res.status(404).json({ success: false, error: 'ACCOUNT_NOT_FOUND' });
+
+    const b = req.body || {};
+    const data = buildMerchantData(b, false);
+    if (b.provider !== undefined) {
+      const provider = normalizeProviderSlug(b.provider);
+      if (!provider) return res.status(400).json({ success: false, error: 'PROVIDER_REQUIRED' });
+      data.provider = provider;
+    }
+    if (data.merchant_name !== undefined && !data.merchant_name) {
+      return res.status(400).json({ success: false, error: 'MERCHANT_NAME_REQUIRED' });
+    }
+    data.updated_at = new Date();
+
+    const updated = await prisma.merchant_accounts.update({ where: { id: acct.id }, data });
+    merchantCache.invalidate(row.api_key);
+    return res.json({ success: true, merchantAccount: toMerchantAccountDto(updated) });
+  } catch (error) {
+    console.error('[Website] updateMerchantAccount error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/** POST /api/v1/websites/:id/merchant-accounts/:accountId/toggle — enable/disable. */
+async function toggleMerchantAccount(req, res) {
+  try {
+    const userId = req.user.userId;
+    const row = await findOwnedWebsite(req.params.id, userId);
+    if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
+    const acct = await findOwnedMerchantAccount(row, req.params.accountId);
+    if (!acct) return res.status(404).json({ success: false, error: 'ACCOUNT_NOT_FOUND' });
+
+    const b = req.body || {};
+    const nextActive = (b.is_active ?? b.isActive);
+    const value = nextActive === undefined ? (acct.is_active ? 0 : 1) : (nextActive ? 1 : 0);
+    const updated = await prisma.merchant_accounts.update({
+      where: { id: acct.id },
+      data: { is_active: value, updated_at: new Date() },
+    });
+    merchantCache.invalidate(row.api_key);
+    return res.json({ success: true, merchantAccount: toMerchantAccountDto(updated) });
+  } catch (error) {
+    console.error('[Website] toggleMerchantAccount error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/** POST /api/v1/websites/:id/merchant-accounts/:accountId/default — set default. */
+async function setDefaultMerchantAccount(req, res) {
+  try {
+    const userId = req.user.userId;
+    const row = await findOwnedWebsite(req.params.id, userId);
+    if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
+    const acct = await findOwnedMerchantAccount(row, req.params.accountId);
+    if (!acct) return res.status(404).json({ success: false, error: 'ACCOUNT_NOT_FOUND' });
+
+    await prisma.merchant_accounts.updateMany({
+      where: { website_id: row.id, provider: acct.provider },
+      data: { is_default: 0 },
+    });
+    const updated = await prisma.merchant_accounts.update({
+      where: { id: acct.id },
+      data: { is_default: 1, updated_at: new Date() },
+    });
+    merchantCache.invalidate(row.api_key);
+    return res.json({ success: true, merchantAccount: toMerchantAccountDto(updated) });
+  } catch (error) {
+    console.error('[Website] setDefaultMerchantAccount error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/** POST /api/v1/websites/:id/merchant-accounts/:accountId/duplicate — clone an account. */
+async function duplicateMerchantAccount(req, res) {
+  try {
+    const userId = req.user.userId;
+    const row = await findOwnedWebsite(req.params.id, userId);
+    if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
+    const acct = await findOwnedMerchantAccount(row, req.params.accountId);
+    if (!acct) return res.status(404).json({ success: false, error: 'ACCOUNT_NOT_FOUND' });
+
+    const created = await prisma.merchant_accounts.create({
+      data: {
+        website_id: row.id,
+        provider: acct.provider,
+        merchant_name: `${acct.merchant_name} (Copy)`,
+        merchant_ref: acct.merchant_ref,
+        logo_url: acct.logo_url,
+        api_key: acct.api_key,
+        api_secret_enc: acct.api_secret_enc,
+        username: acct.username,
+        password_enc: acct.password_enc,
+        app_key: acct.app_key,
+        app_secret_enc: acct.app_secret_enc,
+        base_url: acct.base_url,
+        callback_url: acct.callback_url,
+        is_active: 0, // clones start disabled to avoid accidental live use
+        is_default: 0,
+        priority: acct.priority,
+        notes: acct.notes,
+      },
+    });
+    merchantCache.invalidate(row.api_key);
+    return res.status(201).json({ success: true, merchantAccount: toMerchantAccountDto(created) });
+  } catch (error) {
+    console.error('[Website] duplicateMerchantAccount error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/** DELETE /api/v1/websites/:id/merchant-accounts/:accountId */
+async function deleteMerchantAccount(req, res) {
+  try {
+    const userId = req.user.userId;
+    const row = await findOwnedWebsite(req.params.id, userId);
+    if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
+    const acct = await findOwnedMerchantAccount(row, req.params.accountId);
+    if (!acct) return res.status(404).json({ success: false, error: 'ACCOUNT_NOT_FOUND' });
+
+    const wasDefault = !!acct.is_default;
+    if (acct.logo_url && websiteLogoService.isManagedLogoPath(acct.logo_url, userId, row.id)) {
+      websiteLogoService.deleteLogoFile(acct.logo_url);
+    }
+    await prisma.merchant_accounts.delete({ where: { id: acct.id } });
+
+    // Promote a new default within the same provider if we removed the default.
+    if (wasDefault) {
+      const next = await prisma.merchant_accounts.findFirst({
+        where: { website_id: row.id, provider: acct.provider },
+        orderBy: [{ priority: 'asc' }, { id: 'asc' }],
+      });
+      if (next) {
+        await prisma.merchant_accounts.update({ where: { id: next.id }, data: { is_default: 1 } });
+      }
+    }
+    merchantCache.invalidate(row.api_key);
+    return res.json({ success: true, message: 'Merchant account মুছে ফেলা হয়েছে।' });
+  } catch (error) {
+    console.error('[Website] deleteMerchantAccount error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/**
+ * POST /api/v1/websites/:id/merchant-accounts/:accountId/logo — multipart logo (field: logo).
+ */
+async function uploadMerchantAccountLogo(req, res) {
+  try {
+    const userId = req.user.userId;
+    const row = await findOwnedWebsite(req.params.id, userId);
+    if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
+    const acct = await findOwnedMerchantAccount(row, req.params.accountId);
+    if (!acct) return res.status(404).json({ success: false, error: 'ACCOUNT_NOT_FOUND' });
+
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, error: 'NO_FILE', message: 'লোগো ফাইল পাঠানো হয়নি।' });
+    }
+
+    let relPath;
+    try {
+      relPath = await websiteLogoService.saveWebsiteLogo(req.file.buffer, req.file.mimetype, userId, row.id);
+    } catch (e) {
+      const code = e.message || 'UPLOAD_FAILED';
+      const status = code === 'FILE_TOO_LARGE' ? 413
+        : (code === 'INVALID_FILE_TYPE' || code === 'INVALID_IMAGE_CONTENT') ? 415 : 400;
+      return res.status(status).json({
+        success: false,
+        error: code,
+        message: code === 'FILE_TOO_LARGE' ? 'ফাইল সর্বোচ্চ ৫ MB হতে পারে।'
+          : 'অবৈধ ছবি ফরম্যাট। PNG, JPG, JPEG বা WEBP ব্যবহার করুন।',
+      });
+    }
+
+    if (acct.logo_url && websiteLogoService.isManagedLogoPath(acct.logo_url, userId, row.id)) {
+      websiteLogoService.deleteLogoFile(acct.logo_url);
+    }
+    const updated = await prisma.merchant_accounts.update({
+      where: { id: acct.id },
+      data: { logo_url: relPath, updated_at: new Date() },
+    });
+    merchantCache.invalidate(row.api_key);
+    return res.json({ success: true, logoUrl: relPath, merchantAccount: toMerchantAccountDto(updated) });
+  } catch (error) {
+    console.error('[Website] uploadMerchantAccountLogo error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 /**
  * POST /api/v1/websites/:id/branding/logo — multipart logo upload (field: logo).
  * Replaces any previously managed on-disk logo; external legacy URLs are overwritten in DB.
@@ -950,6 +1322,14 @@ module.exports = {
   listOfficialGateways,
   upsertOfficialGateway,
   deleteOfficialGateway,
+  listMerchantAccounts,
+  createMerchantAccount,
+  updateMerchantAccount,
+  toggleMerchantAccount,
+  setDefaultMerchantAccount,
+  duplicateMerchantAccount,
+  deleteMerchantAccount,
+  uploadMerchantAccountLogo,
   uploadWebsiteLogo,
   deleteWebsiteLogo,
   // exported for reuse in admin permission controller / callback dispatcher

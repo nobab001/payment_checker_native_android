@@ -32,7 +32,10 @@ const numberHealth = require('../services/numberHealthService');
 const { fetchGatewayMethodsForUser } = require('./gatewayController');
 const { getUserEntitlements } = require('../services/accountEntitlementsService');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_987654321';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required and not set. Refusing to start.');
+}
 const TRIAL_DEFAULT_DAYS = parseInt(process.env.TRIAL_DEFAULT_DAYS || '7', 10);
 
 async function fetchDeviceRowForSync(userId, deviceId) {
@@ -538,11 +541,11 @@ async function verifyOtp(req, res) {
         let expectedPass = '';
         if (!isNaN(duration)) {
           if (duration >= 0 && duration <= 5) {
-            expectedPass = process.env.ADMIN_SLOT1_PASS || 'boss_gate_0_30';
+            expectedPass = process.env.ADMIN_SLOT1_PASS || '';
           } else if (duration >= 6 && duration <= 30) {
-            expectedPass = process.env.ADMIN_SLOT2_PASS || 'boss_gate_31_60';
+            expectedPass = process.env.ADMIN_SLOT2_PASS || '';
           } else if (duration >= 31 && duration <= 60) {
-            expectedPass = process.env.ADMIN_SLOT3_PASS || 'boss_gate_61_120';
+            expectedPass = process.env.ADMIN_SLOT3_PASS || '';
           }
         }
 
@@ -554,7 +557,7 @@ async function verifyOtp(req, res) {
       const token = jwt.sign(
         { userId: 0, role: 'admin', deviceId: deviceId || 'admin-device' },
         JWT_SECRET,
-        { expiresIn: '99y' }
+        { expiresIn: process.env.ADMIN_TOKEN_EXPIRES_IN || '12h' }
       );
 
       return res.json({
@@ -803,7 +806,7 @@ async function verifyOtp(req, res) {
     const token = jwt.sign(
        { userId: user.id, role: user.role, deviceId: device.device_id },
        JWT_SECRET,
-       { expiresIn: '99y' }
+       { expiresIn: process.env.USER_TOKEN_EXPIRES_IN || '30d' }
      );
 
     return res.json({
@@ -1825,7 +1828,7 @@ async function sendOtpDispatch(contact, otpCode) {
 
 // Helper: Generates a 6-digit verification code
 function generateOtpCode() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 1000000).toString();
 }
 
 async function getPublicConfig(req, res) {
@@ -2146,6 +2149,23 @@ async function submitRole(req, res) {
       return res.status(400).json({ success: false, error: 'Valid role (owner or restricted) is required' });
     }
 
+    // SECURITY: prevent privilege escalation. A device that is already 'restricted'
+    // must NOT be able to promote itself to 'owner' via this onboarding endpoint —
+    // promotion must go through the PIN-gated toggle-remote-role flow. Self-selection
+    // is only allowed for a device that has not yet been assigned the owner role.
+    if (role === 'owner') {
+      const existing = await query(
+        `SELECT device_role FROM registered_devices WHERE user_id = ? AND device_id = ? LIMIT 1`,
+        [userId, deviceId]
+      );
+      if (existing.length > 0 && existing[0].device_role === 'restricted') {
+        return res.status(403).json({
+          success: false,
+          error: 'Restricted device cannot self-promote to owner. Owner approval with PIN is required.'
+        });
+      }
+    }
+
     const result = await query(
       `UPDATE registered_devices 
        SET device_role = ? 
@@ -2251,12 +2271,14 @@ async function deleteDevice(req, res) {
     }
 
     const devices = await query(
-      `SELECT device_id FROM registered_devices WHERE user_id = ? AND device_id = ? LIMIT 1`,
+      `SELECT device_id, android_id, hardware_fingerprint, sim_slot_ids
+         FROM registered_devices WHERE user_id = ? AND device_id = ? LIMIT 1`,
       [userId, deviceId]
     );
     if (!devices.length) {
       return res.status(404).json({ success: false, error: 'Device not found' });
     }
+    const deletedDevice = devices[0];
 
     const bindings = await query(
       `SELECT phone_number FROM sim_slot_bindings WHERE user_id = ? AND device_id = ?`,
@@ -2264,10 +2286,46 @@ async function deleteDevice(req, res) {
     );
     const phones = [...new Set(bindings.map((b) => b.phone_number).filter(Boolean))];
 
-    await query(`DELETE FROM gateway_methods WHERE user_id = ? AND device_id = ?`, [String(userId), deviceId]);
-    await query(`DELETE FROM sim_slot_bindings WHERE user_id = ? AND device_id = ?`, [String(userId), deviceId]);
-    await query(`DELETE FROM sim_number_profiles WHERE user_id = ? AND device_id = ?`, [String(userId), deviceId]);
-    await query(`DELETE FROM registered_devices WHERE user_id = ? AND device_id = ?`, [userId, deviceId]);
+    // ---------------------------------------------------------------------
+    // SOFT DELETE / UNLINK ডিজাইন:
+    // ডিভাইসটি অ্যাকাউন্ট থেকে আনলিংক হবে, কিন্তু সার্ভারে ডেটা সংরক্ষিত থাকবে —
+    //   • gateway_methods (টেমপ্লেট)         → রাখা হয় (মুছি না)
+    //   • sim_number_profiles (নাম্বার ক্যাশ) → রাখা হয় (মুছি না)
+    //   • sim_slot_bindings                  → is_active = 0 (মুছি না)
+    //   • registered_devices রো              → রাখা হয়, শুধু is_approved=0 + status='rejected'
+    //                                          + device_role='pending' দিয়ে আনলিংক
+    // এতে ভবিষ্যতে একই নাম্বার অন্য ডিভাইসে দিলে বা এই ডিভাইসে অ্যাপ পুনরায় ইনস্টল করলে
+    // নাম্বার+টেমপ্লেট অটো-লোড হতে পারবে।
+    // ---------------------------------------------------------------------
+    await query(
+      `UPDATE sim_slot_bindings SET is_active = 0 WHERE user_id = ? AND device_id = ?`,
+      [String(userId), deviceId]
+    );
+    await query(
+      `UPDATE registered_devices
+          SET is_approved = 0, status = 'rejected', device_role = 'pending'
+        WHERE user_id = ? AND device_id = ?`,
+      [userId, deviceId]
+    );
+
+    // ডিভাইস আনলিংক হলেও তার hardware fingerprint সার্ভারে সংরক্ষণ করা হয় (device_trial_logs),
+    // যাতে ভবিষ্যতে এই ফিজিক্যাল ডিভাইসে অন্য কোনো অ্যাকাউন্ট লগইন/রেজিস্টার করতে না পারে —
+    // কেবল এই মালিক অ্যাকাউন্টই (user_id) পুনরায় লগইন করতে পারবে (isTrialAbused গেটকিপার দেখে)।
+    const fpAndroidId = deletedDevice.android_id || '';
+    const fpHardware = deletedDevice.hardware_fingerprint || '';
+    const fpSimSlots = deletedDevice.sim_slot_ids || '';
+    if (fpAndroidId || fpHardware) {
+      try {
+        await query(
+          `INSERT INTO device_trial_logs (user_id, android_id, hardware_fingerprint, sim_slot_ids, has_used_trial)
+           VALUES (?, ?, ?, ?, 1)
+           ON DUPLICATE KEY UPDATE user_id = VALUES(user_id), has_used_trial = 1`,
+          [userId, fpAndroidId, fpHardware, fpSimSlots]
+        );
+      } catch (fpErr) {
+        console.error('[deleteDevice] fingerprint preserve failed:', fpErr);
+      }
+    }
 
     for (const phone of phones) {
       await numberHealth.purgeNumber(userId, phone);

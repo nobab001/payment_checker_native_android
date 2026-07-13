@@ -96,7 +96,7 @@ const PaymentEngine = {
       ? toDbProviderKey(registryEntry.id).toLowerCase()
       : String(rawProvider).toLowerCase();
 
-    const gateway = await loadOfficialGateway(merchant.id, registryEntry?.id || rawProvider);
+    const gateway = await loadOfficialGateway(merchant.id, registryEntry?.id || rawProvider, ctx.merchantAccountId);
     if (!gateway) {
       throw new ProviderError(PROVIDER_ERROR_CODES.NOT_CONFIGURED, 'PROVIDER_NOT_CONFIGURED');
     }

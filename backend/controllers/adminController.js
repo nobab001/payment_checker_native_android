@@ -4,7 +4,10 @@ const layoutHelper = require('../services/checkoutLayoutHelper');
 const imageUpload = require('../services/imageUploadService');
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_987654321';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required and not set. Refusing to start.');
+}
 
 // ---------------------------------------------------------
 // Middleware: verifyAdmin

@@ -216,6 +216,15 @@ export function buildCheckoutModel(apiData, amountStr) {
 
   const amount = parseFloat(amountStr) || 0;
 
+  // Raw list of active official (live/redirect) gateways, used by Live mode.
+  const officialGateways = (apiData.officialGateways || [])
+    .filter((og) => og && (og.isActive !== false) && (og.provider))
+    .map((og) => ({
+      provider: og.provider,
+      displayName: og.displayName || og.provider,
+      tab: og.tab || 'payment',
+    }));
+
   return {
     merchant: {
       companyName: apiData.companyName || apiData.siteName || 'Paychek',
@@ -226,6 +235,7 @@ export function buildCheckoutModel(apiData, amountStr) {
     amount,
     design: designFromApi(apiData.checkoutDesign || apiData.checkoutTheme),
     checkoutMode: apiData.checkoutMode || 'transaction',
+    officialGateways,
     providerBranding: apiData.providerBranding || {},
     tabs,
     tabTree,

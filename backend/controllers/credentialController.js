@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const prisma = require('../db/prisma');
 const { encryptOtp, decryptOtp } = require('../utils/otpCrypto');
 
@@ -100,7 +101,7 @@ async function sendCredentialOtp(req, res) {
     }
 
     // Generate OTP and store
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpCode = crypto.randomInt(100000, 1000000).toString();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
     
     await prisma.otps.create({

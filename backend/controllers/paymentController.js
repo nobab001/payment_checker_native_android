@@ -100,25 +100,47 @@ async function paymentSmsIngestBulk(req, res) {
       return res.status(400).json({ error: 'items array is required' });
     }
 
+    const MAX_BULK_ITEMS = parseInt(process.env.BULK_SMS_MAX_ITEMS || '100', 10);
+    if (items.length > MAX_BULK_ITEMS) {
+      return res.status(413).json({
+        error: 'TOO_MANY_ITEMS',
+        message: `Bulk ingest accepts at most ${MAX_BULK_ITEMS} items per request.`,
+        limit: MAX_BULK_ITEMS,
+        received: items.length,
+      });
+    }
+
     await assertSmsQueueReady();
 
-    const jobs = items.map(item => ({
-      name: 'processSms',
-      data: {
-        userId,
-        deviceId,
-        rawBody: item.rawBody,
-        hmacSignature: item.hmacSignature,
-        senderNumber: item.senderNumber,
-        smsTimestamp: item.smsTimestamp,
-        simSlot: item.simSlot,
-        simNumber: item.simNumber,
-        providerTag: item.providerTag,
-        amount: item.amount,
-        trxId: item.trxId,
-        isParseable: item.is_parseable !== undefined ? parseInt(item.is_parseable, 10) : (item.isParseable !== undefined ? parseInt(item.isParseable, 10) : 1)
+    const jobs = [];
+    const rejected = [];
+    items.forEach((item, index) => {
+      if (!item || typeof item !== 'object') {
+        rejected.push({ index, reason: 'item must be an object' });
+        return;
       }
-    }));
+      if (typeof item.rawBody !== 'string' || item.rawBody.trim() === '') {
+        rejected.push({ index, reason: 'rawBody is required' });
+        return;
+      }
+      jobs.push({
+        name: 'processSms',
+        data: {
+          userId,
+          deviceId,
+          rawBody: item.rawBody,
+          hmacSignature: item.hmacSignature,
+          senderNumber: item.senderNumber,
+          smsTimestamp: item.smsTimestamp,
+          simSlot: item.simSlot,
+          simNumber: item.simNumber,
+          providerTag: item.providerTag,
+          amount: item.amount,
+          trxId: item.trxId,
+          isParseable: item.is_parseable !== undefined ? parseInt(item.is_parseable, 10) : (item.isParseable !== undefined ? parseInt(item.isParseable, 10) : 1)
+        }
+      });
+    });
 
     if (jobs.length > 0) {
       await smsQueue.addBulk(jobs);
@@ -127,7 +149,8 @@ async function paymentSmsIngestBulk(req, res) {
     return res.status(202).json({
       success: true,
       processed: jobs.length,
-      failed: 0,
+      failed: rejected.length,
+      rejected,
       status: 'Accepted',
       message: 'Bulk SMS queued for processing'
     });

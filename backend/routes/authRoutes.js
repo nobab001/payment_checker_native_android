@@ -3,14 +3,15 @@ const router = express.Router();
 const authController = require('../controllers/authController');
 const adminController = require('../controllers/adminController');
 const authenticateToken = require('../middleware/auth');
+const { otpRateLimiter } = require('../middleware/rateLimiter');
 
 // Public Auth Endpoints
 router.get('/config/public', authController.getPublicConfig);
 router.post('/check-contact', authController.checkContact);
-router.post('/send-otp', authController.sendOtp);
-router.post('/send-otp-new', authController.sendOtpNew);
-router.post('/auth/register-send-otp', authController.registerSendOtp);
-router.post('/verify-otp', authController.verifyOtp);
+router.post('/send-otp', otpRateLimiter, authController.sendOtp);
+router.post('/send-otp-new', otpRateLimiter, authController.sendOtpNew);
+router.post('/auth/register-send-otp', otpRateLimiter, authController.registerSendOtp);
+router.post('/verify-otp', otpRateLimiter, authController.verifyOtp);
 router.post('/check-device-trial', authController.checkDeviceTrial);
 router.post('/check-device-login', authController.checkDeviceTrial);
 
@@ -23,7 +24,7 @@ router.post('/complete-profile', authenticateToken, authController.completeProfi
 
 // Parent-Child Control Hub Endpoints
 router.get('/v1/devices', authenticateToken, authController.getChildDevices);
-router.post('/v1/devices/remote-update', authenticateToken, authController.remoteUpdateDevice);
+router.post('/v1/devices/remote-update', authenticateToken, authenticateToken.requireOwnerCaller, authController.remoteUpdateDevice);
 router.get('/v1/devices/my-config', authenticateToken, authController.getMyDeviceConfig);
 
 // Cross-Device Multi-Approval & RBAC Endpoints

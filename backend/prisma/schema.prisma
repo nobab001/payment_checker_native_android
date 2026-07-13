@@ -74,6 +74,7 @@ model gateway_layouts {
   checkout_vibe_requests checkout_vibe_requests[]
   payment_sessions       payment_sessions[]
   website_official_gateways website_official_gateways[]
+  merchant_accounts      merchant_accounts[]
 
   @@index([user_id, is_active], map: "idx_gateway_active")
   @@index([user_id], map: "idx_gateway_user")
@@ -188,6 +189,36 @@ model website_official_gateways {
 
   @@unique([website_id, provider], map: "uniq_website_official_provider")
   @@index([website_id, is_active], map: "idx_official_website_active")
+}
+
+// Live merchant accounts — multiple accounts per provider per website.
+// Sensitive credentials (api_secret, password, app_secret) are AES-encrypted
+// (iv:ciphertext hex) via utils/merchantCrypto.js. Never returned in plaintext.
+model merchant_accounts {
+  id              Int      @id @default(autoincrement())
+  website_id      Int
+  provider        String   @db.VarChar(40) // bkash | nagad | rocket | upay | ...
+  merchant_name   String   @db.VarChar(120)
+  merchant_ref    String?  @db.VarChar(120) // optional merchant id/ref shown on card
+  logo_url        String?  @db.VarChar(512)
+  api_key         String?  @db.VarChar(512)
+  api_secret_enc  String?  @db.Text
+  username        String?  @db.VarChar(255)
+  password_enc    String?  @db.Text
+  app_key         String?  @db.VarChar(512)
+  app_secret_enc  String?  @db.Text
+  base_url        String?  @db.VarChar(512)
+  callback_url    String?  @db.VarChar(512)
+  is_active       Int      @default(1) @db.TinyInt
+  is_default      Int      @default(0) @db.TinyInt
+  priority        Int      @default(0)
+  notes           String?  @db.Text
+  created_at      DateTime @default(now()) @db.Timestamp(0)
+  updated_at      DateTime @default(now()) @updatedAt @db.Timestamp(0)
+  gateway_layouts gateway_layouts @relation(fields: [website_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_merchant_account_website")
+
+  @@index([website_id, is_active], map: "idx_merchant_acct_website_active")
+  @@index([website_id, provider, is_active], map: "idx_merchant_acct_provider")
 }
 
 // Lightweight append-only audit trail (Phase 8). Write-mostly; never blocks the

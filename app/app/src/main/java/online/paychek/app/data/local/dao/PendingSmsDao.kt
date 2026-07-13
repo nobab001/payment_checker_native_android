@@ -33,16 +33,16 @@ interface PendingSmsDao {
      * Sync-এর জন্য eligible pending items নিয়ে আসো।
      * Conditions:
      *  • isSynced = false (এখনো push হয়নি)
-     *  • isPermanentlyFailed = false (manually failed নয়)
-     *  • retryCount < 10 (max retry limit)
+     *  • isPermanentlyFailed = false (server 422 parse-fail নয়)
      *  • nextRetryAt <= now (backoff window শেষ হয়েছে)
      * পুরনো SMS আগে পাঠানো হবে (FIFO)।
+     * দ্রষ্টব্য: retryCount দিয়ে আর drop করা হয় না — server outage (network/5xx) transient,
+     * তাই কেবল server 422 (unparseable) permanently failed হয়; বাকি সব শেষ পর্যন্ত রিট্রাই হয়।
      */
     @Query("""
         SELECT * FROM pending_sms_queue
         WHERE isSynced = 0
           AND isPermanentlyFailed = 0
-          AND retryCount < 10
           AND nextRetryAt <= :nowMs
         ORDER BY smsTimestamp ASC
     """)
@@ -75,6 +75,19 @@ interface PendingSmsDao {
         WHERE id = :id
     """)
     suspend fun markRetryFailed(id: Int, nowMs: Long, nextRetryMs: Long)
+
+    /**
+     * Transient failure (server down / network / 5xx) — global outage, per-item দোষ নয়।
+     * retryCount বাড়ানো হয় না (যাতে কখনো permanent-fail হয়ে drop না হয়);
+     * শুধু একটি ছোট fixed backoff দেওয়া হয় যাতে server ফিরলেই দ্রুত আবার eligible হয়।
+     */
+    @Query("""
+        UPDATE pending_sms_queue
+        SET lastAttemptAt = :nowMs,
+            nextRetryAt = :nextRetryMs
+        WHERE id = :id
+    """)
+    suspend fun markTransientFailure(id: Int, nowMs: Long, nextRetryMs: Long)
 
     /**
      * Permanently failed হিসেবে চিহ্নিত করো।
@@ -147,6 +160,26 @@ interface PendingSmsDao {
         WHERE isPermanentlyFailed = 1 AND isSynced = 0
     """)
     suspend fun resetPermanentlyFailed(): Int
+
+    /**
+     * Outage-এ ভুলভাবে আটকে থাকা আইটেম পুনরুদ্ধার।
+     * পুরনো build server-down-কে per-item retry ভেবে retryCount বাড়িয়ে ৬ঘণ্টা backoff দিত এবং
+     * retryCount≥10 হলে permanently-failed করত। এখন সেগুলো আবার eligible করা হয়:
+     *  • retryCount≥10 হয়ে permanent-fail হওয়া আইটেম un-fail করা হয় (server 422 নয়, retryCount সেখানে ছোট)।
+     *  • backoff window ভবিষ্যতে থাকলে তা এখনই খুলে দেওয়া হয়।
+     * server 422 (unparseable, retryCount ছোট) permanently-failed-ই থাকে।
+     */
+    @Query("""
+        UPDATE pending_sms_queue
+        SET isPermanentlyFailed = 0,
+            nextRetryAt = 0
+        WHERE isSynced = 0
+          AND (
+            (isPermanentlyFailed = 1 AND retryCount >= 10)
+            OR (isPermanentlyFailed = 0 AND nextRetryAt > 0)
+          )
+    """)
+    suspend fun recoverOutageFailedItems()
 
     /**
      * retryCount >= 10 কিন্তু এখনো permanently failed নয় — zombie rows cleanup।

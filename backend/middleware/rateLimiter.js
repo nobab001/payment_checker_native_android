@@ -24,4 +24,29 @@ const apiRateLimiter = rateLimit({
   }),
 });
 
+// Strict limiter for sensitive unauthenticated/OTP/PIN endpoints.
+// Keyed by IP + contact (or IP alone) to throttle brute-force and OTP spam.
+const otpRateLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minute window
+  max: 10, // Limit each key to 10 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false, default: true, ip: false, keyGeneratorIpFallback: false },
+  keyGenerator: (req) => {
+    const contact = req.body?.contact || req.body?.phone || req.body?.email || '';
+    return `${req.ip}:${contact}`;
+  },
+  handler: (req, res) => {
+    res.status(429).json({
+      error: 'TOO_MANY_REQUESTS',
+      message: 'Too many attempts. Please try again after a few minutes.'
+    });
+  },
+  store: new RedisStore({
+    sendCommand: (...args) => redisClient.call(...args),
+  }),
+});
+
 module.exports = apiRateLimiter;
+module.exports.apiRateLimiter = apiRateLimiter;
+module.exports.otpRateLimiter = otpRateLimiter;

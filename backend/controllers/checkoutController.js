@@ -73,7 +73,7 @@ async function getCheckoutLayout(req, res) {
     const checkoutDesign = layoutHelper.resolveDesign(layout.checkout_theme);
     const providers = await layoutHelper.resolveProviderBrandingFull(providerBranding);
 
-    // Official (live) payment channels for bank/card/merchant tabs
+    // Official (live) payment channels for bank/card/merchant tabs (legacy)
     const officialRows = await prisma.website_official_gateways.findMany({
       where: { website_id: layout.id, is_active: 1 },
       select: { id: true, provider: true, display_name: true, redirect_url_template: true },
@@ -84,6 +84,32 @@ async function getCheckoutLayout(req, res) {
       displayName: og.display_name || og.provider,
       tab: layoutHelper.officialProviderTab(og.provider),
       livePayment: true,
+    }));
+
+    // Merchant accounts (multi-account support for live payments
+    const merchantAccountRows = await prisma.merchant_accounts.findMany({
+      where: { website_id: layout.id, is_active: 1 },
+      orderBy: [{ priority: 'asc' }, { id: 'desc' }],
+    });
+    // Group by provider
+    const merchantAccountsByProvider = {};
+    for (const acct of merchantAccountRows) {
+      const p = acct.provider;
+      if (!merchantAccountsByProvider[p]) merchantAccountsByProvider[p] = [];
+      merchantAccountsByProvider[p].push({
+        id: acct.id,
+        provider: acct.provider,
+        merchantName: acct.merchant_name,
+        merchantRef: acct.merchant_ref,
+        logoUrl: acct.logo_url,
+        isDefault: !!acct.is_default,
+        priority: acct.priority,
+      });
+    }
+    // Convert to array of { provider, accounts } objects
+    const merchantAccountsGroups = Object.entries(merchantAccountsByProvider).map(([provider, accounts]) => ({
+      provider,
+      accounts,
     }));
 
     // Enrich synced SIM rows with tab + group metadata for the 3 checkout designs
@@ -105,6 +131,7 @@ async function getCheckoutLayout(req, res) {
       activeGateways: formattedGateways,
       gatewaysByCategory,
       officialGateways,
+      merchantAccountsGroups,
       redirectUrl: layout.redirect_url,
       successUrl: layout.success_url || layout.redirect_url,
       cancelUrl: layout.cancel_url

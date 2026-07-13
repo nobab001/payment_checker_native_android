@@ -1,6 +1,12 @@
 const jwt = require('jsonwebtoken');
-const JWT_SECRET = process.env.JWT_SECRET || 'paychek_super_secret_jwt_key_987654321';
 const prisma = require('../db/prisma');
+
+// SECURITY: never ship a hardcoded fallback secret. If JWT_SECRET is missing the
+// process must refuse to start rather than sign/verify tokens with a public key.
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('[auth] JWT_SECRET is not set. Refusing to start with an insecure fallback.');
+}
 
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -58,9 +64,16 @@ async function requireOwnerCaller(req, res, next) {
     }
     const device = await prisma.registered_devices.findFirst({
       where: { user_id: Number(userId), device_id: deviceId },
-      select: { device_role: true },
+      select: { device_role: true, is_parent: true, is_owner_device: true },
     });
-    if (!device || device.device_role !== 'owner') {
+    // মালিক caller = device_role 'owner' অথবা legacy parent/owner ডিভাইস
+    // (পুরনো অ্যাকাউন্টে role 'owner' সেট নাও থাকতে পারে, কিন্তু is_parent/is_owner_device থাকে)।
+    const isOwnerCaller = !!device && (
+      device.device_role === 'owner' ||
+      device.is_parent === 1 ||
+      device.is_owner_device === 1
+    );
+    if (!isOwnerCaller) {
       return res.status(403).json({ success: false, error: 'শুধুমাত্র মালিক ডিভাইস এই কাজ করতে পারবে।' });
     }
     next();

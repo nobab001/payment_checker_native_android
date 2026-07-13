@@ -4,11 +4,28 @@ process.env.TZ = 'Asia/Dhaka';
 const express = require('express');
 const http = require('http');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const cron = require('node-cron');
 const prisma = require('./db/prisma');
 require('dotenv').config();
+
+// SECURITY: JWT secret must be provided by the environment. No insecure fallback.
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('[app] JWT_SECRET is not set. Refusing to start.');
+}
+
+// SECURITY: restrict CORS/socket origins. Comma-separated list in CORS_ORIGINS,
+// e.g. "https://paychek.app,https://admin.paychek.app". Falls back to same-origin
+// only (no wildcard) when unset.
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+const corsOrigin = ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS : false;
 
 const authRoutes        = require('./routes/authRoutes');
 const paymentRoutes     = require('./routes/paymentRoutes');
@@ -23,16 +40,43 @@ const numberHealth      = require('./services/numberHealthService');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: '*' }
+  cors: { origin: corsOrigin }
 });
 
 // One live socket per device room — duplicate connects from service restarts are dropped.
 const deviceSocketIds = new Map();
 
+// SECURITY: authenticate every socket handshake with a JWT before it can join a
+// device room. Previously any client that knew a userId:deviceId pair could join
+// that room and receive its private device_config events. The token is passed as
+// handshake.auth.token (preferred) or handshake.query.token, and its claims MUST
+// match the userId/deviceId the client is asking to bind to.
+io.use((socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    const userId = String(socket.handshake.query.userId || '');
+    const deviceId = String(socket.handshake.query.deviceId || '');
+
+    if (!token) return next(new Error('AUTH_REQUIRED'));
+    if (!userId || !deviceId) return next(new Error('DEVICE_CONTEXT_MISSING'));
+
+    const claims = jwt.verify(token, JWT_SECRET);
+    if (String(claims.userId) !== userId || (claims.deviceId && String(claims.deviceId) !== deviceId)) {
+      return next(new Error('AUTH_MISMATCH'));
+    }
+
+    socket.data.userId = userId;
+    socket.data.deviceId = deviceId;
+    return next();
+  } catch (err) {
+    return next(new Error('AUTH_INVALID'));
+  }
+});
+
 // Setup Socket.IO Multi-Device Isolation + number health (ONLINE on connect, GRACE on disconnect)
 io.on('connection', (socket) => {
-  const userId = socket.handshake.query.userId;
-  const deviceId = socket.handshake.query.deviceId;
+  const userId = socket.data.userId;
+  const deviceId = socket.data.deviceId;
 
   if (!userId || !deviceId) {
     console.log('[Socket.IO] Anonymous connection dropped (missing userId or deviceId)');
@@ -80,8 +124,8 @@ app.set('io', io);
 
 const PORT = process.env.PORT || 3000;
 
-// Enable CORS for frontend API requests
-app.use(cors());
+// Enable CORS for frontend API requests (restricted to configured origins)
+app.use(cors({ origin: corsOrigin || undefined }));
 
 // Demo Merchant webhook (raw body for PayCheck HMAC) — must mount before express.json
 const demoMerchant = require('./demo-merchant');
@@ -230,5 +274,3 @@ server.listen(PORT, async () => {
     console.error('[DB] Failed to initialize database setup:', dbErr);
   }
 });
-
-

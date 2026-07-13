@@ -9,7 +9,7 @@ const audit = require('../../services/auditLog');
 const { createTraceId, logPayment } = require('../logging/trace-logger');
 const { runWithTrace } = require('../logging/trace-context');
 const { isSessionExpired, baseUrlFromRequest } = require('../shared/session-utils');
-const { loadMerchantByApiKey } = require('../shared/merchant-loader');
+const { loadMerchantByApiKey, loadMerchantByWebsiteId } = require('../shared/merchant-loader');
 const { loadOfficialGateway } = require('../shared/gateway-config-loader');
 const PaymentSessionEngine = require('../session/payment-session');
 const RedirectService = require('../redirect/redirect-service');
@@ -30,6 +30,44 @@ function timingSafeEqual(a, b) {
   const bb = Buffer.from(String(b || ''));
   if (ba.length !== bb.length) return false;
   return crypto.timingSafeEqual(ba, bb);
+}
+
+/**
+ * Verify an inbound legacy (non-bkash) gateway callback signature.
+ * The gateway config_json may carry a `callbackSecret` (or `callback_secret`).
+ * The signature is an HMAC-SHA256 over the sorted key=value querystring of the
+ * callback params (excluding the signature field itself), matching the scheme
+ * used by the bkash adapter.
+ *
+ * SECURITY: fail-closed. If a callbackSecret is configured, a valid signature is
+ * REQUIRED. If no secret is configured we fall back to the merchant api_secret;
+ * if neither exists we reject, because an unauthenticated callback can otherwise
+ * mark any session as paid.
+ *
+ * @returns {boolean}
+ */
+function verifyLegacyCallbackSignature(src, providedSignature, gatewayCfg, apiSecret) {
+  const secrets = [];
+  const cfgSecret = gatewayCfg?.callbackSecret || gatewayCfg?.callback_secret;
+  if (cfgSecret) secrets.push(String(cfgSecret));
+  if (apiSecret) secrets.push(String(apiSecret));
+
+  // No secret material at all → cannot authenticate this callback → reject.
+  if (!secrets.length) return false;
+  if (!providedSignature) return false;
+
+  const { signature: _s, sign: _sign, ...rest } = src;
+  const base = Object.keys(rest)
+    .filter((k) => rest[k] != null && rest[k] !== '')
+    .sort()
+    .map((k) => `${k}=${rest[k]}`)
+    .join('&');
+
+  for (const secret of secrets) {
+    const expected = crypto.createHmac('sha256', secret).update(base).digest('hex');
+    if (timingSafeEqual(providedSignature, expected)) return true;
+  }
+  return false;
 }
 
 function handleHttpError(res, err) {
@@ -61,13 +99,21 @@ const PaymentFlowEngine = {
         return res.status(403).json({ success: false, error: 'INVALID_API_KEY' });
       }
 
+      // SECURITY: HMAC signature is mandatory. Previously the check was skipped
+      // entirely when no x-signature header was present, letting a leaked API key
+      // alone authorize payment creation. Now the merchant must sign every request
+      // with its api_secret.
       const signature = req.headers['x-signature'];
-      if (signature) {
-        const raw = JSON.stringify(req.body || {});
-        const expected = crypto.createHmac('sha256', website.api_secret || '').update(raw).digest('hex');
-        if (!timingSafeEqual(signature, expected)) {
-          return res.status(401).json({ success: false, error: 'INVALID_SIGNATURE' });
-        }
+      if (!website.api_secret) {
+        return res.status(500).json({ success: false, error: 'MERCHANT_SECRET_NOT_CONFIGURED' });
+      }
+      if (!signature) {
+        return res.status(401).json({ success: false, error: 'MISSING_SIGNATURE' });
+      }
+      const raw = JSON.stringify(req.body || {});
+      const expected = crypto.createHmac('sha256', website.api_secret).update(raw).digest('hex');
+      if (!timingSafeEqual(signature, expected)) {
+        return res.status(401).json({ success: false, error: 'INVALID_SIGNATURE' });
       }
 
       const amount = parseFloat(req.body.amount);
@@ -286,12 +332,41 @@ const PaymentFlowEngine = {
 
   async _legacyNonBkashCallback(req, res, session) {
     const src = { ...req.query, ...req.body };
-    const outcome = (src.status || 'success').toLowerCase();
+    // SECURITY: fail-closed. `status` has NO default — a callback that omits it is
+    // treated as failure, not success. Previously `status` defaulted to 'success',
+    // which let an unauthenticated GET mark a session paid.
+    const outcome = String(src.status || src.paymentStatus || '').toLowerCase();
     const trxId = src.trxId || src.trx_id || src.transactionId || null;
     const token = session.sessionToken;
 
     if (session.status === PAYMENT_STATUS.SUCCESS) {
       return RedirectService.redirect(res, session.successUrl || '/');
+    }
+
+    // SECURITY: verify the callback signature before trusting its outcome.
+    const gw = await loadOfficialGateway(session.websiteId, session.officialProvider);
+    let gatewayCfg = {};
+    try {
+      gatewayCfg = gw?.config_json ? JSON.parse(gw.config_json) : {};
+    } catch (_) {
+      gatewayCfg = {};
+    }
+    const providedSignature = src.signature || src.sign || req.headers['x-signature'];
+    const merchant = await loadMerchantByWebsiteId(session.websiteId);
+    const sigOk = verifyLegacyCallbackSignature(
+      src,
+      providedSignature,
+      gatewayCfg,
+      merchant?.api_secret,
+    );
+
+    if (!sigOk) {
+      audit.log({
+        eventType: 'payment.callback.rejected', entityType: 'payment_session', entityId: token,
+        websiteId: session.websiteId, userId: session.userId, ip: req.ip, status: 'rejected',
+        detail: { reason: 'INVALID_SIGNATURE', provider: session.officialProvider, trxId },
+      });
+      return res.status(401).json({ success: false, error: 'INVALID_SIGNATURE' });
     }
 
     if (outcome !== 'success') {
@@ -311,7 +386,7 @@ const PaymentFlowEngine = {
       detail: { provider: session.officialProvider, trxId, amount: session.amount },
     });
 
-    const website = await loadMerchantByWebsiteId(session.websiteId);
+    const website = merchant;
     if (website) {
       const merchantCallback = require('../../services/merchantCallback');
       const synthetic = {
