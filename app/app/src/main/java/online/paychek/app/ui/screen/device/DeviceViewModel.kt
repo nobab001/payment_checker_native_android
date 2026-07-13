@@ -414,90 +414,177 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         if (phoneNumber.length != 11) return
 
         viewModelScope.launch {
-            val token = getToken() ?: return@launch
-            if (newValue) {
-                val lookupOk = performSlotLookup(simSlot, phoneNumber)
-                if (!lookupOk) {
-                    if (_state.value.pendingSimConflict == null) {
-                        validateAndSyncSimToggles()
-                    }
-                    return@launch
-                }
+            isSimToggleInFlight = true
+            try {
+                val token = getToken() ?: return@launch
+                if (newValue) {
+                    // Lookup লোকাল সিলেক্টেড টেমপ্লেট মুছে ফেলতে পারে — আগে স্ন্যাপশট রাখি।
+                    val preservedItems = snapshotEnabledSlotBulkItems(simSlot)
 
-                val slotMethods = _state.value.methods.filter { it.simSlot == simSlot && it.isEnabled == 1 }
-                val bulkItems = slotMethods.map { method ->
-                    BulkSyncMethodItem(
-                        templateId = method.templateId,
-                        provider = method.provider,
-                        isEnabled = method.isEnabled
+                    val lookupOk = performSlotLookup(
+                        simSlot = simSlot,
+                        cleanNum = phoneNumber,
+                        wipeLocalSlot = false,
+                        skipValidate = true
                     )
-                }
-                runCatching {
-                    api.bulkSyncSlotMethods(
-                        "Bearer $token",
-                        BulkSyncRequest(
-                            simSlot = simSlot,
-                            phoneNumber = phoneNumber,
-                            methods = bulkItems,
-                            replaceSlot = true,
-                            activateBinding = true
-                        )
-                    )
-                }.onSuccess { res ->
-                    if (!res.isSuccessful) {
-                        revertSimToggle(simSlot)
-                        setError("সিম সক্রিয় করতে ব্যর্থ হয়েছে (${res.code()})")
-                        return@onSuccess
+                    if (!lookupOk) {
+                        if (_state.value.pendingSimConflict == null) {
+                            revertSimToggle(simSlot)
+                        }
+                        return@launch
                     }
-                    val body = res.body()
-                    if (body?.hasConflict == true) {
+
+                    val bulkItems = mergeSlotBulkItems(simSlot, preservedItems)
+                    if (bulkItems.isEmpty()) {
                         revertSimToggle(simSlot)
-                        _state.update {
-                            it.copy(
-                                pendingSimConflict = SimConflictUi(
-                                    simSlot = simSlot,
-                                    phoneNumber = phoneNumber,
-                                    runningDeviceName = body.runningDeviceName ?: "অন্য ডিভাইস"
-                                )
+                        setError("সিম চালু করতে আগে অন্তত একটি টেমপ্লেট সিলেক্ট করুন")
+                        return@launch
+                    }
+
+                    runCatching {
+                        api.bulkSyncSlotMethods(
+                            "Bearer $token",
+                            BulkSyncRequest(
+                                simSlot = simSlot,
+                                phoneNumber = phoneNumber,
+                                methods = bulkItems,
+                                replaceSlot = true,
+                                activateBinding = true
                             )
-                        }
-                        return@onSuccess
-                    }
-                    if (body?.success == true) {
-                        body.data?.let { newData ->
-                            saveMethodsToCache(newData)
-                            _state.update { it.copy(methods = newData) }
-                        }
-                        enableSimSlot(simSlot)
-                    } else {
-                        revertSimToggle(simSlot)
-                        setError("সিম সক্রিয় করতে ব্যর্থ হয়েছে")
-                    }
-                }.onFailure {
-                    revertSimToggle(simSlot)
-                    setError("নেটওয়ার্ক সমস্যা: ${it.message}")
-                }
-            } else {
-                runCatching {
-                    api.setSlotActive(
-                        "Bearer $token",
-                        SlotActiveRequest(
-                            simSlot = simSlot,
-                            phoneNumber = phoneNumber,
-                            isActive = 0
                         )
-                    )
-                }.onSuccess { res ->
-                    if (res.isSuccessful) {
-                        res.body()?.data?.let { newData ->
-                            saveMethodsToCache(newData)
-                            _state.update { it.copy(methods = newData) }
+                    }.onSuccess { res ->
+                        if (!res.isSuccessful) {
+                            revertSimToggle(simSlot)
+                            setError("সিম সক্রিয় করতে ব্যর্থ হয়েছে (${res.code()})")
+                            return@onSuccess
+                        }
+                        val body = res.body()
+                        if (body?.hasConflict == true) {
+                            revertSimToggle(simSlot)
+                            _state.update {
+                                it.copy(
+                                    pendingSimConflict = SimConflictUi(
+                                        simSlot = simSlot,
+                                        phoneNumber = phoneNumber,
+                                        runningDeviceName = body.runningDeviceName ?: "অন্য ডিভাইস"
+                                    )
+                                )
+                            }
+                            return@onSuccess
+                        }
+                        if (body?.success == true) {
+                            body.data?.let { newData ->
+                                saveMethodsToCache(newData)
+                                _state.update { it.copy(methods = newData) }
+                            }
+                            enableSimSlot(simSlot)
+                            reactivatedSlotsThisSession.add(simSlot)
+                        } else {
+                            revertSimToggle(simSlot)
+                            setError(body?.message ?: "সিম সক্রিয় করতে ব্যর্থ হয়েছে")
+                        }
+                    }.onFailure {
+                        revertSimToggle(simSlot)
+                        setError("নেটওয়ার্ক সমস্যা: ${it.message}")
+                    }
+                } else {
+                    runCatching {
+                        api.setSlotActive(
+                            "Bearer $token",
+                            SlotActiveRequest(
+                                simSlot = simSlot,
+                                phoneNumber = phoneNumber,
+                                isActive = 0
+                            )
+                        )
+                    }.onSuccess { res ->
+                        if (res.isSuccessful) {
+                            res.body()?.data?.let { newData ->
+                                saveMethodsToCache(newData)
+                                _state.update { it.copy(methods = newData) }
+                            }
+                            reactivatedSlotsThisSession.remove(simSlot)
                         }
                     }
+                }
+            } finally {
+                isSimToggleInFlight = false
+                if (_state.value.pendingSimConflict == null) {
+                    validateAndSyncSimToggles()
                 }
             }
-            validateAndSyncSimToggles()
         }
+    }
+
+    /** টগলের আগে ইউজার যে টেমপ্লেট চালু রেখেছে তার স্ন্যাপশট। */
+    private fun snapshotEnabledSlotBulkItems(simSlot: Int): List<BulkSyncMethodItem> {
+        return _state.value.methods
+            .filter { it.simSlot == simSlot && it.isEnabled == 1 && it.provider.isNotBlank() }
+            .map { method ->
+                BulkSyncMethodItem(
+                    templateId = method.templateId,
+                    provider = method.provider,
+                    isEnabled = 1
+                )
+            }
+    }
+
+    /**
+     * Lookup/profile এর পর সার্ভার মেথড + ইউজারের প্রি-সিলেক্টেড টেমপ্লেট মার্জ।
+     * স্লটে যেকোনো মেথড থাকলে (disabled হলেও) চালু করে bulk-sync-এ পাঠায় —
+     * খালি replace_slot দিয়ে সব ডিলিট হওয়া বন্ধ করে।
+     */
+    private fun mergeSlotBulkItems(
+        simSlot: Int,
+        preserved: List<BulkSyncMethodItem>
+    ): List<BulkSyncMethodItem> {
+        val byKey = LinkedHashMap<String, BulkSyncMethodItem>()
+
+        fun keyOf(templateId: Int?, provider: String): String =
+            if (templateId != null) "t:$templateId" else "p:${provider.lowercase()}"
+
+        fun putItem(item: BulkSyncMethodItem) {
+            if (item.provider.isBlank()) return
+            byKey[keyOf(item.templateId, item.provider)] = item.copy(isEnabled = 1)
+        }
+
+        preserved.forEach(::putItem)
+
+        _state.value.methods
+            .filter { it.simSlot == simSlot && it.provider.isNotBlank() }
+            .forEach { method ->
+                val wantOn = method.isEnabled == 1 ||
+                    preserved.any { p ->
+                        (p.templateId != null && p.templateId == method.templateId) ||
+                            (p.templateId == null && p.provider.equals(method.provider, ignoreCase = true))
+                    }
+                if (wantOn) {
+                    putItem(
+                        BulkSyncMethodItem(
+                            templateId = method.templateId,
+                            provider = method.provider,
+                            isEnabled = 1
+                        )
+                    )
+                }
+            }
+
+        if (byKey.isEmpty()) {
+            // প্রিজারভড খালি কিন্তু স্লটে মেথড আছে → সব চালু করে অ্যাক্টিভেট (পুরনো প্রোফাইল)
+            _state.value.methods
+                .filter { it.simSlot == simSlot && it.provider.isNotBlank() }
+                .forEach { method ->
+                    putItem(
+                        BulkSyncMethodItem(
+                            templateId = method.templateId,
+                            provider = method.provider,
+                            isEnabled = 1
+                        )
+                    )
+                }
+        }
+
+        return byKey.values.toList()
     }
 
     fun openEditSheet(method: GatewayMethod) {
@@ -1197,6 +1284,8 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     // সেশন প্রতি একবার valid+ON slot গুলো সার্ভারে re-activate করা হয়। মাঝপথে ডুপ্লিকেট চলা এড়াতে guard।
     private var isReactivatingSlots = false
     private val reactivatedSlotsThisSession = mutableSetOf<Int>()
+    /** SIM toggle API চলাকালীন validate যেন জোর করে OFF না করে (ON→OFF churn)। */
+    private var isSimToggleInFlight = false
 
     private fun isSimSlotActive(simSlot: Int): Boolean {
         return if (simSlot == 1) _state.value.sim1Enabled else _state.value.sim2Enabled
@@ -1425,7 +1514,12 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private suspend fun performSlotLookup(simSlot: Int, cleanNum: String): Boolean {
+    private suspend fun performSlotLookup(
+        simSlot: Int,
+        cleanNum: String,
+        wipeLocalSlot: Boolean = true,
+        skipValidate: Boolean = false
+    ): Boolean {
         if (isApplyingProfile) return false
         val token = getToken() ?: return false
         return runCatching {
@@ -1453,7 +1547,16 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                     return@fold false
                 }
 
-                clearSlotLocalCache(simSlot)
+                // টগল ON পাথে লোকাল সিলেকশন রাখতে wipe বন্ধ; নাম্বার চেঞ্জে wipe চালু।
+                val preservedLocal = if (!wipeLocalSlot) {
+                    _state.value.methods.filter { it.simSlot == simSlot }
+                } else {
+                    emptyList()
+                }
+
+                if (wipeLocalSlot) {
+                    clearSlotLocalCache(simSlot)
+                }
 
                 if (!body.data.isNullOrEmpty()) {
                     applyServerMethods(body.data)
@@ -1461,13 +1564,26 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                     mergeSlotNumbersFromServer(body.data)
                 }
 
+                if (preservedLocal.isNotEmpty()) {
+                    mergePreservedLocalSlotMethods(simSlot, preservedLocal)
+                }
+
                 if (body.applyProfile == true && !body.cachedMethods.isNullOrEmpty()) {
                     applyProfileFromLookup(simSlot, cleanNum, body.cachedMethods)
+                    // প্রোফাইল apply-এর পরও ইউজারের enabled সিলেকশন ধরে রাখি
+                    if (preservedLocal.isNotEmpty()) {
+                        mergePreservedLocalSlotMethods(
+                            simSlot,
+                            preservedLocal.filter { it.isEnabled == 1 }
+                        )
+                    }
                 } else {
                     lastConfirmedLookupNumber[simSlot] = cleanNum
                 }
 
-                validateAndSyncSimToggles()
+                if (!skipValidate) {
+                    validateAndSyncSimToggles()
+                }
                 true
             },
             onFailure = { exception ->
@@ -1475,6 +1591,43 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 false
             }
         )
+    }
+
+    /**
+     * Lookup/server data-এর সাথে লোকাল স্লট মেথড মার্জ — টেমপ্লেট সিলেক্ট করে SIM চালু
+     * করলে যেন wipe/profile সেগুলো হারায় না।
+     */
+    private fun mergePreservedLocalSlotMethods(simSlot: Int, preserved: List<GatewayMethod>) {
+        if (preserved.isEmpty()) return
+        val current = _state.value.methods
+        val existingTids = current
+            .filter { it.simSlot == simSlot }
+            .mapNotNull { it.templateId }
+            .toSet()
+        val toAdd = preserved.filter { method ->
+            method.simSlot == simSlot &&
+                method.templateId != null &&
+                method.templateId !in existingTids
+        }
+        val enableIds = preserved
+            .filter { it.isEnabled == 1 }
+            .mapNotNull { it.templateId }
+            .toSet()
+
+        if (toAdd.isEmpty() && enableIds.isEmpty()) return
+
+        var merged = if (toAdd.isNotEmpty()) current + toAdd else current
+        if (enableIds.isNotEmpty()) {
+            merged = merged.map { m ->
+                if (m.simSlot == simSlot && m.templateId != null && m.templateId in enableIds) {
+                    m.copy(isEnabled = 1)
+                } else {
+                    m
+                }
+            }
+        }
+        saveMethodsToCache(merged)
+        _state.update { it.copy(methods = merged) }
     }
 
     private suspend fun lookupSlotNumber(simSlot: Int, cleanNum: String) {
@@ -1529,6 +1682,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
     fun validateAndSyncSimToggles() {
         if (_state.value.pendingSimConflict != null) return
+        if (isSimToggleInFlight) return
 
         val stateVal = _state.value
         val sim1Num = stateVal.sim1Number

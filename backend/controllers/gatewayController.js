@@ -1423,14 +1423,14 @@ async function bulkSyncSlotMethods(req, res) {
             ],
           },
         });
+      } else if (items.length > 0) {
+        // টেমপ্লেট-আইডি ছাড়া আইটেম আছে — null-template রো ছাড়া মুছব না সব।
+        // (খালি items + replace_slot দিয়ে পুরো স্লট ডিলিট বন্ধ — SIM ON churn ফিক্স)
       } else {
-        await prisma.gateway_methods.deleteMany({
-          where: {
-            user_id: String(userId),
-            device_id: String(deviceId),
-            sim_slot: simSlot,
-          },
-        });
+        // items খালি → মেথড ডিলিট করব না; শুধু binding activate/deactivate চলবে
+        console.warn(
+          `[GATEWAY] bulk-sync replace_slot ignored empty methods | user=${userId} slot=${simSlot}`
+        );
       }
     }
 
