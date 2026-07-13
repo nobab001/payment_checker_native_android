@@ -174,12 +174,65 @@ fun SignupScreen(
                     .semantics { contentType = ContentType.PersonFullName }
             )
 
-            // ── Fix 4: Smart Field — Phone or Email depending on login type ──
-            // isEmailLogin=true  → logged in via email → phone field (mandatory)
-            // isEmailLogin=false → logged in via phone → email field (optional)
-
+            // ── Verified contact from login (read-only) ────────────────────
             if (isEmailLogin) {
-                // Phone field — mandatory when email login
+                OutlinedTextField(
+                    value = uiState.email ?: contact,
+                    onValueChange = {},
+                    label = { Text("জিমেইল এড্রেস") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Email,
+                            contentDescription = null,
+                            tint = Color.Gray
+                        )
+                    },
+                    supportingText = {
+                        Text(
+                            text = "লগইন থেকে ভেরিফাইড — পরিবর্তন করা যাবে না",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    singleLine = true,
+                    readOnly = true,
+                    enabled = false,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = signupFieldColors(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else {
+                OutlinedTextField(
+                    value = uiState.phone ?: contact,
+                    onValueChange = {},
+                    label = { Text("মোবাইল নম্বর") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.PhoneAndroid,
+                            contentDescription = null,
+                            tint = Color.Gray
+                        )
+                    },
+                    supportingText = {
+                        Text(
+                            text = "লগইন থেকে ভেরিফাইড — পরিবর্তন করা যাবে না",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    singleLine = true,
+                    readOnly = true,
+                    enabled = false,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = signupFieldColors(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // ── Complementary field — other contact type ──────────────────
+            // Email login → need phone (mandatory)
+            // Phone login → email optional
+            if (isEmailLogin) {
                 OutlinedTextField(
                     value       = uiState.phone ?: "",
                     onValueChange = { viewModel.onPhoneChanged(it) },
@@ -189,7 +242,7 @@ fun SignupScreen(
                         Icon(
                             imageVector    = Icons.Default.PhoneAndroid,
                             contentDescription = "Phone Icon",
-                            tint           = if (uiState.isPhonePreFilled) Color.Gray else RoyalIndigo
+                            tint           = RoyalIndigo
                         )
                     },
                     supportingText = {
@@ -204,17 +257,13 @@ fun SignupScreen(
                         imeAction    = ImeAction.Next
                     ),
                     singleLine = true,
-                    readOnly   = uiState.isPhonePreFilled,
-                    enabled    = !uiState.isPhonePreFilled,
                     shape      = RoundedCornerShape(12.dp),
                     colors     = signupFieldColors(),
-                    // Fix 3: Autofill বন্ধ — phone autofill enabled, email suggestion বন্ধ
                     modifier   = Modifier
                         .fillMaxWidth()
                         .semantics { contentType = ContentType.PhoneNumber }
                 )
             } else {
-                // Email field — optional when phone login
                 OutlinedTextField(
                     value       = uiState.email ?: "",
                     onValueChange = { viewModel.onEmailChanged(it) },
@@ -224,7 +273,7 @@ fun SignupScreen(
                         Icon(
                             imageVector    = Icons.Default.Email,
                             contentDescription = "Email Icon",
-                            tint           = if (uiState.isEmailPreFilled) Color.Gray else RoyalIndigo
+                            tint           = RoyalIndigo
                         )
                     },
                     supportingText = {
@@ -239,8 +288,6 @@ fun SignupScreen(
                         imeAction    = ImeAction.Next
                     ),
                     singleLine = true,
-                    readOnly   = uiState.isEmailPreFilled,
-                    enabled    = !uiState.isEmailPreFilled,
                     shape      = RoundedCornerShape(12.dp),
                     colors     = signupFieldColors(),
                     modifier   = Modifier
