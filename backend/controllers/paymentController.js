@@ -324,11 +324,52 @@ async function getDashboardStats(req, res) {
 
     const userRow = await prisma.users.findUnique({
       where: { id: userId },
-      select: { is_paid: true, active_plan_name: true, expiry_date: true, secretKey: true, secretKeyVersion: true }
+      select: {
+        is_paid: true,
+        active_plan_name: true,
+        expiry_date: true,
+        secretKey: true,
+        secretKeyVersion: true,
+        created_at: true
+      }
     });
     const isPaid = userRow ? userRow.is_paid : 0;
     const activePlanName = userRow ? userRow.active_plan_name : 'FREE_LEVEL';
     const expiryDate = userRow ? userRow.expiry_date : null;
+    const createdAt = userRow?.created_at
+      ? new Date(userRow.created_at).toISOString()
+      : null;
+
+    const welcomeKeys = [
+      'trial_welcome_enabled',
+      'trial_welcome_title',
+      'trial_welcome_message',
+      'trial_welcome_features',
+      'trial_welcome_show_once',
+      'trial_welcome_button',
+      'trial_days'
+    ];
+    const welcomeRows = await prisma.global_config.findMany({
+      where: { config_key: { in: welcomeKeys } }
+    });
+    const welcomeMap = {};
+    welcomeRows.forEach((r) => {
+      welcomeMap[r.config_key] = r.config_value;
+    });
+    const trialWelcome = {
+      enabled: (welcomeMap.trial_welcome_enabled ?? '1') !== '0',
+      title: welcomeMap.trial_welcome_title || 'অভিনন্দন!',
+      message: welcomeMap.trial_welcome_message
+        || 'আপনার জন্য {trial_days} দিনের Trial Package সক্রিয় করা হয়েছে।\n\nএখন আপনি সম্পূর্ণ ফ্রি-তে PayCheck-এর সকল Premium Feature ব্যবহার করে দেখতে পারবেন।',
+      features: (welcomeMap.trial_welcome_features
+        || 'Payment Monitoring\nAPI Access\nCheckout System\nMerchant Dashboard\nReal-time Notification')
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean),
+      show_once: (welcomeMap.trial_welcome_show_once ?? '1') !== '0',
+      button_text: welcomeMap.trial_welcome_button || 'এখনই শুরু করুন',
+      trial_days: parseInt(welcomeMap.trial_days || '7', 10) || 7
+    };
 
     const recentRows = await prisma.sms_history.findMany({
       where: { user_id: userId },
@@ -386,6 +427,8 @@ async function getDashboardStats(req, res) {
         is_paid:             !!isPaid,
         active_plan_name:    activePlanName,
         expiry_date:         expiryDate,
+        created_at:          createdAt,
+        trial_welcome:       trialWelcome,
         secretKey:           userRow ? userRow.secretKey : null,
         secretKeyVersion:    userRow ? userRow.secretKeyVersion : 1,
         recent_transactions: mappedRecentRows,

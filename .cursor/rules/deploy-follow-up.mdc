@@ -1,0 +1,29 @@
+---
+description: Post-task deploy — APK for app changes, adb install/run if device connected; server restart for backend-only; no auto git push
+alwaysApply: true
+---
+
+# Deploy follow-up (PayChek)
+
+After finishing a coding task, decide deploy action by **what changed**:
+
+## App changed (`app/**` or Android UI/services)
+1. Build debug APK (`gradlew assembleDebug` in `app/`).
+2. Tell the user the APK path: `app/app/build/outputs/apk/debug/app-debug.apk`.
+3. **Device check (required after every APK build):**
+   - Run `adb devices`.
+   - If at least one device shows as `device` (USB or wireless):
+     - Install and launch: `adb install -r app/app/build/outputs/apk/debug/app-debug.apk`
+     - Then start the app: `adb shell am start -n online.paychek.app/.MainActivity` (or the project's launch activity).
+   - If no device is connected: only give the APK path. Do **not** ask for IP/PORT unless the user wants wireless install.
+
+## App unchanged — only server / backend / package (`backend/**`, npm, env, DB, payment, checkout JS served by server)
+1. Restart the backend server (nodemon/node on port 3000) so changes load.
+2. Do **not** build an APK.
+
+## GitHub
+- Do **not** auto stage/commit/push after tasks.
+- Push to GitHub **only** when the user explicitly asks.
+
+## Both app + server in one task
+- Restart server **and** build APK (with the device check above).

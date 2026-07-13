@@ -158,6 +158,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             _state.update { it.copy(isServiceActive = false) }
             return
         }
+        // Device setup incomplete → do not keep/restart monitor
+        val gate = online.paychek.app.utils.DeviceMonitoringGate.check(context)
+        if (!gate.ready) {
+            SmsServiceGuard.stopService(context)
+            SmsServiceGuard.cancelWatchdog(context)
+            prefs.edit().putBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, false).apply()
+            _state.update { it.copy(isServiceActive = false) }
+            return
+        }
         val running = SmsServiceGuard.ensureRunningAndSync(context)
         _state.update { it.copy(isServiceActive = running) }
     }
@@ -370,6 +379,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
         try {
             if (enable) {
+                val gate = online.paychek.app.utils.DeviceMonitoringGate.check(context)
+                if (!gate.ready) {
+                    return
+                }
                 SmsServiceGuard.startService(context)
                 SmsServiceGuard.scheduleWatchdog(context)
             } else {

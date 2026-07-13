@@ -1796,13 +1796,23 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun loadTemplates(force: Boolean = false) {
-        if (!force && _state.value.templates.isNotEmpty()) {
+        val current = _state.value.templates
+        val officialMissingLogos = current.any {
+            it.isOfficial == 1 && it.isParseable == 1 && it.logoUrl.isNullOrBlank()
+        }
+        // Stale cache often has templates without logo_url — force a full pull once.
+        val needsLogoRefresh = officialMissingLogos && current.isNotEmpty()
+        if (!force && !needsLogoRefresh && current.isNotEmpty()) {
             return
         }
         viewModelScope.launch {
             _state.update { it.copy(isTemplatesLoading = true) }
             val token = getToken() ?: return@launch setError("লগইন সেশন পাওয়া যায়নি।")
-            val lastSync = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsLastSync(getApplication())
+            val lastSync = if (force || needsLogoRefresh) {
+                0L
+            } else {
+                online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsLastSync(getApplication())
+            }
             runCatching { api.getTemplates("Bearer $token", lastSync) }
                 .onSuccess { res ->
                     if (res.isSuccessful && res.body()?.success == true) {
@@ -1825,10 +1835,13 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                                 e.printStackTrace()
                             }
                         } else {
-                            // unchanged / null payload — force full fetch if local cache empty
+                            // unchanged / null payload — if logos still missing, force full fetch
+                            val stillMissingLogos = _state.value.templates.any {
+                                it.isOfficial == 1 && it.isParseable == 1 && it.logoUrl.isNullOrBlank()
+                            }
                             val localEmpty = !online.paychek.app.data.local.prefs.PrefsHelper
                                 .hasSmsTemplatesCache(getApplication()) && _state.value.templates.isEmpty()
-                            if (localEmpty) {
+                            if (localEmpty || stillMissingLogos) {
                                 runCatching { api.getTemplates("Bearer $token", 0L) }
                                     .onSuccess { fullRes ->
                                         val fullList = fullRes.body()?.templates

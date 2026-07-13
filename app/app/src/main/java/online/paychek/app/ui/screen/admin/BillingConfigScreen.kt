@@ -79,6 +79,20 @@ fun BillingConfigScreen(
     var trialMaxDevices by remember { mutableStateOf("1") }
     var trialMaxSites by remember { mutableStateOf("1") }
     var trialAllowCustomSender by remember { mutableStateOf("0") }
+    var trialWelcomeEnabled by remember { mutableStateOf(true) }
+    var trialWelcomeTitle by remember { mutableStateOf("অভিনন্দন!") }
+    var trialWelcomeMessage by remember {
+        mutableStateOf(
+            "আপনার জন্য {trial_days} দিনের Trial Package সক্রিয় করা হয়েছে।\n\nএখন আপনি সম্পূর্ণ ফ্রি-তে PayCheck-এর সকল Premium Feature ব্যবহার করে দেখতে পারবেন।"
+        )
+    }
+    var trialWelcomeFeatures by remember {
+        mutableStateOf(
+            "Payment Monitoring\nAPI Access\nCheckout System\nMerchant Dashboard\nReal-time Notification"
+        )
+    }
+    var trialWelcomeShowOnce by remember { mutableStateOf(true) }
+    var trialWelcomeButton by remember { mutableStateOf("এখনই শুরু করুন") }
 
     var showCreateAddonDialog by remember { mutableStateOf(false) }
     var editingAddon by remember { mutableStateOf<AddonPlanDto?>(null) }
@@ -109,6 +123,14 @@ fun BillingConfigScreen(
         trialMaxDevices = uiState.configs["trial_max_devices"] ?: "1"
         trialMaxSites = uiState.configs["trial_max_sites"] ?: "1"
         trialAllowCustomSender = uiState.configs["trial_allow_custom_sender"] ?: "0"
+        trialWelcomeEnabled = (uiState.configs["trial_welcome_enabled"] ?: "1") != "0"
+        trialWelcomeTitle = uiState.configs["trial_welcome_title"] ?: "অভিনন্দন!"
+        trialWelcomeMessage = uiState.configs["trial_welcome_message"]
+            ?: "আপনার জন্য {trial_days} দিনের Trial Package সক্রিয় করা হয়েছে।\n\nএখন আপনি সম্পূর্ণ ফ্রি-তে PayCheck-এর সকল Premium Feature ব্যবহার করে দেখতে পারবেন।"
+        trialWelcomeFeatures = uiState.configs["trial_welcome_features"]
+            ?: "Payment Monitoring\nAPI Access\nCheckout System\nMerchant Dashboard\nReal-time Notification"
+        trialWelcomeShowOnce = (uiState.configs["trial_welcome_show_once"] ?: "1") != "0"
+        trialWelcomeButton = uiState.configs["trial_welcome_button"] ?: "এখনই শুরু করুন"
     }
 
     // Edit/Create Plan Dialog
@@ -781,6 +803,99 @@ fun BillingConfigScreen(
                         onCheckedChange = { trialAllowCustomSender = if (it) "1" else "0" }
                     )
                 }
+
+                HorizontalDivider(color = TextSecondary.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
+
+                Text(
+                    text = "Trial Welcome Message",
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                )
+                Text(
+                    text = "নতুন অ্যাকাউন্টে মেয়াদ-সতর্কতার বদলে এই ওয়েলকাম পপআপ দেখাবে। {trial_days} ও {expiry_date} প্লেসহোল্ডার ব্যবহার করা যাবে।",
+                    color = TextSecondary,
+                    fontSize = 11.sp
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Welcome Popup চালু", color = TextPrimary, fontSize = 14.sp)
+                    Switch(
+                        checked = trialWelcomeEnabled,
+                        onCheckedChange = { trialWelcomeEnabled = it }
+                    )
+                }
+
+                OutlinedTextField(
+                    value = trialWelcomeTitle,
+                    onValueChange = { trialWelcomeTitle = it },
+                    label = { Text("Title") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = trialWelcomeMessage,
+                    onValueChange = { trialWelcomeMessage = it },
+                    label = { Text("Message") },
+                    minLines = 3,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = trialWelcomeFeatures,
+                    onValueChange = { trialWelcomeFeatures = it },
+                    label = { Text("Features (প্রতি লাইনে একটি)") },
+                    minLines = 3,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = trialWelcomeButton,
+                    onValueChange = { trialWelcomeButton = it },
+                    label = { Text("Button text") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Show Once", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text("চেক থাকলে প্রতি ইউজারকে একবারই দেখাবে", color = TextSecondary, fontSize = 11.sp)
+                    }
+                    Checkbox(
+                        checked = trialWelcomeShowOnce,
+                        onCheckedChange = { trialWelcomeShowOnce = it }
+                    )
+                }
             }
         }
 
@@ -793,7 +908,13 @@ fun BillingConfigScreen(
                         "trial_days" to trialDays,
                         "trial_max_devices" to trialMaxDevices,
                         "trial_max_sites" to trialMaxSites,
-                        "trial_allow_custom_sender" to trialAllowCustomSender
+                        "trial_allow_custom_sender" to trialAllowCustomSender,
+                        "trial_welcome_enabled" to if (trialWelcomeEnabled) "1" else "0",
+                        "trial_welcome_title" to trialWelcomeTitle,
+                        "trial_welcome_message" to trialWelcomeMessage,
+                        "trial_welcome_features" to trialWelcomeFeatures,
+                        "trial_welcome_show_once" to if (trialWelcomeShowOnce) "1" else "0",
+                        "trial_welcome_button" to trialWelcomeButton
                     )
                 )
             },

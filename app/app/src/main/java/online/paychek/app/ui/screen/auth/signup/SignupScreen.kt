@@ -1,5 +1,7 @@
 package online.paychek.app.ui.screen.auth.signup
 
+import android.app.Activity
+import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -22,9 +24,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -40,6 +44,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.autofill.ContentType
 import online.paychek.app.utils.disableAutofill
+import kotlinx.coroutines.launch
 
 private val ErrorContainerLight = Color(0xFFFFEBEE)
 private val ErrorContainerDark = Color(0xFF3D1F1F)
@@ -48,6 +53,9 @@ private val SignupIndigo = Color(0xFF1F2A8A)
 private val SignupIndigoSoft = Color(0xFF3949AB)
 private val VerifiedGreen = Color(0xFF059669)
 private val SoftSurface = Color(0xFFF8F9FC)
+
+/** ~1.0 inch upward scroll when PIN / confirm-PIN is focused (160dpi × 1.0). */
+private val PinFocusScrollDp = 160.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,7 +70,22 @@ fun SignupScreen(
     val scrollState = rememberScrollState()
     val focusManager = LocalFocusManager.current
     val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
     val isEmailLogin = remember(contact) { contact.contains("@") }
+    val pinScrollPx = with(density) { PinFocusScrollDp.roundToPx() }
+
+    // Keep window fixed — we control scroll only for PIN fields
+    DisposableEffect(Unit) {
+        val window = (context as? Activity)?.window
+        val previousMode = window?.attributes?.softInputMode
+        window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+        onDispose {
+            if (previousMode != null) {
+                window?.setSoftInputMode(previousMode)
+            }
+        }
+    }
 
     LaunchedEffect(contact, token) {
         viewModel.initData(contact, token)
@@ -72,12 +95,29 @@ fun SignupScreen(
     val pageBg = if (isDark) MaterialTheme.colorScheme.background else SoftSurface
     val cardBg = if (isDark) MaterialTheme.colorScheme.surface else Color.White
 
+    fun keepFixedAtTop() {
+        scope.launch {
+            if (scrollState.value != 0) {
+                scrollState.animateScrollTo(0)
+            }
+        }
+    }
+
+    fun scrollMildForPin() {
+        scope.launch {
+            // One frame so bottom spacer has laid out
+            kotlinx.coroutines.delay(50)
+            scrollState.animateScrollTo(
+                pinScrollPx.coerceAtMost(scrollState.maxValue.coerceAtLeast(0))
+            )
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(pageBg)
     ) {
-        // Soft top wash — matches login premium feel without clutter
         Box(
             Modifier
                 .fillMaxWidth()
@@ -94,13 +134,12 @@ fun SignupScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .verticalScroll(scrollState)
                 .padding(horizontal = 20.dp)
-                .padding(top = 28.dp, bottom = 24.dp),
+                .padding(top = 28.dp, bottom = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Header badge
             Box(
                 Modifier
                     .size(64.dp)
@@ -138,7 +177,6 @@ fun SignupScreen(
 
             Spacer(Modifier.height(18.dp))
 
-            // Form card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -188,10 +226,10 @@ fun SignupScreen(
                         icon = Icons.Default.Person,
                         keyboardType = KeyboardType.Text,
                         imeAction = ImeAction.Next,
+                        onFocused = { keepFixedAtTop() },
                         modifier = Modifier.semantics { contentType = ContentType.PersonFullName }
                     )
 
-                    // Verified contact — compact chip-style row (no bulky supportingText)
                     VerifiedContactRow(
                         icon = if (isEmailLogin) Icons.Default.Email else Icons.Default.PhoneAndroid,
                         label = if (isEmailLogin) "জিমেইল" else "মোবাইল",
@@ -208,6 +246,7 @@ fun SignupScreen(
                             icon = Icons.Default.PhoneAndroid,
                             keyboardType = KeyboardType.Phone,
                             imeAction = ImeAction.Next,
+                            onFocused = { keepFixedAtTop() },
                             modifier = Modifier.semantics { contentType = ContentType.PhoneNumber }
                         )
                     } else {
@@ -219,6 +258,7 @@ fun SignupScreen(
                             icon = Icons.Default.Email,
                             keyboardType = KeyboardType.Email,
                             imeAction = ImeAction.Next,
+                            onFocused = { keepFixedAtTop() },
                             modifier = Modifier.semantics { contentType = ContentType.EmailAddress }
                         )
                     }
@@ -235,6 +275,7 @@ fun SignupScreen(
                         keyboardType = KeyboardType.NumberPassword,
                         imeAction = ImeAction.Next,
                         isPassword = true,
+                        onFocused = { scrollMildForPin() },
                         modifier = Modifier
                             .semantics { contentDescription = "Security PIN" }
                             .disableAutofill()
@@ -249,6 +290,7 @@ fun SignupScreen(
                         keyboardType = KeyboardType.NumberPassword,
                         imeAction = ImeAction.Done,
                         isPassword = true,
+                        onFocused = { scrollMildForPin() },
                         onDone = {
                             focusManager.clearFocus()
                             viewModel.submitSignup(context, onSignupComplete)
@@ -287,6 +329,9 @@ fun SignupScreen(
                     }
                 }
             }
+
+            // Room so a mild ~1.0" PIN scroll is possible
+            Spacer(Modifier.height(PinFocusScrollDp + 48.dp))
         }
     }
 }
@@ -353,6 +398,7 @@ private fun CompactField(
     imeAction: ImeAction,
     isPassword: Boolean = false,
     onDone: (() -> Unit)? = null,
+    onFocused: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     OutlinedTextField(
@@ -375,6 +421,11 @@ private fun CompactField(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 54.dp)
+            .onFocusChanged { state ->
+                if (state.isFocused) {
+                    onFocused?.invoke()
+                }
+            }
     )
 }
 
@@ -387,6 +438,7 @@ private fun signupFieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
     focusedTextColor = MaterialTheme.colorScheme.onSurface,
     unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+    cursorColor = SignupIndigo,
     focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
     unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
     focusedLabelColor = SignupIndigo,

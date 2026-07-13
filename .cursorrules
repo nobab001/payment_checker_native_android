@@ -1,8 +1,8 @@
-# Antigravity Project Rules
+# PayChek — post-task deploy rules
 
-Every time after completing a coding task or feature modification:
-1. **Stage, commit, and push changes**: Run `git push origin main` after staging and committing the files.
-2. **Deploy and Run**: Run the application on the connected Android device.
-   * Both the PC and the Android device are connected to the same Wi-Fi network.
-   * If `adb devices` shows no connected devices, ask the user for their device's IP address and port to connect via `adb connect <IP>:<PORT>` (or standard wireless debugging setup), then deploy the app.
-3. **Generate Clean Debug APK**: Run `gradlew clean assembleDebug --no-build-cache --no-configuration-cache` in the `app` directory to generate a fresh, un-cached debug APK file for the user to install on their device, and provide them the link to the generated APK file located at `app/app/build/outputs/apk/debug/app-debug.apk`.
+After completing a coding task, choose action by what changed:
+
+1. **App changed** (`app/**`): Build debug APK (`gradlew assembleDebug` in `app/`). Give path `app/app/build/outputs/apk/debug/app-debug.apk`. Then run `adb devices` — if any device is connected (`device` state), install with `adb install -r` and launch the app. If none connected, only share the APK path.
+2. **Only server / backend / package** (`backend/**`): Restart the Node server. Do **not** build an APK.
+3. **Both**: Restart server and build APK (same adb device check as above).
+4. **GitHub**: Do **not** auto stage/commit/push. Push only when the user explicitly asks.

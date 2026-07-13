@@ -66,6 +66,7 @@ import online.paychek.app.ui.components.LastUpdateRow
 import online.paychek.app.ui.components.background.BackgroundPersistenceCard
 import online.paychek.app.utils.AccessibilityHelper
 import online.paychek.app.utils.BatteryOptimizationHelper
+import online.paychek.app.utils.OemBackgroundHelper
 import online.paychek.app.utils.adaptivePadding
 import online.paychek.app.utils.adaptiveTextSize
 import online.paychek.app.utils.screenWidth
@@ -132,12 +133,17 @@ fun DashboardScreen(
     }
 
     var isAccessibilityEnabled by remember { mutableStateOf(true) }
+    var isBatteryUnrestricted by remember { mutableStateOf(true) }
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val backgroundSetupPending = !isAccessibilityEnabled || !isBatteryUnrestricted
+    val pendingSetupCount =
+        (if (!isAccessibilityEnabled) 1 else 0) + (if (!isBatteryUnrestricted) 1 else 0)
 
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
             if (state == androidx.lifecycle.Lifecycle.State.RESUMED) {
-                isAccessibilityEnabled = online.paychek.app.utils.AccessibilityHelper.isAccessibilityServiceEnabled(context)
+                isAccessibilityEnabled = AccessibilityHelper.isAccessibilityServiceEnabled(context)
+                isBatteryUnrestricted = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
                 viewModel.ensureSmsServiceRunning()
             }
         }
@@ -146,6 +152,7 @@ fun DashboardScreen(
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     var hasShownReminder by remember { mutableStateOf(false) }
     var showExpiryReminderDialog by remember { mutableStateOf(false) }
+    var showTrialWelcomeDialog by remember { mutableStateOf(false) }
     var checkoutPlanName by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(screenState.isServiceActive, lifecycleOwner) {
@@ -167,8 +174,13 @@ fun DashboardScreen(
         val granted = permissions[Manifest.permission.RECEIVE_SMS] == true &&
                       permissions[Manifest.permission.READ_SMS] == true
         if (granted) {
-            viewModel.toggleSmsService(true)
-            ensureBackgroundSmsReady()
+            val gate = online.paychek.app.utils.DeviceMonitoringGate.check(context)
+            if (!gate.ready) {
+                android.widget.Toast.makeText(context, gate.message, android.widget.Toast.LENGTH_LONG).show()
+            } else {
+                viewModel.toggleSmsService(true)
+                ensureBackgroundSmsReady()
+            }
         } else {
             showSmsPermissionRationaleDialog = true
         }
@@ -187,25 +199,100 @@ fun DashboardScreen(
     val daysRemaining = remember(successStats?.expiryDate) {
         calculateDaysRemaining(successStats?.expiryDate)
     }
+    val accountAgeDays = remember(successStats?.createdAt) {
+        calculateAccountAgeDays(successStats?.createdAt)
+    }
+    val trialWelcome = successStats?.trialWelcome
 
     val prefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
+    val welcomePrefKey = remember(successStats?.createdAt) {
+        "trial_welcome_shown_${successStats?.createdAt ?: "unknown"}"
+    }
 
-    LaunchedEffect(isPaid, daysRemaining) {
-        if (isPaid && daysRemaining in 0..30 && !hasShownReminder) {
+    // Welcome (new account) OR subscription reminder (day 2+, milestones 7/3/1/0)
+    LaunchedEffect(isPaid, daysRemaining, accountAgeDays, trialWelcome, welcomePrefKey) {
+        if (successStats == null || hasShownReminder) return@LaunchedEffect
+
+        val welcomeEnabled = trialWelcome?.enabled != false
+        val welcomeShowOnce = trialWelcome?.showOnce != false
+        val alreadyShownWelcome = prefs.getBoolean(welcomePrefKey, false)
+        val isSignupDay = accountAgeDays < 1
+        val todayStart = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val lastWelcomeDay = prefs.getLong("last_trial_welcome_day", 0)
+
+        // 1) Welcome popup for new accounts (never show expiry warning on signup day)
+        val shouldShowWelcome = welcomeEnabled && (
+            (isSignupDay && (!welcomeShowOnce || !alreadyShownWelcome)) ||
+                (!isSignupDay && accountAgeDays <= 1 && welcomeShowOnce && !alreadyShownWelcome)
+            ) && (welcomeShowOnce || lastWelcomeDay < todayStart)
+
+        if (shouldShowWelcome) {
+            showTrialWelcomeDialog = true
+            return@LaunchedEffect
+        }
+
+        // 2) System subscription reminder — from day 2+, only at 7 / 3 / 1 / 0 days left
+        val reminderMilestones = setOf(7L, 3L, 1L, 0L)
+        if (isPaid && !isSignupDay && daysRemaining in reminderMilestones) {
             val lastAlertTime = prefs.getLong("last_trial_alert_time", 0)
-            val todayStart = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }.timeInMillis
-            
-            if (lastAlertTime < todayStart) {
+            val lastMilestone = prefs.getLong("last_trial_alert_days", -1)
+
+            if (lastAlertTime < todayStart || lastMilestone != daysRemaining) {
                 showExpiryReminderDialog = true
             } else {
                 hasShownReminder = true
             }
         }
+    }
+
+    if (showTrialWelcomeDialog) {
+        TrialWelcomeDialog(
+            welcome = trialWelcome,
+            expiryDate = successStats?.expiryDate,
+            onDismiss = {
+                showTrialWelcomeDialog = false
+                hasShownReminder = true
+                val todayStart = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }.timeInMillis
+                val editor = prefs.edit().putLong("last_trial_welcome_day", todayStart)
+                if (trialWelcome?.showOnce != false) {
+                    editor.putBoolean(welcomePrefKey, true)
+                }
+                editor.apply()
+            }
+        )
+    }
+
+    if (showExpiryReminderDialog) {
+        ExpiryReminderDialog(
+            daysRemaining = daysRemaining,
+            onDismiss = {
+                showExpiryReminderDialog = false
+                hasShownReminder = true
+                prefs.edit()
+                    .putLong("last_trial_alert_time", System.currentTimeMillis())
+                    .putLong("last_trial_alert_days", daysRemaining)
+                    .apply()
+            },
+            onBuyPlanClick = {
+                showExpiryReminderDialog = false
+                hasShownReminder = true
+                prefs.edit()
+                    .putLong("last_trial_alert_time", System.currentTimeMillis())
+                    .putLong("last_trial_alert_days", daysRemaining)
+                    .apply()
+                onNavigateToSubscription()
+            }
+        )
     }
 
     if (screenState.showPurchaseDialog) {
@@ -229,23 +316,6 @@ fun DashboardScreen(
                 android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
                 checkoutPlanName = null
                 viewModel.loadDashboardStats()
-            }
-        )
-    }
-
-    if (showExpiryReminderDialog) {
-        ExpiryReminderDialog(
-            daysRemaining = daysRemaining,
-            onDismiss = {
-                showExpiryReminderDialog = false
-                hasShownReminder = true
-                prefs.edit().putLong("last_trial_alert_time", System.currentTimeMillis()).apply()
-            },
-            onBuyPlanClick = {
-                showExpiryReminderDialog = false
-                hasShownReminder = true
-                prefs.edit().putLong("last_trial_alert_time", System.currentTimeMillis()).apply()
-                onNavigateToSubscription()
             }
         )
     }
@@ -319,7 +389,7 @@ fun DashboardScreen(
             ConnectionStatusBanner(banner = banner)
         }
 
-        if (!isAccessibilityEnabled) {
+        if (backgroundSetupPending) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFF59E0B)),
                 shape = RoundedCornerShape(12.dp),
@@ -328,8 +398,11 @@ fun DashboardScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp)
                     .clickable {
                         online.paychek.app.MainActivity.isRequestingPermission = true
-                        val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                        context.startActivity(intent)
+                        if (!isAccessibilityEnabled) {
+                            AccessibilityHelper.openAccessibilitySettings(context)
+                        } else {
+                            OemBackgroundHelper.openBatteryUnrestrictedSettings(context)
+                        }
                     }
             ) {
                 Row(
@@ -349,14 +422,14 @@ fun DashboardScreen(
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
-                            text = "পেমেন্ট অটো-সিঙ্ক করতে এক্সেসিবিলিটি পারমিশন দিন",
+                            text = "⚠ ${pendingSetupCount}টি সেটিংস সম্পূর্ণ করুন",
                             color = Color.White,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
                     Text(
-                        text = "অনুমোদন করুন ➔",
+                        text = "সেটআপ ➔",
                         color = Color.White,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
@@ -397,65 +470,56 @@ fun DashboardScreen(
                     isServiceActive = screenState.isServiceActive,
                     onServiceToggle = { enable ->
                         if (enable) {
-                            val prefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
-                            val sim1Enabled = prefs.getBoolean(online.paychek.app.config.AppConfig.KEY_SIM1_ENABLED, true)
-                            val sim2Enabled = prefs.getBoolean(online.paychek.app.config.AppConfig.KEY_SIM2_ENABLED, true)
-                            val isAnySimActive = sim1Enabled || sim2Enabled
-
                             if (!isPaid) {
                                 android.widget.Toast.makeText(
                                     context,
                                     "SMS মনিটর চালু করতে প্যাকেজ কিনুন",
                                     android.widget.Toast.LENGTH_LONG
                                 ).show()
-                            } else if (!isAnySimActive) {
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "ডিভাইস সেটিংসে গিয়ে SIM সক্রিয় করুন",
-                                    android.widget.Toast.LENGTH_LONG
-                                ).show()
-                            } else if (!isAccessibilityEnabled) {
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "প্রথমে এক্সেসিবিলিটি পারমিশন সক্রিয় করুন",
-                                    android.widget.Toast.LENGTH_LONG
-                                ).show()
                             } else {
-                                val hasReceiveSms = androidx.core.content.ContextCompat.checkSelfPermission(
-                                    context,
-                                    Manifest.permission.RECEIVE_SMS
-                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                                val hasReadSms = androidx.core.content.ContextCompat.checkSelfPermission(
-                                    context,
-                                    Manifest.permission.READ_SMS
-                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
-                                if (hasReceiveSms && hasReadSms) {
-                                    if (!AccessibilityHelper.isAccessibilityServiceEnabled(context)) {
+                                val deviceGate = online.paychek.app.utils.DeviceMonitoringGate.check(context)
+                                if (!deviceGate.ready) {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        deviceGate.message,
+                                        android.widget.Toast.LENGTH_LONG
+                                    ).show()
+                                } else if (!isAccessibilityEnabled || !isBatteryUnrestricted) {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "প্রথমে Background Guard সেটিংস সম্পূর্ণ করুন",
+                                        android.widget.Toast.LENGTH_LONG
+                                    ).show()
+                                    if (!isAccessibilityEnabled) {
                                         AccessibilityHelper.openAccessibilitySettings(context)
-                                        android.widget.Toast.makeText(
-                                            context,
-                                            "প্রথমে Accessibility চালু করুন (Paychek Background Guard)",
-                                            android.widget.Toast.LENGTH_LONG
-                                        ).show()
-                                    } else if (!BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)) {
-                                        BatteryOptimizationHelper.requestExemptionIfNeeded(context)
-                                        android.widget.Toast.makeText(
-                                            context,
-                                            "Battery → Unrestricted সিলেক্ট করুন",
-                                            android.widget.Toast.LENGTH_LONG
-                                        ).show()
                                     } else {
-                                        viewModel.toggleSmsService(true)
+                                        OemBackgroundHelper.openBatteryUnrestrictedSettings(context)
                                     }
                                 } else {
-                                    online.paychek.app.MainActivity.isRequestingPermission = true
-                                    smsPermissionsLauncher.launch(
-                                        arrayOf(
-                                            Manifest.permission.RECEIVE_SMS,
-                                            Manifest.permission.READ_SMS
+                                    val hasReceiveSms = androidx.core.content.ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.RECEIVE_SMS
+                                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                    val hasReadSms = androidx.core.content.ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.READ_SMS
+                                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                                    if (hasReceiveSms && hasReadSms) {
+                                        if (!AccessibilityHelper.isBackgroundReady(context)) {
+                                            ensureBackgroundSmsReady()
+                                        } else {
+                                            viewModel.toggleSmsService(true)
+                                        }
+                                    } else {
+                                        online.paychek.app.MainActivity.isRequestingPermission = true
+                                        smsPermissionsLauncher.launch(
+                                            arrayOf(
+                                                Manifest.permission.RECEIVE_SMS,
+                                                Manifest.permission.READ_SMS
+                                            )
                                         )
-                                    )
+                                    }
                                 }
                             }
                         } else {
@@ -469,7 +533,11 @@ fun DashboardScreen(
                 BackgroundPersistenceCard(
                     isServiceActive = screenState.isServiceActive,
                     modifier = Modifier.padding(horizontal = 16.dp),
-                    onRefreshService = { viewModel.ensureSmsServiceRunning() }
+                    onRefreshService = { viewModel.ensureSmsServiceRunning() },
+                    onSetupStateChanged = { accessibilityOk, batteryOk ->
+                        isAccessibilityEnabled = accessibilityOk
+                        isBatteryUnrestricted = batteryOk
+                    }
                 )
             }
 
@@ -1732,17 +1800,148 @@ private fun calculateDaysRemaining(expiryDateStr: String?): Long {
     }
 }
 
+/** Calendar days since account creation (0 = created today). */
+private fun calculateAccountAgeDays(createdAtStr: String?): Long {
+    if (createdAtStr.isNullOrEmpty()) return 0L
+    return try {
+        val formats = listOf(
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            },
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            },
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US),
+            SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        )
+        var created: Date? = null
+        for (f in formats) {
+            created = try { f.parse(createdAtStr) } catch (_: Exception) { null }
+            if (created != null) break
+        }
+        if (created == null) return 0L
+
+        val todayCal = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val createdCal = Calendar.getInstance().apply {
+            time = created
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val diffMs = todayCal.timeInMillis - createdCal.timeInMillis
+        (diffMs / (1000 * 60 * 60 * 24)).coerceAtLeast(0)
+    } catch (_: Exception) {
+        0L
+    }
+}
+
+@Composable
+private fun TrialWelcomeDialog(
+    welcome: online.paychek.app.data.remote.dto.TrialWelcomeDto?,
+    expiryDate: String?,
+    onDismiss: () -> Unit
+) {
+    val trialDays = welcome?.trialDays ?: 7
+    val title = welcome?.title?.ifBlank { null } ?: "অভিনন্দন!"
+    val rawMessage = welcome?.message?.ifBlank { null }
+        ?: "আপনার জন্য {trial_days} দিনের Trial Package সক্রিয় করা হয়েছে।\n\nএখন আপনি সম্পূর্ণ ফ্রি-তে PayCheck-এর সকল Premium Feature ব্যবহার করে দেখতে পারবেন।"
+    val formattedExpiry = formatExpiryDateToBangla(expiryDate)
+    val message = rawMessage
+        .replace("{trial_days}", trialDays.toString())
+        .replace("{expiry_date}", formattedExpiry.ifBlank { "—" })
+    val features = welcome?.features?.takeIf { it.isNotEmpty() }
+        ?: listOf(
+            "Payment Monitoring",
+            "API Access",
+            "Checkout System",
+            "Merchant Dashboard",
+            "Real-time Notification"
+        )
+    val buttonText = welcome?.buttonText?.ifBlank { null } ?: "এখনই শুরু করুন"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = title,
+                color = AccentGreen,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(text = message, color = TextWhite, fontSize = 14.sp)
+                Text(
+                    text = "Trial-এ যা পাবেন:",
+                    color = TextWhite,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp
+                )
+                features.forEach { feature ->
+                    Text(
+                        text = "✓  $feature",
+                        color = TextWhite.copy(alpha = 0.92f),
+                        fontSize = 13.sp
+                    )
+                }
+                if (formattedExpiry.isNotBlank()) {
+                    Text(
+                        text = "Trial শেষ হবে: $formattedExpiry",
+                        color = AccentCyan,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 13.sp
+                    )
+                }
+                Text(
+                    text = "সর্বোচ্চ ব্যবহার করে দেখুন। কোনো প্রশ্ন থাকলে Support থেকে সাহায্য নিতে পারবেন।",
+                    color = TextMuted,
+                    fontSize = 12.sp
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(buttonText, color = AccentCyan, fontWeight = FontWeight.Bold)
+            }
+        },
+        containerColor = DashCard,
+        shape = RoundedCornerShape(20.dp),
+        modifier = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) Modifier
+        else Modifier.border(1.dp, Color(0xFFE3E5E8), RoundedCornerShape(20.dp))
+    )
+}
+
 @Composable
 private fun ExpiryReminderDialog(
     daysRemaining: Long,
     onDismiss: () -> Unit,
     onBuyPlanClick: () -> Unit
 ) {
+    val title = when (daysRemaining) {
+        0L -> "⚠️ সাবস্ক্রিপশন মেয়াদ শেষ"
+        else -> "⚠️ Trial / সাবস্ক্রিপশন মেয়াদ শেষ হচ্ছে"
+    }
+    val body = when (daysRemaining) {
+        0L -> "আপনার সাবস্ক্রিপশন বা Trial Package-এর মেয়াদ শেষ হয়ে গেছে। সার্ভিস সচল রাখতে প্যাকেজ রিনিউ করুন।"
+        1L -> "আপনার Trial / সাবস্ক্রিপশন শেষ হতে আর মাত্র ১ দিন বাকি। সার্ভিস সচল রাখতে রিনিউ করুন।"
+        else -> "আপনার Trial / সাবস্ক্রিপশন শেষ হতে আর $daysRemaining দিন বাকি। সার্ভিস সচল রাখতে এবং পেমেন্ট মনিটরিং অব্যাহত রাখতে প্যাকেজ রিনিউ করুন।"
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "⚠️ সাবস্ক্রিপশন মেয়াদ শেষ হচ্ছে",
+                text = title,
                 color = AccentAmber,
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp
@@ -1751,7 +1950,7 @@ private fun ExpiryReminderDialog(
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    text = "আপনার বর্তমান সাবস্ক্রিপশন মেয়াদের আর মাত্র $daysRemaining দিন বাকি আছে। সার্ভিস সচল রাখতে এবং পেমেন্ট মনিটরিং অব্যাহত রাখতে অনুগ্রহ করে আপনার প্যাকেজটি রিনিউ করুন।",
+                    text = body,
                     color = TextWhite,
                     fontSize = 14.sp
                 )
@@ -1970,14 +2169,15 @@ private fun CustomArchiveRow(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Header Row: Sender / Device & Time
+            // Header: title wraps (1→2→3 lines); time keeps fixed width on the right
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Top
             ) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.Top,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Box(
@@ -1994,26 +2194,44 @@ private fun CustomArchiveRow(
                             modifier = Modifier.size(16.dp)
                         )
                     }
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = item.providerTag, // Sender ID e.g. GP, BL, bKash
+                            text = item.providerTag,
                             fontWeight = FontWeight.Bold,
                             color = AccentCyan,
-                            fontSize = 14.sp
+                            fontSize = 14.sp,
+                            lineHeight = 18.sp,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                            softWrap = true
                         )
                         Text(
                             text = item.deviceName ?: "মূল ডিভাইস",
                             color = TextMuted,
-                            fontSize = 11.sp
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
-                
-                Text(
-                    text = formatCustomArchiveTime(item.createdAt),
-                    color = TextMuted,
-                    fontSize = 11.sp
-                )
+
+                Column(horizontalAlignment = Alignment.End) {
+                    val timeParts = formatCustomArchiveTimeParts(item.createdAt)
+                    Text(
+                        text = timeParts.first,
+                        color = TextMuted,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                    Text(
+                        text = timeParts.second,
+                        color = TextMuted,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
             }
 
             // Raw SMS Text Box — long-press to select/copy
@@ -2068,14 +2286,20 @@ private fun CustomArchiveRow(
 }
 
 private fun formatCustomArchiveTime(isoString: String): String {
+    val parts = formatCustomArchiveTimeParts(isoString)
+    return if (parts.second.isBlank()) parts.first else "${parts.first}, ${parts.second}"
+}
+
+/** Returns (time, date) so the header never squeezes into a vertical strip. */
+private fun formatCustomArchiveTimeParts(isoString: String): Pair<String, String> {
     return try {
-        // e.g. "2026-06-25T10:05:59.000Z"
         val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
-        val date = inputFormat.parse(isoString) ?: Date()
-        val outputFormat = SimpleDateFormat("hh:mm a, dd MMM yyyy", Locale.US)
-        outputFormat.format(date)
-    } catch (e: Exception) {
-        isoString
+        val date = inputFormat.parse(isoString) ?: return isoString to ""
+        val timeFormat = SimpleDateFormat("hh:mm a", Locale.US)
+        val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale.US)
+        timeFormat.format(date) to dateFormat.format(date)
+    } catch (_: Exception) {
+        isoString to ""
     }
 }
 

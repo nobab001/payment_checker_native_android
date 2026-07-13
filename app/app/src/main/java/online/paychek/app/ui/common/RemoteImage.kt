@@ -46,30 +46,39 @@ fun RemoteImage(
     var bitmap by remember(resolved) { mutableStateOf(bitmapCache.get(resolved)) }
 
     LaunchedEffect(resolved) {
-        if (resolved.isEmpty() || bitmap != null) return@LaunchedEffect
-        withContext(Dispatchers.IO) {
+        if (resolved.isEmpty()) return@LaunchedEffect
+        val cached = bitmapCache.get(resolved)
+        if (cached != null) {
+            bitmap = cached
+            return@LaunchedEffect
+        }
+        val decoded = withContext(Dispatchers.IO) {
             try {
-                val bmp = if (resolved.startsWith("http")) {
+                if (resolved.startsWith("http")) {
                     val c = java.net.URL(resolved).openConnection() as java.net.HttpURLConnection
                     c.connectTimeout = 12000
                     c.readTimeout = 12000
+                    c.instanceFollowRedirects = true
                     c.doInput = true
+                    // ngrok free tier may block bare clients
+                    c.setRequestProperty("User-Agent", "PaychekAndroid/1.0")
+                    c.setRequestProperty("ngrok-skip-browser-warning", "true")
                     c.connect()
                     val input = c.inputStream
-                    val decoded = android.graphics.BitmapFactory.decodeStream(input)
+                    val bmp = android.graphics.BitmapFactory.decodeStream(input)
                     input.close()
                     c.disconnect()
-                    decoded
+                    bmp
                 } else {
                     android.graphics.BitmapFactory.decodeFile(resolved.removePrefix("file://"))
                 }
-                if (bmp != null) {
-                    bitmapCache.put(resolved, bmp)
-                    bitmap = bmp
-                }
             } catch (_: Exception) {
-                // fall through to fallback()
+                null
             }
+        }
+        if (decoded != null) {
+            bitmapCache.put(resolved, decoded)
+            bitmap = decoded
         }
     }
 

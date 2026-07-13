@@ -122,6 +122,16 @@ data class DashboardStatsResponse(
     val data: DashboardStats?
 )
 
+data class TrialWelcomeDto(
+    @SerializedName("enabled") val enabled: Boolean = true,
+    @SerializedName("title") val title: String = "অভিনন্দন!",
+    @SerializedName("message") val message: String = "",
+    @SerializedName("features") val features: List<String> = emptyList(),
+    @SerializedName("show_once") val showOnce: Boolean = true,
+    @SerializedName("button_text") val buttonText: String = "এখনই শুরু করুন",
+    @SerializedName("trial_days") val trialDays: Int = 7
+)
+
 data class DashboardStats(
 
     @SerializedName("total_earnings")
@@ -153,6 +163,12 @@ data class DashboardStats(
 
     @SerializedName("expiry_date")
     val expiryDate: String?,
+
+    @SerializedName("created_at")
+    val createdAt: String? = null,
+
+    @SerializedName("trial_welcome")
+    val trialWelcome: TrialWelcomeDto? = null,
 
     @SerializedName("global_templates")
     val globalTemplates: List<SmsTemplateDto>? = emptyList(),
