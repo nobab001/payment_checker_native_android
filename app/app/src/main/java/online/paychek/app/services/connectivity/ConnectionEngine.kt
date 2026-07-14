@@ -108,7 +108,12 @@ class ConnectionEngine private constructor(context: Context) {
             }
         }
 
+        val wasConnected = _status.value.hasServer
         _status.value = _status.value.copy(isChecking = true)
+        // 🔄 Reconnecting — only when we were not already Connected
+        if (!wasConnected) {
+            emitBannerDebounced(ConnectionBanner.Reconnecting())
+        }
 
         val layer1 = hasActiveTransport()
         val layer2 = if (layer1) checkInternetReachable() else false
@@ -129,7 +134,12 @@ class ConnectionEngine private constructor(context: Context) {
         val connectivityBanner = result.toConnectivityBanner()
         if (connectivityBanner != null) {
             emitBannerDebounced(connectivityBanner)
-        } else if (_banner.value is ConnectionBanner.NoInternet || _banner.value is ConnectionBanner.ServerUnavailable) {
+        } else if (
+            _banner.value is ConnectionBanner.NoInternet ||
+            _banner.value is ConnectionBanner.Disconnected ||
+            _banner.value is ConnectionBanner.Reconnecting
+        ) {
+            // ✅ Connected — clear transport/reconnect banners (keep ServerError until sync OK)
             _banner.value = null
             lastBanner = null
         }
@@ -141,14 +151,22 @@ class ConnectionEngine private constructor(context: Context) {
         result
     }
 
-    fun reportApiSyncFailure(message: String, isRetrying: Boolean = false) {
+    fun reportApiSyncFailure(message: String = ConnectionBanner.MSG_SERVER_ERROR, isRetrying: Boolean = false) {
         val current = _status.value
         if (!current.hasServer) return
-        emitBannerDebounced(ConnectionBanner.DataSyncFailed(message, isRetrying))
+        // 🔄 retrying sync → Reconnecting; final failure → Server Error
+        if (isRetrying) {
+            emitBannerDebounced(ConnectionBanner.Reconnecting())
+        } else {
+            emitBannerDebounced(ConnectionBanner.ServerError())
+        }
     }
 
     fun clearApiSyncBanner() {
-        if (_banner.value is ConnectionBanner.DataSyncFailed) {
+        if (
+            _banner.value is ConnectionBanner.ServerError ||
+            _banner.value is ConnectionBanner.Reconnecting
+        ) {
             _banner.value = null
             lastBanner = null
         }

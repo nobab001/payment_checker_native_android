@@ -29,8 +29,14 @@ const { PAYMENT_CONTEXT_VERSION } = require('../core/payment-context-v1');
  */
 
 function buildContextFromLiveInitRequest(req) {
-  const baseUrl = process.env.PUBLIC_BASE_URL
-    || `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
+  const { browserBaseUrlFromRequest } = require('../shared/session-utils');
+  // Browser must stay on the same origin as checkout (LAN / current host).
+  // PUBLIC_BASE_URL is only for gateway callbacks — ngrok free interstitial breaks /pay.
+  const browserBase = browserBaseUrlFromRequest(req);
+
+  const successUrl = req.body?.successUrl || req.body?.success_url || null;
+  const cancelUrl = req.body?.cancelUrl || req.body?.cancel_url || null;
+  const demoSessionId = req.body?.demoSessionId || req.body?.demoSession || null;
 
   return {
     traceId: createTraceId(),
@@ -39,10 +45,21 @@ function buildContextFromLiveInitRequest(req) {
     amount: parseFloat(req.body?.amount),
     currency: 'BDT',
     provider: { raw: req.body?.provider, id: null },
-    merchantAccountId: req.body?.merchantAccountId,
+    merchantAccountId: req.body?.merchantAccountId
+      ?? req.body?.merchant_account_id
+      ?? null,
+    successUrl: typeof successUrl === 'string' ? successUrl : null,
+    cancelUrl: typeof cancelUrl === 'string' ? cancelUrl : null,
     ip: req.ip,
-    http: { baseUrl, protocol: req.protocol, host: req.get('host') },
-    metadata: { custom: {}, extra: {} },
+    http: {
+      baseUrl: browserBase,
+      protocol: req.protocol,
+      host: req.get('host'),
+    },
+    metadata: {
+      custom: {},
+      extra: demoSessionId ? { demoSessionId: String(demoSessionId) } : {},
+    },
   };
 }
 

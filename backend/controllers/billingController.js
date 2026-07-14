@@ -60,6 +60,116 @@ async function ensurePlanFeaturesColumns() {
   if (!addonCols.length) {
     await prisma.$executeRawUnsafe('ALTER TABLE addon_plans ADD COLUMN features_json TEXT NULL');
   }
+  await ensureBillingSortSchema();
+}
+
+const DEFAULT_BILLING_TAB_ORDER = [
+  'personal_custom_center',
+  'personal_business',
+  'payment_gateway',
+];
+
+async function ensureBillingSortSchema() {
+  const subSort = await prisma.$queryRaw`SHOW COLUMNS FROM subscription_plans LIKE 'sort_order'`;
+  if (!subSort.length) {
+    await prisma.$executeRawUnsafe(
+      'ALTER TABLE subscription_plans ADD COLUMN sort_order INT NOT NULL DEFAULT 0'
+    );
+    const cats = await prisma.$queryRawUnsafe(`
+      SELECT DISTINCT COALESCE(NULLIF(plan_category,''),'payment_gateway') AS cat FROM subscription_plans
+    `);
+    for (const c of cats) {
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT id FROM subscription_plans
+         WHERE COALESCE(NULLIF(plan_category,''),'payment_gateway') = ?
+         ORDER BY price ASC, id ASC`,
+        c.cat
+      );
+      let n = 1;
+      for (const r of rows) {
+        await prisma.$executeRawUnsafe(
+          `UPDATE subscription_plans SET sort_order = ? WHERE id = ?`,
+          n++,
+          r.id
+        );
+      }
+    }
+  }
+  const addonSort = await prisma.$queryRaw`SHOW COLUMNS FROM addon_plans LIKE 'sort_order'`;
+  if (!addonSort.length) {
+    await prisma.$executeRawUnsafe(
+      'ALTER TABLE addon_plans ADD COLUMN sort_order INT NOT NULL DEFAULT 0'
+    );
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT id FROM addon_plans ORDER BY price ASC, id ASC`
+    );
+    let n = 1;
+    for (const r of rows) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE addon_plans SET sort_order = ? WHERE id = ?`,
+        n++,
+        r.id
+      );
+    }
+  }
+
+  const tabCfg = await prisma.global_config.findUnique({ where: { config_key: 'billing_tab_order' } });
+  if (!tabCfg) {
+    await prisma.global_config.create({
+      data: {
+        config_key: 'billing_tab_order',
+        config_value: JSON.stringify(DEFAULT_BILLING_TAB_ORDER),
+      },
+    }).catch(async () => {
+      await prisma.$executeRaw`
+        INSERT IGNORE INTO global_config (config_key, config_value)
+        VALUES ('billing_tab_order', ${JSON.stringify(DEFAULT_BILLING_TAB_ORDER)})
+      `;
+    });
+  }
+}
+
+function normalizeTabOrder(raw) {
+  let parsed = null;
+  try {
+    parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch {
+    parsed = null;
+  }
+  const allowed = new Set(DEFAULT_BILLING_TAB_ORDER);
+  const out = [];
+  if (Array.isArray(parsed)) {
+    for (const key of parsed) {
+      if (allowed.has(key) && !out.includes(key)) out.push(key);
+    }
+  }
+  for (const key of DEFAULT_BILLING_TAB_ORDER) {
+    if (!out.includes(key)) out.push(key);
+  }
+  return out;
+}
+
+async function getBillingTabOrder() {
+  await ensureBillingSortSchema();
+  const row = await prisma.global_config.findUnique({ where: { config_key: 'billing_tab_order' } });
+  return normalizeTabOrder(row?.config_value);
+}
+
+async function nextSubscriptionSortOrder(category) {
+  const cat = category || 'payment_gateway';
+  const rows = await prisma.$queryRaw`
+    SELECT COALESCE(MAX(sort_order), 0) AS m
+    FROM subscription_plans
+    WHERE plan_category = ${cat}
+  `;
+  return Number(rows[0]?.m || 0) + 1;
+}
+
+async function nextAddonSortOrder() {
+  const rows = await prisma.$queryRaw`
+    SELECT COALESCE(MAX(sort_order), 0) AS m FROM addon_plans
+  `;
+  return Number(rows[0]?.m || 0) + 1;
 }
 
 function parseFeaturesJson(raw, fallbackFn) {
@@ -117,10 +227,13 @@ function mapSubscriptionPlanRow(row) {
     max_devices: Number(row.max_devices),
     is_custom_sender_allowed: Number(row.is_custom_sender_allowed || 0),
     duration_days: Number(row.duration_days || 365),
-    plan_category: row.plan_category || 'personal',
+    plan_category: row.plan_category === 'personal' || !row.plan_category
+      ? 'payment_gateway'
+      : row.plan_category,
     perm_template: Number(row.perm_template ?? 1),
     perm_website: Number(row.perm_website ?? 1),
     perm_device: Number(row.perm_device ?? 1),
+    sort_order: Number(row.sort_order ?? 0),
   };
   return {
     ...plan,
@@ -141,6 +254,7 @@ function mapAddonPlanRow(row) {
     perm_template: Number(row.perm_template ?? 0),
     perm_website: Number(row.perm_website ?? 0),
     perm_device: Number(row.perm_device ?? 1),
+    sort_order: Number(row.sort_order ?? 0),
   };
   return {
     ...plan,
@@ -305,17 +419,19 @@ async function updateFcmToken(req, res) {
 async function listPlans(req, res) {
   try {
     await ensurePlanFeaturesColumns();
+    const tabOrder = await getBillingTabOrder();
     const rows = await prisma.$queryRaw`
       SELECT id, plan_name, price, max_sites, max_devices, is_custom_sender_allowed, duration_days, features_json,
-             plan_category, perm_template, perm_website, perm_device
+             plan_category, perm_template, perm_website, perm_device, sort_order
       FROM subscription_plans
-      ORDER BY price ASC
+      ORDER BY sort_order ASC, id ASC
     `;
     const mainPlans = rows
       .filter((p) => !isLegacyCustomSenderPlanName(p.plan_name))
       .map(mapSubscriptionPlanRow);
     return res.json({
       success: true,
+      tab_order: tabOrder,
       plans: mainPlans,
     });
   } catch (error) {
@@ -333,10 +449,10 @@ async function listAddonPlans(req, res) {
     await ensureAddonPlansTable();
     const rows = await prisma.$queryRaw`
       SELECT id, plan_name, price, duration_days, description, is_active, features_json,
-             max_devices, perm_custom_sender, perm_template, perm_website, perm_device
+             max_devices, perm_custom_sender, perm_template, perm_website, perm_device, sort_order
       FROM addon_plans
       WHERE is_active = 1
-      ORDER BY price ASC
+      ORDER BY sort_order ASC, id ASC
     `;
     return res.json({ success: true, plans: rows.map(mapAddonPlanRow) });
   } catch (error) {
@@ -351,13 +467,14 @@ async function listAddonPlans(req, res) {
 async function listAddonPlansAdmin(req, res) {
   try {
     await ensureAddonPlansTable();
+    const tabOrder = await getBillingTabOrder();
     const rows = await prisma.$queryRaw`
       SELECT id, plan_name, price, duration_days, description, is_active, features_json, created_at,
-             max_devices, perm_custom_sender, perm_template, perm_website, perm_device
+             max_devices, perm_custom_sender, perm_template, perm_website, perm_device, sort_order
       FROM addon_plans
-      ORDER BY price ASC
+      ORDER BY sort_order ASC, id ASC
     `;
-    return res.json({ success: true, plans: rows.map(mapAddonPlanRow) });
+    return res.json({ success: true, tab_order: tabOrder, plans: rows.map(mapAddonPlanRow) });
   } catch (error) {
     console.error('[Billing Controller] listAddonPlansAdmin error:', error);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
@@ -432,11 +549,12 @@ async function saveAddonPlan(req, res) {
           message: 'এই নামের একটি অ্যাড-অন প্যাকেজ ইতিমধ্যেই রয়েছে। + দিয়ে নতুন তৈরি না করে তালিকা থেকে এডিট করুন।',
         });
       }
+      const sortOrder = await nextAddonSortOrder();
       await prisma.$executeRaw`
         INSERT INTO addon_plans (plan_name, price, duration_days, description, is_active, features_json,
-          max_devices, perm_custom_sender, perm_template, perm_website, perm_device)
+          max_devices, perm_custom_sender, perm_template, perm_website, perm_device, sort_order)
         VALUES (${normalizedName}, ${Number(price)}, ${parseInt(duration_days, 10) || 30}, ${description || null}, ${activeVal}, ${featuresJson},
-          ${maxDev}, ${permCustom}, ${permTpl}, ${permWeb}, ${permDev})
+          ${maxDev}, ${permCustom}, ${permTpl}, ${permWeb}, ${permDev}, ${sortOrder})
       `;
     }
 
@@ -497,9 +615,9 @@ async function createPlan(req, res) {
       duration_days: duration_days || 365,
     };
     const featuresJson = serializeFeatures(features);
-    const category = ['personal', 'personal_business', 'payment_gateway'].includes(plan_category)
+    const category = ['personal_business', 'payment_gateway'].includes(plan_category)
       ? plan_category
-      : 'personal';
+      : (plan_category === 'personal' ? 'payment_gateway' : 'payment_gateway');
     const permTpl = perm_template === false || perm_template === 0 ? 0 : 1;
     const permWeb = perm_website === false || perm_website === 0 ? 0 : 1;
     const permDev = perm_device === false || perm_device === 0 ? 0 : 1;
@@ -511,6 +629,15 @@ async function createPlan(req, res) {
         where: { id: planId },
         data,
       });
+      await prisma.$executeRaw`
+        UPDATE subscription_plans
+        SET features_json = ${featuresJson},
+            plan_category = ${category},
+            perm_template = ${permTpl},
+            perm_website = ${permWeb},
+            perm_device = ${permDev}
+        WHERE id = ${planId}
+      `;
     } else {
       const existingName = await prisma.subscription_plans.findUnique({
         where: { plan_name },
@@ -520,17 +647,18 @@ async function createPlan(req, res) {
       }
       const created = await prisma.subscription_plans.create({ data });
       planId = created.id;
+      const sortOrder = await nextSubscriptionSortOrder(category);
+      await prisma.$executeRaw`
+        UPDATE subscription_plans
+        SET features_json = ${featuresJson},
+            plan_category = ${category},
+            perm_template = ${permTpl},
+            perm_website = ${permWeb},
+            perm_device = ${permDev},
+            sort_order = ${sortOrder}
+        WHERE id = ${planId}
+      `;
     }
-
-    await prisma.$executeRaw`
-      UPDATE subscription_plans
-      SET features_json = ${featuresJson},
-          plan_category = ${category},
-          perm_template = ${permTpl},
-          perm_website = ${permWeb},
-          perm_device = ${permDev}
-      WHERE id = ${planId}
-    `;
 
     return res.json({ success: true, message: 'প্ল্যান সফলভাবে তৈরি/আপডেট করা হয়েছে।' });
   } catch (error) {
@@ -622,9 +750,81 @@ async function getAccountEntitlements(req, res) {
   try {
     const userId = req.user.userId;
     const ent = await syncUserEntitlements(userId);
-    return res.json({ success: true, entitlements: ent });
+    const profile = await require('../services/commPolicyService').resolveCommProfile(userId);
+    const policy = require('../services/commPolicyService').toClientPolicy(profile);
+    return res.json({
+      success: true,
+      entitlements: {
+        ...ent,
+        comm_profile: profile.id,
+        heartbeat: policy.heartbeat,
+        use_socket: policy.use_socket,
+      },
+      policy,
+    });
   } catch (error) {
     console.error('[Billing Controller] getAccountEntitlements error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function reorderSubscriptionPlans(req, res) {
+  try {
+    await ensurePlanFeaturesColumns();
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (!items.length) {
+      return res.status(400).json({ success: false, error: 'MISSING_ITEMS' });
+    }
+    for (const item of items) {
+      const id = parseInt(item.id, 10);
+      const sortOrder = parseInt(item.sort_order ?? item.sortOrder, 10);
+      if (!id || Number.isNaN(sortOrder)) continue;
+      await prisma.$executeRaw`
+        UPDATE subscription_plans SET sort_order = ${sortOrder} WHERE id = ${id}
+      `;
+    }
+    return res.json({ success: true, message: 'প্যাকেজ অর্ডার সেভ হয়েছে।' });
+  } catch (error) {
+    console.error('[Billing Controller] reorderSubscriptionPlans error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function reorderAddonPlans(req, res) {
+  try {
+    await ensureAddonPlansTable();
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (!items.length) {
+      return res.status(400).json({ success: false, error: 'MISSING_ITEMS' });
+    }
+    for (const item of items) {
+      const id = parseInt(item.id, 10);
+      const sortOrder = parseInt(item.sort_order ?? item.sortOrder, 10);
+      if (!id || Number.isNaN(sortOrder)) continue;
+      await prisma.$executeRaw`
+        UPDATE addon_plans SET sort_order = ${sortOrder} WHERE id = ${id}
+      `;
+    }
+    return res.json({ success: true, message: 'অ্যাড-অন অর্ডার সেভ হয়েছে।' });
+  } catch (error) {
+    console.error('[Billing Controller] reorderAddonPlans error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function saveBillingTabOrder(req, res) {
+  try {
+    await ensureBillingSortSchema();
+    const order = normalizeTabOrder(req.body?.tab_order ?? req.body?.tabOrder);
+    const value = JSON.stringify(order);
+    await prisma.$executeRaw`
+      INSERT INTO global_config (config_key, config_value)
+      VALUES ('billing_tab_order', ${value})
+      ON DUPLICATE KEY UPDATE config_value = ${value}
+    `;
+    return res.json({ success: true, tab_order: order, message: 'ট্যাব অর্ডার সেভ হয়েছে।' });
+  } catch (error) {
+    console.error('[Billing Controller] saveBillingTabOrder error:', error);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 }
@@ -642,4 +842,8 @@ module.exports = {
   deletePlan,
   purchaseCustomSenderAddon,
   getAccountEntitlements,
+  reorderSubscriptionPlans,
+  reorderAddonPlans,
+  saveBillingTabOrder,
+  getBillingTabOrder,
 };

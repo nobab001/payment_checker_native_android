@@ -27,6 +27,7 @@ object AccountEntitlementsStore {
         SecurePreferences.encrypt(context, AppConfig.KEY_PERM_DEVICE, if (ent.permDevice == 1) "1" else "0")
         SecurePreferences.encrypt(context, AppConfig.KEY_EFF_MAX_DEVICES, ent.effMaxDevices.toString())
         SecurePreferences.encrypt(context, AppConfig.KEY_EFF_MAX_SITES, ent.effMaxSites.toString())
+        online.paychek.app.services.sync.CommPolicyStore.applyEntitlements(context, ent)
         context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(AppConfig.KEY_HAS_CUSTOM_SENDER_ADDON, ent.hasCustomSender)

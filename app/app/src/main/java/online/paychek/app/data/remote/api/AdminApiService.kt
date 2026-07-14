@@ -156,6 +156,24 @@ interface AdminApiService {
         @Path("id") id: Int
     ): Response<AdminGenericResponse>
 
+    @POST("admin/plans/reorder")
+    suspend fun reorderPlans(
+        @Header("Authorization") token: String,
+        @Body request: PlanReorderRequest
+    ): Response<AdminGenericResponse>
+
+    @POST("admin/addon-plans/reorder")
+    suspend fun reorderAddonPlans(
+        @Header("Authorization") token: String,
+        @Body request: PlanReorderRequest
+    ): Response<AdminGenericResponse>
+
+    @POST("admin/billing-tab-order")
+    suspend fun saveBillingTabOrder(
+        @Header("Authorization") token: String,
+        @Body request: BillingTabOrderRequest
+    ): Response<AdminGenericResponse>
+
     @GET("admin/websites")
     suspend fun getWebsites(
         @Header("Authorization") token: String

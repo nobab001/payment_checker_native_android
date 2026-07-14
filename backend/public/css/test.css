@@ -1,0 +1,210 @@
+/* Test Experience layout (tokens from official.css) */
+
+.test-shell {
+  min-height: calc(100vh - var(--nav-h));
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+}
+
+.test-hero {
+  padding: 28px 0 8px;
+}
+.test-hero h1 {
+  font-family: var(--display);
+  font-size: clamp(1.6rem, 3vw, 2rem);
+  letter-spacing: -0.03em;
+  margin: 0 0 8px;
+}
+.test-hero p { margin: 0; color: var(--muted); max-width: 60ch; }
+
+.notice {
+  margin: 16px 0 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fde68a;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.notice strong { color: #fff; display: block; margin-bottom: 4px; }
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-top: 20px;
+}
+.tab-btn {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  padding: 12px 16px;
+  cursor: pointer;
+  font-weight: 600;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.tab-btn.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 20px;
+  padding: 20px 0 40px;
+  min-height: 640px;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  overflow: auto;
+  max-height: calc(100vh - 220px);
+}
+
+.panel h2 {
+  font-size: 0.95rem;
+  margin: 0 0 12px;
+  letter-spacing: -0.02em;
+}
+.field { margin-bottom: 14px; }
+.field label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.field select, .field input[type="number"] {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--text);
+}
+.seg {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.seg button {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 10px;
+  padding: 10px 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.seg button.active {
+  border-color: rgba(45, 212, 191, 0.5);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.toggle-list { display: flex; flex-direction: column; gap: 8px; }
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+.toggle-row span { color: var(--muted); font-size: 0.75rem; }
+
+.switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex: 0 0 auto;
+}
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch .slider {
+  position: absolute;
+  inset: 0;
+  background: #2a2f3a;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: 0.15s;
+}
+.switch .slider::before {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: 0.15s;
+}
+.switch input:checked + .slider { background: var(--accent); }
+.switch input:checked + .slider::before { transform: translateX(18px); }
+
+.preview-frame {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+  min-height: 640px;
+  display: flex;
+  flex-direction: column;
+}
+.preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.preview-frame iframe {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  min-height: 600px;
+  background: #fff;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+.status-pill.err { background: rgba(248,113,113,0.12); color: var(--danger); }
+
+.pay-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+  margin-top: 12px;
+}
+.pay-bar .field { margin: 0; flex: 1; min-width: 120px; }
+
+.hidden { display: none !important; }
+
+@media (max-width: 960px) {
+  .workspace { grid-template-columns: 1fr; }
+  .panel, .preview-frame { max-height: none; }
+}

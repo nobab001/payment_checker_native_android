@@ -214,12 +214,13 @@ async function getSmsHistory(req, res) {
       });
     }
 
-    const allowedProviders = ['bKash', 'Nagad', 'Rocket', 'Upay'];
-    const useFilter = allowedProviders.includes(provider);
+    const providerQuery = (provider || 'all').trim();
+    const useFilter = providerQuery && providerQuery.toLowerCase() !== 'all';
 
     const whereClause = { user_id: userId };
     if (useFilter) {
-      whereClause.provider_tag = provider;
+      // Match full template name OR legacy short tags (bKash / Nagad / ...)
+      whereClause.provider_tag = { contains: providerQuery };
     }
 
     const hasDateFilter = req.query.startDate && req.query.endDate;
@@ -237,8 +238,18 @@ async function getSmsHistory(req, res) {
     const queryOptions = {
       where: whereClause,
       select: {
-        id: true, provider_tag: true, amount: true, trx_id: true, sender_number: true,
-        sim_slot: true, sms_timestamp: true, is_used: true, created_at: true, full_sms: true
+        id: true,
+        provider_tag: true,
+        amount: true,
+        trx_id: true,
+        sender_number: true,
+        sim_slot: true,
+        sim_number: true,
+        device_id: true,
+        sms_timestamp: true,
+        is_used: true,
+        created_at: true,
+        full_sms: true
       },
       orderBy: { sms_timestamp: 'desc' }
     };
@@ -263,7 +274,9 @@ async function getSmsHistory(req, res) {
       ...row,
       status: row.is_used ? 'SOLD_OUT' : 'READY',
       amount: Number(row.amount),
-      device_name: deviceMap[row.device_id] || 'Unknown Device'
+      // Source device that uploaded this SMS — never the viewer's phone
+      device_name: deviceMap[row.device_id] || row.device_id || 'Unknown Device',
+      sim_number: row.sim_number || null
     }));
 
     console.log(`[HISTORY] User ${userId} | cache MISS | client=${lastSync} server=${historyVersion} | Page ${page} | Provider: ${provider} | Found: ${rows.length}`);
@@ -374,8 +387,18 @@ async function getDashboardStats(req, res) {
     const recentRows = await prisma.sms_history.findMany({
       where: { user_id: userId },
       select: {
-        id: true, provider_tag: true, amount: true, trx_id: true, sender_number: true,
-        sim_slot: true, sms_timestamp: true, is_used: true, created_at: true, full_sms: true
+        id: true,
+        provider_tag: true,
+        amount: true,
+        trx_id: true,
+        sender_number: true,
+        sim_slot: true,
+        sim_number: true,
+        device_id: true,
+        sms_timestamp: true,
+        is_used: true,
+        created_at: true,
+        full_sms: true
       },
       orderBy: { sms_timestamp: 'desc' },
       take: 20
@@ -394,7 +417,8 @@ async function getDashboardStats(req, res) {
       ...row,
       status: row.is_used ? 'SOLD_OUT' : 'READY',
       amount: Number(row.amount),
-      device_name: deviceMap[row.device_id] || 'Unknown Device'
+      device_name: deviceMap[row.device_id] || row.device_id || 'Unknown Device',
+      sim_number: row.sim_number || null
     }));
 
     console.log(`[STATS] Dashboard loaded for user: ${userId} | Today: ${todayDate} | Paid: ${isPaid} | Plan: ${activePlanName}`);

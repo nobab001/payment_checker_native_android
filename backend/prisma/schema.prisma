@@ -469,6 +469,7 @@ model subscription_plans {
   perm_website             Int      @default(1) @db.TinyInt
   perm_device              Int      @default(1) @db.TinyInt
   features_json            String?  @db.Text
+  sort_order               Int      @default(0)
   created_at               DateTime @default(now()) @db.Timestamp(0)
 }
 
@@ -485,6 +486,7 @@ model addon_plans {
   perm_website      Int      @default(0) @db.TinyInt
   perm_device       Int      @default(1) @db.TinyInt
   features_json     String?  @db.Text
+  sort_order        Int      @default(0)
   created_at        DateTime @default(now()) @db.Timestamp(0)
 }
 
@@ -566,100 +568,3 @@ model custom_sms_archives {
   @@index([user_id, created_at])
 }
 
-// ── Demo Merchant (v1) — test harness for PayCheck platform ─────────────────
-model demo_merchant_users {
-  id            Int      @id @default(autoincrement())
-  email         String   @unique @db.VarChar(255)
-  password_hash String   @db.VarChar(255)
-  full_name     String   @db.VarChar(120)
-  role          String   @default("user") @db.VarChar(16)
-  created_at    DateTime @default(now()) @db.Timestamp(0)
-  updated_at    DateTime @default(now()) @updatedAt @db.Timestamp(0)
-
-  wallet       demo_merchant_wallets?
-  orders       demo_merchant_orders[]
-  ledger       demo_merchant_wallet_ledger[]
-  transactions demo_merchant_transactions[]
-
-  @@index([created_at], map: "idx_dm_user_created")
-}
-
-model demo_merchant_wallets {
-  user_id    Int      @id
-  balance    Decimal  @default(0.00) @db.Decimal(12, 2)
-  updated_at DateTime @default(now()) @updatedAt @db.Timestamp(0)
-
-  user demo_merchant_users @relation(fields: [user_id], references: [id], onDelete: Cascade)
-}
-
-model demo_merchant_wallet_ledger {
-  id             Int      @id @default(autoincrement())
-  user_id        Int
-  amount         Decimal  @db.Decimal(12, 2)
-  balance_after  Decimal  @db.Decimal(12, 2)
-  entry_type     String   @db.VarChar(16)
-  reference_type String   @db.VarChar(32)
-  reference_id   String?  @db.VarChar(64)
-  description    String?  @db.VarChar(255)
-  created_at     DateTime @default(now()) @db.Timestamp(0)
-
-  user demo_merchant_users @relation(fields: [user_id], references: [id], onDelete: Cascade)
-
-  @@index([user_id, created_at], map: "idx_dm_ledger_user_created")
-}
-
-model demo_merchant_products {
-  id          Int      @id @default(autoincrement())
-  sku         String   @unique @db.VarChar(64)
-  name        String   @db.VarChar(120)
-  description String?  @db.Text
-  price       Decimal  @db.Decimal(12, 2)
-  image_url   String?  @db.VarChar(512)
-  is_active   Int      @default(1) @db.TinyInt
-  created_at  DateTime @default(now()) @db.Timestamp(0)
-
-  orders demo_merchant_orders[]
-}
-
-model demo_merchant_orders {
-  id                   Int       @id @default(autoincrement())
-  user_id              Int
-  order_number         String    @unique @db.VarChar(64)
-  order_type           String    @db.VarChar(32)
-  status               String    @default("pending") @db.VarChar(16)
-  amount               Decimal   @db.Decimal(12, 2)
-  product_id           Int?
-  payment_session_token String?  @db.VarChar(128)
-  paychek_order_id     String?   @db.VarChar(191)
-  paychek_payment_id   String?   @db.VarChar(128)
-  trace_id             String?   @db.VarChar(64)
-  meta_json            String?   @db.Text
-  created_at           DateTime  @default(now()) @db.Timestamp(0)
-  paid_at              DateTime? @db.Timestamp(0)
-
-  user    demo_merchant_users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  product demo_merchant_products? @relation(fields: [product_id], references: [id], onDelete: SetNull)
-
-  transactions demo_merchant_transactions[]
-
-  @@index([user_id, status], map: "idx_dm_order_user_status")
-  @@index([user_id, created_at], map: "idx_dm_order_user_created")
-  @@index([payment_session_token], map: "idx_dm_order_session")
-}
-
-model demo_merchant_transactions {
-  id          Int      @id @default(autoincrement())
-  user_id     Int
-  order_id    Int?
-  txn_type    String   @db.VarChar(32)
-  amount      Decimal  @db.Decimal(12, 2)
-  status      String   @db.VarChar(16)
-  description String?  @db.VarChar(255)
-  created_at  DateTime @default(now()) @db.Timestamp(0)
-
-  user  demo_merchant_users  @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  order demo_merchant_orders? @relation(fields: [order_id], references: [id], onDelete: SetNull)
-
-  @@index([user_id, txn_type], map: "idx_dm_txn_user_type")
-  @@index([user_id, created_at], map: "idx_dm_txn_user_created")
-}

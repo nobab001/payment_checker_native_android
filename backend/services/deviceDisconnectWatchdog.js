@@ -1,16 +1,15 @@
 /**
- * After Socket.IO disconnect: check every 10 min, up to 3 times.
- * If device is still inactive → sim_slot_bindings.is_active = 0 for that device.
- * Watch ends after 3 checks or when device becomes active again.
+ * Device disconnect / heartbeat-miss watchdog (Comm Policy v1.0).
+ *
+ * Gateway / Welcome: inactive past offline threshold → is_active = 0 (checkout hide).
+ * Personal tiers: monitoring status only — do not force-deactivate bindings.
  */
 
 const prisma = require('../db/prisma');
 const numberHealth = require('./numberHealthService');
+const commPolicy = require('./commPolicyService');
 
-const CHECK_INTERVAL_MS = 10 * 60 * 1000;
-const MAX_CHECKS = 3;
-
-/** @type {Map<string, { timeouts: NodeJS.Timeout[], checkCount: number }>} */
+/** @type {Map<string, { timeouts: NodeJS.Timeout[], profileId: string }>} */
 const activeWatches = new Map();
 
 function watchKey(userId, deviceId) {
@@ -29,6 +28,7 @@ function cancelDeviceWatch(userId, deviceId) {
 async function isDeviceCurrentlyActive(userId, deviceId) {
   const uid = String(userId);
   const dev = String(deviceId);
+  const profile = await numberHealth.getCachedProfile(uid);
 
   if (await numberHealth.isDeviceSocketLive(uid, dev)) return true;
 
@@ -36,7 +36,7 @@ async function isDeviceCurrentlyActive(userId, deviceId) {
   const deviceHealth = await numberHealth.getDeviceHealth(uid, dev);
   if (
     deviceHealth.lastSeenMs
-    && now - deviceHealth.lastSeenMs <= numberHealth.THRESHOLDS.ONLINE_MS
+    && now - deviceHealth.lastSeenMs <= profile.onlineMs
   ) {
     return true;
   }
@@ -44,7 +44,7 @@ async function isDeviceCurrentlyActive(userId, deviceId) {
   const numbers = await numberHealth.fetchActiveNumbersForDevice(uid, dev);
   for (const n of numbers) {
     const st = await numberHealth.getNumberState(uid, n.phone_number);
-    if (st.state === 'ONLINE') return true;
+    if (st.state === 'ONLINE' || st.state === 'GRACE') return true;
   }
   return false;
 }
@@ -90,64 +90,62 @@ async function reactivateDeviceBindings(userId, deviceId, numbers = null) {
   }
 }
 
-async function runCheck(userId, deviceId, checkIndex) {
+async function runOfflineCheck(userId, deviceId) {
   const key = watchKey(userId, deviceId);
   const watch = activeWatches.get(key);
   if (!watch) return;
 
+  const profile = await numberHealth.getCachedProfile(userId);
+  if (!profile.deactivateOnOffline) {
+    console.log(`[DeviceWatch] ${key} profile=${profile.id} — skip deactivate`);
+    cancelDeviceWatch(userId, deviceId);
+    return;
+  }
+
   const active = await isDeviceCurrentlyActive(userId, deviceId);
   if (active) {
-    console.log(`[DeviceWatch] ${key} active on check ${checkIndex + 1}/${MAX_CHECKS} — OK, watch ended`);
+    console.log(`[DeviceWatch] ${key} active before offline deadline — OK`);
     cancelDeviceWatch(userId, deviceId);
     return;
   }
 
-  const checkNum = checkIndex + 1;
-  watch.checkCount = checkNum;
-  console.log(`[DeviceWatch] ${key} inactive — check ${checkNum}/${MAX_CHECKS}`);
-
-  if (checkNum >= MAX_CHECKS) {
-    await deactivateDeviceBindings(userId, deviceId);
-    cancelDeviceWatch(userId, deviceId);
-    return;
-  }
-
-  const timer = setTimeout(() => {
-    runCheck(userId, deviceId, checkNum).catch((err) => {
-      console.warn('[DeviceWatch] runCheck failed:', err.message);
-      cancelDeviceWatch(userId, deviceId);
-    });
-  }, CHECK_INTERVAL_MS);
-  watch.timeouts.push(timer);
+  console.log(`[DeviceWatch] ${key} OFFLINE past ${profile.offlineMs}ms — is_active=0`);
+  await deactivateDeviceBindings(userId, deviceId);
+  cancelDeviceWatch(userId, deviceId);
 }
 
 /**
- * Start 3×10min inactive watch after socket disconnect.
- * First check runs after 10 minutes.
+ * Schedule profile-aware offline check after disconnect / heartbeat miss.
+ * @param {object} [profileHint] optional pre-resolved profile
  */
-function scheduleDeviceWatch(userId, deviceId) {
+function scheduleDeviceWatch(userId, deviceId, profileHint = null) {
   const key = watchKey(userId, deviceId);
   cancelDeviceWatch(userId, deviceId);
 
-  const watch = { timeouts: [], checkCount: 0 };
+  const profile = profileHint || commPolicy.PROFILES.gateway;
+  if (!profile.deactivateOnOffline) {
+    console.log(`[DeviceWatch] Skip watch for ${key} (profile=${profile.id})`);
+    return;
+  }
+
+  const watch = { timeouts: [], profileId: profile.id };
   activeWatches.set(key, watch);
 
+  const delay = profile.offlineMs;
   console.log(
-    `[DeviceWatch] Scheduled ${MAX_CHECKS} checks every ${CHECK_INTERVAL_MS / 60000} min for ${key}`
+    `[DeviceWatch] Scheduled offline check in ${Math.round(delay / 1000)}s for ${key} (${profile.id})`
   );
 
   const timer = setTimeout(() => {
-    runCheck(userId, deviceId, 0).catch((err) => {
-      console.warn('[DeviceWatch] first check failed:', err.message);
+    runOfflineCheck(userId, deviceId).catch((err) => {
+      console.warn('[DeviceWatch] offline check failed:', err.message);
       cancelDeviceWatch(userId, deviceId);
     });
-  }, CHECK_INTERVAL_MS);
+  }, delay);
   watch.timeouts.push(timer);
 }
 
 module.exports = {
-  CHECK_INTERVAL_MS,
-  MAX_CHECKS,
   scheduleDeviceWatch,
   cancelDeviceWatch,
   isDeviceCurrentlyActive,

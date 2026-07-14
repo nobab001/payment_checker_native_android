@@ -72,35 +72,35 @@ class BkashLiveProvider extends BaseProvider {
 
   async createPayment(ctx) {
     const cfg = this._cfg(ctx);
-    const reference = ctx.sessionToken || `ref_${Date.now()}`;
+    const reference = ctx.sessionToken || `inv_${Date.now()}`;
 
     if (cfg.mode !== 'api') {
       return { providerReference: reference, providerMeta: { mode: 'template' } };
     }
 
     const token = await this._grantToken(cfg);
-    const paymentID = await this._createBkashPayment(cfg, token, ctx);
+    const created = await this._createBkashPayment(cfg, token, ctx);
     return {
-      providerReference: paymentID,
-      providerMeta: { mode: 'api', paymentID },
+      providerReference: created.paymentID,
+      providerMeta: {
+        mode: 'api',
+        paymentID: created.paymentID,
+        bkashURL: created.bkashURL || null,
+      },
     };
   }
 
   async getRedirectUrl(ctx, payment) {
     const cfg = this._cfg(ctx);
 
-    if (cfg.mode === 'api' && payment.providerMeta?.paymentID) {
-      const token = await this._grantToken(cfg);
-      const res = await axios.post(
-        `${BKASH_API_BASE}/tokenized/checkout/create`,
-        { paymentID: payment.providerMeta.paymentID },
-        { headers: this._apiHeaders(cfg, token), timeout: 15000 },
-      );
-      const url = res.data?.bkashURL || res.data?.redirectURL;
-      if (!url) {
-        throw new ProviderError(PROVIDER_ERROR_CODES.REDIRECT_FAILED, 'bkash redirect url missing');
+    if (cfg.mode === 'api') {
+      if (payment.providerMeta?.bkashURL) {
+        return payment.providerMeta.bkashURL;
       }
-      return url;
+      throw new ProviderError(
+        PROVIDER_ERROR_CODES.REDIRECT_FAILED,
+        'bkash redirect url missing — recreate payment',
+      );
     }
 
     const tpl = ctx.merchantConfig?.redirect_url_template;
@@ -119,20 +119,15 @@ class BkashLiveProvider extends BaseProvider {
   }
 
   /**
-   * Verify inbound callback signature (template + api modes).
-   *
-   * SECURITY: fail-closed. Previously, when no callback secret was configured
-   * this returned `true` for an unsigned callback — letting anyone mark a
-   * session paid by hitting the callback URL. Now, if no secret material
-   * (config callbackSecret rotation set OR merchant api_secret fallback) is
-   * available, OR the signature is missing, we REJECT.
-   *
-   * @param {Object} payload — flat key/values from query/body
-   * @param {string} signature
-   * @param {Object} cfg
-   * @param {string} [fallbackSecret]
+   * Template mode: HMAC over sorted query params (our callbackSecret / api_secret).
+   * API mode: bKash's opaque `signature` query param is NOT our HMAC — authenticity
+   * comes from Execute/Status against bKash with paymentID bound to the session.
    */
   verifySignature(payload, signature, cfg, fallbackSecret) {
+    if (String(cfg?.mode || '').toLowerCase() === 'api') {
+      return true;
+    }
+
     const secrets = [...getCallbackSecrets(cfg)];
     if (fallbackSecret) secrets.push(String(fallbackSecret));
 
@@ -181,20 +176,51 @@ class BkashLiveProvider extends BaseProvider {
       return { verified: true, status: PAYMENT_STATUS.SUCCESS, providerReference: payment?.providerReference };
     }
 
+    const paymentID = payment.providerReference;
     const token = await this._grantToken(cfg);
-    const res = await axios.post(
-      `${BKASH_API_BASE}/tokenized/checkout/payment/status`,
-      { paymentID: payment.providerReference },
-      { headers: this._apiHeaders(cfg, token), timeout: 15000 },
-    );
-    const st = String(res.data?.transactionStatus || '').toLowerCase();
-    const ok = st === 'completed' || st === 'success';
-    return {
-      verified: ok,
-      status: ok ? PAYMENT_STATUS.SUCCESS : PAYMENT_STATUS.FAILED,
-      providerTransactionId: res.data?.trxID || payment.providerReference,
-      raw: res.data,
-    };
+
+    // Tokenized Checkout: finalize with Execute after customer PIN success.
+    try {
+      const exec = await axios.post(
+        `${BKASH_API_BASE}/tokenized/checkout/execute`,
+        { paymentID },
+        { headers: this._apiHeaders(cfg, token), timeout: 20000 },
+      );
+      const st = String(exec.data?.transactionStatus || '').toLowerCase();
+      const codeOk = String(exec.data?.statusCode || '') === '0000';
+      const ok = codeOk || st === 'completed' || st === 'success';
+      return {
+        verified: ok,
+        status: ok ? PAYMENT_STATUS.SUCCESS : PAYMENT_STATUS.FAILED,
+        providerTransactionId: exec.data?.trxID || paymentID,
+        raw: exec.data,
+      };
+    } catch (err) {
+      // Already executed / transient — fall back to Query Payment Status.
+      console.warn('[bkash-live] execute failed, trying status:', err.response?.data || err.message);
+      try {
+        const res = await axios.post(
+          `${BKASH_API_BASE}/tokenized/checkout/payment/status`,
+          { paymentID },
+          { headers: this._apiHeaders(cfg, token), timeout: 15000 },
+        );
+        const st = String(res.data?.transactionStatus || '').toLowerCase();
+        const codeOk = String(res.data?.statusCode || '') === '0000';
+        const ok = codeOk || st === 'completed' || st === 'success';
+        return {
+          verified: ok,
+          status: ok ? PAYMENT_STATUS.SUCCESS : PAYMENT_STATUS.FAILED,
+          providerTransactionId: res.data?.trxID || paymentID,
+          raw: res.data,
+        };
+      } catch (statusErr) {
+        recordFailure(this.id);
+        throw new ProviderError(
+          PROVIDER_ERROR_CODES.REDIRECT_FAILED,
+          statusErr.response?.data?.statusMessage || statusErr.message || 'bkash verify failed',
+        );
+      }
+    }
   }
 
   async normalize(parsed, ctx) {
@@ -234,13 +260,21 @@ class BkashLiveProvider extends BaseProvider {
   }
 
   _apiHeaders(cfg, idToken) {
+    // Create / execute: only auth + app-key (username/password are for token grant).
+    return {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'x-app-key': cfg.appKey,
+      authorization: idToken,
+    };
+  }
+
+  _grantHeaders(cfg) {
     return {
       'Content-Type': 'application/json',
       Accept: 'application/json',
       username: cfg.username,
       password: cfg.password,
-      'x-app-key': cfg.appKey,
-      authorization: idToken,
     };
   }
 
@@ -252,7 +286,7 @@ class BkashLiveProvider extends BaseProvider {
       const res = await axios.post(
         `${BKASH_API_BASE}/tokenized/checkout/token/grant`,
         { app_key: cfg.appKey, app_secret: cfg.appSecret },
-        { headers: { 'Content-Type': 'application/json', username: cfg.username, password: cfg.password }, timeout: 15000 },
+        { headers: this._grantHeaders(cfg), timeout: 15000 },
       );
       const token = res.data?.id_token || res.data?.token;
       if (!token) throw new ProviderError(PROVIDER_ERROR_CODES.NOT_CONFIGURED, 'bkash token grant failed');
@@ -265,22 +299,61 @@ class BkashLiveProvider extends BaseProvider {
   }
 
   async _createBkashPayment(cfg, token, ctx) {
-    const res = await axios.post(
-      `${BKASH_API_BASE}/tokenized/checkout/create`,
-      {
-        mode: '0011',
-        payerReference: ctx.meta?.customerNumber || 'paychek',
-        callbackURL: ctx.callbackUrl,
-        amount: String(ctx.amount),
-        currency: ctx.currency || 'BDT',
-        intent: 'sale',
-        merchantInvoiceNumber: ctx.sessionToken,
-      },
-      { headers: this._apiHeaders(cfg, token), timeout: 15000 },
-    );
-    const paymentID = res.data?.paymentID;
-    if (!paymentID) throw new ProviderError(PROVIDER_ERROR_CODES.REDIRECT_FAILED, 'bkash paymentID missing');
-    return paymentID;
+    const invoice = String(ctx.sessionToken || ctx.orderId || `INV${Date.now()}`)
+      .replace(/[<>&]/g, '')
+      .slice(0, 255);
+    const callbackURL = String(ctx.callbackUrl || '').trim();
+    if (!callbackURL) {
+      throw new ProviderError(PROVIDER_ERROR_CODES.NOT_CONFIGURED, 'bkash callbackURL missing');
+    }
+
+    let payerReference = String(
+      ctx.meta?.payerReference || ctx.meta?.customerNumber || cfg.username || '01700000000',
+    ).replace(/\D/g, '');
+    if (payerReference.length < 11) {
+      payerReference = (payerReference + '00000000000').slice(0, 11);
+    } else {
+      payerReference = payerReference.slice(-11);
+    }
+
+    const body = {
+      mode: '0011',
+      payerReference,
+      callbackURL,
+      amount: String(Number(ctx.amount).toFixed(2)),
+      currency: ctx.currency || 'BDT',
+      intent: 'sale',
+      merchantInvoiceNumber: invoice,
+    };
+
+    try {
+      const res = await axios.post(
+        `${BKASH_API_BASE}/tokenized/checkout/create`,
+        body,
+        { headers: this._apiHeaders(cfg, token), timeout: 15000 },
+      );
+      const paymentID = res.data?.paymentID;
+      const bkashURL = res.data?.bkashURL || res.data?.redirectURL || null;
+      if (!paymentID) {
+        throw new ProviderError(
+          PROVIDER_ERROR_CODES.REDIRECT_FAILED,
+          res.data?.statusMessage || 'bkash paymentID missing',
+        );
+      }
+      return { paymentID, bkashURL, raw: res.data };
+    } catch (err) {
+      if (err instanceof ProviderError) throw err;
+      const apiMsg = err.response?.data?.statusMessage
+        || err.response?.data?.message
+        || err.message
+        || 'bkash create payment failed';
+      console.error('[bkash-live] create payment failed:', apiMsg, {
+        status: err.response?.status,
+        body: err.response?.data,
+        callbackURL,
+      });
+      throw new ProviderError(PROVIDER_ERROR_CODES.REDIRECT_FAILED, apiMsg);
+    }
   }
 }
 

@@ -8,7 +8,11 @@ data class AccountEntitlementsDto(
     @SerializedName("perm_website") val permWebsite: Int = 0,
     @SerializedName("perm_device") val permDevice: Int = 0,
     @SerializedName("eff_max_devices") val effMaxDevices: Int = 0,
-    @SerializedName("eff_max_sites") val effMaxSites: Int = 0
+    @SerializedName("eff_max_sites") val effMaxSites: Int = 0,
+    /** Comm Policy v1.0 — welcome|personal|personal_business|gateway */
+    @SerializedName("comm_profile") val commProfile: String? = null,
+    @SerializedName("heartbeat") val heartbeatSec: Int? = null,
+    @SerializedName("use_socket") val useSocket: Boolean? = null
 ) {
     val hasCustomSender: Boolean get() = permCustomSender == 1
     val hasTemplate: Boolean get() = permTemplate == 1

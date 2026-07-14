@@ -1,6 +1,6 @@
 /**
  * Bridges checkout verify / vibe match → payment_sessions + per-init callback URLs.
- * Demo Merchant passes successUrl + callbackUrl on pay/init (session), not gateway_layouts row.
+ * Official Test / merchants pass successUrl + callbackUrl on pay/init (session), not gateway_layouts row.
  */
 
 const prisma = require('../db/prisma');
@@ -118,7 +118,7 @@ async function mergeSessionUrlsIntoLayout(apiData, sessionToken) {
   if (!session) return apiData;
   const successUrl = alignUrlToSessionOrigin(session.successUrl || apiData.successUrl, session);
   const cancelUrl = alignUrlToSessionOrigin(session.cancelUrl || apiData.cancelUrl, session);
-  return {
+  let payload = {
     ...apiData,
     successUrl,
     cancelUrl,
@@ -126,6 +126,20 @@ async function mergeSessionUrlsIntoLayout(apiData, sessionToken) {
     paymentSessionToken: session.sessionToken,
     orderId: session.orderId,
   };
+
+  // Official Test Experience: visitor edits live in session.meta.demoOverrides
+  // (never written to gateway_layouts). Apply on checkout load.
+  const demoOverrides = session.meta?.demoOverrides;
+  if (demoOverrides && typeof demoOverrides === 'object') {
+    try {
+      const { applyOverrides } = require('../official-website/services/session-store');
+      payload = applyOverrides(payload, demoOverrides);
+    } catch (e) {
+      console.warn('[CHECKOUT BRIDGE] demoOverrides apply failed:', e.message);
+    }
+  }
+
+  return payload;
 }
 
 module.exports = {

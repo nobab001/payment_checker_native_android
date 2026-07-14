@@ -131,6 +131,42 @@ class PaymentRepository {
         }
     }
 
+    data class BillingPackagesCatalog(
+        val plans: List<SubscriptionPlanDto>,
+        val addonPlans: List<AddonPlanDto>,
+        val tabOrder: List<String>
+    )
+
+    suspend fun getBillingPackagesCatalog(token: String): Result<BillingPackagesCatalog> {
+        return try {
+            val plansRes = api.getPlans("Bearer $token")
+            val addonRes = api.getAddonPlans("Bearer $token")
+            if (!plansRes.isSuccessful || plansRes.body()?.success != true) {
+                return Result.failure(
+                    Exception(ApiErrorMapper.fromHttpCode(plansRes.code(), "প্ল্যান লোড ব্যর্থ"))
+                )
+            }
+            val plansBody = plansRes.body()!!
+            val addons = if (addonRes.isSuccessful && addonRes.body()?.success == true) {
+                addonRes.body()?.plans.orEmpty()
+            } else {
+                emptyList()
+            }
+            val tabOrder = plansBody.tabOrder
+                ?.takeIf { it.isNotEmpty() }
+                ?: listOf("personal_custom_center", "personal_business", "payment_gateway")
+            Result.success(
+                BillingPackagesCatalog(
+                    plans = plansBody.plans,
+                    addonPlans = addons,
+                    tabOrder = tabOrder
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "প্যাকেজ লোড ব্যর্থ")))
+        }
+    }
+
     suspend fun purchaseSubscription(token: String, planName: String): Result<PurchaseSubscriptionResponse> {
         return try {
             val response = api.purchaseSubscription("Bearer $token", PurchaseSubscriptionRequest(planName))

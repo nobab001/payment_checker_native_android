@@ -240,10 +240,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
             repeat(3) { attempt ->
                 if (attempt > 0) {
-                    connectionEngine.reportApiSyncFailure(
-                        message = lastError ?: "ডেটা সিঙ্ক ব্যর্থ",
-                        isRetrying = true
-                    )
+                    connectionEngine.reportApiSyncFailure(isRetrying = true)
                     delay(1_000L * attempt)
                 }
 
@@ -261,10 +258,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             restoreCachedDashboardStats()
-            connectionEngine.reportApiSyncFailure(
-                message = lastError ?: "ডেটা সিঙ্ক ব্যর্থ। পুনরায় চেষ্টা করুন।",
-                isRetrying = false
-            )
+            connectionEngine.reportApiSyncFailure(isRetrying = false)
             if (!hasCachedStats) {
                 _state.update {
                     it.copy(

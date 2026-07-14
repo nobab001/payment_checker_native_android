@@ -8,7 +8,7 @@ const prisma = require('../../db/prisma');
 const audit = require('../../services/auditLog');
 const { createTraceId, logPayment } = require('../logging/trace-logger');
 const { runWithTrace } = require('../logging/trace-context');
-const { isSessionExpired, baseUrlFromRequest } = require('../shared/session-utils');
+const { isSessionExpired, baseUrlFromRequest, resolvePublicBaseUrl } = require('../shared/session-utils');
 const { loadMerchantByApiKey, loadMerchantByWebsiteId } = require('../shared/merchant-loader');
 const { loadOfficialGateway } = require('../shared/gateway-config-loader');
 const PaymentSessionEngine = require('../session/payment-session');
@@ -191,7 +191,7 @@ const PaymentFlowEngine = {
 
       const traceId = session.traceId || createTraceId();
 
-      return runWithTrace(traceId, async () => {
+      return await runWithTrace(traceId, async () => {
         if (isSessionExpired(session)) {
           await PaymentSessionEngine.expireSession(token).catch(() => {});
           return RedirectService.redirect(res, session.cancelUrl || '/');
@@ -222,52 +222,87 @@ const PaymentFlowEngine = {
       });
     } catch (error) {
       console.error('[PAY REDIRECT] error:', error);
-      return res.status(500).send('Internal Server Error');
+      if (!res.headersSent) {
+        return res.status(500).send(
+          `Payment redirect failed: ${error.message || 'Internal Server Error'}`,
+        );
+      }
     }
   },
 
   async _redirectBkash(req, res, session, traceId) {
-    const gateway = await loadOfficialGateway(session.websiteId, 'bkash_live');
-    if (!gateway) {
-      return RedirectService.redirect(res, session.cancelUrl || '/');
+    try {
+      const merchantAccountId = session.meta?.merchantAccountId ?? null;
+      const gateway = await loadOfficialGateway(session.websiteId, 'bkash_live', merchantAccountId);
+      if (!gateway) {
+        return RedirectService.redirect(res, session.cancelUrl || '/');
+      }
+
+      const adapter = getProvider('bkash_live');
+      const publicBase = resolvePublicBaseUrl(req, {
+        merchantCallbackUrl: gateway.callback_url || gateway.callbackUrl,
+      });
+      if (!publicBase) {
+        console.error(
+          '[BKASH] PUBLIC_BASE_URL missing — LAN/localhost cannot be used as bKash callback. '
+          + 'Set PUBLIC_BASE_URL to your ngrok/public HTTPS URL.',
+        );
+        return res.status(503).send(
+          'bKash callback URL requires a public HTTPS host. '
+          + 'Set PUBLIC_BASE_URL in backend .env (e.g. your ngrok URL) and restart the server.',
+        );
+      }
+      const callbackUrl = `${publicBase}/api/payment/bkash/callback?token=${encodeURIComponent(session.sessionToken)}`;
+
+      const paymentCtx = {
+        traceId,
+        sessionToken: session.sessionToken,
+        websiteId: session.websiteId,
+        userId: session.userId,
+        amount: session.amount,
+        currency: session.currency || 'BDT',
+        orderId: session.orderId,
+        successUrl: session.successUrl,
+        cancelUrl: session.cancelUrl,
+        merchantConfig: gateway,
+        callbackUrl,
+        meta: {
+          customerNumber: session.customerNumber || gateway.username || '',
+          payerReference: gateway.username || session.customerNumber || '',
+        },
+      };
+
+      logPayment(traceId, 'Provider', 'redirect.start', {
+        providerId: 'bkash_live',
+        callbackHost: publicBase,
+      });
+      await adapter.initialize(paymentCtx);
+      const payment = await adapter.createPayment(paymentCtx);
+      await PaymentSessionEngine.updateMeta(session.sessionToken, {
+        providerReference: payment.providerReference,
+        providerId: 'bkash_live',
+        paymentID: payment.providerMeta?.paymentID || null,
+      });
+
+      const redirectUrl = await adapter.getRedirectUrl(paymentCtx, payment);
+      await PaymentSessionEngine.markRedirected(session.sessionToken);
+
+      emitPaymentEvent(PAYMENT_EVENTS.PAYMENT_REDIRECTED, {
+        traceId, sessionToken: session.sessionToken, providerId: 'bkash_live',
+      });
+      recordLatency('redirect', 0, { traceId, providerId: 'bkash_live' });
+
+      return RedirectService.redirectBreakout(res, redirectUrl, { publicBase });
+    } catch (err) {
+      console.error('[BKASH REDIRECT]', err.message || err);
+      if (res.headersSent) return undefined;
+      const cancel = session.cancelUrl || '/';
+      const sep = cancel.includes('?') ? '&' : '?';
+      return RedirectService.redirect(
+        res,
+        `${cancel}${sep}error=${encodeURIComponent(err.message || 'BKASH_REDIRECT_FAILED')}`,
+      );
     }
-
-    const adapter = getProvider('bkash_live');
-    const base = baseUrlFromRequest(req);
-    const callbackUrl = `${base}/api/payment/bkash/callback?token=${encodeURIComponent(session.sessionToken)}`;
-
-    const paymentCtx = {
-      traceId,
-      sessionToken: session.sessionToken,
-      websiteId: session.websiteId,
-      userId: session.userId,
-      amount: session.amount,
-      currency: session.currency || 'BDT',
-      orderId: session.orderId,
-      successUrl: session.successUrl,
-      cancelUrl: session.cancelUrl,
-      merchantConfig: gateway,
-      callbackUrl,
-      meta: { customerNumber: session.customerNumber },
-    };
-
-    logPayment(traceId, 'Provider', 'redirect.start', { providerId: 'bkash_live' });
-    await adapter.initialize(paymentCtx);
-    const payment = await adapter.createPayment(paymentCtx);
-    await PaymentSessionEngine.updateMeta(session.sessionToken, {
-      providerReference: payment.providerReference,
-      providerId: 'bkash_live',
-    });
-
-    const redirectUrl = await adapter.getRedirectUrl(paymentCtx, payment);
-    await PaymentSessionEngine.markRedirected(session.sessionToken);
-
-    emitPaymentEvent(PAYMENT_EVENTS.PAYMENT_REDIRECTED, {
-      traceId, sessionToken: session.sessionToken, providerId: 'bkash_live',
-    });
-    recordLatency('redirect', 0, { traceId, providerId: 'bkash_live' });
-
-    return RedirectService.redirect(res, redirectUrl);
   },
 
   async _redirectLegacyOfficial(req, res, session, traceId) {

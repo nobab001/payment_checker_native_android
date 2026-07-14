@@ -114,7 +114,11 @@ async function processBkashCallback(req, opts = {}) {
       throw new PaymentError(PAY_ERROR_CODES.DUPLICATE_CALLBACK);
     }
 
-    const gateway = await loadOfficialGateway(session.websiteId, 'bkash_live');
+    const gateway = await loadOfficialGateway(
+      session.websiteId,
+      'bkash_live',
+      session.meta?.merchantAccountId ?? null,
+    );
     const website = await loadMerchantByWebsiteId(session.websiteId);
     let cfg = {};
     try {
@@ -122,17 +126,28 @@ async function processBkashCallback(req, opts = {}) {
     } catch (_) {
       cfg = {};
     }
-    const sigOk = adapter.verifySignature(
-      parsed.raw,
-      parsed.signature,
-      {
-        callbackSecret: cfg.callbackSecret || cfg.callback_secret,
-      },
-      website?.api_secret,
-    );
+    const providerCfg = adapter._cfg({ merchantConfig: gateway });
 
-    if (!sigOk) {
-      throw new PaymentError(PAY_ERROR_CODES.INVALID_SIGNATURE);
+    // API mode: bind paymentID to session — do not treat bKash opaque signature as HMAC.
+    if (providerCfg.mode === 'api') {
+      const expectedPid = session.meta?.paymentID || session.meta?.providerReference;
+      const gotPid = parsed.raw?.paymentID || parsed.trxId;
+      if (!expectedPid || !gotPid || String(expectedPid) !== String(gotPid)) {
+        throw new PaymentError(PAY_ERROR_CODES.INVALID_SIGNATURE);
+      }
+    } else {
+      const sigOk = adapter.verifySignature(
+        parsed.raw,
+        parsed.signature,
+        {
+          mode: providerCfg.mode,
+          callbackSecret: cfg.callbackSecret || cfg.callback_secret,
+        },
+        website?.api_secret,
+      );
+      if (!sigOk) {
+        throw new PaymentError(PAY_ERROR_CODES.INVALID_SIGNATURE);
+      }
     }
 
     const paymentCtx = {
@@ -148,12 +163,23 @@ async function processBkashCallback(req, opts = {}) {
       meta: {},
     };
 
-    const paymentRef = { providerReference: session.meta?.providerReference };
-    const verified = await adapter.verify(paymentCtx, paymentRef);
-    logPayment(traceId, 'Callback', 'verified', { verified: verified.verified });
-    emitPaymentEvent(PAYMENT_EVENTS.PAYMENT_VERIFIED, {
-      traceId, sessionToken, status: verified.status,
-    });
+    const paymentRef = {
+      providerReference: session.meta?.paymentID || session.meta?.providerReference || parsed.trxId,
+    };
+
+    // Only finalize with bKash Execute on customer success redirect.
+    let verified = { verified: false, status: PAYMENT_STATUS.FAILED };
+    if (parsed.success) {
+      verified = await adapter.verify(paymentCtx, paymentRef);
+      logPayment(traceId, 'Callback', 'verified', { verified: verified.verified });
+      emitPaymentEvent(PAYMENT_EVENTS.PAYMENT_VERIFIED, {
+        traceId, sessionToken, status: verified.status,
+      });
+    } else {
+      logPayment(traceId, 'Callback', 'customer_cancelled_or_failed', {
+        status: parsed.raw?.status,
+      });
+    }
 
     const normalized = await adapter.normalize(
       { ...parsed, success: parsed.success && verified.verified },

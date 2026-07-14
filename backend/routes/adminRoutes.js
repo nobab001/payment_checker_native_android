@@ -16,10 +16,13 @@ router.post('/plans', billingController.createPlan);
 router.get('/plans', billingController.listPlans);
 router.get('/subscription-plans', billingController.listPlans);
 router.delete('/plans/:id', billingController.deletePlan);
+router.post('/plans/reorder', billingController.reorderSubscriptionPlans);
 
 router.get('/addon-plans', billingController.listAddonPlansAdmin);
 router.post('/addon-plans', billingController.saveAddonPlan);
 router.delete('/addon-plans/:id', billingController.deleteAddonPlan);
+router.post('/addon-plans/reorder', billingController.reorderAddonPlans);
+router.post('/billing-tab-order', billingController.saveBillingTabOrder);
 
 // 1. App Configs (global_config)
 router.get('/config', admin.getConfigs);

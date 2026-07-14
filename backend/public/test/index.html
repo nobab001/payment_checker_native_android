@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Test Experience — PayCheck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/official.css" />
+  <link rel="stylesheet" href="/css/test.css" />
+  <script src="https://unpkg.com/lucide@0.468.0" defer></script>
+</head>
+<body>
+  <div class="bg-mesh" aria-hidden="true"></div>
+
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark"><i data-lucide="shield-check"></i></span>
+        PayCheck
+      </a>
+      <nav class="nav-links" id="navLinks">
+        <a href="/">Home</a>
+        <a href="/#features">Features</a>
+        <a href="/#solutions">Solutions</a>
+        <a href="/#pricing">Pricing</a>
+        <a href="/#documentation">Documentation</a>
+        <a href="/#resources">Resources</a>
+        <a class="nav-test" href="/test">Test</a>
+        <a href="/#contact">Contact</a>
+      </nav>
+      <button class="nav-toggle" id="navToggle" aria-label="Menu"><i data-lucide="menu"></i></button>
+    </div>
+  </header>
+
+  <div class="test-shell container">
+    <div class="test-hero">
+      <h1>Interactive Test Experience</h1>
+      <p>No login. No account. Edit checkout settings temporarily, then open the real PayCheck checkout. Merchant history, balance, and live config stay untouched.</p>
+      <div class="notice" id="noticeBox">
+        <strong>This is a PayCheck Test Environment.</strong>
+        You may send between ৳10 and ৳100.<br />
+        Your payment will be automatically refunded within 24 hours.<br />
+        Please do not send more than ৳100.
+      </div>
+      <div style="margin-top:12px">
+        <span class="status-pill" id="sessionPill">Starting session…</span>
+      </div>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button class="tab-btn active" data-tab="edit" type="button">Edit</button>
+      <button class="tab-btn" data-tab="test" type="button">Test</button>
+    </div>
+
+    <div class="workspace">
+      <aside class="panel" id="editPanel">
+        <h2>Checkout editor</h2>
+        <p style="color:var(--muted);font-size:0.85rem;margin:0 0 16px">Changes apply to this temporary demo session only. They expire automatically.</p>
+
+        <div class="field">
+          <label>Checkout mode</label>
+          <div class="seg" id="modeSeg">
+            <button type="button" data-mode="transaction">Transaction</button>
+            <button type="button" data-mode="merchant_vibe">Vibe</button>
+            <button type="button" data-mode="hybrid">Hybrid</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Design</label>
+          <div class="seg" id="designSeg">
+            <button type="button" data-design="design-1">Design 1</button>
+            <button type="button" data-design="design-2">Design 2</button>
+            <button type="button" data-design="design-3">Design 3</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Tabs</label>
+          <div class="toggle-list" id="tabsList"></div>
+        </div>
+
+        <div class="field">
+          <label>Numbers / providers</label>
+          <div class="toggle-list" id="gatewayList"></div>
+        </div>
+
+        <div class="pay-bar">
+          <div class="field">
+            <label>Preview amount (৳)</label>
+            <input type="number" id="amountInput" min="10" max="100" step="1" value="10" />
+          </div>
+          <button class="btn btn-ghost" type="button" id="refreshPreviewBtn">Refresh preview</button>
+        </div>
+      </aside>
+
+      <section class="preview-frame" id="previewPanel">
+        <div class="preview-toolbar">
+          <span id="previewLabel">Live checkout preview</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-primary" type="button" id="startPayBtn" style="padding:8px 12px;font-size:0.85rem">
+              Start real payment
+            </button>
+          </div>
+        </div>
+        <iframe id="checkoutFrame" title="PayCheck Checkout" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation allow-top-navigation-by-user-activation"></iframe>
+      </section>
+    </div>
+  </div>
+
+  <script src="/js/official/test-app.js" type="module"></script>
+  <script>
+    document.getElementById('navToggle')?.addEventListener('click', () => {
+      document.getElementById('navLinks').classList.toggle('open');
+    });
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.lucide) lucide.createIcons();
+    });
+  </script>
+</body>
+</html>

@@ -43,6 +43,9 @@ object AppConfig {
     const val KEY_PERM_DEVICE           = "pcu_perm_device"
     const val KEY_EFF_MAX_DEVICES       = "pcu_eff_max_devices"
     const val KEY_EFF_MAX_SITES         = "pcu_eff_max_sites"
+    const val KEY_COMM_PROFILE          = "pcu_comm_profile"
+    const val KEY_COMM_HEARTBEAT_SEC    = "pcu_comm_heartbeat_sec"
+    const val KEY_COMM_USE_SOCKET       = "pcu_comm_use_socket"
     const val KEY_DASHBOARD_STATS_CACHE   = "pcu_dashboard_stats_cache_v1"
 
     // -----------------------------------------------------------------------
@@ -59,8 +62,11 @@ object AppConfig {
     const val SYNC_WORKER_INTERVAL_MIN  = 15L        // 15 minutes
     const val SMS_POLL_WORKER_INTERVAL_MIN = 15L     // Guard-2: ContentProvider polling interval
     const val SMS_INBOX_SCAN_LIMIT      = 50         // Guard-2: এক ব্যাচে সর্বোচ্চ কতটি SMS স্ক্যান করবে
-    const val HEARTBEAT_INTERVAL_MS         = 60_000L    // legacy alias
-    const val FALLBACK_HEARTBEAT_INTERVAL_MS = 15 * 60_000L // HTTP ping only while socket is down
+    /** Comm Policy defaults — overridden by server heartbeat / entitlements. */
+    const val HEARTBEAT_INTERVAL_MS         = 120_000L   // 2 min (welcome/gateway)
+    const val HEARTBEAT_SPARSE_MS           = 600_000L   // 10 min (personal / personal business)
+    @Deprecated("Use CommPolicyStore.heartbeatIntervalMs()")
+    const val FALLBACK_HEARTBEAT_INTERVAL_MS = HEARTBEAT_SPARSE_MS
 
     // -----------------------------------------------------------------------
     // HTTP Headers

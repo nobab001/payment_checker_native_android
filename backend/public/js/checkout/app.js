@@ -16,12 +16,14 @@ const urlParams = new URLSearchParams(window.location.search);
 export const apiKey = urlParams.get('apiKey');
 export const amount = urlParams.get('amount') || '0.00';
 export const sessionToken = urlParams.get('session') || null;
+export const demoSessionId = urlParams.get('demoSession') || null;
 
 let checkoutModel = null;
 let activeTabId = 'send_money';
 let vibeRequestId = null;
 let vibePollTimer = null;
 let successUrl = null;
+let cancelUrl = null;
 let initialLoaded = false;
 
 window.__checkoutIconFail = function (img) {
@@ -98,12 +100,16 @@ function updateCheckoutPartial(prevSnap) {
 async function loadCheckoutData({ silent = false } = {}) {
   if (!apiKey) throw new Error('missing api key');
   const sessionQ = sessionToken ? `?session=${encodeURIComponent(sessionToken)}` : '';
-  const r = await fetch(`/api/checkout/${apiKey}${sessionQ}`);
+  const demoQ = demoSessionId
+    ? `${sessionQ ? '&' : '?'}demoSession=${encodeURIComponent(demoSessionId)}`
+    : '';
+  const r = await fetch(`/api/checkout/${apiKey}${sessionQ}${demoQ}`);
   if (!r.ok) throw new Error('load failed');
   const data = await r.json();
   const prevSnap = checkoutModel ? snapshotTab(checkoutModel, activeTabId) : null;
   checkoutModel = buildCheckoutModel(data, amount);
   successUrl = checkoutModel.urls.successUrl;
+  cancelUrl = checkoutModel.urls.cancelUrl;
 
   if (!initialLoaded) {
     HeaderComponent.mount(checkoutModel.merchant, checkoutModel.amount);
@@ -360,17 +366,30 @@ function escapeHtml(str) {
 async function startLivePay(provider, merchantAccountId) {
   try {
     const body = { provider, amount: parseFloat(amount) };
-    if (merchantAccountId != null) body.merchantAccountId = merchantAccountId;
+    if (merchantAccountId != null && Number.isFinite(Number(merchantAccountId))) {
+      body.merchantAccountId = Number(merchantAccountId);
+    }
+    if (successUrl) body.successUrl = successUrl;
+    if (cancelUrl) body.cancelUrl = cancelUrl;
+    if (demoSessionId) body.demoSessionId = demoSessionId;
 
     const r = await fetch(`/api/checkout/${apiKey}/live-init`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     const res = await r.json();
-    if (res.success && res.redirectUrl) window.location.href = res.redirectUrl;
-    else showStatus(res.error || 'লাইভ পেমেন্ট শুরু করা যায়নি।', 'err');
+    if (res.success && res.redirectUrl) {
+      // bKash blocks iframe embedding — always navigate the top window
+      const topWin = window.top || window;
+      topWin.location.href = res.redirectUrl;
+      return;
+    }
+    const errMsg = res.message || res.error || 'লাইভ পেমেন্ট শুরু করা যায়নি।';
+    showStatus(errMsg, 'err');
+    console.warn('[live-init]', errMsg, res);
   } catch (e) {
     showStatus('সংযোগ ত্রুটি।', 'err');
+    console.warn('[live-init]', e);
   }
 }
 
@@ -458,9 +477,19 @@ function redirectSuccess(redirectUrlOrTrx, trxId) {
 
 function showStatus(t, cls) {
   const p = resolveStatusPanel();
-  if (!p) return;
-  p.className = 'status ' + cls;
-  p.textContent = t;
+  if (p) {
+    p.className = 'status ' + cls;
+    p.textContent = t;
+    return;
+  }
+  if (cls === 'err') {
+    const toast = document.createElement('div');
+    toast.setAttribute('role', 'alert');
+    toast.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:9999;background:#991b1b;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;max-width:90%;box-shadow:0 8px 24px rgba(0,0,0,.25)';
+    toast.textContent = t;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 4500);
+  }
 }
 
 function showVibeStatus(t, cls) {

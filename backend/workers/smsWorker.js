@@ -61,7 +61,8 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
   const rawBodyHash = sha256(rawBody.trim());
   
   // Always parse on server side — app only sends rawBody
-  const parsed = await parseRawSms(rawBody, senderNumber || '', job.data.providerTag || '');
+  const clientProviderTag = (job.data.providerTag || '').trim();
+  const parsed = await parseRawSms(rawBody, senderNumber || '', clientProviderTag);
 
   if (!parsed.success) {
     try {
@@ -80,6 +81,9 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
     throw new Error('SMS_PARSE_FAILED');
   }
 
+  // Prefer full template name from parser; fall back to client-matched method provider.
+  const providerTag = (parsed.templateName || parsed.provider || clientProviderTag || 'Unknown').trim();
+
   const dateObj = new Date(Number(smsTimestamp));
   const formattedDate = dateObj.toISOString().slice(0, 10);
   // If trxId is empty (e.g. all {random} template), use rawBodyHash as unique trx_id
@@ -91,10 +95,10 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
     savedHistory = await prisma.sms_history.create({
       data: {
         user_id: userId,
-        device_id: deviceId,
+        device_id: deviceId || 'unknown_device',
         sim_slot: simSlot ? parseInt(simSlot, 10) : null,
         sim_number: simNumber ? String(simNumber) : null,
-        provider_tag: parsed.provider,
+        provider_tag: providerTag,
         amount: parsed.amount,
         trx_id: finalTrxId,
         sender_number: parsed.senderNumber || null,
@@ -107,7 +111,10 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
         is_synced: 1,
         is_used: 0
       },
-      select: { id: true, amount: true, trx_id: true, provider_tag: true, sender_number: true, sms_timestamp: true, full_sms: true }
+      select: {
+        id: true, amount: true, trx_id: true, provider_tag: true, sender_number: true,
+        sms_timestamp: true, full_sms: true, device_id: true, sim_slot: true, sim_number: true
+      }
     });
   } catch (dbErr) {
     if (dbErr.code === 'P2002') {

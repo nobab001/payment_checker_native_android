@@ -22,6 +22,7 @@ import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.services.connectivity.ConnectivityService
 import online.paychek.app.services.sms.SmsReceiver
 import online.paychek.app.services.sync.NumberHeartbeatEngine
+import online.paychek.app.services.sync.CommPolicyStore
 import online.paychek.app.services.sync.PingEngine
 import online.paychek.app.services.sync.SmsPollWorker
 import online.paychek.app.services.sync.SyncWorker
@@ -128,7 +129,15 @@ class SmsMonitorService : Service() {
 
         serviceScope.launch {
             startOfflineRecovery()
-            startSocketConnection()
+            // Comm Policy: refresh profile, start package-tiered heartbeat, socket only if needed
+            online.paychek.app.utils.AccountEntitlementsStore.refresh(this@SmsMonitorService)
+            NumberHeartbeatEngine.start(this@SmsMonitorService)
+            if (CommPolicyStore.useSocket(this@SmsMonitorService)) {
+                startSocketConnection()
+            } else {
+                Log.i(TAG, "Comm Policy sparse tier — Socket.IO skipped (HTTP heartbeat only)")
+                teardownSocket()
+            }
             online.paychek.app.services.foreground.SmsServiceGuard.scheduleWatchdog(this@SmsMonitorService)
             ServiceKeepAliveScheduler.schedule(this@SmsMonitorService)
         }
@@ -304,10 +313,27 @@ class SmsMonitorService : Service() {
             val userId = getUserIdFromToken(token) ?: return
             val deviceId = online.paychek.app.utils.DeviceIdHelper.getHashedAndroidId(this)
             
+            // Server io.use() requires JWT (handshake.auth.token or query.token).
+            // Without it every connect fails with AUTH_REQUIRED / connect_error.
             val options = IO.Options.builder()
-                .setQuery("userId=$userId&deviceId=$deviceId")
+                .setAuth(mapOf("token" to token))
+                .setQuery(
+                    "userId=${java.net.URLEncoder.encode(userId, "UTF-8")}" +
+                        "&deviceId=${java.net.URLEncoder.encode(deviceId, "UTF-8")}" +
+                        "&token=${java.net.URLEncoder.encode(token, "UTF-8")}"
+                )
+                .setTransports(arrayOf("websocket", "polling"))
+                .setReconnection(true)
+                .setReconnectionAttempts(Int.MAX_VALUE)
+                .setReconnectionDelay(2_000)
+                .setReconnectionDelayMax(15_000)
+                .setExtraHeaders(
+                    mapOf(
+                        "ngrok-skip-browser-warning" to listOf("true")
+                    )
+                )
                 .build()
-                
+
             socket = IO.socket(AppConfig.SOCKET_URL, options)
             
             socket?.on(Socket.EVENT_CONNECT) {
@@ -539,6 +565,7 @@ class SmsMonitorService : Service() {
 
     private fun stopMonitoring() {
         Log.i(TAG, "SMS Monitoring সার্ভিস বন্ধ হচ্ছে")
+        NumberHeartbeatEngine.signalOffline(this)
         isAlive = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()

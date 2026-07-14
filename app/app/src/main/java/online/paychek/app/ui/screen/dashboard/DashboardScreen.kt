@@ -823,8 +823,13 @@ fun DashboardScreen(
                         (trx.senderNumber != null && trx.senderNumber.contains(searchQuery, ignoreCase = true)) ||
                         trx.amount.toString().contains(searchQuery)
 
-                    val matchesProvider = selectedProvider == null ||
-                        trx.providerTag.equals(selectedProvider, ignoreCase = true)
+                    val matchesProvider = selectedProvider == null || run {
+                        val tag = trx.providerTag
+                        tag.equals(selectedProviderName, ignoreCase = true) ||
+                            tag.equals(selectedProvider, ignoreCase = true) ||
+                            (!selectedProvider.isNullOrBlank() && tag.contains(selectedProvider!!, ignoreCase = true)) ||
+                            (!selectedProviderName.isNullOrBlank() && tag.contains(selectedProviderName!!, ignoreCase = true))
+                    }
 
                     val matchesDate = isDateMatching(trx.smsTimestamp, selectedDate, customStartDate, customEndDate)
 
@@ -1418,35 +1423,23 @@ private fun TransactionRow(
     var expanded by remember { mutableStateOf(false) }
     val rotationState by animateFloatAsState(targetValue = if (expanded) 180f else 0f)
 
-    val providerColor = when (item.providerTag.lowercase(Locale.US)) {
-        "bkash"  -> BkashPink
-        "nagad"  -> NagadOrange
-        "rocket" -> RocketPurple
-        "upay"   -> UpayTeal
-        else     -> AccentCyan
-    }
-    val providerEmoji = when (item.providerTag.lowercase(Locale.US)) {
-        "bkash"  -> "🟢"
-        "nagad"  -> "🟠"
-        "rocket" -> "🔵"
-        "upay"   -> "🟡"
-        else     -> "⚪"
+    val providerKey = item.providerTag.lowercase(Locale.US)
+    val providerColor = when {
+        providerKey.contains("bkash") || providerKey.contains("বিকাশ") -> BkashPink
+        providerKey.contains("nagad") || providerKey.contains("নগদ") -> NagadOrange
+        providerKey.contains("rocket") || providerKey.contains("রকেট") -> RocketPurple
+        providerKey.contains("upay") || providerKey.contains("উপায়") || providerKey.contains("উপায়") -> UpayTeal
+        else -> AccentCyan
     }
     val isSoldOut = item.isUsed == 1
 
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val simNumber = remember(item.simSlot) {
-        val methodsJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(context)
-        val methodsType = object : com.google.gson.reflect.TypeToken<List<online.paychek.app.data.remote.dto.GatewayMethod>>() {}.type
-        val cachedMethods: List<online.paychek.app.data.remote.dto.GatewayMethod> = try {
-            online.paychek.app.utils.GsonUtils.gson.fromJson(methodsJson, methodsType) ?: emptyList()
-        } catch (e: Exception) { emptyList() }
-        cachedMethods.find { it.simSlot == item.simSlot && !it.number.isNullOrEmpty() }?.number
-    }
-
-    val deviceName = item.deviceName?.takeIf { 
-        it.isNotBlank() && it.lowercase(Locale.US) != "unknown" && it.lowercase(Locale.US) != "unknown device" 
-    } ?: android.os.Build.MODEL
+    // Prefer SMS source fields from API — never fall back to this phone's model
+    val displaySimNumber = item.simNumber?.takeIf { it.isNotBlank() }
+    val deviceName = item.deviceName?.takeIf {
+        it.isNotBlank() &&
+            it.lowercase(Locale.US) != "unknown" &&
+            it.lowercase(Locale.US) != "unknown device"
+    } ?: (item.deviceId?.takeIf { it.isNotBlank() } ?: "Unknown Device")
 
     Card(
         colors   = CardDefaults.cardColors(containerColor = DashCard),
@@ -1475,10 +1468,12 @@ private fun TransactionRow(
                     // Details
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text     = "$providerEmoji ${item.providerTag}",
+                            text     = item.providerTag,
                             color    = providerColor,
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
@@ -1495,7 +1490,10 @@ private fun TransactionRow(
                             fontSize = 10.sp
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        val simInfo = if (item.simSlot != null) " • SIM ${item.simSlot}${if (simNumber != null) " - $simNumber" else ""}" else ""
+                        val simInfo = buildString {
+                            if (item.simSlot != null) append(" • SIM ${item.simSlot}")
+                            if (!displaySimNumber.isNullOrBlank()) append(" - $displaySimNumber")
+                        }
                         Text(
                             text     = "Device: $deviceName$simInfo",
                             color    = TextMuted.copy(alpha = 0.6f),

@@ -101,6 +101,15 @@ const PaymentEngine = {
       throw new ProviderError(PROVIDER_ERROR_CODES.NOT_CONFIGURED, 'PROVIDER_NOT_CONFIGURED');
     }
 
+    const successUrl = ctx.successUrl || merchant.success_url || merchant.redirect_url || null;
+    const cancelUrl = ctx.cancelUrl || merchant.cancel_url || null;
+    const sessionMeta = {};
+    if (ctx.merchantAccountId != null) {
+      sessionMeta.merchantAccountId = Number(ctx.merchantAccountId) || ctx.merchantAccountId;
+    }
+    const demoSessionId = ctx.metadata?.extra?.demoSessionId;
+    if (demoSessionId) sessionMeta.demoSessionId = String(demoSessionId);
+
     if (registryEntry) {
       await getCachedProviderEntry(registryEntry.id);
       const adapter = getProvider(registryEntry.id);
@@ -111,17 +120,15 @@ const PaymentEngine = {
         userId: merchant.user_id,
         amount,
         currency: ctx.currency || 'BDT',
-        successUrl: merchant.success_url || merchant.redirect_url,
-        cancelUrl: merchant.cancel_url,
+        successUrl,
+        cancelUrl,
         merchantConfig: gateway,
         meta: ctx.metadata || {},
       };
 
+      // Validate credentials only — actual create happens on /pay/:token with callbackURL + invoice.
       logPayment(traceId, 'Provider', 'initialize', { providerId: registryEntry.id });
       await adapter.initialize(paymentCtx);
-
-      logPayment(traceId, 'Provider', 'createPayment', { providerId: registryEntry.id });
-      await adapter.createPayment(paymentCtx);
     }
 
     logPayment(traceId, 'Session', 'createSession', { providerId: dbProviderKey });
@@ -131,10 +138,11 @@ const PaymentEngine = {
       officialProvider: dbProviderKey,
       amount,
       currency: ctx.currency || 'BDT',
-      successUrl: merchant.success_url || merchant.redirect_url,
-      cancelUrl: merchant.cancel_url,
+      successUrl,
+      cancelUrl,
       timeoutSec: registryEntry?.sessionTimeout ?? 1800,
       traceId,
+      meta: sessionMeta,
     });
 
     const redirectUrl = RedirectService.buildPayTokenUrl(ctx.http?.baseUrl, session.sessionToken);

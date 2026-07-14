@@ -29,7 +29,7 @@ export const InteractionController = {
   mount() {
     if (!this._content) return;
     if (!this._mounted) {
-      LiveController.bind(this._content, (p) => this._onLivePay?.(p));
+      LiveController.bind(this._content, (p, mid) => this._onLivePay?.(p, mid));
       BottomSheetController.bindCardGrid(
         this._content,
         (id) => this._findProvider(id),

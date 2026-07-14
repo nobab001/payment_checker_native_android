@@ -11,9 +11,7 @@
     "test:payment-gate": "node payment/__tests__/production-gate.js",
     "db:hardening-3b5": "node payment/__tests__/apply-hardening-migration.js",
     "staging:preflight": "node payment/__tests__/staging-preflight.js",
-    "demo-merchant:migrate": "node demo-merchant/db/apply-migration.js",
-    "demo-merchant:migrate-admin": "node demo-merchant/db/apply-admin-migration.js",
-    "demo-merchant:seed": "node demo-merchant/db/seed.js"
+    "official:drop-demo-tables": "node official-website/db/drop-demo-merchant-tables.js"
   },
   "dependencies": {
     "@prisma/client": "5.14.0",

@@ -108,14 +108,17 @@ async function parseRawSms(rawBody, senderHint = '', providerTag = '') {
 
       const amount = parseFloat((amountRaw || '0').replace(/,/g, ''));
 
-      // Extract provider and type from template_name (e.g. "bKash Personal" -> provider: "bKash", type: "Personal")
-      const nameParts = template.template_name ? template.template_name.split(' ') : [];
-      const provider = nameParts[0] || 'Unknown';
-      const type = nameParts[1] || '';
+      // Full template name for History cards (e.g. "bKash Personal" / "নগদ এজেন্ট").
+      // Do NOT truncate to first word — that caused "বিকাশ" instead of "বিকাশ পার্সোনাল".
+      const templateName = (template.template_name || '').trim() || 'Unknown';
+      const nameParts = templateName.split(/\s+/).filter(Boolean);
+      const type = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
 
       return {
         success:      true,
-        provider:     provider,
+        provider:     templateName,
+        templateName: templateName,
+        templateId:   template.id != null ? Number(template.id) : undefined,
         type:         type,
         amount:       isNaN(amount) ? 0 : amount,
         trxId:        extractedTrxId || '',

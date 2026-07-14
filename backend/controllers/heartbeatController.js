@@ -1,8 +1,10 @@
 /**
- * POST /api/gateway/heartbeat — sparse fallback ping while Socket.IO is disconnected.
+ * POST /api/gateway/heartbeat — package-tiered liveness + Comm Policy response.
  */
 
 const numberHealth = require('../services/numberHealthService');
+const commPolicy = require('../services/commPolicyService');
+const dataSyncCache = require('../services/dataSyncCache');
 
 async function postHeartbeat(req, res) {
   try {
@@ -13,14 +15,32 @@ async function postHeartbeat(req, res) {
       return res.status(400).json({ success: false, error: 'X-Device-Id header আবশ্যক' });
     }
 
+    const profile = await numberHealth.getCachedProfile(userId);
+    const policy = commPolicy.toClientPolicy(profile);
+
+    let templateVersion = null;
+    try {
+      templateVersion = await dataSyncCache.getGlobalTemplateVersion();
+    } catch (_) {
+      templateVersion = null;
+    }
+
     const smsActive = req.body.sms_service_active !== false
       && req.body.smsServiceActive !== false;
 
     if (!smsActive) {
+      // Monitoring Stop → Offline signal path
+      if (profile.deactivateOnOffline) {
+        const watchdog = require('../services/deviceDisconnectWatchdog');
+        await watchdog.deactivateDeviceBindings(userId, deviceId);
+      }
       return res.json({
         success: true,
         skipped: true,
-        message: 'SMS service inactive — heartbeat skipped',
+        message: 'SMS service inactive — offline signal applied',
+        forceSync: false,
+        templateVersion,
+        ...policy,
       });
     }
 
@@ -34,14 +54,26 @@ async function postHeartbeat(req, res) {
       { batteryPercent },
     );
 
+    // Ensure bindings stay active while heartbeat is healthy
+    const watchdog = require('../services/deviceDisconnectWatchdog');
+    await watchdog.reactivateDeviceBindings(userId, deviceId, numbers);
+    watchdog.cancelDeviceWatch(userId, deviceId);
+    // Re-arm offline timer from this successful heartbeat
+    watchdog.scheduleDeviceWatch(userId, deviceId, profile);
+
+    const forceSync = false;
+
     return res.json({
       success: true,
       server_time: result.serverTime,
       numbers: result.updated,
       states: result.states,
+      forceSync,
+      templateVersion,
+      message: null,
+      ...policy,
       thresholds: {
-        online_sec: numberHealth.THRESHOLDS.ONLINE_MS / 1000,
-        grace_sec: numberHealth.THRESHOLDS.GRACE_MS / 1000,
+        ...policy.thresholds,
         stale_sec: numberHealth.THRESHOLDS.STALE_MS / 1000,
       },
     });

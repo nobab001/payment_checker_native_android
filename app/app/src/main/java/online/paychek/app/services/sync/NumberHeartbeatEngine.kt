@@ -18,57 +18,79 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Lightweight number health — no periodic HTTP while Socket.IO is connected.
+ * Comm Policy v1.0 — package-tiered heartbeat while SMS monitoring is ON.
  *
- * Normal path: socket connect + SMS ingest touch server last_seen.
- * Fallback: sparse HTTP heartbeat (every 15 min) only after socket disconnect.
+ * SMS upload is independent (never waits for this timer).
+ * Heartbeat response can update next interval / forceSync / templateVersion.
  */
 object NumberHeartbeatEngine {
     private const val TAG = "NumberHeartbeat"
-    private var fallbackJob: Job? = null
-  @Volatile private var socketConnected = false
+    private var loopJob: Job? = null
+    @Volatile private var socketConnected = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     fun onSocketConnected(context: Context, socket: io.socket.client.Socket?) {
         socketConnected = true
-        stopFallback()
         emitSocketDeviceNumbers(socket, context)
-        Log.i(TAG, "Socket up — fallback heartbeat off")
+        // Still keep HTTP heartbeat for Policy Sync (forceSync / interval).
+        ensureRunning(context.applicationContext)
+        Log.i(TAG, "Socket up — policy heartbeat continues")
     }
 
     fun onSocketDisconnected(context: Context) {
         socketConnected = false
-        startFallback(context.applicationContext)
-        Log.i(TAG, "Socket down — starting sparse fallback heartbeat")
+        ensureRunning(context.applicationContext)
+        Log.i(TAG, "Socket down — HTTP heartbeat active")
+    }
+
+    /** Start / restart periodic heartbeat for monitoring session. */
+    @Synchronized
+    fun start(context: Context) {
+        ensureRunning(context.applicationContext)
     }
 
     @Synchronized
-    fun startFallback(context: Context) {
-        if (socketConnected) return
-        if (fallbackJob?.isActive == true) return
+    fun ensureRunning(context: Context) {
+        if (!PrefsHelper.isSmsServiceActive(context)) {
+            stop()
+            return
+        }
+        if (loopJob?.isActive == true) return
         val app = context.applicationContext
-        fallbackJob = scope.launch {
-            sendHeartbeat(app)
-            while (isActive && !socketConnected) {
-                delay(AppConfig.FALLBACK_HEARTBEAT_INTERVAL_MS)
-                if (!socketConnected) sendHeartbeat(app)
+        loopJob = scope.launch {
+            sendHeartbeat(app, smsActive = true)
+            while (isActive && PrefsHelper.isSmsServiceActive(app)) {
+                val delayMs = CommPolicyStore.heartbeatIntervalMs(app)
+                Log.d(TAG, "Next heartbeat in ${delayMs / 1000}s (profile=${CommPolicyStore.profile(app)})")
+                delay(delayMs)
+                if (PrefsHelper.isSmsServiceActive(app)) {
+                    sendHeartbeat(app, smsActive = true)
+                }
             }
         }
+        Log.i(
+            TAG,
+            "Heartbeat loop started — interval=${CommPolicyStore.heartbeatIntervalMs(app)}ms profile=${CommPolicyStore.profile(app)}"
+        )
     }
 
     @Synchronized
-    fun stopFallback() {
-        fallbackJob?.cancel()
-        fallbackJob = null
+    fun stop() {
+        loopJob?.cancel()
+        loopJob = null
     }
-
-    /** @deprecated Use [stopFallback]; kept for service teardown. */
-    @Synchronized
-    fun stop() = stopFallback()
 
     /** Immediate one-shot heartbeat (e.g. before refreshing account number list). */
     fun pulse(context: Context) {
-        scope.launch { sendHeartbeat(context.applicationContext) }
+        scope.launch { sendHeartbeat(context.applicationContext, smsActive = PrefsHelper.isSmsServiceActive(context)) }
+    }
+
+    /** Monitoring Stop → Offline Signal */
+    fun signalOffline(context: Context) {
+        scope.launch {
+            sendHeartbeat(context.applicationContext, smsActive = false)
+            stop()
+        }
     }
 
     /** Push active SIM numbers over Socket.IO so server can mark ONLINE instantly. */
@@ -92,19 +114,27 @@ object NumberHeartbeatEngine {
         }
     }
 
-    private suspend fun sendHeartbeat(context: Context) {
-        if (!PrefsHelper.isSmsServiceActive(context)) return
+    /** @deprecated Prefer [start] / [stop]. */
+    fun startFallback(context: Context) = start(context)
+
+    fun stopFallback() = stop()
+
+    private suspend fun sendHeartbeat(context: Context, smsActive: Boolean) {
+        if (smsActive && !PrefsHelper.isSmsServiceActive(context)) return
 
         val token = SecurePreferences.decrypt(context, AppConfig.KEY_AUTH_TOKEN)
         if (token.isEmpty()) return
 
         val numbers = collectActiveNumbers(context)
-        if (numbers.isEmpty()) return
+        if (smsActive && numbers.isEmpty()) {
+            Log.d(TAG, "No active numbers — skip heartbeat")
+            return
+        }
 
         val deviceId = DeviceIdHelper.getHashedAndroidId(context)
         val request = HeartbeatRequest(
             numbers = numbers,
-            smsServiceActive = true,
+            smsServiceActive = smsActive,
             batteryPercent = readBatteryPercent(context)
         )
 
@@ -116,12 +146,23 @@ object NumberHeartbeatEngine {
             )
         }.onSuccess { res ->
             if (res.isSuccessful) {
-                Log.d(TAG, "Fallback heartbeat OK — ${numbers.size} number(s)")
+                val body = res.body()
+                if (body != null) {
+                    CommPolicyStore.applyHeartbeatResponse(context, body)
+                    if (body.forceSync == true) {
+                        Log.i(TAG, "Server requested forceSync (templateVersion=${body.templateVersion})")
+                        // Soft signal — existing dashboards poll templates; optional future hook.
+                    }
+                }
+                Log.d(
+                    TAG,
+                    "Heartbeat OK — numbers=${numbers.size} next=${CommPolicyStore.heartbeatIntervalMs(context)}ms socketConnected=$socketConnected"
+                )
             } else {
-                Log.w(TAG, "Fallback heartbeat HTTP ${res.code()}")
+                Log.w(TAG, "Heartbeat HTTP ${res.code()}")
             }
         }.onFailure { e ->
-            Log.w(TAG, "Fallback heartbeat failed: ${e.message}")
+            Log.w(TAG, "Heartbeat failed: ${e.message}")
         }
     }
 

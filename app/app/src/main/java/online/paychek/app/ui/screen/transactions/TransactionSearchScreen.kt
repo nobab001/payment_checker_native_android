@@ -490,48 +490,21 @@ private fun TransactionCard(
     var expanded by remember { mutableStateOf(false) }
     val rotationState by animateFloatAsState(targetValue = if (expanded) 180f else 0f)
 
-    val providerColor = when (item.providerTag.lowercase(java.util.Locale.US)) {
-        "bkash"  -> BkashPink
-        "nagad"  -> NagadOrange
-        "rocket" -> RocketPurple
-        "upay"   -> UpayTeal
-        else     -> AccentCyan
-    }
-    val providerEmoji = when (item.providerTag.lowercase(java.util.Locale.US)) {
-        "bkash"  -> "🟢"
-        "nagad"  -> "🟠"
-        "rocket" -> "🔵"
-        "upay"   -> "🟡"
-        else     -> "⚪"
+    val providerKey = item.providerTag.lowercase(java.util.Locale.US)
+    val providerColor = when {
+        providerKey.contains("bkash") || providerKey.contains("বিকাশ") -> BkashPink
+        providerKey.contains("nagad") || providerKey.contains("নগদ") -> NagadOrange
+        providerKey.contains("rocket") || providerKey.contains("রকেট") -> RocketPurple
+        providerKey.contains("upay") || providerKey.contains("উপায়") || providerKey.contains("উপায়") -> UpayTeal
+        else -> AccentCyan
     }
     val isSoldOut = item.isUsed == 1
 
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val simNumber = remember(item.simSlot) {
-        val methodsJson = PrefsHelper.getGatewayMethodsCache(context)
-        val methodsType = object : TypeToken<List<GatewayMethod>>() {}.type
-        val cachedMethods: List<GatewayMethod> = try {
-            GsonUtils.gson.fromJson(methodsJson, methodsType) ?: emptyList()
-        } catch (e: Exception) { emptyList() }
-        cachedMethods.find { it.simSlot == item.simSlot && !it.number.isNullOrEmpty() }?.number
-    }
-
-    val deviceName = remember(item.deviceName) {
-        val raw = item.deviceName ?: ""
-        if (raw.isBlank() || raw.lowercase(java.util.Locale.US).contains("unknown")) {
-            val manufacturer = android.os.Build.MANUFACTURER.replaceFirstChar { 
-                if (it.isLowerCase()) it.titlecase(java.util.Locale.US) else it.toString() 
-            }
-            val model = android.os.Build.MODEL
-            if (model.lowercase(java.util.Locale.US).startsWith(manufacturer.lowercase(java.util.Locale.US))) {
-                model
-            } else {
-                "$manufacturer $model"
-            }
-        } else {
-            raw
-        }
-    }
+    val displaySimNumber = item.simNumber?.takeIf { it.isNotBlank() }
+    val deviceName = item.deviceName?.takeIf {
+        it.isNotBlank() &&
+            !it.lowercase(java.util.Locale.US).contains("unknown")
+    } ?: (item.deviceId?.takeIf { it.isNotBlank() } ?: "Unknown Device")
 
     Card(
         colors   = CardDefaults.cardColors(containerColor = HistCard),
@@ -560,10 +533,12 @@ private fun TransactionCard(
                     // Details
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text     = "$providerEmoji ${item.providerTag}",
+                            text     = item.providerTag,
                             color    = providerColor,
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
@@ -580,7 +555,10 @@ private fun TransactionCard(
                             fontSize = 10.sp
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        val simInfo = if (item.simSlot != null) " • SIM ${item.simSlot}${if (simNumber != null) " - $simNumber" else ""}" else ""
+                        val simInfo = buildString {
+                            if (item.simSlot != null) append(" • SIM ${item.simSlot}")
+                            if (!displaySimNumber.isNullOrBlank()) append(" - $displaySimNumber")
+                        }
                         Text(
                             text     = "Device: $deviceName$simInfo",
                             color    = TextMuted.copy(alpha = 0.6f),

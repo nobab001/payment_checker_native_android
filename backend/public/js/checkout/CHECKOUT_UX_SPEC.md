@@ -1,7 +1,7 @@
 # PayCheck Checkout UX — Full Specification
 
 > **Purpose:** Single source of truth for Cursor and developers.  
-> **Scope:** Customer checkout (`checkout.html`), **not** demo-merchant, **not** payment engine internals.  
+> **Scope:** Customer checkout (`checkout.html`), **not** Official Test Experience chrome, **not** payment engine internals.  
 > **Principle:** Backward compatible. No breaking API changes.
 
 ---

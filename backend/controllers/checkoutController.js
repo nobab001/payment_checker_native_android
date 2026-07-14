@@ -142,6 +142,17 @@ async function getCheckoutLayout(req, res) {
       payload = await checkoutPaymentBridge.mergeSessionUrlsIntoLayout(payload, sessionQ);
     }
 
+    // Preview before pay/init — temporary demo session overlays (Official Test Experience)
+    const demoSessionId = req.query.demoSession;
+    if (demoSessionId && !sessionQ) {
+      try {
+        const testCtrl = require('../official-website/controllers/test-controller');
+        payload = testCtrl.applyDemoSessionToLayout(payload, demoSessionId, req);
+      } catch (e) {
+        console.warn('[CHECKOUT] demoSession overlay failed:', e.message);
+      }
+    }
+
     return res.json(payload);
 
   } catch (error) {

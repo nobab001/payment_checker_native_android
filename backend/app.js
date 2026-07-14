@@ -57,11 +57,18 @@ io.use((socket, next) => {
     const userId = String(socket.handshake.query.userId || '');
     const deviceId = String(socket.handshake.query.deviceId || '');
 
-    if (!token) return next(new Error('AUTH_REQUIRED'));
-    if (!userId || !deviceId) return next(new Error('DEVICE_CONTEXT_MISSING'));
+    if (!token) {
+      console.warn(`[Socket.IO] AUTH_REQUIRED from ${socket.handshake.address}`);
+      return next(new Error('AUTH_REQUIRED'));
+    }
+    if (!userId || !deviceId) {
+      console.warn('[Socket.IO] DEVICE_CONTEXT_MISSING');
+      return next(new Error('DEVICE_CONTEXT_MISSING'));
+    }
 
     const claims = jwt.verify(token, JWT_SECRET);
     if (String(claims.userId) !== userId || (claims.deviceId && String(claims.deviceId) !== deviceId)) {
+      console.warn(`[Socket.IO] AUTH_MISMATCH userId=${userId} deviceId=${deviceId}`);
       return next(new Error('AUTH_MISMATCH'));
     }
 
@@ -69,6 +76,7 @@ io.use((socket, next) => {
     socket.data.deviceId = deviceId;
     return next();
   } catch (err) {
+    console.warn(`[Socket.IO] AUTH_INVALID: ${err.message}`);
     return next(new Error('AUTH_INVALID'));
   }
 });
@@ -127,9 +135,9 @@ const PORT = process.env.PORT || 3000;
 // Enable CORS for frontend API requests (restricted to configured origins)
 app.use(cors({ origin: corsOrigin || undefined }));
 
-// Demo Merchant webhook (raw body for PayCheck HMAC) — must mount before express.json
-const demoMerchant = require('./demo-merchant');
-demoMerchant.mountEarly(app);
+// Official Test Experience webhook (raw body for PayCheck HMAC) — before express.json
+const officialWebsite = require('./official-website');
+officialWebsite.mountEarly(app);
 
 // Serve static webpage assets (like public/checkout.html).
 // Uploaded logos/icons use content-hashed filenames, so they can be cached
@@ -191,14 +199,15 @@ const callbackRateLimiter = require('./middleware/callbackRateLimiter');
 app.use('/api/v1/pay', require('./routes/paymentFlowRoutes'));           // merchant S2S: init + status
 app.use('/api/v1/payment', require('./routes/paymentMetricsRoutes'));   // health / metrics
 app.get('/pay/:token', paymentFlowController.redirectPayment);
+app.get('/api/payment/bkash/callback', callbackRateLimiter, paymentFlowController.bkashCallback);
 app.post('/api/payment/bkash/callback', callbackRateLimiter, paymentFlowController.bkashCallback);
 app.all('/api/pay/:token/gateway-callback', paymentFlowController.officialGatewayCallback);
 
 app.use('/api/v1', billingRoutes);
 app.use('/api/v1/websites', require('./routes/websiteRoutes'));
 
-// Demo Merchant application (v1 test harness — consumes PayCheck, does not modify payment/)
-demoMerchant.mount(app);
+// Official Website + Interactive Test Experience (no login; does not modify payment/)
+officialWebsite.mount(app);
 
 // General 404 Route handler
 app.use((req, res) => {

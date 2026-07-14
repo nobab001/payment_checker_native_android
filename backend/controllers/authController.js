@@ -38,6 +38,112 @@ if (!JWT_SECRET) {
 }
 const TRIAL_DEFAULT_DAYS = parseInt(process.env.TRIAL_DEFAULT_DAYS || '7', 10);
 
+function isUsableAndroidId(androidId) {
+  const v = String(androidId || '').trim();
+  return Boolean(v) && v !== 'unknown_android_id' && v.toLowerCase() !== 'null';
+}
+
+function isUsableHardwareFp(fp) {
+  const v = String(fp || '').trim();
+  return Boolean(v) && v !== 'unknown_fingerprint' && v.toLowerCase() !== 'null';
+}
+
+/**
+ * Resolve registered_devices for this account:
+ * 1) exact device_id
+ * 2) same android_id on this user (covers debug/release APK ANDROID_ID change + reinstall quirks)
+ * 3) same hardware_fingerprint on this user (weaker fallback)
+ *
+ * If hardware match found under a different device_id, migrate row to the current device_id
+ * so we never create a second pending request for the same phone.
+ */
+async function findOrReconcileUserDevice(userId, deviceId, androidId, hardwareFingerprint) {
+  if (!deviceId) return null;
+
+  const byId = await query(
+    'SELECT * FROM registered_devices WHERE user_id = ? AND device_id = ? LIMIT 1',
+    [userId, deviceId]
+  );
+  if (byId.length) return byId[0];
+
+  if (isUsableAndroidId(androidId)) {
+    const byAndroid = await query(
+      `SELECT * FROM registered_devices
+       WHERE user_id = ? AND android_id = ? AND android_id IS NOT NULL AND android_id != ''
+       ORDER BY is_parent DESC, is_approved DESC, id ASC
+       LIMIT 1`,
+      [userId, String(androidId).trim()]
+    );
+    if (byAndroid.length) {
+      const row = byAndroid[0];
+      if (row.device_id !== deviceId) {
+        // Avoid unique collision if somehow target device_id exists
+        const clash = await query(
+          'SELECT id FROM registered_devices WHERE user_id = ? AND device_id = ? LIMIT 1',
+          [userId, deviceId]
+        );
+        if (!clash.length) {
+          await query(
+            `UPDATE registered_devices
+             SET device_id = ?, android_id = ?, last_seen_at = NOW()
+             WHERE id = ?`,
+            [deviceId, String(androidId).trim(), row.id]
+          );
+          console.log(
+            `[AUTH] Reconciled device row #${row.id}: device_id ${String(row.device_id).slice(0, 12)}… → ${String(deviceId).slice(0, 12)}… (android_id match)`
+          );
+          row.device_id = deviceId;
+          row.android_id = String(androidId).trim();
+        }
+      }
+      return row;
+    }
+  }
+
+  if (isUsableHardwareFp(hardwareFingerprint)) {
+    const byHw = await query(
+      `SELECT * FROM registered_devices
+       WHERE user_id = ? AND hardware_fingerprint = ?
+         AND hardware_fingerprint IS NOT NULL AND hardware_fingerprint != ''
+       ORDER BY is_parent DESC, is_approved DESC, id ASC
+       LIMIT 1`,
+      [userId, String(hardwareFingerprint).trim()]
+    );
+    if (byHw.length) {
+      const row = byHw[0];
+      if (row.device_id !== deviceId) {
+        const clash = await query(
+          'SELECT id FROM registered_devices WHERE user_id = ? AND device_id = ? LIMIT 1',
+          [userId, deviceId]
+        );
+        if (!clash.length) {
+          await query(
+            `UPDATE registered_devices
+             SET device_id = ?,
+                 android_id = COALESCE(NULLIF(android_id, ''), ?),
+                 hardware_fingerprint = ?,
+                 last_seen_at = NOW()
+             WHERE id = ?`,
+            [
+              deviceId,
+              isUsableAndroidId(androidId) ? String(androidId).trim() : '',
+              String(hardwareFingerprint).trim(),
+              row.id,
+            ]
+          );
+          console.log(
+            `[AUTH] Reconciled device row #${row.id}: device_id via hardware_fingerprint match`
+          );
+          row.device_id = deviceId;
+        }
+      }
+      return row;
+    }
+  }
+
+  return null;
+}
+
 async function fetchDeviceRowForSync(userId, deviceId) {
   const rows = await query(
     `SELECT device_id, custom_device_name, device_role, is_app_active, device_specific_pin,
@@ -694,15 +800,17 @@ async function verifyOtp(req, res) {
     );
     const trialDays = trialDaysConfig.length > 0 ? parseInt(trialDaysConfig[0].config_value, 10) : TRIAL_DEFAULT_DAYS;
 
-    let device;
-    const devices = await query(
-      'SELECT * FROM registered_devices WHERE user_id = ? AND device_id = ? LIMIT 1',
-      [user.id, deviceId]
+    let device = await findOrReconcileUserDevice(
+      user.id,
+      deviceId,
+      androidId,
+      hardwareFingerprint || fingerprint
     );
 
-    if (devices.length === 0) {
+    if (!device) {
       const userDevicesCount = await query(
-        'SELECT COUNT(*) as count FROM registered_devices WHERE user_id = ?',
+        `SELECT COUNT(*) as count FROM registered_devices
+         WHERE user_id = ? AND status != 'rejected'`,
         [user.id]
       );
       
@@ -734,12 +842,21 @@ async function verifyOtp(req, res) {
       const trialExpiresAt = new Date();
       trialExpiresAt.setDate(trialStartedAt.getDate() + trialDays);
 
+      const safeAndroidId = isUsableAndroidId(androidId) ? String(androidId).trim() : null;
+      const safeHw = isUsableHardwareFp(hardwareFingerprint || fingerprint)
+        ? String(hardwareFingerprint || fingerprint).trim()
+        : null;
+      const safeSims = simSlotIds ? String(simSlotIds).trim() : null;
+
       const insertDeviceResult = await query(
         `INSERT INTO registered_devices 
-          (user_id, device_id, device_name, device_model, android_version, status, is_parent, is_approved, device_role, trial_started_at, trial_expires_at, is_trial_locked, is_owner_device) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (user_id, device_id, android_id, hardware_fingerprint, sim_slot_ids,
+           device_name, device_model, android_version, status, is_parent, is_approved, device_role,
+           trial_started_at, trial_expires_at, is_trial_locked, is_owner_device) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           user.id, deviceId,
+          safeAndroidId, safeHw, safeSims,
           isParent ? 'Main Phone' : 'Co-Parent Device',
           deviceModel || 'Unknown Model',
           androidVersion || 'Android',
@@ -763,12 +880,30 @@ async function verifyOtp(req, res) {
         }
       }
     } else {
-      device = devices[0];
-
       await query(
-        'UPDATE registered_devices SET last_seen_at = NOW(), device_model = ?, android_version = ? WHERE id = ?',
-        [deviceModel, androidVersion, device.id]
+        `UPDATE registered_devices
+         SET last_seen_at = NOW(),
+             device_model = COALESCE(NULLIF(?, ''), device_model),
+             android_version = COALESCE(NULLIF(?, ''), android_version),
+             android_id = COALESCE(NULLIF(android_id, ''), ?),
+             hardware_fingerprint = COALESCE(NULLIF(hardware_fingerprint, ''), ?),
+             sim_slot_ids = COALESCE(NULLIF(sim_slot_ids, ''), ?)
+         WHERE id = ?`,
+        [
+          deviceModel || '',
+          androidVersion || '',
+          isUsableAndroidId(androidId) ? String(androidId).trim() : '',
+          isUsableHardwareFp(hardwareFingerprint || fingerprint)
+            ? String(hardwareFingerprint || fingerprint).trim()
+            : '',
+          simSlotIds ? String(simSlotIds).trim() : '',
+          device.id,
+        ]
       );
+
+      // reload after backfill
+      const refreshed = await query('SELECT * FROM registered_devices WHERE id = ? LIMIT 1', [device.id]);
+      if (refreshed.length) device = refreshed[0];
 
       if (device.trial_expires_at && new Date(device.trial_expires_at) < new Date() && !device.is_trial_locked) {
         await query(
@@ -998,11 +1133,22 @@ async function completeProfile(req, res) {
 
           await query(
             `INSERT INTO registered_devices
-              (user_id, device_id, device_name, device_model, android_version,
+              (user_id, device_id, android_id, hardware_fingerprint, sim_slot_ids,
+               device_name, device_model, android_version,
                status, is_parent, is_approved, device_role,
                trial_started_at, trial_expires_at, is_trial_locked, is_owner_device)
-             VALUES (?, ?, 'Main Phone', 'Unknown Model', 'Android', 'active', 1, 1, 'owner', ?, ?, 0, 1)`,
-            [userId, deviceId, trialStartedAt, trialExpiresAt]
+             VALUES (?, ?, ?, ?, ?, 'Main Phone', 'Unknown Model', 'Android', 'active', 1, 1, 'owner', ?, ?, 0, 1)`,
+            [
+              userId,
+              deviceId,
+              isUsableAndroidId(androidId) ? String(androidId).trim() : null,
+              isUsableHardwareFp(hardwareFingerprint || fingerprint)
+                ? String(hardwareFingerprint || fingerprint).trim()
+                : null,
+              simSlotIds ? String(simSlotIds).trim() : null,
+              trialStartedAt,
+              trialExpiresAt,
+            ]
           );
           console.log(`[AUTH] ✅ Device bound on completeProfile (userId=${userId}, deviceId=${deviceId})`);
 
@@ -2085,7 +2231,7 @@ async function getPendingApprovals(req, res) {
     const devices = await query(
       `SELECT id, device_id, custom_device_name, device_model, android_version, status, is_approved, device_role, created_at 
        FROM registered_devices 
-       WHERE user_id = ? AND is_approved = 0`,
+       WHERE user_id = ? AND is_approved = 0 AND status = 'pending'`,
       [userId]
     );
     return res.json({ success: true, data: devices });

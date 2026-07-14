@@ -309,7 +309,14 @@ data class HeartbeatResponse(
     @SerializedName("skipped") val skipped: Boolean? = null,
     @SerializedName("server_time") val serverTime: Long? = null,
     @SerializedName("numbers") val numbers: List<String>? = null,
-    @SerializedName("states") val states: Map<String, String>? = null
+    @SerializedName("states") val states: Map<String, String>? = null,
+    /** Next heartbeat interval seconds (Comm Policy). */
+    @SerializedName("heartbeat") val heartbeatSec: Int? = null,
+    @SerializedName("forceSync") val forceSync: Boolean? = null,
+    @SerializedName("templateVersion") val templateVersion: Any? = null,
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("profile") val profile: String? = null,
+    @SerializedName("use_socket") val useSocket: Boolean? = null
 )
 
 data class AccountNumberDto(

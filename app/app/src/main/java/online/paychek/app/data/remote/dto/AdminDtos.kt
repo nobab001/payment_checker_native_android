@@ -199,16 +199,18 @@ data class SubscriptionPlanDto(
     @SerializedName("max_devices") val maxDevices: Int,
     @SerializedName("is_custom_sender_allowed") val isCustomSenderAllowed: Int = 0,
     @SerializedName("duration_days") val durationDays: Int = 365,
-    @SerializedName("plan_category") val planCategory: String = "personal",
+    @SerializedName("plan_category") val planCategory: String = "payment_gateway",
     @SerializedName("perm_template") val permTemplate: Int = 1,
     @SerializedName("perm_website") val permWebsite: Int = 1,
     @SerializedName("perm_device") val permDevice: Int = 1,
+    @SerializedName("sort_order") val sortOrder: Int = 0,
     @SerializedName("features") val features: List<PlanFeatureDto>? = null
 )
 
 data class SubscriptionPlansResponse(
     @SerializedName("success") val success: Boolean,
-    @SerializedName("plans") val plans: List<SubscriptionPlanDto>
+    @SerializedName("plans") val plans: List<SubscriptionPlanDto>,
+    @SerializedName("tab_order") val tabOrder: List<String>? = null
 )
 
 data class AddonPlanDto(
@@ -223,12 +225,27 @@ data class AddonPlanDto(
     @SerializedName("perm_template") val permTemplate: Int = 0,
     @SerializedName("perm_website") val permWebsite: Int = 0,
     @SerializedName("perm_device") val permDevice: Int = 1,
+    @SerializedName("sort_order") val sortOrder: Int = 0,
     @SerializedName("features") val features: List<PlanFeatureDto>? = null
 )
 
 data class AddonPlansResponse(
     @SerializedName("success") val success: Boolean,
-    @SerializedName("plans") val plans: List<AddonPlanDto>
+    @SerializedName("plans") val plans: List<AddonPlanDto>,
+    @SerializedName("tab_order") val tabOrder: List<String>? = null
+)
+
+data class PlanReorderItemDto(
+    @SerializedName("id") val id: Int,
+    @SerializedName("sort_order") val sortOrder: Int
+)
+
+data class PlanReorderRequest(
+    @SerializedName("items") val items: List<PlanReorderItemDto>
+)
+
+data class BillingTabOrderRequest(
+    @SerializedName("tab_order") val tabOrder: List<String>
 )
 
 data class PurchaseAddonRequest(

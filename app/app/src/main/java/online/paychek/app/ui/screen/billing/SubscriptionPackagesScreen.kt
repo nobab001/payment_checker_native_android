@@ -48,11 +48,32 @@ fun SubscriptionPackagesScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var plans by remember { mutableStateOf<List<SubscriptionPlanDto>>(emptyList()) }
     var addonPlans by remember { mutableStateOf<List<AddonPlanDto>>(emptyList()) }
-    var selectedTab by remember { mutableStateOf(initialTab.coerceIn(0, 3)) }
+    var tabOrder by remember {
+        mutableStateOf(
+            listOf("personal_custom_center", "personal_business", "payment_gateway")
+        )
+    }
+    var selectedTab by remember { mutableStateOf(initialTab.coerceAtLeast(0)) }
     var purchasingAddonId by remember { mutableStateOf<Int?>(null) }
     var previewSubscription by remember { mutableStateOf<SubscriptionPlanDto?>(null) }
     var previewAddon by remember { mutableStateOf<AddonPlanDto?>(null) }
     var checkoutPlan by remember { mutableStateOf<SubscriptionPlanDto?>(null) }
+
+    fun tabLabel(key: String): String = when (key) {
+        "personal_custom_center" -> "পার্সোনাল কাস্টম সেন্টার"
+        "personal_business" -> "পার্সোনাল বিজনেস"
+        "payment_gateway" -> "পেমেন্ট গেটওয়ে"
+        else -> key
+    }
+
+    fun normalizeCategory(category: String?): String {
+        val c = category?.trim().orEmpty()
+        return when {
+            c == "personal_business" -> "personal_business"
+            c.isBlank() || c == "personal" -> "payment_gateway"
+            else -> c
+        }
+    }
 
     fun reloadPlans() {
         coroutineScope.launch {
@@ -64,19 +85,20 @@ fun SubscriptionPackagesScreen(
             }
             isLoading = true
             errorMessage = null
-            repository.getPlans(token).fold(
-                onSuccess = { list ->
-                    plans = list
+            repository.getBillingPackagesCatalog(token).fold(
+                onSuccess = { catalog ->
+                    plans = catalog.plans
+                    addonPlans = catalog.addonPlans
+                    tabOrder = catalog.tabOrder
+                    if (selectedTab !in catalog.tabOrder.indices) {
+                        selectedTab = initialTab.coerceIn(0, catalog.tabOrder.lastIndex.coerceAtLeast(0))
+                    }
                     isLoading = false
                 },
                 onFailure = { err ->
                     errorMessage = err.message ?: "প্যাকেজ তালিকা লোড করতে ব্যর্থ হয়েছে।"
                     isLoading = false
                 }
-            )
-            repository.getAddonPlans(token).fold(
-                onSuccess = { list -> addonPlans = list },
-                onFailure = { }
             )
         }
     }
@@ -120,46 +142,40 @@ fun SubscriptionPackagesScreen(
                 .background(PackBg)
         ) {
             ScrollableTabRow(
-                selectedTabIndex = selectedTab,
+                selectedTabIndex = selectedTab.coerceIn(0, (tabOrder.size - 1).coerceAtLeast(0)),
                 containerColor = PackBg,
                 contentColor = Color(0xFF22D3EE),
                 edgePadding = 8.dp,
                 indicator = { tabPositions ->
-                    if (selectedTab < tabPositions.size) {
+                    val idx = selectedTab.coerceIn(0, (tabPositions.size - 1).coerceAtLeast(0))
+                    if (tabPositions.isNotEmpty() && idx < tabPositions.size) {
                         TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[idx]),
                             color = Color(0xFF22D3EE)
                         )
                     }
                 },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
             ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("পার্সোনাল", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("পার্সোনাল বিজনেস", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
-                )
-                Tab(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    text = { Text("পেমেন্ট গেটওয়ে", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
-                )
-                Tab(
-                    selected = selectedTab == 3,
-                    onClick = { selectedTab = 3 },
-                    text = { Text("কাস্টম সেন্ডার", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
-                )
+                tabOrder.forEachIndexed { index, key ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        text = {
+                            Text(
+                                tabLabel(key),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = if (key == "personal_custom_center") 12.sp else 13.sp
+                            )
+                        }
+                    )
+                }
             }
 
-            val categoryPlans = when (selectedTab) {
-                0 -> plans.filter { it.planCategory == "personal" || it.planCategory.isBlank() }
-                1 -> plans.filter { it.planCategory == "personal_business" }
-                2 -> plans.filter { it.planCategory == "payment_gateway" }
+            val selectedTabKey = tabOrder.getOrNull(selectedTab) ?: "personal_custom_center"
+            val categoryPlans = when (selectedTabKey) {
+                "personal_business" -> plans.filter { normalizeCategory(it.planCategory) == "personal_business" }
+                "payment_gateway" -> plans.filter { normalizeCategory(it.planCategory) == "payment_gateway" }
                 else -> emptyList()
             }
 
@@ -169,7 +185,73 @@ fun SubscriptionPackagesScreen(
                     .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                if (selectedTab < 3) {
+                if (selectedTabKey == "personal_custom_center") {
+                    when {
+                        isLoading -> CircularProgressIndicator(color = Color(0xFF22D3EE))
+                        addonPlans.isEmpty() -> {
+                            Text(
+                                text = "কোনো প্যাকেজ পাওয়া যায়নি।",
+                                color = TextM,
+                                fontSize = 14.sp,
+                                modifier = Modifier.padding(24.dp)
+                            )
+                        }
+                        else -> {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                items(addonPlans, key = { it.id ?: it.planName }) { addon ->
+                                    val features = PlanFeaturesDefaults.addonFeatures(
+                                        durationDays = addon.durationDays,
+                                        description = addon.description,
+                                        existing = addon.features
+                                    )
+                                    PlanPackageCard(
+                                        planName = addon.planName,
+                                        subtitle = "পার্সোনাল কাস্টম সেন্টার",
+                                        price = addon.price,
+                                        features = features,
+                                        highlighted = true,
+                                        buyButtonText = "এখনই কিনুন (Buy Now)",
+                                        buyButtonTextColor = Color.Black,
+                                        isPurchasing = purchasingAddonId == addon.id,
+                                        onDetailsClick = { previewAddon = addon },
+                                        onBuyClick = {
+                                            val planId = addon.id ?: return@PlanPackageCard
+                                            purchasingAddonId = planId
+                                            coroutineScope.launch {
+                                                val token = SecurePreferences.decrypt(
+                                                    context,
+                                                    online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN
+                                                )
+                                                repository.purchaseSubscriptionAddon(token, planId).fold(
+                                                    onSuccess = {
+                                                        purchasingAddonId = null
+                                                        android.widget.Toast.makeText(
+                                                            context,
+                                                            it.message ?: "অ্যাড-অন সফলভাবে সক্রিয় হয়েছে! ✓",
+                                                            android.widget.Toast.LENGTH_LONG
+                                                        ).show()
+                                                    },
+                                                    onFailure = { err ->
+                                                        purchasingAddonId = null
+                                                        android.widget.Toast.makeText(
+                                                            context,
+                                                            err.message ?: "ক্রয় ব্যর্থ হয়েছে।",
+                                                            android.widget.Toast.LENGTH_LONG
+                                                        ).show()
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else if (selectedTabKey == "personal_business" || selectedTabKey == "payment_gateway") {
                     when {
                         isLoading -> CircularProgressIndicator(color = Color(0xFF22D3EE))
                         errorMessage != null -> {
@@ -221,72 +303,6 @@ fun SubscriptionPackagesScreen(
                             }
                         }
                     }
-                } else {
-                    when {
-                        isLoading -> CircularProgressIndicator(color = Color(0xFF22D3EE))
-                        addonPlans.isEmpty() -> {
-                            Text(
-                                text = "কোনো অ্যাড-অন প্যাকেজ পাওয়া যায়নি।",
-                                color = TextM,
-                                fontSize = 14.sp,
-                                modifier = Modifier.padding(24.dp)
-                            )
-                        }
-                        else -> {
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                items(addonPlans, key = { it.id ?: it.planName }) { addon ->
-                                    val features = PlanFeaturesDefaults.addonFeatures(
-                                        durationDays = addon.durationDays,
-                                        description = addon.description,
-                                        existing = addon.features
-                                    )
-                                    PlanPackageCard(
-                                        planName = addon.planName,
-                                        subtitle = "কাস্টম সেন্ডার আইডি পারমিশন",
-                                        price = addon.price,
-                                        features = features,
-                                        highlighted = true,
-                                        buyButtonText = "এখনই কিনুন (Buy Now)",
-                                        buyButtonTextColor = Color.Black,
-                                        isPurchasing = purchasingAddonId == addon.id,
-                                        onDetailsClick = { previewAddon = addon },
-                                        onBuyClick = {
-                                            val planId = addon.id ?: return@PlanPackageCard
-                                            purchasingAddonId = planId
-                                            coroutineScope.launch {
-                                                val token = SecurePreferences.decrypt(
-                                                    context,
-                                                    online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN
-                                                )
-                                                repository.purchaseSubscriptionAddon(token, planId).fold(
-                                                    onSuccess = {
-                                                        purchasingAddonId = null
-                                                        android.widget.Toast.makeText(
-                                                            context,
-                                                            it.message ?: "অ্যাড-অন সফলভাবে সক্রিয় হয়েছে! ✓",
-                                                            android.widget.Toast.LENGTH_LONG
-                                                        ).show()
-                                                    },
-                                                    onFailure = { err ->
-                                                        purchasingAddonId = null
-                                                        android.widget.Toast.makeText(
-                                                            context,
-                                                            err.message ?: "ক্রয় ব্যর্থ হয়েছে।",
-                                                            android.widget.Toast.LENGTH_LONG
-                                                        ).show()
-                                                    }
-                                                )
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -321,7 +337,7 @@ fun SubscriptionPackagesScreen(
         )
         PlanPackagePreviewDialog(
             title = addon.planName,
-            subtitle = addon.description ?: "কাস্টম সেন্ডার অ্যাড-অন",
+            subtitle = addon.description ?: "পার্সোনাল কাস্টম সেন্টার অ্যাড-অন",
             price = addon.price,
             features = features,
             permissionLines = addonPermissionLines(

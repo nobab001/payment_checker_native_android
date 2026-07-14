@@ -52,7 +52,7 @@ data class TransactionItem(
     val id: Int,
 
     @SerializedName("provider_tag")
-    val providerTag: String,            // bKash | Nagad | Rocket | Upay
+    val providerTag: String,            // Full template name e.g. "bKash Personal"
 
     val amount: Double,
 
@@ -64,6 +64,12 @@ data class TransactionItem(
 
     @SerializedName("sim_slot")
     val simSlot: Int?,                  // 1 বা 2
+
+    @SerializedName("sim_number")
+    val simNumber: String? = null,      // Source device SIM number at ingest
+
+    @SerializedName("device_id")
+    val deviceId: String? = null,       // Source device that uploaded SMS
 
     @SerializedName("sms_timestamp")
     val smsTimestamp: String,           // ISO 8601 বা epoch (ব্যাকএন্ড থেকে String)

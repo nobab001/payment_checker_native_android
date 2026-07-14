@@ -24,6 +24,11 @@ data class AdminUiState(
     val otpFormatTemplate: String = "",
     val plans: List<SubscriptionPlanDto> = emptyList(),
     val addonPlans: List<AddonPlanDto> = emptyList(),
+    val billingTabOrder: List<String> = listOf(
+        "personal_custom_center",
+        "personal_business",
+        "payment_gateway"
+    ),
     val checkoutDesignTabs: Map<String, CheckoutTabDto> = emptyMap(),
     val providerBranding: Map<String, ProviderBrandingDto> = emptyMap(),
     val isLoading: Boolean = false,
@@ -141,8 +146,15 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 try {
                     val res = api.getPlans(token)
                     if (res.isSuccessful) {
-                        val plans = res.body()?.plans ?: emptyList()
-                        _state.update { it.copy(plans = plans) }
+                        val body = res.body()
+                        val plans = body?.plans ?: emptyList()
+                        val tabOrder = body?.tabOrder?.takeIf { it.isNotEmpty() }
+                        _state.update {
+                            it.copy(
+                                plans = plans,
+                                billingTabOrder = tabOrder ?: it.billingTabOrder
+                            )
+                        }
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -153,8 +165,15 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 try {
                     val res = api.getAddonPlans(token)
                     if (res.isSuccessful) {
-                        val addonPlans = res.body()?.plans ?: emptyList()
-                        _state.update { it.copy(addonPlans = addonPlans) }
+                        val body = res.body()
+                        val addonPlans = body?.plans ?: emptyList()
+                        val tabOrder = body?.tabOrder?.takeIf { it.isNotEmpty() }
+                        _state.update {
+                            it.copy(
+                                addonPlans = addonPlans,
+                                billingTabOrder = tabOrder ?: it.billingTabOrder
+                            )
+                        }
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -539,12 +558,162 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
             val token = "Bearer ${getToken()}"
             val res = api.getPlans(token)
             if (res.isSuccessful) {
-                _state.update { it.copy(plans = res.body()?.plans ?: emptyList(), isSaving = false) }
+                val body = res.body()
+                _state.update {
+                    it.copy(
+                        plans = body?.plans ?: emptyList(),
+                        billingTabOrder = body?.tabOrder?.takeIf { o -> o.isNotEmpty() } ?: it.billingTabOrder,
+                        isSaving = false
+                    )
+                }
             } else {
                 _state.update { it.copy(isSaving = false) }
             }
         } catch (e: Exception) {
             _state.update { it.copy(isSaving = false) }
+        }
+    }
+
+    fun moveBillingTab(index: Int, delta: Int) {
+        _state.update { state ->
+            val order = state.billingTabOrder.toMutableList()
+            val target = index + delta
+            if (index !in order.indices || target !in order.indices) return@update state
+            val tmp = order[index]
+            order[index] = order[target]
+            order[target] = tmp
+            state.copy(billingTabOrder = order)
+        }
+    }
+
+    fun movePlan(planId: Int, delta: Int) {
+        _state.update { state ->
+            val plan = state.plans.firstOrNull { it.id == planId } ?: return@update state
+            val category = normalizePlanCategory(plan.planCategory)
+            val indices = state.plans.mapIndexedNotNull { i, p ->
+                if (normalizePlanCategory(p.planCategory) == category) i else null
+            }
+            val pos = indices.indexOfFirst { state.plans[it].id == planId }
+            val swapPos = pos + delta
+            if (pos < 0 || swapPos !in indices.indices) return@update state
+            val a = indices[pos]
+            val b = indices[swapPos]
+            val plans = state.plans.toMutableList()
+            val tmp = plans[a]
+            plans[a] = plans[b]
+            plans[b] = tmp
+            state.copy(plans = plans)
+        }
+    }
+
+    fun moveAddonPlan(planId: Int, delta: Int) {
+        _state.update { state ->
+            val list = state.addonPlans.toMutableList()
+            val pos = list.indexOfFirst { it.id == planId }
+            val target = pos + delta
+            if (pos < 0 || target !in list.indices) return@update state
+            val tmp = list[pos]
+            list[pos] = list[target]
+            list[target] = tmp
+            state.copy(addonPlans = list)
+        }
+    }
+
+    fun saveBillingDisplayOrder(onComplete: ((Boolean) -> Unit)? = null) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, errorMessage = null) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val tabRes = api.saveBillingTabOrder(
+                    token,
+                    BillingTabOrderRequest(_state.value.billingTabOrder)
+                )
+                if (!tabRes.isSuccessful || tabRes.body()?.success != true) {
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            errorMessage = parseApiErrorMessage(tabRes.errorBody()?.string())
+                                ?: "ট্যাব অর্ডার সেভ ব্যর্থ হয়েছে।"
+                        )
+                    }
+                    onComplete?.invoke(false)
+                    return@launch
+                }
+
+                val planItems = _state.value.plans
+                    .groupBy { normalizePlanCategory(it.planCategory) }
+                    .values
+                    .flatMap { group ->
+                        group.mapIndexedNotNull { index, plan ->
+                            val id = plan.id ?: return@mapIndexedNotNull null
+                            PlanReorderItemDto(id = id, sortOrder = index + 1)
+                        }
+                    }
+                if (planItems.isNotEmpty()) {
+                    val planRes = api.reorderPlans(token, PlanReorderRequest(planItems))
+                    if (!planRes.isSuccessful || planRes.body()?.success != true) {
+                        _state.update {
+                            it.copy(
+                                isSaving = false,
+                                errorMessage = parseApiErrorMessage(planRes.errorBody()?.string())
+                                    ?: "প্যাকেজ অর্ডার সেভ ব্যর্থ হয়েছে।"
+                            )
+                        }
+                        onComplete?.invoke(false)
+                        return@launch
+                    }
+                }
+
+                val addonItems = _state.value.addonPlans.mapIndexedNotNull { index, plan ->
+                    val id = plan.id ?: return@mapIndexedNotNull null
+                    PlanReorderItemDto(id = id, sortOrder = index + 1)
+                }
+                if (addonItems.isNotEmpty()) {
+                    val addonRes = api.reorderAddonPlans(token, PlanReorderRequest(addonItems))
+                    if (!addonRes.isSuccessful || addonRes.body()?.success != true) {
+                        _state.update {
+                            it.copy(
+                                isSaving = false,
+                                errorMessage = parseApiErrorMessage(addonRes.errorBody()?.string())
+                                    ?: "অ্যাড-অন অর্ডার সেভ ব্যর্থ হয়েছে।"
+                            )
+                        }
+                        onComplete?.invoke(false)
+                        return@launch
+                    }
+                }
+
+                _state.update {
+                    it.copy(
+                        isSaving = false,
+                        successMessage = "বিলিং ট্যাব ও প্যাকেজ অর্ডার সেভ হয়েছে।"
+                    )
+                }
+                refreshPlans()
+                refreshAddonPlans()
+                onComplete?.invoke(true)
+            } catch (e: Exception) {
+                _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }
+                onComplete?.invoke(false)
+            }
+        }
+    }
+
+    companion object {
+        fun normalizePlanCategory(category: String?): String {
+            val c = category?.trim().orEmpty()
+            return when {
+                c == "personal_business" -> "personal_business"
+                c.isBlank() || c == "personal" -> "payment_gateway"
+                else -> c
+            }
+        }
+
+        fun billingTabLabel(key: String): String = when (key) {
+            "personal_custom_center" -> "পার্সোনাল কাস্টম সেন্টার"
+            "personal_business" -> "পার্সোনাল বিজনেস"
+            "payment_gateway" -> "পেমেন্ট গেটওয়ে"
+            else -> key
         }
     }
 
@@ -617,7 +786,14 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
             val token = "Bearer ${getToken()}"
             val res = api.getAddonPlans(token)
             if (res.isSuccessful) {
-                _state.update { it.copy(addonPlans = res.body()?.plans ?: emptyList(), isSaving = false) }
+                val body = res.body()
+                _state.update {
+                    it.copy(
+                        addonPlans = body?.plans ?: emptyList(),
+                        billingTabOrder = body?.tabOrder?.takeIf { o -> o.isNotEmpty() } ?: it.billingTabOrder,
+                        isSaving = false
+                    )
+                }
             } else {
                 _state.update { it.copy(isSaving = false) }
             }

@@ -13,10 +13,10 @@ data class ConnectionStatus(
     val hasServer: Boolean
         get() = hasInternet && layer3ServerAlive
 
+    /** ✅ Connected → null; otherwise Disconnected / No Internet. */
     fun toConnectivityBanner(): ConnectionBanner? = when {
-        !layer1NetworkConnected -> ConnectionBanner.NoInternet("নেটওয়ার্ক সংযোগ নেই। ডেটা আপডেট হচ্ছে না।")
-        !layer2InternetAvailable -> ConnectionBanner.NoInternet()
-        !layer3ServerAlive -> ConnectionBanner.ServerUnavailable()
+        !layer1NetworkConnected || !layer2InternetAvailable -> ConnectionBanner.NoInternet()
+        !layer3ServerAlive -> ConnectionBanner.Disconnected()
         else -> null
     }
 }

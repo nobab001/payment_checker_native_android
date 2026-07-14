@@ -63,7 +63,7 @@ async function ensureEntitlementSchema() {
     }
   }
 
-  await ensureColumn('subscription_plans', 'plan_category', "`plan_category` VARCHAR(32) NOT NULL DEFAULT 'personal'");
+  await ensureColumn('subscription_plans', 'plan_category', "`plan_category` VARCHAR(32) NOT NULL DEFAULT 'payment_gateway'");
   await ensureColumn('subscription_plans', 'perm_template', '`perm_template` TINYINT NOT NULL DEFAULT 1');
   await ensureColumn('subscription_plans', 'perm_website', '`perm_website` TINYINT NOT NULL DEFAULT 1');
   await ensureColumn('subscription_plans', 'perm_device', '`perm_device` TINYINT NOT NULL DEFAULT 1');

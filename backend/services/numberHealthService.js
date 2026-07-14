@@ -2,24 +2,28 @@
  * numberHealthService — Number-centric health (ONLINE / GRACE / OFFLINE / DISABLED / STALE).
  *
  * Hot path: Socket.IO connect + SMS ingest touch Redis last_seen.
- * HTTP heartbeat is sparse fallback only while socket is down (client-side, ~15 min).
+ * HTTP heartbeat is package-tiered (Comm Policy v1.0): realtime packages every 2 min,
+ * sparse packages every 10 min.
  *
- * Thresholds (ms):
+ * Default thresholds (Gateway / Welcome):
  *   0–2 min   ONLINE
- *   2–10 min  GRACE
- *   10 min–24h OFFLINE
- *   24h+      STALE
+ *   2–3 min   GRACE
+ *   3–5 min   OFFLINE
+ *   5 min+    STALE (deactivate for gateway/welcome)
  */
 
 const { getRedisClient } = require('./redisClient');
+const commPolicy = require('./commPolicyService');
 
 function deviceWatchdog() {
   return require('./deviceDisconnectWatchdog');
 }
 
+/** Legacy global defaults = Gateway/Welcome realtime tier (kept for exports). */
 const THRESHOLDS = {
-  ONLINE_MS: 2 * 60 * 1000,
-  GRACE_MS: 10 * 60 * 1000,
+  ONLINE_MS: commPolicy.PROFILES.gateway.onlineMs,
+  GRACE_MS: commPolicy.PROFILES.gateway.graceMs,
+  OFFLINE_MS: commPolicy.PROFILES.gateway.offlineMs,
   STALE_MS: 24 * 60 * 60 * 1000,
 };
 
@@ -49,18 +53,40 @@ const SOCKET_DISCONNECT_DEBOUNCE_MS = 30 * 1000;
 const DEVICE_DB_FLUSH_MS = 5 * 60 * 1000;
 const REDIS_TTL_SEC = 48 * 60 * 60; // 48h — STALE still computable
 
+/** Short-lived profile cache to avoid DB on every SMS touch. */
+const profileCache = new Map();
+const PROFILE_CACHE_MS = 60 * 1000;
+
+async function getCachedProfile(userId) {
+  const uid = String(userId);
+  const hit = profileCache.get(uid);
+  if (hit && Date.now() - hit.at < PROFILE_CACHE_MS) return hit.profile;
+  const profile = await commPolicy.resolveCommProfile(uid);
+  profileCache.set(uid, { at: Date.now(), profile });
+  return profile;
+}
+
+function invalidateProfileCache(userId) {
+  profileCache.delete(String(userId));
+}
+
 function normalizePhone(raw) {
   if (!raw || typeof raw !== 'string') return '';
   return raw.replace(/\D/g, '').slice(-11);
 }
 
-function computeState(lastSeenMs, isDisabled, now = Date.now()) {
+function computeState(lastSeenMs, isDisabled, now = Date.now(), profile = null) {
+  const p = profile || commPolicy.PROFILES.gateway;
   if (isDisabled) return 'DISABLED';
   if (!lastSeenMs || lastSeenMs <= 0) return 'GRACE'; // migration: no heartbeat yet
   const age = now - lastSeenMs;
-  if (age <= THRESHOLDS.ONLINE_MS) return 'ONLINE';
-  if (age <= THRESHOLDS.GRACE_MS) return 'GRACE';
-  if (age <= THRESHOLDS.STALE_MS) return 'OFFLINE';
+  if (age <= p.onlineMs) return 'ONLINE';
+  if (age <= p.graceMs) return 'GRACE';
+  if (age <= Math.max(p.offlineMs, THRESHOLDS.STALE_MS)) {
+    // Before STALE wall-clock (24h), treat past offline as OFFLINE
+    if (age <= p.offlineMs) return 'OFFLINE';
+    if (age <= THRESHOLDS.STALE_MS) return 'OFFLINE';
+  }
   return 'STALE';
 }
 
@@ -106,7 +132,8 @@ async function getNumberMeta(userId, phone) {
 
 async function getNumberState(userId, phone, now = Date.now()) {
   const meta = await getNumberMeta(userId, phone);
-  const state = computeState(meta.lastSeenMs, meta.isDisabled, now);
+  const profile = await getCachedProfile(userId);
+  const state = computeState(meta.lastSeenMs, meta.isDisabled, now, profile);
   return {
     phone: normalizePhone(phone),
     state,
@@ -114,6 +141,7 @@ async function getNumberState(userId, phone, now = Date.now()) {
     deviceId: meta.deviceId,
     ageMs: meta.lastSeenMs ? now - meta.lastSeenMs : null,
     checkoutEligible: isCheckoutEligible(state),
+    profile: profile.id,
   };
 }
 
@@ -156,12 +184,13 @@ async function touchNumberLive(userId, deviceId, phone) {
 async function getNumberStateForDisplay(userId, phone, deviceId, now = Date.now()) {
   const meta = await getNumberMeta(userId, phone);
   let lastSeenMs = meta.lastSeenMs;
+  const profile = await getCachedProfile(userId);
 
   if (deviceId && (await isDeviceSocketLive(userId, deviceId))) {
     lastSeenMs = now;
   }
 
-  const state = computeState(lastSeenMs, meta.isDisabled, now);
+  const state = computeState(lastSeenMs, meta.isDisabled, now, profile);
   return {
     phone: normalizePhone(phone),
     state,
@@ -169,6 +198,7 @@ async function getNumberStateForDisplay(userId, phone, deviceId, now = Date.now(
     deviceId: deviceId || meta.deviceId,
     ageMs: lastSeenMs ? now - lastSeenMs : null,
     checkoutEligible: isCheckoutEligible(state),
+    profile: profile.id,
   };
 }
 
@@ -302,15 +332,16 @@ async function onDeviceSocketConnect(userId, deviceId, clientNumbers = null) {
 }
 
 /**
- * Socket.IO disconnect (debounced) — shift numbers into GRACE; start 3×10min server watch.
+ * Socket.IO disconnect (debounced) — shift numbers into GRACE; start profile-aware watch.
  */
 async function onDeviceSocketDisconnect(userId, deviceId) {
   const uid = String(userId);
   const dev = String(deviceId || '');
   if (!uid || !dev) return;
 
+  const profile = await getCachedProfile(uid);
   const numbers = await fetchActiveNumbersForDevice(uid, dev);
-  const graceAnchorMs = Date.now() - THRESHOLDS.ONLINE_MS - 1000;
+  const graceAnchorMs = Date.now() - profile.onlineMs - 1000;
   const anchorStr = String(graceAnchorMs);
 
   await safePipeline((pipe) => {
@@ -321,10 +352,10 @@ async function onDeviceSocketDisconnect(userId, deviceId) {
     });
   });
 
-  deviceWatchdog().scheduleDeviceWatch(uid, dev);
+  deviceWatchdog().scheduleDeviceWatch(uid, dev, profile);
 
   console.log(
-    `[NumberHealth] Socket disconnect → GRACE + watchdog for device ${dev} (${numbers.length} number(s))`
+    `[NumberHealth] Socket disconnect → GRACE + watchdog (${profile.id}) for device ${dev} (${numbers.length} number(s))`
   );
 }
 
@@ -403,14 +434,21 @@ async function purgeNumber(userId, phone) {
 async function getDeviceHealth(userId, deviceId) {
   const uid = String(userId);
   const dev = String(deviceId);
+  const profile = await getCachedProfile(uid);
   try {
     const redis = getRedisClient();
     const seen = await redis.get(KEYS.deviceLastSeen(uid, dev));
     const lastSeenMs = seen ? parseInt(seen, 10) || 0 : 0;
-    const state = computeState(lastSeenMs, false);
-    return { deviceId: dev, lastSeenMs, state, ageMs: lastSeenMs ? Date.now() - lastSeenMs : null };
+    const state = computeState(lastSeenMs, false, Date.now(), profile);
+    return {
+      deviceId: dev,
+      lastSeenMs,
+      state,
+      ageMs: lastSeenMs ? Date.now() - lastSeenMs : null,
+      profile: profile.id,
+    };
   } catch (err) {
-    return { deviceId: dev, lastSeenMs: 0, state: 'GRACE', ageMs: null };
+    return { deviceId: dev, lastSeenMs: 0, state: 'GRACE', ageMs: null, profile: profile.id };
   }
 }
 
@@ -422,6 +460,7 @@ async function applyHealthToCheckoutRows(userId, rows) {
 
   const uid = String(userId);
   const now = Date.now();
+  const profile = await getCachedProfile(uid);
   const phones = [...new Set(rows.map((r) => normalizePhone(r.number)).filter(Boolean))];
   const deviceIds = [...new Set(
     rows.map((r) => String(r.device_id || r.deviceId || '')).filter(Boolean),
@@ -473,7 +512,7 @@ async function applyHealthToCheckoutRows(userId, rows) {
     if (devId && socketLiveByDevice[devId]) {
       lastSeenMs = now;
     }
-    const state = computeState(lastSeenMs, meta.isDisabled, now);
+    const state = computeState(lastSeenMs, meta.isDisabled, now, profile);
     return {
       ...row,
       healthState: state,
@@ -511,4 +550,6 @@ module.exports = {
   purgeNumber,
   getDeviceHealth,
   applyHealthToCheckoutRows,
+  getCachedProfile,
+  invalidateProfileCache,
 };

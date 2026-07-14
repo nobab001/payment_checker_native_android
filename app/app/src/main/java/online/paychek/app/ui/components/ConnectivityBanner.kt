@@ -3,8 +3,9 @@ package online.paychek.app.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.SyncProblem
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -23,17 +24,14 @@ fun ConnectionStatusBanner(
     modifier: Modifier = Modifier
 ) {
     val (background, textColor, icon) = when (banner) {
-        is ConnectionBanner.NoInternet -> Triple(Color(0xFFFEF3C7), Color(0xFF92400E), Icons.Default.WifiOff)
-        is ConnectionBanner.ServerUnavailable -> Triple(Color(0xFFFFEDD5), Color(0xFF9A3412), Icons.Default.CloudOff)
-        is ConnectionBanner.DataSyncFailed -> Triple(Color(0xFFE0F2FE), Color(0xFF075985), Icons.Default.SyncProblem)
-    }
-
-    val displayMessage = when (banner) {
-        is ConnectionBanner.DataSyncFailed -> {
-            if (banner.isRetrying) "${banner.message} পুনরায় চেষ্টা করা হচ্ছে…"
-            else banner.message
-        }
-        else -> banner.message
+        is ConnectionBanner.Reconnecting ->
+            Triple(Color(0xFFE0F2FE), Color(0xFF075985), Icons.Default.Sync)
+        is ConnectionBanner.Disconnected ->
+            Triple(Color(0xFFFFEDD5), Color(0xFF9A3412), Icons.Default.CloudOff)
+        is ConnectionBanner.NoInternet ->
+            Triple(Color(0xFFFEF3C7), Color(0xFF92400E), Icons.Default.WifiOff)
+        is ConnectionBanner.ServerError ->
+            Triple(Color(0xFFFEE2E2), Color(0xFF991B1B), Icons.Default.Build)
     }
 
     Box(
@@ -49,12 +47,12 @@ fun ConnectionStatusBanner(
         ) {
             Icon(
                 imageVector = icon,
-                contentDescription = displayMessage,
+                contentDescription = banner.message,
                 tint = textColor,
                 modifier = Modifier.size(16.dp)
             )
             Text(
-                text = displayMessage,
+                text = banner.message,
                 color = textColor,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium
