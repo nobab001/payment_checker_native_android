@@ -104,6 +104,7 @@ private val GradientHeader = Brush.linearGradient(
 fun DashboardScreen(
     onNavigateToHistory: () -> Unit,
     onNavigateToSubscription: () -> Unit,
+    onPullRefresh: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: DashboardViewModel = viewModel()
 ) {
@@ -441,6 +442,7 @@ fun DashboardScreen(
         PullToRefreshBox(
             isRefreshing = screenState.isRefreshing,
             onRefresh    = {
+                onPullRefresh()
                 if (!viewModel.onRefresh()) {
                     android.widget.Toast.makeText(
                         context,

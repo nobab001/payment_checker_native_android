@@ -29,6 +29,7 @@ const axios = require('axios');
 const crypto = require('crypto');
 const { encryptOtp, decryptOtp } = require('../utils/otpCrypto');
 const numberHealth = require('../services/numberHealthService');
+const presenceV25 = require('../services/presenceV25');
 const { fetchGatewayMethodsForUser } = require('./gatewayController');
 const { getUserEntitlements } = require('../services/accountEntitlementsService');
 
@@ -167,6 +168,88 @@ function emitDeviceConfig(io, userId, deviceId, row) {
     sim_one_active: row.sim_one_active,
     sim_two_number: row.sim_two_number,
     sim_two_active: row.sim_two_active,
+  });
+}
+
+function isApprovedDevice(device) {
+  const v = device?.is_approved;
+  return v === 1 || v === true || v === '1';
+}
+
+function isPendingApprovalDevice(device) {
+  return !isApprovedDevice(device) && device?.status === 'pending';
+}
+
+/** Re-open a soft-deleted (rejected) child device as pending when the same phone logs in again. */
+async function reopenRejectedDeviceAsPending(deviceId) {
+  await query(
+    `UPDATE registered_devices
+     SET status = 'pending',
+         is_approved = 0,
+         device_role = 'pending',
+         custom_device_name = CASE
+           WHEN custom_device_name IS NULL OR custom_device_name = ''
+                OR custom_device_name LIKE '%(removed)%'
+           THEN COALESCE(NULLIF(device_name, ''), 'Co-Parent Device')
+           ELSE REPLACE(custom_device_name, ' (removed)', '')
+         END,
+         last_seen_at = NOW()
+     WHERE id = ? AND is_parent = 0 AND status = 'rejected'`,
+    [deviceId]
+  );
+}
+
+/** Notify approved devices on the account that a child device needs PIN approval. */
+async function notifyOwnersPendingDevice(app, userId, pendingDevice) {
+  try {
+    const io = app?.get?.('io');
+    if (!io || !pendingDevice?.device_id) return;
+
+    const approvers = await query(
+      `SELECT device_id FROM registered_devices
+       WHERE user_id = ? AND is_approved = 1 AND status = 'active'
+         AND device_id != ?`,
+      [userId, pendingDevice.device_id]
+    );
+
+    const payload = {
+      device_id: pendingDevice.device_id,
+      device_model: pendingDevice.device_model || pendingDevice.device_name || '',
+      custom_device_name: pendingDevice.custom_device_name || pendingDevice.device_name || '',
+      created_at: pendingDevice.created_at || null,
+    };
+
+    for (const row of approvers || []) {
+      const room = `${userId}:${row.device_id}`;
+      io.to(room).emit('pending_device_approval', payload);
+    }
+
+    if (approvers?.length) {
+      console.log(
+        `[AUTH] pending_device_approval pushed user=${userId} pending=${String(pendingDevice.device_id).slice(0, 12)}… `
+        + `notified=${approvers.length}`
+      );
+    }
+  } catch (err) {
+    console.warn('[AUTH] notifyOwnersPendingDevice failed:', err.message);
+  }
+}
+
+async function consumeOtp(contact, code) {
+  return prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRawUnsafe(
+      `SELECT id, code FROM otps
+       WHERE contact = ? AND expires_at > NOW() AND used_at IS NULL
+       ORDER BY id DESC FOR UPDATE`,
+      contact
+    );
+    const parsed = JSON.parse(JSON.stringify(rows, (key, val) => (
+      typeof val === 'bigint' ? Number(val) : val
+    )));
+    const matched = parsed.find((otp) => decryptOtp(otp.code) === code);
+    if (!matched) return null;
+    await tx.$executeRawUnsafe('UPDATE otps SET used_at = NOW() WHERE id = ?', matched.id);
+    return matched;
   });
 }
 
@@ -727,15 +810,10 @@ async function verifyOtp(req, res) {
     }
 
     const cleanedCode = code.trim();
-    const activeOtps = await query(
-      'SELECT * FROM otps WHERE contact = ? AND expires_at > NOW() AND used_at IS NULL ORDER BY id DESC',
-      [cleanedContact]
-    );
-    const matchedOtp = activeOtps.find(otp => decryptOtp(otp.code) === cleanedCode);
+    const matchedOtp = await consumeOtp(cleanedContact, cleanedCode);
     if (!matchedOtp) {
       return res.status(400).json({ error: 'ভুল ওটিপি কোড অথবা ওটিপির মেয়াদ শেষ হয়ে গেছে।' });
     }
-    await query('UPDATE otps SET used_at = NOW() WHERE id = ?', [matchedOtp.id]);
 
     // Check if user exists, if not, create new pending user (profile_complete=0)
     let user = await findUserByContact(cleanedContact);
@@ -808,69 +886,102 @@ async function verifyOtp(req, res) {
     );
 
     if (!device) {
-      const userDevicesCount = await query(
-        `SELECT COUNT(*) as count FROM registered_devices
-         WHERE user_id = ? AND status != 'rejected'`,
-        [user.id]
-      );
-      
-      const isParent = userDevicesCount[0].count === 0 ? 1 : 0;
+      device = await prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe('SELECT id FROM users WHERE id = ? FOR UPDATE', user.id);
 
-      if (isParent === 0) {
-        const ent = await getUserEntitlements(user.id);
-        if (!ent || ent.perm_device !== 1) {
-          return res.status(403).json({
-            success: false,
-            error: 'PERMISSION_DENIED',
-            message: 'আপনার প্যাকেজে নতুন ডিভাইস যোগ করার পারমিশন নেই।',
-          });
+        const countRows = await tx.$queryRawUnsafe(
+          `SELECT COUNT(*) AS count FROM registered_devices
+           WHERE user_id = ? AND status != 'rejected' FOR UPDATE`,
+          user.id
+        );
+        const deviceCount = Number(countRows[0]?.count || 0);
+        const isParent = deviceCount === 0 ? 1 : 0;
+
+        if (isParent === 0) {
+          const ent = await getUserEntitlements(user.id);
+          if (!ent || ent.perm_device !== 1) {
+            const err = new Error('PERMISSION_DENIED');
+            err.code = 'PERMISSION_DENIED';
+            throw err;
+          }
+          const maxDevices = ent.eff_max_devices || 1;
+          if (deviceCount >= maxDevices) {
+            const err = new Error('LIMIT_EXCEEDED');
+            err.code = 'LIMIT_EXCEEDED';
+            throw err;
+          }
         }
 
-        const maxDevices = ent.eff_max_devices || 1;
-        
-        if (userDevicesCount[0].count >= maxDevices) {
-          return res.status(403).json({
-            success: false,
-            error: 'LIMIT_EXCEEDED',
-            message: '👑 লিমিট শেষ! আরও সাইট বা ডিভাইস যুক্ত করতে অনুগ্রহ করে আপনার প্যাকেজটি আপগ্রেড করুন।'
-          });
-        }
-      }
+        const initialStatus = isParent ? 'active' : 'pending';
+        const trialStartedAt = new Date();
+        const trialExpiresAt = new Date();
+        trialExpiresAt.setDate(trialStartedAt.getDate() + trialDays);
 
-      const initialStatus = isParent ? 'active' : 'pending';
-      const trialStartedAt = new Date();
-      const trialExpiresAt = new Date();
-      trialExpiresAt.setDate(trialStartedAt.getDate() + trialDays);
+        const safeAndroidId = isUsableAndroidId(androidId) ? String(androidId).trim() : null;
+        const safeHw = isUsableHardwareFp(hardwareFingerprint || fingerprint)
+          ? String(hardwareFingerprint || fingerprint).trim()
+          : null;
+        const safeSims = simSlotIds ? String(simSlotIds).trim() : null;
 
-      const safeAndroidId = isUsableAndroidId(androidId) ? String(androidId).trim() : null;
-      const safeHw = isUsableHardwareFp(hardwareFingerprint || fingerprint)
-        ? String(hardwareFingerprint || fingerprint).trim()
-        : null;
-      const safeSims = simSlotIds ? String(simSlotIds).trim() : null;
-
-      const insertDeviceResult = await query(
-        `INSERT INTO registered_devices 
-          (user_id, device_id, android_id, hardware_fingerprint, sim_slot_ids,
-           device_name, device_model, android_version, status, is_parent, is_approved, device_role,
-           trial_started_at, trial_expires_at, is_trial_locked, is_owner_device) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          user.id, deviceId,
-          safeAndroidId, safeHw, safeSims,
+        const insertDeviceResult = await tx.$executeRawUnsafe(
+          `INSERT INTO registered_devices
+            (user_id, device_id, android_id, hardware_fingerprint, sim_slot_ids,
+             device_name, device_model, android_version, status, is_parent, is_approved, device_role,
+             trial_started_at, trial_expires_at, is_trial_locked, is_owner_device)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          user.id,
+          deviceId,
+          safeAndroidId,
+          safeHw,
+          safeSims,
           isParent ? 'Main Phone' : 'Co-Parent Device',
           deviceModel || 'Unknown Model',
           androidVersion || 'Android',
-          initialStatus, isParent, isParent ? 1 : 0,
+          initialStatus,
+          isParent,
+          isParent ? 1 : 0,
           isParent ? 'owner' : 'pending',
-          trialStartedAt, trialExpiresAt, 0,
+          trialStartedAt,
+          trialExpiresAt,
+          0,
           isParent ? 1 : 0
-        ]
-      );
+        );
 
-      const freshDevices = await query('SELECT * FROM registered_devices WHERE id = ?', [insertDeviceResult.insertId]);
-      device = freshDevices[0];
+        let insertId = 0;
+        const idRes = await tx.$queryRawUnsafe('SELECT LAST_INSERT_ID() AS insertId');
+        if (idRes?.length) insertId = Number(idRes[0].insertId);
 
-      if (isParent === 1) {
+        const freshDevices = await tx.$queryRawUnsafe(
+          'SELECT * FROM registered_devices WHERE id = ? LIMIT 1',
+          insertId
+        );
+        return freshDevices[0] || null;
+      }).catch((err) => {
+        if (err.code === 'PERMISSION_DENIED') {
+          return { __error: 'PERMISSION_DENIED' };
+        }
+        if (err.code === 'LIMIT_EXCEEDED') {
+          return { __error: 'LIMIT_EXCEEDED' };
+        }
+        throw err;
+      });
+
+      if (device?.__error === 'PERMISSION_DENIED') {
+        return res.status(403).json({
+          success: false,
+          error: 'PERMISSION_DENIED',
+          message: 'আপনার প্যাকেজে নতুন ডিভাইস যোগ করার পারমিশন নেই।',
+        });
+      }
+      if (device?.__error === 'LIMIT_EXCEEDED') {
+        return res.status(403).json({
+          success: false,
+          error: 'LIMIT_EXCEEDED',
+          message: '👑 লিমিট শেষ! আরও সাইট বা ডিভাইস যুক্ত করতে অনুগ্রহ করে আপনার প্যাকেজটি আপগ্রেড করুন।',
+        });
+      }
+
+      if (device?.is_parent === 1) {
         const existingKey = await query("SELECT secretKey FROM users WHERE id = ? LIMIT 1", [user.id]);
         if (!existingKey[0]?.secretKey) {
           const newSecretKey = crypto.randomBytes(32).toString('hex');
@@ -904,6 +1015,17 @@ async function verifyOtp(req, res) {
       // reload after backfill
       const refreshed = await query('SELECT * FROM registered_devices WHERE id = ? LIMIT 1', [device.id]);
       if (refreshed.length) device = refreshed[0];
+
+      if (device.status === 'rejected' && !isApprovedDevice(device) && Number(device.is_parent) !== 1) {
+        await reopenRejectedDeviceAsPending(device.id);
+        const reopened = await query('SELECT * FROM registered_devices WHERE id = ? LIMIT 1', [device.id]);
+        if (reopened.length) {
+          device = reopened[0];
+          console.log(
+            `[AUTH] Reopened rejected device as pending — user=${user.id} device=${String(device.device_id).slice(0, 12)}…`
+          );
+        }
+      }
 
       if (device.trial_expires_at && new Date(device.trial_expires_at) < new Date() && !device.is_trial_locked) {
         await query(
@@ -943,6 +1065,17 @@ async function verifyOtp(req, res) {
        JWT_SECRET,
        { expiresIn: process.env.USER_TOKEN_EXPIRES_IN || '30d' }
      );
+
+    // Phase 2: Presence Engine alive entry-point (login success).
+    try {
+      await presenceV25.markDeviceAlive(user.id, device.device_id, { source: 'LOGIN_SUCCESS' });
+    } catch (e) {
+      console.warn('[PresenceV25] markDeviceAlive LOGIN_SUCCESS failed:', e.message);
+    }
+
+    if (isPendingApprovalDevice(device)) {
+      await notifyOwnersPendingDevice(req.app, user.id, device);
+    }
 
     return res.json({
       token,
@@ -1999,16 +2132,17 @@ async function getChildDevices(req, res) {
     const userId = req.user.userId;
     const currentDeviceId = req.user.deviceId || '';
     const devices = await query(
-      `SELECT id, device_id, custom_device_name, device_model, is_parent, is_approved, device_role,
+      `SELECT id, device_id, custom_device_name, device_model, device_name, status, is_parent, is_approved, device_role,
               sim_one_number, sim_one_active, sim_two_number, sim_two_active, is_app_active,
               device_specific_pin, last_seen_at, android_version
        FROM registered_devices
-       WHERE user_id = ? AND is_approved = 1
-       ORDER BY created_at DESC`,
+       WHERE user_id = ? AND (is_approved = 1 OR status = 'pending')
+       ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, created_at DESC`,
       [userId]
     );
     const data = devices.map((d) => ({
       ...d,
+      custom_device_name: d.custom_device_name || d.device_name || '',
       is_current: d.device_id === currentDeviceId ? 1 : 0,
       has_device_pin: d.device_specific_pin ? 1 : 0,
     }));
@@ -2229,12 +2363,16 @@ async function getPendingApprovals(req, res) {
   try {
     const userId = req.user.userId;
     const devices = await query(
-      `SELECT id, device_id, custom_device_name, device_model, android_version, status, is_approved, device_role, created_at 
+      `SELECT id, device_id, custom_device_name, device_name, device_model, android_version, status, is_approved, device_role, created_at 
        FROM registered_devices 
        WHERE user_id = ? AND is_approved = 0 AND status = 'pending'`,
       [userId]
     );
-    return res.json({ success: true, data: devices });
+    const data = devices.map((d) => ({
+      ...d,
+      custom_device_name: d.custom_device_name || d.device_name || d.device_model || 'নতুন ডিভাইস',
+    }));
+    return res.json({ success: true, data });
   } catch (error) {
     console.error('Error fetching pending approvals:', error);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
@@ -2277,6 +2415,14 @@ async function approveByPin(req, res) {
     const io = req.app.get('io');
     const row = await fetchDeviceRowForSync(userId, deviceId);
     emitDeviceConfig(io, userId, deviceId, row);
+    if (io) {
+      io.to(`${userId}:${deviceId}`).emit('device_approved', {
+        device_id: deviceId,
+        device_role: role,
+        is_approved: 1,
+        device_specific_pin: role === 'owner' ? '' : (staffPin || ''),
+      });
+    }
 
     return res.json({ success: true, message: 'ডিভাইসটি সফলভাবে অনুমোদন করা হয়েছে।' });
   } catch (error) {

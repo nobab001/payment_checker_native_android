@@ -226,12 +226,14 @@ async function findBindingsForPhoneOnOtherDevices(userId, deviceId, phoneNumber)
 async function upsertSlotBinding(userId, deviceId, simSlot, phoneNumber, isActive) {
   await ensureSimBindingsTable();
   const activeVal = isActive ? 1 : 0;
+  // merchant_enabled = merchant intent (v2.5 checkout); is_active also presence bridge for legacy
   await prisma.$executeRaw`
-    INSERT INTO sim_slot_bindings (user_id, device_id, sim_slot, phone_number, is_active)
-    VALUES (${String(userId)}, ${String(deviceId)}, ${simSlot}, ${phoneNumber}, ${activeVal})
+    INSERT INTO sim_slot_bindings (user_id, device_id, sim_slot, phone_number, is_active, merchant_enabled)
+    VALUES (${String(userId)}, ${String(deviceId)}, ${simSlot}, ${phoneNumber}, ${activeVal}, ${activeVal})
     ON DUPLICATE KEY UPDATE
       phone_number = VALUES(phone_number),
       is_active = VALUES(is_active),
+      merchant_enabled = VALUES(merchant_enabled),
       updated_at = CURRENT_TIMESTAMP
   `;
 }
@@ -241,7 +243,7 @@ async function deactivatePhoneGlobally(userId, phoneNumber) {
   await ensureSimBindingsTable();
   await prisma.$executeRaw`
     UPDATE sim_slot_bindings
-    SET is_active = 0, updated_at = CURRENT_TIMESTAMP
+    SET is_active = 0, merchant_enabled = 0, updated_at = CURRENT_TIMESTAMP
     WHERE user_id = ${String(userId)} AND phone_number = ${phoneNumber}
   `;
 }
@@ -249,7 +251,7 @@ async function deactivatePhoneGlobally(userId, phoneNumber) {
 async function deactivateBindingById(bindingId) {
   await prisma.$executeRaw`
     UPDATE sim_slot_bindings
-    SET is_active = 0, updated_at = CURRENT_TIMESTAMP
+    SET is_active = 0, merchant_enabled = 0, updated_at = CURRENT_TIMESTAMP
     WHERE id = ${bindingId}
   `;
 }
@@ -647,6 +649,11 @@ async function addGatewayMethod(req, res) {
       return res.status(400).json({ error: 'sim_slot এবং provider আবশ্যক' });
     }
 
+    const cleanNumber = String(number || '').replace(/\D/g, '').slice(-11);
+    if (cleanNumber.length !== 11) {
+      return res.status(400).json({ error: 'সঠিক ১১ ডিজিটের মোবাইল নম্বর আবশ্যক' });
+    }
+
     if (template_id) {
       const perm = await requirePermission(userId, 'perm_template');
       if (!perm.ok) {
@@ -668,7 +675,7 @@ async function addGatewayMethod(req, res) {
         template_id: template_id || null,
         sim_slot,
         provider,
-        number: number || null,
+        number: cleanNumber,
         is_enabled: 1,
         priority: nextPriority
       }

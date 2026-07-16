@@ -151,6 +151,7 @@ data class ChildDeviceDto(
     @SerializedName("is_owner") val isOwner: Int? = null,
     @SerializedName("device_specific_pin") val deviceSpecificPin: String? = null,
     @SerializedName("device_model") val deviceModel: String? = null,
+    @SerializedName("status") val status: String? = null,
     @SerializedName("last_seen_at") val lastSeenAt: String? = null,
     @SerializedName("is_current") val isCurrent: Int = 0,
     @SerializedName("has_device_pin") val hasDevicePin: Int = 0
@@ -301,7 +302,9 @@ data class HeartbeatNumberItem(
 data class HeartbeatRequest(
     @SerializedName("numbers") val numbers: List<HeartbeatNumberItem>,
     @SerializedName("sms_service_active") val smsServiceActive: Boolean = true,
-    @SerializedName("battery_percent") val batteryPercent: Int? = null
+    @SerializedName("battery_percent") val batteryPercent: Int? = null,
+    /** v2.5 presence trigger: boot_completed | network_restored (optional). */
+    @SerializedName("presence_trigger") val presenceTrigger: String? = null
 )
 
 data class HeartbeatResponse(

@@ -5,6 +5,7 @@
 const numberHealth = require('../services/numberHealthService');
 const commPolicy = require('../services/commPolicyService');
 const dataSyncCache = require('../services/dataSyncCache');
+const presenceV25 = require('../services/presenceV25');
 
 async function postHeartbeat(req, res) {
   try {
@@ -29,11 +30,10 @@ async function postHeartbeat(req, res) {
       && req.body.smsServiceActive !== false;
 
     if (!smsActive) {
-      // Monitoring Stop → Offline signal path
-      if (profile.deactivateOnOffline) {
-        const watchdog = require('../services/deviceDisconnectWatchdog');
-        await watchdog.deactivateDeviceBindings(userId, deviceId);
-      }
+      // Monitoring Stop / explicit offline — hide numbers from checkout immediately
+      const watchdog = require('../services/deviceDisconnectWatchdog');
+      await watchdog.deactivateDeviceBindings(userId, deviceId);
+      watchdog.cancelDeviceWatch(userId, deviceId);
       return res.json({
         success: true,
         skipped: true,
@@ -56,10 +56,29 @@ async function postHeartbeat(req, res) {
 
     // Ensure bindings stay active while heartbeat is healthy
     const watchdog = require('../services/deviceDisconnectWatchdog');
-    await watchdog.reactivateDeviceBindings(userId, deviceId, numbers);
-    watchdog.cancelDeviceWatch(userId, deviceId);
-    // Re-arm offline timer from this successful heartbeat
-    watchdog.scheduleDeviceWatch(userId, deviceId, profile);
+    const presenceV25 = require('../services/presenceV25');
+    const v2On = await presenceV25.isPresenceV2Enabled(profile?.id || 'personal');
+
+    if (!v2On) {
+      await watchdog.reactivateDeviceBindings(userId, deviceId, numbers);
+      watchdog.cancelDeviceWatch(userId, deviceId);
+      watchdog.scheduleDeviceWatch(userId, deviceId, profile);
+    }
+
+    // Phase 2: Presence Engine alive entry-point (heartbeat success only)
+    try {
+      const trigger = String(req.body.presence_trigger || req.body.presenceTrigger || '').trim();
+      let source = 'HB_SUCCESS';
+      if (trigger === 'boot_completed') source = 'BOOT_SUCCESS';
+      else if (trigger === 'network_restored') source = 'NETWORK_RESTORED';
+
+      await presenceV25.markDeviceAlive(userId, deviceId, {
+        source,
+        packageKey: profile?.id,
+      });
+    } catch (e) {
+      console.warn('[PresenceV25] markDeviceAlive heartbeat failed:', e.message);
+    }
 
     const forceSync = false;
 

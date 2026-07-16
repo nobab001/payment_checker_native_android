@@ -6,6 +6,7 @@ import android.content.Intent
 import android.util.Log
 import online.paychek.app.config.AppConfig
 import online.paychek.app.services.foreground.SmsServiceGuard
+import online.paychek.app.services.sync.NumberHeartbeatEngine
 import online.paychek.app.services.sync.SmsPollWorker
 import online.paychek.app.utils.SessionFlags
 
@@ -44,9 +45,9 @@ class BootReceiver : BroadcastReceiver() {
         }
 
         try {
-            SmsServiceGuard.startService(context)
+            SmsServiceGuard.startService(context, NumberHeartbeatEngine.TRIGGER_BOOT_COMPLETED)
             SmsServiceGuard.scheduleWatchdog(context)
-            Log.i(TAG, "SMS Monitor Service started on boot")
+            Log.i(TAG, "SMS Monitor Service started on boot (BOOT_COMPLETED heartbeat scheduled)")
             SmsPollWorker.schedule(context.applicationContext)
         } catch (e: Exception) {
             Log.e(TAG, "Boot service start failed: ${e.message}")

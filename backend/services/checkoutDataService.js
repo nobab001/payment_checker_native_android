@@ -46,9 +46,54 @@ function categoryToTab(category) {
  *   sms_templates.is_parseable = 1
  *   checkout_view_templates must exist (official checkout instructions)
  */
-async function fetchSecureCheckoutRows(userId) {
+async function fetchSecureCheckoutRows(userId, opts = {}) {
   const uid = String(userId);
-  const rows = await prisma.$queryRaw`
+  const useV2 = !!opts.useV2;
+
+  // Phase 4 cutover: presence = device_online, merchant toggle = merchant_enabled
+  // Legacy: sim_slot_bindings.is_active = 1 (DeviceWatch / heartbeat)
+  const rows = useV2
+    ? await prisma.$queryRaw`
+    SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.device_id, gm.priority,
+           t.id AS template_id, t.template_name, t.category, t.is_active AS tpl_active, t.is_parseable,
+           cvt.single_number_instruction, cvt.multiple_number_instruction,
+           rd.device_name
+      FROM gateway_methods gm
+      INNER JOIN sms_templates t ON gm.template_id = t.id
+      INNER JOIN sim_slot_bindings ssb
+        ON CONVERT(ssb.user_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+         = CONVERT(gm.user_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+       AND CONVERT(ssb.device_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+         = CONVERT(gm.device_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+       AND ssb.sim_slot = gm.sim_slot
+       AND ssb.merchant_enabled = 1
+       AND (
+         CONVERT(ssb.phone_number USING utf8mb4) COLLATE utf8mb4_unicode_ci
+           = CONVERT(gm.number USING utf8mb4) COLLATE utf8mb4_unicode_ci
+         OR CONVERT(
+           RIGHT(REPLACE(REPLACE(REPLACE(ssb.phone_number, ' ', ''), '-', ''), '+', ''), 11)
+           USING utf8mb4
+         ) COLLATE utf8mb4_unicode_ci
+           = CONVERT(
+           RIGHT(REPLACE(REPLACE(REPLACE(gm.number, ' ', ''), '-', ''), '+', ''), 11)
+           USING utf8mb4
+         ) COLLATE utf8mb4_unicode_ci
+       )
+      INNER JOIN registered_devices rd
+        ON CONVERT(gm.device_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+         = CONVERT(rd.device_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+       AND rd.user_id = CAST(gm.user_id AS UNSIGNED)
+       AND rd.status = 'active'
+       AND rd.device_online = 1
+      LEFT JOIN checkout_view_templates cvt ON cvt.sms_template_id = t.id
+     WHERE gm.user_id = ${uid}
+       AND gm.is_enabled = 1
+       AND gm.number IS NOT NULL AND gm.number != ''
+       AND t.is_active = 1
+       AND t.is_parseable = 1
+  ORDER BY gm.priority ASC, gm.sim_slot ASC
+  `
+    : await prisma.$queryRaw`
     SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.device_id, gm.priority,
            t.id AS template_id, t.template_name, t.category, t.is_active AS tpl_active, t.is_parseable,
            cvt.single_number_instruction, cvt.multiple_number_instruction,
@@ -161,10 +206,22 @@ function applyNumberOrderOverrides(gateways, numberOrderJson, options = {}) {
  * Returns flat list + grouped-by-category map for tab rendering.
  */
 async function buildSecureCheckoutData(userId, numberOrderJson = null, options = {}) {
-  const rows = await fetchSecureCheckoutRows(userId);
+  const presenceV25 = require('./presenceV25');
+  const commPolicy = require('./commPolicyService');
+  let useV2 = false;
+  try {
+    const profile = await commPolicy.resolveCommProfile(userId);
+    useV2 = await presenceV25.isPresenceV2Enabled(profile?.id || 'personal');
+  } catch (_) {
+    useV2 = false;
+  }
 
-  // Server-side health filter + automatic failover ordering (ONLINE → GRACE)
-  const healthyRows = await numberHealth.applyHealthToCheckoutRows(userId, rows);
+  const rows = await fetchSecureCheckoutRows(userId, { useV2 });
+
+  // Phase 4: v2.5 checkout = DB only (device_online + merchant_enabled). No Redis health.
+  const healthyRows = useV2
+    ? rows
+    : await numberHealth.applyHealthToCheckoutRows(userId, rows);
 
   const providerCounts = {};
   healthyRows.forEach((g) => {

@@ -50,7 +50,7 @@ model gateway_layouts {
   created_at    DateTime @default(now()) @db.Timestamp(0)
   updated_at    DateTime @default(now()) @db.Timestamp(0)
 
-  // â”€â”€ API Integration v2 (additive, backward-compatible) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // GöÇGöÇ API Integration v2 (additive, backward-compatible) GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
   merchant_id                 String?  @unique(map: "uniq_merchant_id") @db.VarChar(64)
   company_name                String?  @db.VarChar(255)
   logo_url                    String?  @db.VarChar(512)
@@ -116,7 +116,7 @@ model checkout_vibe_requests {
   @@index([expires_at], map: "idx_vibe_expiry")
 }
 
-// â”€â”€ API Integration v2: Payment Flow routing (Phase 6) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// GöÇGöÇ API Integration v2: Payment Flow routing (Phase 6) GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
 // A payment session is created when a merchant server initiates a payment. It
 // records the intended amount server-side (tamper-proof) and routes the customer
 // either to the PayCheck checkout (transaction/vibe) or to an official gateway.
@@ -150,7 +150,7 @@ model payment_sessions {
   @@unique([website_id, trx_id], map: "uniq_website_trx")
 }
 
-/// Merchant callback outbox â€” durable delivery after payment SUCCESS (Phase-3B.5).
+/// Merchant callback outbox GÇö durable delivery after payment SUCCESS (Phase-3B.5).
 model merchant_callback_outbox {
   id            Int       @id @default(autoincrement())
   delivery_key  String    @unique(map: "uniq_mcb_delivery_key") @db.VarChar(191)
@@ -191,7 +191,7 @@ model website_official_gateways {
   @@index([website_id, is_active], map: "idx_official_website_active")
 }
 
-// Live merchant accounts â€” multiple accounts per provider per website.
+// Live merchant accounts GÇö multiple accounts per provider per website.
 // Sensitive credentials (api_secret, password, app_secret) are AES-encrypted
 // (iv:ciphertext hex) via utils/merchantCrypto.js. Never returned in plaintext.
 model merchant_accounts {
@@ -265,14 +265,29 @@ model sim_slot_bindings {
   device_id    String   @default("") @db.VarChar(255)
   sim_slot     Int      @default(1) @db.TinyInt
   phone_number String   @default("") @db.VarChar(20)
-  is_active    Int      @default(0) @db.TinyInt
-  created_at   DateTime @default(now()) @db.Timestamp(0)
-  updated_at   DateTime @default(now()) @db.Timestamp(0)
+  is_active         Int      @default(0) @db.TinyInt
+  merchant_enabled  Int      @default(1) @db.TinyInt
+  created_at        DateTime @default(now()) @db.Timestamp(0)
+  updated_at        DateTime @default(now()) @db.Timestamp(0)
 
   @@unique([user_id, device_id, sim_slot], map: "uniq_user_device_slot")
   @@index([user_id, phone_number, is_active], map: "idx_user_number_active")
 }
 
+
+model comm_policy {
+  id                      Int      @id @default(autoincrement())
+  package_key             String   @unique(map: "uniq_comm_policy_package") @db.VarChar(32)
+  heartbeat_interval_sec  Int      @default(300)
+  probe_steps_json        Json
+  worker_sweep_sec        Int      @default(30)
+  sync_interval_sec       Int      @default(1800)
+  jitter_sec              Int      @default(30)
+  presence_engine_version Int      @default(1) @db.TinyInt
+  is_active               Int      @default(1) @db.TinyInt
+  created_at              DateTime @default(now()) @db.Timestamp(0)
+  updated_at              DateTime @default(now()) @db.Timestamp(0)
+}
 model global_config {
   config_key   String   @id @db.VarChar(128)
   config_value String   @db.Text
@@ -323,6 +338,7 @@ model registered_devices {
   sim_settings         String?                   @db.LongText
   last_seen_at         DateTime?                 @db.Timestamp(0)
   last_battery_percent Int?                      @db.UnsignedTinyInt
+  device_online        Int       @default(1) @db.TinyInt
   trial_started_at     DateTime?                 @db.Timestamp(0)
   trial_expires_at     DateTime?                 @db.Timestamp(0)
   is_trial_locked      Int       @default(0) @db.TinyInt

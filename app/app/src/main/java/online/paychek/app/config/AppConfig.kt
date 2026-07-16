@@ -63,8 +63,9 @@ object AppConfig {
     const val SMS_POLL_WORKER_INTERVAL_MIN = 15L     // Guard-2: ContentProvider polling interval
     const val SMS_INBOX_SCAN_LIMIT      = 50         // Guard-2: এক ব্যাচে সর্বোচ্চ কতটি SMS স্ক্যান করবে
     /** Comm Policy defaults — overridden by server heartbeat / entitlements. */
-    const val HEARTBEAT_INTERVAL_MS         = 120_000L   // 2 min (welcome/gateway)
-    const val HEARTBEAT_SPARSE_MS           = 600_000L   // 10 min (personal / personal business)
+    const val HEARTBEAT_INTERVAL_MS         = 300_000L    // 5 min (welcome/gateway v2.5)
+    const val HEARTBEAT_SPARSE_MS           = 1_800_000L  // 30 min (personal)
+    const val HEARTBEAT_JITTER_MS           = 30_000L     // ±30s herd avoidance
     @Deprecated("Use CommPolicyStore.heartbeatIntervalMs()")
     const val FALLBACK_HEARTBEAT_INTERVAL_MS = HEARTBEAT_SPARSE_MS
 

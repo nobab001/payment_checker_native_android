@@ -70,4 +70,31 @@ router.get('/users', admin.listUsers);
 router.post('/users/:id/block', admin.toggleUserBlock);
 router.post('/devices/:id/trial', admin.updateDeviceTrial);
 
+// Presence v2.5 metrics (Phase 3)
+router.get('/presence-v25/metrics', async (req, res) => {
+  try {
+    const presenceV25 = require('../services/presenceV25');
+    const snap = presenceV25.getPresenceMetrics();
+    const shadow = await presenceV25.isShadowModeEnabled();
+    const globalOn = await presenceV25.loadGlobalV2Enabled();
+    const policies = await presenceV25.refreshAllPolicies();
+    return res.json({
+      success: true,
+      dryRun: presenceV25.DRY_RUN,
+      shadowMode: shadow,
+      globalV2Enabled: globalOn,
+      metrics: snap,
+      policies: Object.fromEntries(
+        Object.entries(policies).map(([k, p]) => [k, {
+          heartbeat_interval_sec: p.heartbeat_interval_sec,
+          presence_engine_version: p.presence_engine_version,
+          offline_deadline_sec: p.offline_deadline_sec,
+        }])
+      ),
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 module.exports = router;

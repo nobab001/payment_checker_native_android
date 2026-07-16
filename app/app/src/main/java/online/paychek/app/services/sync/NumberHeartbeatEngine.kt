@@ -25,9 +25,23 @@ import org.json.JSONObject
  */
 object NumberHeartbeatEngine {
     private const val TAG = "NumberHeartbeat"
+    const val TRIGGER_BOOT_COMPLETED = "boot_completed"
+    const val TRIGGER_NETWORK_RESTORED = "network_restored"
+    private const val NETWORK_RESTORE_DEBOUNCE_MS = 7_000L
+
     private var loopJob: Job? = null
+    private var networkRestorePulseJob: Job? = null
     @Volatile private var socketConnected = false
+    /** After SMS upload success, skip the next scheduled heartbeat (server already marked alive). */
+    @Volatile private var skipNextScheduled = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    /** Call after successful SMS upload to server — resets timer / skips duplicate HB. */
+    fun noteSmsUploadSuccess(context: Context) {
+        skipNextScheduled = true
+        Log.i(TAG, "SMS upload success — next scheduled heartbeat will skip")
+        // Immediate pulse optional: server already got SMS_SUCCESS alive; no need to POST again.
+    }
 
     fun onSocketConnected(context: Context, socket: io.socket.client.Socket?) {
         socketConnected = true
@@ -45,12 +59,12 @@ object NumberHeartbeatEngine {
 
     /** Start / restart periodic heartbeat for monitoring session. */
     @Synchronized
-    fun start(context: Context) {
-        ensureRunning(context.applicationContext)
+    fun start(context: Context, initialPresenceTrigger: String? = null) {
+        ensureRunning(context.applicationContext, initialPresenceTrigger)
     }
 
     @Synchronized
-    fun ensureRunning(context: Context) {
+    fun ensureRunning(context: Context, initialPresenceTrigger: String? = null) {
         if (!PrefsHelper.isSmsServiceActive(context)) {
             stop()
             return
@@ -58,13 +72,18 @@ object NumberHeartbeatEngine {
         if (loopJob?.isActive == true) return
         val app = context.applicationContext
         loopJob = scope.launch {
-            sendHeartbeat(app, smsActive = true)
+            sendHeartbeat(app, smsActive = true, presenceTrigger = initialPresenceTrigger)
             while (isActive && PrefsHelper.isSmsServiceActive(app)) {
                 val delayMs = CommPolicyStore.heartbeatIntervalMs(app)
                 Log.d(TAG, "Next heartbeat in ${delayMs / 1000}s (profile=${CommPolicyStore.profile(app)})")
                 delay(delayMs)
                 if (PrefsHelper.isSmsServiceActive(app)) {
-                    sendHeartbeat(app, smsActive = true)
+                    if (skipNextScheduled) {
+                        skipNextScheduled = false
+                        Log.i(TAG, "Skipped scheduled heartbeat (SMS already counted as alive)")
+                    } else {
+                        sendHeartbeat(app, smsActive = true, presenceTrigger = null)
+                    }
                 }
             }
         }
@@ -78,11 +97,32 @@ object NumberHeartbeatEngine {
     fun stop() {
         loopJob?.cancel()
         loopJob = null
+        networkRestorePulseJob?.cancel()
+        networkRestorePulseJob = null
     }
 
     /** Immediate one-shot heartbeat (e.g. before refreshing account number list). */
     fun pulse(context: Context) {
         scope.launch { sendHeartbeat(context.applicationContext, smsActive = PrefsHelper.isSmsServiceActive(context)) }
+    }
+
+    /**
+     * Internet restored (offline → online only). Debounced to avoid heartbeat storms.
+     * WiFi ↔ mobile handoff does not trigger this — caller must gate on offline→online.
+     */
+    @Synchronized
+    fun pulseNetworkRestored(context: Context) {
+        networkRestorePulseJob?.cancel()
+        networkRestorePulseJob = scope.launch {
+            delay(NETWORK_RESTORE_DEBOUNCE_MS)
+            if (!PrefsHelper.isSmsServiceActive(context.applicationContext)) return@launch
+            Log.i(TAG, "Network restored — immediate heartbeat after debounce")
+            sendHeartbeat(
+                context.applicationContext,
+                smsActive = true,
+                presenceTrigger = TRIGGER_NETWORK_RESTORED
+            )
+        }
     }
 
     /** Monitoring Stop → Offline Signal */
@@ -119,23 +159,29 @@ object NumberHeartbeatEngine {
 
     fun stopFallback() = stop()
 
-    private suspend fun sendHeartbeat(context: Context, smsActive: Boolean) {
+    private suspend fun sendHeartbeat(
+        context: Context,
+        smsActive: Boolean,
+        presenceTrigger: String? = null
+    ) {
         if (smsActive && !PrefsHelper.isSmsServiceActive(context)) return
 
         val token = SecurePreferences.decrypt(context, AppConfig.KEY_AUTH_TOKEN)
         if (token.isEmpty()) return
 
+        // Always POST while SMS is active — even with empty numbers — so server
+        // refreshes device last_seen and DeviceWatch does not deactivate SIMs.
         val numbers = collectActiveNumbers(context)
         if (smsActive && numbers.isEmpty()) {
-            Log.d(TAG, "No active numbers — skip heartbeat")
-            return
+            Log.i(TAG, "Heartbeat with 0 numbers — device liveness only")
         }
 
         val deviceId = DeviceIdHelper.getHashedAndroidId(context)
         val request = HeartbeatRequest(
             numbers = numbers,
             smsServiceActive = smsActive,
-            batteryPercent = readBatteryPercent(context)
+            batteryPercent = readBatteryPercent(context),
+            presenceTrigger = presenceTrigger
         )
 
         runCatching {
@@ -154,9 +200,10 @@ object NumberHeartbeatEngine {
                         // Soft signal — existing dashboards poll templates; optional future hook.
                     }
                 }
-                Log.d(
+                Log.i(
                     TAG,
-                    "Heartbeat OK — numbers=${numbers.size} next=${CommPolicyStore.heartbeatIntervalMs(context)}ms socketConnected=$socketConnected"
+                    "Heartbeat OK — numbers=${numbers.size} trigger=${presenceTrigger ?: "scheduled"} "
+                        + "next=${CommPolicyStore.heartbeatIntervalMs(context)}ms socketConnected=$socketConnected"
                 )
             } else {
                 Log.w(TAG, "Heartbeat HTTP ${res.code()}")

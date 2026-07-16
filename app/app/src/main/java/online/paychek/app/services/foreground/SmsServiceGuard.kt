@@ -25,6 +25,9 @@ object SmsServiceGuard {
     private const val WATCH_WORK_NAME = "paychek_sms_service_watch"
     private const val RECOVER_WORK_NAME = "paychek_sms_service_recover"
 
+    /** Passed to [SmsMonitorService] for v2.5 presence boot recovery heartbeat. */
+    const val EXTRA_PRESENCE_TRIGGER = "extra_presence_trigger"
+
     private fun watchdogIntervalMinutes(): Long = 15L // WorkManager periodic minimum
 
     fun isServiceAlive(): Boolean = SmsMonitorService.isAlive
@@ -36,10 +39,11 @@ object SmsServiceGuard {
         return startService(app)
     }
 
-    fun startService(context: Context): Boolean {
+    fun startService(context: Context, presenceTrigger: String? = null): Boolean {
         return try {
             val intent = Intent(context, SmsMonitorService::class.java).apply {
                 action = SmsMonitorService.ACTION_START
+                presenceTrigger?.let { putExtra(EXTRA_PRESENCE_TRIGGER, it) }
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)

@@ -208,12 +208,21 @@ fun HomeScreen(
         )
     }
 
+    var approvalPollTick by remember { mutableIntStateOf(0) }
+
     DisposableEffect(context) {
         val sharedPrefs = context.getSharedPreferences("paychek_secure_prefs", android.content.Context.MODE_PRIVATE)
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == "pcu_is_approved" || key == "pcu_device_role") {
                 isApproved = SecurePreferences.decrypt(context, "pcu_is_approved") == "true"
                 deviceRole = SecurePreferences.decrypt(context, "pcu_device_role").ifEmpty { "pending" }
+            }
+            if (key == "pcu_pending_approval_ping") {
+                approvalPollTick += 1
+            }
+            if (key == "pcu_device_approved_ping") {
+                // Child: force immediate approval-status check after owner approves.
+                approvalPollTick += 1
             }
         }
         sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
@@ -222,8 +231,8 @@ fun HomeScreen(
         }
     }
 
-    // 5-second polling loop to check if approved
-    LaunchedEffect(isApproved) {
+    // 5-second polling loop to check if approved (child lock screen)
+    LaunchedEffect(isApproved, approvalPollTick) {
         if (!isApproved) {
             while (true) {
                 try {
@@ -255,27 +264,58 @@ fun HomeScreen(
         }
     }
 
-    // Fetch pending approvals on load or refresh (no 10-second polling)
+    // Pending approvals: one-shot on tick/resume/refresh; poll 5s ONLY while list non-empty.
+    // Do NOT spam /pending-approvals while empty (OTP-in-progress or after approve).
     var pendingDevices by remember { mutableStateOf<List<online.paychek.app.data.remote.dto.ChildDeviceDto>>(emptyList()) }
-    LaunchedEffect(isApproved) {
-        if (isApproved) {
-            try {
-                val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
-                if (token.isNotEmpty()) {
-                    val response = online.paychek.app.data.remote.api.RetrofitClient.gatewayApiService.getPendingApprovals("Bearer $token")
-                    if (response.isSuccessful && response.body() != null) {
-                        pendingDevices = response.body()!!.data.filter { it.isApproved == 0 }
-                    }
-                }
-            } catch (e: Exception) {
-                // Ignore error
+    var showPinApprovalDialogForDevice by remember { mutableStateOf<online.paychek.app.data.remote.dto.ChildDeviceDto?>(null) }
+
+    DisposableEffect(lifecycleOwner, isApproved) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && isApproved) {
+                approvalPollTick += 1
             }
-        } else {
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(isApproved, approvalPollTick) {
+        if (!isApproved) {
             pendingDevices = emptyList()
+            return@LaunchedEffect
+        }
+
+        suspend fun fetchPending(): List<online.paychek.app.data.remote.dto.ChildDeviceDto> {
+            return try {
+                val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
+                if (token.isEmpty()) return emptyList()
+                val response = online.paychek.app.data.remote.api.RetrofitClient.gatewayApiService.getPendingApprovals("Bearer $token")
+                if (response.isSuccessful && response.body() != null) {
+                    response.body()!!.data.filter { it.isApproved == 0 }
+                } else {
+                    emptyList()
+                }
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+
+        var fresh = fetchPending()
+        pendingDevices = fresh
+
+        // Active wait only while a device is actually pending approval.
+        // When empty: soft rediscovery every 45s (no Socket.IO — HTTP only).
+        while (true) {
+            if (fresh.isNotEmpty()) {
+                kotlinx.coroutines.delay(5_000L)
+            } else {
+                kotlinx.coroutines.delay(45_000L)
+            }
+            fresh = fetchPending()
+            pendingDevices = fresh
         }
     }
 
-    var showPinApprovalDialogForDevice by remember { mutableStateOf<online.paychek.app.data.remote.dto.ChildDeviceDto?>(null) }
     var pinApprovalInput by remember { mutableStateOf("") }
     var pinApprovalError by remember { mutableStateOf<String?>(null) }
     var pinApprovalLoading by remember { mutableStateOf(false) }
@@ -303,6 +343,17 @@ fun HomeScreen(
         }
     }
     var selectedTab by remember { mutableStateOf(HomeTab.HOME) }
+
+    LaunchedEffect(selectedTab) {
+        when (selectedTab) {
+            HomeTab.HOME, HomeTab.DEVICE -> approvalPollTick += 1
+            else -> Unit
+        }
+    }
+
+    val triggerPendingRefresh: () -> Unit = {
+        approvalPollTick += 1
+    }
 
     BackHandler(enabled = selectedTab != HomeTab.HOME) {
         selectedTab = HomeTab.HOME
@@ -726,6 +777,8 @@ fun HomeScreen(
                                             pendingDevices = pendingDevices.filter { it.deviceId != deviceToApprove.deviceId }
                                             showPinApprovalDialogForDevice = null
                                             pinApprovalInput = ""
+                                            // Re-fetch once; loop stops when list is empty.
+                                            approvalPollTick += 1
                                         } else {
                                             pinApprovalError = when (response.code()) {
                                                 403 -> "শুধুমাত্র মালিক ডিভাইস অনুমোদন করতে পারবে।"
@@ -828,11 +881,13 @@ fun HomeScreen(
                     HomeTab.HOME -> DashboardScreen(
                         onNavigateToHistory = { selectedTab = HomeTab.SEARCH },
                         onNavigateToSubscription = { onNavigate(AppNavKey.SubscriptionPackages()) },
+                        onPullRefresh = triggerPendingRefresh,
                         modifier = Modifier.fillMaxSize()
                     )
                     HomeTab.DEVICE -> DeviceScreen(
                         onNavigateBack = { selectedTab = HomeTab.HOME },
                         onNavigateToSubscription = { tab -> onNavigate(AppNavKey.SubscriptionPackages(tab)) },
+                        externalRefreshTick = approvalPollTick,
                         modifier = Modifier.fillMaxSize()
                     )
                     HomeTab.SEARCH -> TransactionSearchScreen(

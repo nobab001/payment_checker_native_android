@@ -129,9 +129,10 @@ class SmsMonitorService : Service() {
 
         serviceScope.launch {
             startOfflineRecovery()
+            val presenceTrigger = intent?.getStringExtra(SmsServiceGuard.EXTRA_PRESENCE_TRIGGER)
             // Comm Policy: refresh profile, start package-tiered heartbeat, socket only if needed
             online.paychek.app.utils.AccountEntitlementsStore.refresh(this@SmsMonitorService)
-            NumberHeartbeatEngine.start(this@SmsMonitorService)
+            NumberHeartbeatEngine.start(this@SmsMonitorService, presenceTrigger)
             if (CommPolicyStore.useSocket(this@SmsMonitorService)) {
                 startSocketConnection()
             } else {
@@ -229,11 +230,18 @@ class SmsMonitorService : Service() {
 
         if (connectivityJob?.isActive != true) {
             connectivityJob = serviceScope.launch {
+                var previousOnline: Boolean? = null
                 ConnectivityService(this@SmsMonitorService).observe().collect { isOnline ->
                     if (isOnline) {
                         Log.i(TAG, "Network available — flushing offline SMS queue")
                         SmsReceiver.syncPendingQueue(this@SmsMonitorService)
+                        // Only offline → online restores trigger immediate heartbeat (not WiFi ↔ mobile).
+                        if (previousOnline == false) {
+                            Log.i(TAG, "Internet restored — scheduling debounced presence heartbeat")
+                            NumberHeartbeatEngine.pulseNetworkRestored(this@SmsMonitorService)
+                        }
                     }
+                    previousOnline = isOnline
                 }
             }
         }
@@ -359,6 +367,7 @@ class SmsMonitorService : Service() {
                         val jsonStr = dataArray.toString()
                         online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(this@SmsMonitorService, jsonStr)
                         Log.i(TAG, "✅ Push-Driven Cache Sync: Gateway methods updated via Socket.IO")
+                        NumberHeartbeatEngine.pulse(this@SmsMonitorService)
                         NumberHeartbeatEngine.emitSocketDeviceNumbers(socket, this@SmsMonitorService)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error parsing socket push data: ${e.message}")
@@ -399,6 +408,24 @@ class SmsMonitorService : Service() {
                     Log.i(TAG, "✅ Push-Driven Cache Sync: Device config updated via Socket.IO")
                 } catch (e: Exception) {
                     Log.e(TAG, "Error parsing sync_device_config: ${e.message}")
+                }
+            }
+
+            socket?.on("pending_device_approval") { args ->
+                try {
+                    val raw = args.firstOrNull()
+                    val deviceId = when (raw) {
+                        is org.json.JSONObject -> raw.optString("device_id", "")
+                        else -> org.json.JSONObject(raw.toString()).optString("device_id", "")
+                    }
+                    Log.i(TAG, "pending_device_approval push device=$deviceId")
+                    SecurePreferences.encrypt(
+                        this@SmsMonitorService,
+                        "pcu_pending_approval_ping",
+                        System.currentTimeMillis().toString()
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "pending_device_approval parse failed: ${e.message}")
                 }
             }
 
@@ -451,6 +478,7 @@ class SmsMonitorService : Service() {
                                 body?.data?.let { methods ->
                                     val jsonStr = online.paychek.app.utils.GsonUtils.gson.toJson(methods)
                                     online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(this@SmsMonitorService, jsonStr)
+                                    NumberHeartbeatEngine.pulse(this@SmsMonitorService)
                                 }
                             }
 

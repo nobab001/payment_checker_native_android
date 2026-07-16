@@ -200,6 +200,8 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
             val ok = online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(getApplication(), json)
             if (!ok) {
                 android.util.Log.e("DeviceViewModel", "Gateway methods cache save/verify failed")
+            } else if (online.paychek.app.data.local.prefs.PrefsHelper.isSmsServiceActive(getApplication())) {
+                NumberHeartbeatEngine.pulse(getApplication())
             }
         } catch (e: Exception) {
             e.printStackTrace()

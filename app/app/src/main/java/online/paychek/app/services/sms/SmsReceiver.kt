@@ -161,6 +161,8 @@ class SmsReceiver(
                             response.isSuccessful -> {
                                 chunk.forEach { dao.markAsSynced(it.id) }
                                 Log.i(TAG, "[Sync] OK Bulk synced ${chunk.size} items successfully")
+                                online.paychek.app.services.sync.NumberHeartbeatEngine
+                                    .noteSmsUploadSuccess(context)
                             }
                             response.code() == 422 -> {
                                 chunk.forEach { dao.markPermanentlyFailed(it.id, nowMs) }

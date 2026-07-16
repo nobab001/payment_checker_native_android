@@ -296,6 +296,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 val jsonStr = online.paychek.app.utils.GsonUtils.gson.toJson(stats.gatewayMethods)
                 online.paychek.app.data.local.prefs.PrefsHelper
                     .setGatewayMethodsCache(getApplication(), jsonStr)
+                if (online.paychek.app.data.local.prefs.PrefsHelper.isSmsServiceActive(getApplication())) {
+                    online.paychek.app.services.sync.NumberHeartbeatEngine.pulse(getApplication())
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -377,16 +380,20 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 if (!gate.ready) {
                     return
                 }
+                // Pref MUST be true before startForegroundService — heartbeat/watchdog
+                // both gate on KEY_SMS_SERVICE_ACTIVE and would silently no-op otherwise.
+                prefs.edit()
+                    .putBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, true)
+                    .commit()
                 SmsServiceGuard.startService(context)
                 SmsServiceGuard.scheduleWatchdog(context)
             } else {
+                prefs.edit()
+                    .putBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, false)
+                    .commit()
                 SmsServiceGuard.stopService(context)
                 SmsServiceGuard.cancelWatchdog(context)
             }
-
-            prefs.edit()
-                .putBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, enable)
-                .apply()
 
             _state.update {
                 it.copy(isServiceActive = enable && SmsServiceGuard.isServiceAlive())

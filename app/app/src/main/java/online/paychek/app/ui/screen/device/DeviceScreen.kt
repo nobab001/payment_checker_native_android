@@ -99,6 +99,7 @@ private fun providerEmoji(tag: String): String = when (tag.lowercase()) {
 fun DeviceScreen(
     onNavigateBack: (() -> Unit)? = null,
     onNavigateToSubscription: (Int) -> Unit = {},
+    externalRefreshTick: Int = 0,
     modifier: Modifier = Modifier,
     viewModel: DeviceViewModel = viewModel()
 ) {
@@ -115,6 +116,12 @@ fun DeviceScreen(
                 viewModel.loadTemplates()
                 viewModel.syncPhysicalSimNumbers()
             }
+        }
+    }
+
+    LaunchedEffect(externalRefreshTick) {
+        if (externalRefreshTick > 0) {
+            viewModel.loadChildDevices()
         }
     }
 
@@ -1996,9 +2003,18 @@ private fun ChildDeviceCard(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isPendingApproval = device.isApproved == 0 || device.status == "pending"
     val isAppActive = device.isAppActive == 1
-    val statusText = if (isAppActive) "সক্রিয়" else "নিষ্ক্রিয়"
-    val statusColor = if (isAppActive) AccentGreen else Color(0xFFEF4444)
+    val statusText = when {
+        isPendingApproval -> "অনুমোদন পেন্ডিং"
+        isAppActive -> "সক্রিয়"
+        else -> "নিষ্ক্রিয়"
+    }
+    val statusColor = when {
+        isPendingApproval -> Color(0xFFF59E0B)
+        isAppActive -> AccentGreen
+        else -> Color(0xFFEF4444)
+    }
     val roleLabel = if (device.deviceRole == "owner") "মালিক" else "স্টাফ"
     val roleColor = if (device.deviceRole == "owner") AccentCyan else Color(0xFFF59E0B)
 
@@ -2095,6 +2111,7 @@ private fun ChildDeviceCard(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (!isPendingApproval) {
             IconButton(
                 onClick = onConfigure,
                 modifier = Modifier
@@ -2108,7 +2125,8 @@ private fun ChildDeviceCard(
                     modifier = Modifier.size(20.dp)
                 )
             }
-            if (device.isCurrent != 1) {
+            }
+            if (device.isCurrent != 1 && !isPendingApproval) {
                 IconButton(
                     onClick = onDelete,
                     modifier = Modifier

@@ -103,6 +103,7 @@ io.on('connection', (socket) => {
     }
   }
   deviceSocketIds.set(roomName, socket.id);
+  numberHealth.markSocketPresent(userId, deviceId);
 
   socket.join(roomName);
   console.log(`[Socket.IO] Device connected and locked to room: ${roomName} (socket=${socket.id})`);
@@ -121,6 +122,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     if (deviceSocketIds.get(roomName) === socket.id) {
       deviceSocketIds.delete(roomName);
+      numberHealth.markSocketAbsent(userId, deviceId);
     }
     console.log(`[Socket.IO] Device disconnected from room: ${roomName} (socket=${socket.id})`);
     numberHealth.scheduleSocketDisconnect(userId, deviceId);
@@ -247,6 +249,26 @@ cron.schedule('*/15 * * * * *', () => {
   runOutboxWorker().catch((err) => console.error('[CRON] outbox worker:', err.message));
 });
 
+
+// Comm Policy v1.1: catch silent/uninstalled devices — arm miss probes if heartbeat window elapsed
+cron.schedule('* * * * *', () => {
+  const watchdog = require('./services/deviceDisconnectWatchdog');
+  watchdog.sweepStaleActiveBindings()
+    .then((r) => {
+      if (r.armed) {
+        console.log(`[CRON] device sweep checked=${r.checked} armed=${r.armed}`);
+      }
+    })
+    .catch((err) => console.error('[CRON] device sweep:', err.message));
+});
+
+// Device Communication v2.5 — presence worker (probe SM + offline; Trial/welcome live)
+cron.schedule('*/30 * * * * *', () => {
+  const presenceV25 = require('./services/presenceV25');
+  presenceV25.runSweepTick()
+    .catch((err) => console.error('[PresenceV25] sweep:', err.message));
+});
+
 // Mount BullMQ Background Worker for SMS Processing
 require('./workers/smsWorker');
 
@@ -257,6 +279,12 @@ server.listen(PORT, async () => {
   console.log(` Database Target: ${process.env.DB_HOST}:${process.env.DB_PORT || 3306}`);
   console.log(` Database Name  : ${process.env.DB_NAME}`);
   console.log(`=============================================`);
+
+  try {
+    await numberHealth.clearAllSocketLiveFlags();
+  } catch (sockErr) {
+    console.warn('[NumberHealth] boot socket cleanup skipped:', sockErr.message);
+  }
 
   try {
     // ─────────────────────────────────────────────────────────────────────────
@@ -271,6 +299,17 @@ server.listen(PORT, async () => {
     }
 
     console.log('[DB] ✅ Database check complete!');
+
+
+    try {
+      const { ensurePresenceV25Schema } = require('./db/ensure-presence-v25');
+      await ensurePresenceV25Schema();
+      const presenceV25 = require('./services/presenceV25');
+      await presenceV25.refreshAllPolicies();
+      console.log('[DB] ✅ presence v2.5 schema + comm_policy verified.');
+    } catch (presenceErr) {
+      console.warn('[DB] presence v2.5 ensure failed:', presenceErr.message);
+    }
 
     try {
       const { migrateAllUserEntitlements } = require('./scripts/migrateUserEntitlements');

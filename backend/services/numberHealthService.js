@@ -2,14 +2,14 @@
  * numberHealthService — Number-centric health (ONLINE / GRACE / OFFLINE / DISABLED / STALE).
  *
  * Hot path: Socket.IO connect + SMS ingest touch Redis last_seen.
- * HTTP heartbeat is package-tiered (Comm Policy v1.0): realtime packages every 2 min,
- * sparse packages every 10 min.
+ * HTTP heartbeat is package-tiered (Comm Policy v1.1):
+ *   Gateway / Trial — every 10 min
+ *   Personal / Personal Business — every 30 min
+ * On miss: server probes every 1 min × 5, then is_active=0 (all packages).
  *
  * Default thresholds (Gateway / Welcome):
- *   0–2 min   ONLINE
- *   2–3 min   GRACE
- *   3–5 min   OFFLINE
- *   5 min+    STALE (deactivate for gateway/welcome)
+ *   0–10 min  ONLINE / GRACE
+ *   miss → 1 min × 5 probes → STALE / deactivate
  */
 
 const { getRedisClient } = require('./redisClient');
@@ -48,6 +48,56 @@ const KEYS = {
 
 /** In-memory debounce — brief socket flaps do not push numbers into GRACE. */
 const pendingSocketDisconnect = new Map();
+
+/**
+ * Process-local Socket.IO presence (`userId:deviceId`).
+ * Redis socket flags alone are not trusted — they survive process kill / uninstall
+ * for up to REDIS_TTL and caused infinite DeviceWatch "ONLINE again" loops.
+ */
+const liveSocketRooms = new Set();
+/** Socket presence Redis TTL — refreshed on connect/heartbeat; short so ghosts die. */
+const SOCKET_LIVE_TTL_SEC = 15 * 60;
+
+function socketRoomKey(userId, deviceId) {
+  return `${String(userId)}:${String(deviceId)}`;
+}
+
+function markSocketPresent(userId, deviceId) {
+  const uid = String(userId || '');
+  const dev = String(deviceId || '');
+  if (!uid || !dev) return;
+  liveSocketRooms.add(socketRoomKey(uid, dev));
+}
+
+function markSocketAbsent(userId, deviceId) {
+  liveSocketRooms.delete(socketRoomKey(userId, deviceId));
+}
+
+function isSocketPresentInProcess(userId, deviceId) {
+  return liveSocketRooms.has(socketRoomKey(userId, deviceId));
+}
+
+/** On boot: no sockets are connected yet — wipe stale Redis socket flags. */
+async function clearAllSocketLiveFlags() {
+  try {
+    const redis = getRedisClient();
+    let cursor = '0';
+    let cleared = 0;
+    do {
+      const [next, keys] = await redis.scan(cursor, 'MATCH', 'paychek:nh:u:*:d:*:socket', 'COUNT', 200);
+      cursor = next;
+      if (keys.length) {
+        cleared += keys.length;
+        await redis.del(...keys);
+      }
+    } while (cursor !== '0');
+    if (cleared) {
+      console.log(`[NumberHealth] Cleared ${cleared} stale socket-live flag(s) on boot`);
+    }
+  } catch (err) {
+    console.warn('[NumberHealth] clearAllSocketLiveFlags failed:', err.message);
+  }
+}
 const SOCKET_DISCONNECT_DEBOUNCE_MS = 30 * 1000;
 
 const DEVICE_DB_FLUSH_MS = 5 * 60 * 1000;
@@ -146,13 +196,23 @@ async function getNumberState(userId, phone, now = Date.now()) {
 }
 
 async function isDeviceSocketLive(userId, deviceId) {
-  if (!deviceId) return false;
+  const uid = String(userId || '');
+  const dev = String(deviceId || '');
+  if (!uid || !dev) return false;
+
+  // Authoritative: this process currently has the socket
+  if (isSocketPresentInProcess(uid, dev)) return true;
+
+  // Redis flag without a live socket = ghost (restart / hard kill / uninstall)
   try {
     const redis = getRedisClient();
-    return (await redis.get(KEYS.deviceSocketLive(String(userId), String(deviceId)))) === '1';
-  } catch (_) {
-    return false;
-  }
+    const key = KEYS.deviceSocketLive(uid, dev);
+    if ((await redis.get(key)) === '1') {
+      await redis.del(key);
+      console.log(`[NumberHealth] Cleared ghost socket flag ${uid}:${dev}`);
+    }
+  } catch (_) { /* ignore */ }
+  return false;
 }
 
 /**
@@ -221,6 +281,9 @@ async function recordHeartbeat(userId, deviceId, numbers = [], opts = {}) {
 
   await safePipeline((pipe) => {
     pipe.set(KEYS.deviceLastSeen(uid, dev), nowStr, 'EX', REDIS_TTL_SEC);
+    if (dev && isSocketPresentInProcess(uid, dev)) {
+      pipe.set(KEYS.deviceSocketLive(uid, dev), '1', 'EX', SOCKET_LIVE_TTL_SEC);
+    }
     cleaned.forEach(({ phone }) => {
       pipe.set(KEYS.numberLastSeen(uid, phone), nowStr, 'EX', REDIS_TTL_SEC);
       pipe.set(KEYS.numberDevice(uid, phone), dev, 'EX', REDIS_TTL_SEC);
@@ -315,9 +378,10 @@ async function onDeviceSocketConnect(userId, deviceId, clientNumbers = null) {
   const fromClient = normalizeClientNumbers(clientNumbers);
   const numbers = fromClient.length ? fromClient : await fetchActiveNumbersForDevice(uid, dev);
 
+  markSocketPresent(uid, dev);
   try {
     const redis = getRedisClient();
-    await redis.set(KEYS.deviceSocketLive(uid, dev), '1', 'EX', REDIS_TTL_SEC);
+    await redis.set(KEYS.deviceSocketLive(uid, dev), '1', 'EX', SOCKET_LIVE_TTL_SEC);
   } catch (_) { /* ignore */ }
 
   if (numbers.length) {
@@ -344,6 +408,7 @@ async function onDeviceSocketDisconnect(userId, deviceId) {
   const graceAnchorMs = Date.now() - profile.onlineMs - 1000;
   const anchorStr = String(graceAnchorMs);
 
+  markSocketAbsent(uid, dev);
   await safePipeline((pipe) => {
     pipe.del(KEYS.deviceSocketLive(uid, dev));
     numbers.forEach(({ phone_number: phone }) => {
@@ -467,18 +532,8 @@ async function applyHealthToCheckoutRows(userId, rows) {
   )];
 
   const socketLiveByDevice = {};
-  if (deviceIds.length) {
-    try {
-      const redis = getRedisClient();
-      const socketResults = await redis.mget(
-        ...deviceIds.map((d) => KEYS.deviceSocketLive(uid, d)),
-      );
-      deviceIds.forEach((d, i) => {
-        socketLiveByDevice[d] = socketResults[i] === '1';
-      });
-    } catch (err) {
-      console.warn('[NumberHealth] socket live batch read failed:', err.message);
-    }
+  for (const d of deviceIds) {
+    socketLiveByDevice[d] = await isDeviceSocketLive(uid, d);
   }
 
   const metaByPhone = {};
@@ -545,6 +600,9 @@ module.exports = {
   getNumberStateForDisplay,
   touchNumberLive,
   isDeviceSocketLive,
+  markSocketPresent,
+  markSocketAbsent,
+  clearAllSocketLiveFlags,
   getNumberMeta,
   setNumberDisabled,
   purgeNumber,

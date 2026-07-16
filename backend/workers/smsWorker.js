@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const { verifyHmac } = require('../utils/verifyHmac');
 const { parseRawSms } = require('../utils/parseRawSms');
 const checkoutController = require('../controllers/checkoutController');
+const presenceV25 = require('../services/presenceV25');
 
 function sha256(data) {
   return crypto.createHash('sha256').update(data, 'utf8').digest('hex');
@@ -50,6 +51,11 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
         }
       });
       await dataSyncCache.bumpUserHistoryVersion(userId);
+      try {
+        await presenceV25.markDeviceAlive(userId, deviceId, { source: 'SMS_SUCCESS' });
+      } catch (e) {
+        console.warn('[PresenceV25] markDeviceAlive SMS_SUCCESS failed:', e.message);
+      }
       console.log(`[WORKER] Custom archive SMS saved in 1ms for user ${userId}`);
       return { success: true, isArchive: true };
     } catch (archiveErr) {
@@ -125,6 +131,11 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
   }
 
   await dataSyncCache.bumpUserHistoryVersion(userId);
+  try {
+    await presenceV25.markDeviceAlive(userId, deviceId, { source: 'SMS_SUCCESS' });
+  } catch (e) {
+    console.warn('[PresenceV25] markDeviceAlive SMS_SUCCESS failed:', e.message);
+  }
 
   if (simNumber) {
     numberHealth.touchNumberLive(userId, deviceId, simNumber).catch((err) => {

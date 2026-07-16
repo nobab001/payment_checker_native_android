@@ -1,53 +1,61 @@
 /**
- * PayCheck Communication Policy v1.0
- * Package-tiered app↔server contact (heartbeat / grace / offline).
- * Feature-permission logic stays elsewhere — this is only connection intensity.
+ * PayCheck Communication Policy v1.1
+ * Package-tiered app↔server contact (heartbeat / miss-probe / deactivate).
+ *
+ * Gateway + Trial: heartbeat every 10 min
+ * Personal + Personal Business: heartbeat every 30 min
+ * All packages on miss: probe every 1 min × 5, then is_active=0
  */
 
 const prisma = require('../db/prisma');
 
 /** @typedef {'welcome'|'personal'|'personal_business'|'gateway'} CommProfileId */
 
+const MISS_PROBE = {
+  intervalMs: 60 * 1000,
+  maxAttempts: 5,
+};
+
 const PROFILES = {
   welcome: {
     id: 'welcome',
-    heartbeatSec: 120,
-    onlineMs: 2 * 60 * 1000,
-    graceMs: 3 * 60 * 1000,
-    offlineMs: 5 * 60 * 1000,
-    useSocket: true,
+    heartbeatSec: 600, // 10 min
+    onlineMs: 10 * 60 * 1000,
+    graceMs: 10 * 60 * 1000,
+    offlineMs: 10 * 60 * 1000, // miss deadline = one heartbeat window
+    useSocket: false, // HTTP heartbeat only (Comm Policy v1.1)
     deactivateOnOffline: true,
     checkoutHideOnOffline: true,
   },
   gateway: {
     id: 'gateway',
-    heartbeatSec: 120,
-    onlineMs: 2 * 60 * 1000,
-    graceMs: 3 * 60 * 1000,
-    offlineMs: 5 * 60 * 1000,
-    useSocket: true,
+    heartbeatSec: 600,
+    onlineMs: 10 * 60 * 1000,
+    graceMs: 10 * 60 * 1000,
+    offlineMs: 10 * 60 * 1000,
+    useSocket: false, // HTTP heartbeat only
     deactivateOnOffline: true,
     checkoutHideOnOffline: true,
   },
   personal: {
     id: 'personal',
-    heartbeatSec: 600,
-    onlineMs: 10 * 60 * 1000,
-    graceMs: 15 * 60 * 1000,
-    offlineMs: 20 * 60 * 1000,
+    heartbeatSec: 1800, // 30 min
+    onlineMs: 30 * 60 * 1000,
+    graceMs: 30 * 60 * 1000,
+    offlineMs: 30 * 60 * 1000,
     useSocket: false,
-    deactivateOnOffline: false,
-    checkoutHideOnOffline: false,
+    deactivateOnOffline: true,
+    checkoutHideOnOffline: true,
   },
   personal_business: {
     id: 'personal_business',
-    heartbeatSec: 600,
-    onlineMs: 10 * 60 * 1000,
-    graceMs: 15 * 60 * 1000,
-    offlineMs: 20 * 60 * 1000,
+    heartbeatSec: 1800,
+    onlineMs: 30 * 60 * 1000,
+    graceMs: 30 * 60 * 1000,
+    offlineMs: 30 * 60 * 1000,
     useSocket: false,
-    deactivateOnOffline: false,
-    checkoutHideOnOffline: false,
+    deactivateOnOffline: true,
+    checkoutHideOnOffline: true,
   },
 };
 
@@ -56,12 +64,14 @@ const DEFAULT_PROFILE = PROFILES.personal;
 function normalizePlanCategory(raw) {
   const c = String(raw || '').trim().toLowerCase();
   if (c === 'personal_business') return 'personal_business';
-  if (c === 'payment_gateway' || c === 'personal' || c === '') return 'payment_gateway';
+  if (c === 'personal') return 'personal';
+  if (c === 'payment_gateway' || c === '') return 'payment_gateway';
   return c;
 }
 
 function profileFromCategory(category) {
   if (category === 'personal_business') return PROFILES.personal_business;
+  if (category === 'personal') return PROFILES.personal;
   return PROFILES.gateway;
 }
 
@@ -138,6 +148,8 @@ function toClientPolicy(profile) {
       online_sec: Math.round(profile.onlineMs / 1000),
       grace_sec: Math.round(profile.graceMs / 1000),
       offline_sec: Math.round(profile.offlineMs / 1000),
+      miss_probe_sec: Math.round(MISS_PROBE.intervalMs / 1000),
+      miss_probe_max: MISS_PROBE.maxAttempts,
     },
   };
 }
@@ -145,6 +157,7 @@ function toClientPolicy(profile) {
 module.exports = {
   PROFILES,
   DEFAULT_PROFILE,
+  MISS_PROBE,
   resolveCommProfile,
   computeStateWithProfile,
   toClientPolicy,
