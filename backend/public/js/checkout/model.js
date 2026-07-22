@@ -59,8 +59,18 @@ function gatewayToNumber(g) {
   };
 }
 
-function buildProviderFields({ tabId, provider, variant, type, displayName, instruction, sortOrder, templateId, liveProviderKey, merchantAccountId, logoUrl, stableId }) {
+function buildProviderFields({ tabId, provider, variant, type, displayName, instruction, sortOrder, templateId, liveProviderKey, merchantAccountId, logoUrl, stableId, incentiveToken, incentiveTplKey }) {
   const id = stableId || buildStableProviderId({ provider, variant, type });
+  const metadata = defaultMetadata({
+    templateId: templateId ?? null,
+    liveProviderKey: liveProviderKey ?? null,
+    liveRedirect: type !== PROVIDER_TYPE.SIM,
+    merchantAccountId: merchantAccountId ?? null,
+    logoUrl: logoUrl || null,
+  });
+  // Normalized token + optional tpl_<id> used to match commission/campaign rules.
+  metadata.incentiveToken = incentiveToken || null;
+  metadata.incentiveTplKey = incentiveTplKey || (templateId != null ? `tpl_${templateId}` : null);
   return {
     id,
     tabId,
@@ -72,13 +82,7 @@ function buildProviderFields({ tabId, provider, variant, type, displayName, inst
     sortOrder,
     enabled: true,
     numbers: [],
-    metadata: defaultMetadata({
-      templateId: templateId ?? null,
-      liveProviderKey: liveProviderKey ?? null,
-      liveRedirect: type !== PROVIDER_TYPE.SIM,
-      merchantAccountId: merchantAccountId ?? null,
-      logoUrl: logoUrl || null,
-    }),
+    metadata,
   };
 }
 
@@ -95,30 +99,8 @@ function createSimProvider(g, tabId) {
     instruction: g.instruction || '',
     sortOrder: pos,
     templateId: g.templateId ?? null,
-  });
-}
-
-function createOfficialProvider(og) {
-  const tabId = og.tab || 'payment';
-  const providerName = og.provider || '';
-  const type = inferOfficialType(providerName);
-  const variant = inferOfficialVariant(type, tabId);
-
-  const defaultInstruction = type === PROVIDER_TYPE.BANK
-    ? 'ব্যাংক ট্রান্সফার — অফিসিয়াল গেটওয়ে দিয়ে সরাসরি পরিশোধ করুন।'
-    : type === PROVIDER_TYPE.CARD
-      ? 'কার্ড পেমেন্ট — অফিসিয়াল গেটওয়ে দিয়ে সরাসরি পরিশোধ করুন।'
-      : 'লাইভ পেমেন্ট — অফিসিয়াল গেটওয়ে দিয়ে সরাসরি পরিশোধ করুন।';
-
-  return buildProviderFields({
-    tabId,
-    provider: providerName,
-    variant,
-    type,
-    displayName: og.displayName || providerName || 'Live Payment',
-    instruction: defaultInstruction,
-    sortOrder: Number.MAX_SAFE_INTEGER - 1,
-    liveProviderKey: providerName,
+    incentiveToken: g.incentiveToken ?? null,
+    incentiveTplKey: g.incentiveTplKey ?? (g.templateId != null ? `tpl_${g.templateId}` : null),
   });
 }
 
@@ -140,6 +122,7 @@ function createMerchantAccountProvider(acct, providerSlug) {
     merchantAccountId: acct.id,
     logoUrl: acct.logoUrl || null,
     stableId: `${baseId}_acct_${acct.id}`,
+    incentiveToken: acct.incentiveToken ?? null,
   });
 }
 
@@ -222,16 +205,6 @@ export function buildCheckoutModel(apiData, amountStr) {
     }
   }
 
-  for (const og of apiData.officialGateways || []) {
-    const tabId = og.tab || 'payment';
-    if (!tabsById[tabId]) continue;
-    const liveProv = createOfficialProvider(og);
-    const key = bucketKey(tabId, liveProv.id);
-    if (providerIndex.has(key)) continue;
-    providerIndex.set(key, liveProv);
-    ensureTabBucket(tabTree, tabId, tabsById).providers.push(liveProv);
-  }
-
   // Multi-account live merchants → one card each (hybrid + live tabs that include payment)
   const merchantAccountsGroups = apiData.merchantAccountsGroups || [];
   const hasMerchantAccounts = merchantAccountsGroups.some((g) => (g.accounts || []).length > 0);
@@ -265,15 +238,28 @@ export function buildCheckoutModel(apiData, amountStr) {
   }
 
   const amount = parseFloat(amountStr) || 0;
+  const sessionPurpose = apiData.purpose || (
+    apiData.websitePurpose === 'both' ? 'add_balance' : (apiData.websitePurpose || 'add_balance')
+  );
 
-  // Raw list of active official (live/redirect) gateways, used by Live mode.
-  const officialGateways = (apiData.officialGateways || [])
-    .filter((og) => og && (og.isActive !== false) && (og.provider))
-    .map((og) => ({
-      provider: og.provider,
-      displayName: og.displayName || og.provider,
-      tab: og.tab || 'payment',
-    }));
+  // Attach the customer-facing incentive (cashback/charge) per provider so the
+  // shared provider header can render a badge without threading amount/rules.
+  const incentiveRules = apiData.incentives || { enabled: false, commissions: [], campaigns: [] };
+  for (const bucket of Object.values(tabTree)) {
+    for (const p of bucket.providers) {
+      const inc = computeProviderIncentive(
+        incentiveRules,
+        p.metadata?.incentiveToken,
+        amount,
+        p.metadata?.incentiveTplKey || p.metadata?.templateId,
+        sessionPurpose,
+      );
+      if (inc) {
+        inc.payHint = payHintForIncentive(inc);
+      }
+      p.incentive = inc;
+    }
+  }
 
   return {
     merchant: {
@@ -285,7 +271,9 @@ export function buildCheckoutModel(apiData, amountStr) {
     amount,
     design: designFromApi(apiData.checkoutDesign || apiData.checkoutTheme),
     checkoutMode: apiData.checkoutMode || 'transaction',
-    officialGateways,
+    websitePurpose: apiData.websitePurpose || 'add_balance',
+    purpose: sessionPurpose,
+    incentives: apiData.incentives || { enabled: false, commissions: [], campaigns: [] },
     merchantAccountsGroups,
     providerBranding: apiData.providerBranding || {},
     tabs,
@@ -299,4 +287,144 @@ export function buildCheckoutModel(apiData, amountStr) {
 
 export function getActiveTabBucket(model, tabId) {
   return model.tabTree[tabId] || { tab: { id: tabId, label: tabId }, providers: [] };
+}
+
+/**
+ * Round payable for Payment mode: <0.50 paisa → floor Taka; >=0.50 → ceil.
+ * Global rule — same for every provider.
+ */
+export function roundPayableTaka(amount) {
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const floor = Math.floor(n);
+  const frac = n - floor;
+  if (frac < 0.5) return floor;
+  return Math.ceil(n);
+}
+
+/**
+ * Compute customer-facing incentive for a provider at the given amount.
+ *
+ * Add Balance: customer always sends `amount`; UI shows walletCredit.
+ * Payment: customer must send expectedPayable (charge/commission adjusted + rounded).
+ */
+export function computeProviderIncentive(incentives, token, amount, tplKeyOrId, purpose = 'add_balance') {
+  if (!incentives || !incentives.enabled) return null;
+  const amt = Number(amount) || 0;
+  const tplKey = tplKeyOrId == null
+    ? null
+    : (String(tplKeyOrId).startsWith('tpl_') ? String(tplKeyOrId) : `tpl_${tplKeyOrId}`);
+
+  const ruleMatches = (ruleToken) => {
+    if (!ruleToken) return true; // campaign ALL
+    if (tplKey && ruleToken === tplKey) return true;
+    if (token && ruleToken === token) return true;
+    return false;
+  };
+
+  // Prefer a tpl_ commission rule over a coarse token when both exist.
+  const commRules = incentives.commissions || [];
+  const preferredComm = commRules.find((c) => tplKey && c.token === tplKey)
+    || commRules.find((c) => token && c.token === token);
+
+  let commission = 0;
+  let charge = 0;
+  if (preferredComm) {
+    commission += preferredComm.commissionType === 'percentage'
+      ? amt * (Number(preferredComm.commissionValue) / 100)
+      : Number(preferredComm.commissionValue);
+    charge += preferredComm.chargeType === 'percentage'
+      ? amt * (Number(preferredComm.chargeValue) / 100)
+      : Number(preferredComm.chargeValue);
+  }
+  for (const cp of incentives.campaigns || []) {
+    if (!ruleMatches(cp.token)) continue;
+    if (amt < Number(cp.minAmount)) continue;
+    if (Number(cp.maxAmount) > 0 && amt > Number(cp.maxAmount)) continue;
+    const v = cp.valueType === 'percentage' ? amt * (Number(cp.value) / 100) : Number(cp.value);
+    if (cp.mode === 'charge') charge += v; else commission += v;
+  }
+
+  commission = Math.round(commission * 100) / 100;
+  charge = Math.round(charge * 100) / 100;
+  if (commission <= 0 && charge <= 0) return null;
+  const net = Math.round((commission - charge) * 100) / 100;
+  if (net === 0) return null;
+
+  const base = Math.round(amt * 100) / 100;
+  const delta = Math.round(Math.abs(net) * 100) / 100;
+  const sessionPurpose = purpose === 'payment' ? 'payment' : 'add_balance';
+
+  if (sessionPurpose === 'add_balance') {
+    // Customer always sends base; wallet credit informs merchant callback.
+    const walletCredit = Math.round((base + net) * 100) / 100;
+    return {
+      kind: net > 0 ? 'commission' : 'charge',
+      purpose: 'add_balance',
+      commission,
+      charge,
+      net,
+      delta,
+      amount: base,
+      payAmount: base,
+      customerSendAmount: base,
+      walletCredit,
+      resultAmount: walletCredit,
+    };
+  }
+
+  // Payment mode — customer pays adjusted amount (whole Taka rounding).
+  if (net > 0) {
+    const payAmount = roundPayableTaka(Math.max(0, base - delta));
+    return {
+      kind: 'commission',
+      purpose: 'payment',
+      commission,
+      charge,
+      net,
+      delta,
+      amount: base,
+      payAmount,
+      customerSendAmount: payAmount,
+      expectedPayable: payAmount,
+      resultAmount: base,
+    };
+  }
+
+  const payAmount = roundPayableTaka(base + delta);
+  return {
+    kind: 'charge',
+    purpose: 'payment',
+    commission,
+    charge,
+    net,
+    delta,
+    amount: base,
+    payAmount,
+    customerSendAmount: payAmount,
+    expectedPayable: payAmount,
+    resultAmount: base,
+  };
+}
+
+/** Short BN hint for copy/sheet. */
+export function payHintForIncentive(inc) {
+  if (!inc || !inc.kind) return null;
+  const fmt = (n) => {
+    const x = Math.round(Number(n) * 100) / 100;
+    return Number.isInteger(x) ? String(x) : String(x);
+  };
+  if (inc.purpose === 'add_balance') {
+    const credit = Number(inc.walletCredit);
+    if (!Number.isFinite(credit) || credit <= 0) return null;
+    if (inc.kind === 'commission') {
+      return `আপনি ৳${fmt(inc.payAmount)} পাঠান — ওয়ালেটে ৳${fmt(credit)} যোগ হবে`;
+    }
+    return `আপনি ৳${fmt(inc.payAmount)} পাঠান — ওয়ালেটে ৳${fmt(credit)} যোগ হবে`;
+  }
+  const pay = Number(inc.payAmount);
+  if (!Number.isFinite(pay) || pay <= 0) return null;
+  if (inc.kind === 'charge') return `চার্জসহ ৳${fmt(pay)} পাঠান`;
+  if (inc.kind === 'commission') return `কমিশন মাইনাস করে ৳${fmt(pay)} পাঠান`;
+  return null;
 }

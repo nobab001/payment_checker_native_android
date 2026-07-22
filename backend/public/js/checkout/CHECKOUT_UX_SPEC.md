@@ -3,6 +3,19 @@
 > **Purpose:** Single source of truth for Cursor and developers.  
 > **Scope:** Customer checkout (`checkout.html`), **not** Official Test Experience chrome, **not** payment engine internals.  
 > **Principle:** Backward compatible. No breaking API changes.
+>
+> **Related:** Website Purpose + Settlement A–Z → [`backend/docs/WEBSITE_PURPOSE_AND_SETTLEMENT.md`](../../docs/WEBSITE_PURPOSE_AND_SETTLEMENT.md)
+
+---
+
+## 0. Session purpose (Add Balance vs Payment)
+
+| Session `purpose` | Customer sends | UI badge | Verify |
+|-------------------|----------------|----------|--------|
+| `add_balance` | Checkout amount (always) | Wallet credit info | Exact amount match |
+| `payment` | `expectedPayable` (rounded) | Send more/less | Multi-Trx settlement (max 5); overpay → SUCCESS |
+
+See full architecture doc for callbacks (`walletCredit`, `overPaid`, `transactions[]`).
 
 ---
 

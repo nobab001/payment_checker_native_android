@@ -25,6 +25,13 @@ async function writeClipboard(text) {
   ta.remove();
 }
 
+/** Design 1/3: after copy, show pay hint if this provider has charge/commission. */
+function hintFromCopyButton(btn) {
+  const block = btn.closest('[data-pay-hint], [data-provider-id]');
+  const hint = block?.getAttribute('data-pay-hint')?.trim();
+  return hint || null;
+}
+
 export const CopyController = {
   /** Document-level delegation — works in #pay-content and bottom sheet portal. */
   bind() {
@@ -50,8 +57,18 @@ export const CopyController = {
       btn.textContent = 'Copied';
       btn.classList.add('copied');
       btn.setAttribute('aria-label', `Copied ${text}`);
-      ToastController.show(t('copied'));
-      document.dispatchEvent(new CustomEvent('checkout:number-copied', { detail: { number: text } }));
+
+      const payHint = hintFromCopyButton(btn);
+      if (payHint) {
+        // Small popup: copy ack + how much to send (charge/commission only).
+        ToastController.show(`${t('copied')} · ${payHint}`, { duration: 3200 });
+      } else {
+        ToastController.show(t('copied'));
+      }
+
+      document.dispatchEvent(new CustomEvent('checkout:number-copied', {
+        detail: { number: text, payHint },
+      }));
       setTimeout(() => {
         btn.textContent = original;
         btn.classList.remove('copied');

@@ -18,13 +18,21 @@ function sweep() {
 
 setInterval(sweep, 60_000).unref?.();
 
+function defaultOverrides() {
+  return {
+    editorSurface: 'hybrid',
+    checkoutMode: 'transaction',
+    checkoutTheme: 'design-1',
+  };
+}
+
 function createSession(initialOverrides = {}) {
   sweep();
   const id = `tds_${crypto.randomBytes(16).toString('hex')}`;
   const now = Date.now();
   const session = {
     id,
-    overrides: sanitizeOverrides(initialOverrides),
+    overrides: sanitizeOverrides({ ...defaultOverrides(), ...initialOverrides }),
     createdAt: now,
     expiresAt: now + config.sessionTtlMs,
     lastPayment: null,
@@ -77,9 +85,21 @@ function sanitizeOverrides(input = {}) {
   const out = {};
   if (!input || typeof input !== 'object') return out;
 
+  const surface = input.editorSurface;
+  if (surface === 'hybrid' || surface === 'live') {
+    out.editorSurface = surface;
+  }
+
   const mode = input.checkoutMode;
   if (typeof mode === 'string' && ['transaction', 'merchant_vibe', 'hybrid', 'live'].includes(mode)) {
     out.checkoutMode = mode;
+  }
+
+  // Live surface always forces live checkout; hybrid never stays on live.
+  if (out.editorSurface === 'live') {
+    out.checkoutMode = 'live';
+  } else if (out.editorSurface === 'hybrid' && out.checkoutMode === 'live') {
+    out.checkoutMode = 'transaction';
   }
 
   const theme = input.checkoutTheme || input.checkoutDesign;
@@ -187,4 +207,5 @@ module.exports = {
   deleteSession,
   applyOverrides,
   sanitizeOverrides,
+  defaultOverrides,
 };

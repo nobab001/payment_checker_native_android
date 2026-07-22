@@ -37,31 +37,112 @@ function normalizePaymentType(providerTag = '', templateName = '') {
   return `${provider}_${kind}`;
 }
 
-// Compute commission + charge for a payment_type using merchant_commissions.
-async function computeCommission(websiteId, paymentType, amount) {
-  const rule = await prisma.merchant_commissions.findFirst({
-    where: { website_id: websiteId, payment_type: paymentType, is_active: 1 },
-  });
-  if (!rule) return { commission: 0, charge: 0 };
+/**
+ * Resolve all payment_type keys that should match a verified SMS.
+ * Supports legacy tokens (bkash_personal) and per-template keys (tpl_<id>).
+ * provider_tag is often the exact sms_templates.template_name (see smsWorker).
+ */
+async function resolveIncentiveKeys(paymentType, providerTag = '') {
+  const keys = new Set();
+  if (paymentType) keys.add(String(paymentType));
+  const tag = (providerTag || '').trim();
+  if (tag) {
+    keys.add(tag);
+    keys.add(normalizePaymentType(tag, ''));
+    try {
+      const tpls = await prisma.sms_templates.findMany({
+        where: { template_name: tag, is_active: 1 },
+        select: { id: true },
+        take: 10,
+      });
+      for (const t of tpls) keys.add(`tpl_${t.id}`);
+    } catch (_) { /* ignore */ }
+  }
+  return [...keys];
+}
 
+function applyMoneyRule(amt, type, value) {
+  return type === 'percentage'
+    ? +(amt * (Number(value) / 100)).toFixed(2)
+    : Number(value) || 0;
+}
+
+// Compute commission + charge using merchant_commissions (token or tpl_<id>).
+async function computeCommission(websiteId, paymentType, amount, providerTag = '') {
+  const keys = await resolveIncentiveKeys(paymentType, providerTag);
+  if (!keys.length) return { commission: 0, charge: 0 };
+
+  const rules = await prisma.merchant_commissions.findMany({
+    where: { website_id: websiteId, is_active: 1, payment_type: { in: keys } },
+  });
+  if (!rules.length) return { commission: 0, charge: 0 };
+
+  // Prefer an exact per-template rule over a coarse legacy token.
+  const rule = rules.find((r) => String(r.payment_type).startsWith('tpl_')) || rules[0];
   const amt = Number(amount) || 0;
-  const commission = rule.commission_type === 'percentage'
-    ? +(amt * (Number(rule.commission_value) / 100)).toFixed(2)
-    : Number(rule.commission_value);
-  const charge = rule.charge_type === 'percentage'
-    ? +(amt * (Number(rule.charge_value) / 100)).toFixed(2)
-    : Number(rule.charge_value);
-  return { commission, charge };
+  return {
+    commission: applyMoneyRule(amt, rule.commission_type, rule.commission_value),
+    charge: applyMoneyRule(amt, rule.charge_type, rule.charge_value),
+  };
+}
+
+// Campaign matches: payment_type in resolved keys OR '' (ALL), plus amount range.
+async function computeCampaigns(websiteId, paymentType, amount, providerTag = '') {
+  const amt = Number(amount) || 0;
+  const keys = await resolveIncentiveKeys(paymentType, providerTag);
+  let rows = [];
+  try {
+    if (!keys.length) {
+      rows = await prisma.$queryRawUnsafe(
+        `SELECT * FROM merchant_campaigns
+          WHERE website_id = ? AND is_active = 1 AND payment_type = ''
+            AND ? >= min_amount AND (max_amount = 0 OR ? <= max_amount)`,
+        websiteId, amt, amt,
+      );
+    } else {
+      rows = await prisma.$queryRawUnsafe(
+        `SELECT * FROM merchant_campaigns
+          WHERE website_id = ? AND is_active = 1
+            AND (payment_type = '' OR payment_type IN (${keys.map(() => '?').join(',')}))
+            AND ? >= min_amount
+            AND (max_amount = 0 OR ? <= max_amount)`,
+        websiteId, ...keys, amt, amt,
+      );
+    }
+  } catch (_) {
+    return { commission: 0, charge: 0 };
+  }
+  let commission = 0;
+  let charge = 0;
+  for (const c of rows) {
+    const v = applyMoneyRule(amt, c.value_type, c.value);
+    if (c.mode === 'charge') charge += v; else commission += v;
+  }
+  return { commission: +commission.toFixed(2), charge: +charge.toFixed(2) };
+}
+
+// Total incentives = base per-type commission/charge + all matching campaigns.
+async function computeIncentives(websiteId, paymentType, amount, providerTag = '') {
+  const base = await computeCommission(websiteId, paymentType, amount, providerTag);
+  const camp = await computeCampaigns(websiteId, paymentType, amount, providerTag);
+  return {
+    commission: +(base.commission + camp.commission).toFixed(2),
+    charge: +(base.charge + camp.charge).toFixed(2),
+  };
 }
 
 /**
  * Build the callback payload for a website + verified transaction.
+ * Additive purpose-aware fields (v2) — legacy keys (trxId, amount, status) kept.
+ *
  * @param website  gateway_layouts row (must include permission + preference flags)
- * @param history  sms_history row (amount, trx_id, provider_tag, sender_number, ...)
- * @param status   e.g. 'verified'
+ * @param history  sms_history row
+ * @param status   e.g. 'verified' | 'SUCCESS'
+ * @param extras   optional settlement / purpose enrichment
  */
-async function buildPayload(website, history, status = 'verified') {
+async function buildPayload(website, history, status = 'verified', extras = {}) {
   const amount = Number(history.amount);
+  const purpose = extras.purpose || extras.sessionPurpose || null;
   const payload = {
     trxId: history.trx_id,
     amount,
@@ -73,20 +154,65 @@ async function buildPayload(website, history, status = 'verified') {
     timestamp: new Date(),
   };
 
+  if (purpose) payload.purpose = purpose;
+
   // payment_type: included only if admin allows AND merchant opted in.
   if (website.allow_payment_type_callback && website.receive_payment_type) {
     payload.payment_type = normalizePaymentType(history.provider_tag, history.template_name || '');
   }
 
-  // commission: included only if admin allows AND merchant opted in.
+  const paymentType = payload.payment_type || normalizePaymentType(history.provider_tag, '');
+  const incentives = await computeIncentives(
+    website.id, paymentType, extras.checkoutAmount ?? amount, history.provider_tag || '',
+  );
+
+  // commission/charge raw: only if admin allows AND merchant opted in.
   if (website.allow_commission_callback && website.receive_commission) {
-    const paymentType = payload.payment_type || normalizePaymentType(history.provider_tag, '');
-    const { commission, charge } = await computeCommission(website.id, paymentType, amount);
-    payload.commission = commission;
-    payload.charge = charge;
+    payload.commission = incentives.commission;
+    payload.charge = incentives.charge;
+  }
+
+  // ── Purpose-aware additive fields (always when purpose known) ───────────
+  if (purpose === 'add_balance') {
+    const checkoutAmount = Number(extras.checkoutAmount ?? amount);
+    const net = +(incentives.commission - incentives.charge).toFixed(2);
+    payload.checkoutAmount = checkoutAmount;
+    payload.receivedAmount = Number(extras.receivedAmount ?? amount);
+    payload.walletCredit = Number(
+      extras.walletCredit ?? +(Math.max(0, checkoutAmount + net)).toFixed(2),
+    );
+  } else if (purpose === 'payment') {
+    payload.orderAmount = Number(extras.orderAmount ?? extras.checkoutAmount ?? amount);
+    payload.expectedPayable = Number(extras.expectedPayable ?? amount);
+    payload.receivedAmount = Number(extras.receivedAmount ?? amount);
+    if (extras.overPaid != null) payload.overPaid = Number(extras.overPaid);
+    if (Array.isArray(extras.transactions)) payload.transactions = extras.transactions;
   }
 
   return payload;
+}
+
+/**
+ * Dispatch with optional purpose/settlement extras (additive).
+ */
+async function sendMerchantCallback(website, history, status = 'verified', extras = {}) {
+  const payload = await buildPayload(website, history, status, extras);
+  const targets = [];
+  if (website.callback_url) targets.push(website.callback_url);
+  if (website.webhook_url && website.webhook_url !== website.callback_url) targets.push(website.webhook_url);
+  const results = [];
+  for (const url of targets) {
+    const result = await dispatchWebhook(url, payload, website.api_secret);
+    results.push(result);
+    audit.log({
+      eventType: result.delivered ? 'callback.delivered' : 'callback.failed',
+      entityType: 'website', entityId: website.merchant_id || website.id,
+      websiteId: website.id, userId: website.user_id,
+      status: result.delivered ? 'success' : 'failed',
+      detail: { url, trxId: payload.trxId, amount: payload.amount, purpose: payload.purpose, result },
+    });
+  }
+  return { payload, results };
 }
 
 function signBody(rawBody, secret) {
@@ -126,34 +252,11 @@ async function dispatchWebhook(url, payload, secret, { retries = 3 } = {}) {
   return { delivered: false, reason: 'MAX_RETRIES' };
 }
 
-/**
- * Convenience: build payload for a website+history and dispatch to both the
- * callback_url and webhook_url (whichever are set). Uses the website's stored
- * api_secret for signing.
- */
-async function sendMerchantCallback(website, history, status = 'verified') {
-  const payload = await buildPayload(website, history, status);
-  const targets = [];
-  if (website.callback_url) targets.push(website.callback_url);
-  if (website.webhook_url && website.webhook_url !== website.callback_url) targets.push(website.webhook_url);
-  const results = [];
-  for (const url of targets) {
-    const result = await dispatchWebhook(url, payload, website.api_secret);
-    results.push(result);
-    audit.log({
-      eventType: result.delivered ? 'callback.delivered' : 'callback.failed',
-      entityType: 'website', entityId: website.merchant_id || website.id,
-      websiteId: website.id, userId: website.user_id,
-      status: result.delivered ? 'success' : 'failed',
-      detail: { url, trxId: payload.trxId, amount: payload.amount, result },
-    });
-  }
-  return { payload, results };
-}
-
 module.exports = {
   normalizePaymentType,
   computeCommission,
+  computeCampaigns,
+  computeIncentives,
   buildPayload,
   dispatchWebhook,
   sendMerchantCallback,

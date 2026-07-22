@@ -201,6 +201,17 @@ fun AdminDashboardScreen(
                         )
                     }
                 )
+                Tab(
+                    selected = selectedTab == 5,
+                    onClick = { selectedTab = 5 },
+                    icon = {
+                        Icon(
+                            Icons.Default.Language,
+                            contentDescription = "ওয়েবসাইট",
+                            tint = if (selectedTab == 5) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                )
                 }
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
             }
@@ -228,7 +239,8 @@ fun AdminDashboardScreen(
                         onEditCheckout = { showCheckoutDialog = it },
                         onDeleteTemplate = { viewModel.deleteSmsTemplate(it) },
                         onDeleteEmail = { viewModel.deleteEmailAccount(it) },
-                        onUpdateOtpFormat = { viewModel.updateOtpFormat(it) }
+                        onUpdateOtpFormat = { viewModel.updateOtpFormat(it) },
+                        onReorderTemplates = { viewModel.reorderSmsTemplates(it) }
                     )
                     1 -> CheckoutDesignTab(
                         uiState = uiState,
@@ -249,6 +261,11 @@ fun AdminDashboardScreen(
                     )
                     4 -> BillingConfigScreen(
                         viewModel = viewModel,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    5 -> OfficialWebsiteAdminTab(
+                        uiState = uiState,
+                        onSave = { viewModel.saveOfficialWebsiteCms(it) },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -313,9 +330,20 @@ private fun GatewaysAndTemplatesTab(
     onEditCheckout: (CheckoutTemplateDto) -> Unit,
     onDeleteTemplate: (Int) -> Unit,
     onDeleteEmail: (Int) -> Unit,
-    onUpdateOtpFormat: (String) -> Unit
+    onUpdateOtpFormat: (String) -> Unit,
+    onReorderTemplates: (List<SmsTemplateDto>) -> Unit
 ) {
     val scrollState = rememberScrollState()
+    var showCheckoutOrder by remember { mutableStateOf(false) }
+    var showCustomOrder by remember { mutableStateOf(false) }
+    val parseableOnes = remember(uiState.smsTemplates) {
+        uiState.smsTemplates.filter { it.isParseable == 1 }
+            .sortedWith(compareBy({ it.displayOrder }, { it.id ?: 0 }))
+    }
+    val parseableZeros = remember(uiState.smsTemplates) {
+        uiState.smsTemplates.filter { it.isParseable == 0 }
+            .sortedWith(compareBy({ it.displayOrder }, { it.id ?: 0 }))
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -502,7 +530,7 @@ private fun GatewaysAndTemplatesTab(
             }
         }
 
-        // Section 3: SMS Templates (Official)
+        // Section 3: SMS Templates (Official) — split parseable 1 / 0
         Card(
             colors = CardDefaults.cardColors(containerColor = CardBackground),
             shape = RoundedCornerShape(12.dp),
@@ -535,34 +563,88 @@ private fun GatewaysAndTemplatesTab(
                         Icon(Icons.Default.AddCircle, "Add Template", tint = RoyalIndigo)
                     }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-                if (uiState.smsTemplates.isEmpty()) {
-                    Text("কোনো অফিসিয়াল টেমপ্লেট নেই।", fontSize = 13.sp, color = TextSecondary)
+
+                // —— Parseable = 1 (Checkout) ——
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Checkout (is_parseable = 1)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = RoyalIndigo)
+                    Text(
+                        text = "See All",
+                        color = RoyalIndigo,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        modifier = Modifier
+                            .clickable { showCheckoutOrder = true }
+                            .padding(4.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                if (parseableOnes.isEmpty()) {
+                    Text("কোনো চেকআউট টেমপ্লেট নেই।", fontSize = 12.sp, color = TextSecondary)
                 } else {
-                    uiState.smsTemplates.forEach { temp ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp)
-                                .clickable { onEditTemplate(temp) },
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(temp.templateName, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text(
-                                    "Type: ${temp.category ?: "SEND_MONEY"} | Sender: ${temp.senderId} | Active: ${if (temp.isActive == 1) "Yes" else "No"}",
-                                    fontSize = 12.sp,
-                                    color = TextSecondary
-                                )
-                            }
-                            IconButton(onClick = { temp.id?.let { onDeleteTemplate(it) } }) {
-                                Icon(Icons.Default.Delete, "Delete", tint = StatusRed)
-                            }
-                        }
+                    parseableOnes.take(8).forEach { temp ->
+                        AdminTemplateRow(temp, onEditTemplate, onDeleteTemplate)
+                    }
+                    if (parseableOnes.size > 8) {
+                        Text("… আরও ${parseableOnes.size - 8}টি — See All এ খুলুন", fontSize = 11.sp, color = TextSecondary)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // —— Parseable = 0 (Custom Sender) ——
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Custom Sender (is_parseable = 0)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = RoyalIndigo)
+                    Text(
+                        text = "See All",
+                        color = RoyalIndigo,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        modifier = Modifier
+                            .clickable { showCustomOrder = true }
+                            .padding(4.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                if (parseableZeros.isEmpty()) {
+                    Text("কোনো কাস্টম সেন্ডার টেমপ্লেট নেই।", fontSize = 12.sp, color = TextSecondary)
+                } else {
+                    parseableZeros.take(8).forEach { temp ->
+                        AdminTemplateRow(temp, onEditTemplate, onDeleteTemplate)
+                    }
+                    if (parseableZeros.size > 8) {
+                        Text("… আরও ${parseableZeros.size - 8}টি — See All এ খুলুন", fontSize = 11.sp, color = TextSecondary)
                     }
                 }
             }
+        }
+
+        if (showCheckoutOrder) {
+            AdminCheckoutTemplateOrderDialog(
+                templates = uiState.smsTemplates,
+                onDismiss = { showCheckoutOrder = false },
+                onSave = { ordered ->
+                    onReorderTemplates(ordered)
+                    showCheckoutOrder = false
+                }
+            )
+        }
+        if (showCustomOrder) {
+            AdminCustomSenderTemplateOrderDialog(
+                templates = uiState.smsTemplates,
+                onDismiss = { showCustomOrder = false },
+                onSave = { ordered ->
+                    onReorderTemplates(ordered)
+                    showCustomOrder = false
+                }
+            )
         }
 
         // Section 4: Checkout Instructions
@@ -605,6 +687,34 @@ private fun GatewaysAndTemplatesTab(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AdminTemplateRow(
+    temp: SmsTemplateDto,
+    onEditTemplate: (SmsTemplateDto) -> Unit,
+    onDeleteTemplate: (Int) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .clickable { onEditTemplate(temp) },
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(temp.templateName, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Text(
+                "Type: ${temp.category ?: "SEND_MONEY"} | Sender: ${temp.senderId} | Active: ${if (temp.isActive == 1) "Yes" else "No"}",
+                fontSize = 12.sp,
+                color = TextSecondary
+            )
+        }
+        IconButton(onClick = { temp.id?.let { onDeleteTemplate(it) } }) {
+            Icon(Icons.Default.Delete, "Delete", tint = StatusRed)
         }
     }
 }
@@ -883,14 +993,35 @@ private fun SmsTemplateEditDialog(
     var category by remember {
         mutableStateOf(template.category?.takeIf { it.isNotBlank() } ?: "SEND_MONEY")
     }
-    var categoryExpanded by remember { mutableStateOf(false) }
-    val categoryOptions = listOf(
+    val checkoutCategoryOptions = listOf(
         "SEND_MONEY" to "সেন্ড মানি",
         "CASH_OUT" to "ক্যাশ আউট",
         "PAYMENT" to "পেমেন্ট",
         "BANK" to "ব্যাংক",
         "CARD" to "কার্ড"
     )
+    val customSenderCategoryOptions = listOf(
+        "ROBI" to "Robi",
+        "AIRTEL" to "Airtel",
+        "GP" to "GP",
+        "BL" to "BL",
+        "TELETAK" to "Teletalk",
+        "BANK" to "Bank",
+        "OTHERS" to "Others"
+    )
+    val operatorOnly = setOf("ROBI", "AIRTEL", "GP", "BL", "TELETAK", "OTHERS")
+    var purpose by remember {
+        val initialCat = template.category?.uppercase().orEmpty()
+        mutableStateOf(
+            when {
+                initialCat in operatorOnly -> "custom"
+                template.isParseable == 0 -> "custom"
+                else -> "checkout"
+            }
+        )
+    }
+    val categoryOptions = if (purpose == "custom") customSenderCategoryOptions else checkoutCategoryOptions
+    var categoryExpanded by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -950,6 +1081,39 @@ private fun SmsTemplateEditDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                // Purpose: Checkout vs Custom Sender
+                Text("টেমপ্লেট ধরন", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextSecondary)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("checkout" to "চেকআউট", "custom" to "কাস্টম সেন্ডার").forEach { (key, label) ->
+                        val selected = purpose == key
+                        FilterChip(
+                            selected = selected,
+                            onClick = {
+                                purpose = key
+                                if (key == "checkout") {
+                                    isParseable = 1
+                                    if (category !in checkoutCategoryOptions.map { it.first }) {
+                                        category = "SEND_MONEY"
+                                    }
+                                } else {
+                                    isParseable = 0
+                                    if (category !in customSenderCategoryOptions.map { it.first }) {
+                                        category = "ROBI"
+                                    }
+                                }
+                            },
+                            label = { Text(label, fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = RoyalIndigo.copy(alpha = 0.2f),
+                                selectedLabelColor = RoyalIndigo
+                            )
+                        )
+                    }
+                }
+
                 ExposedDropdownMenuBox(
                     expanded = categoryExpanded,
                     onExpandedChange = { categoryExpanded = it },
@@ -959,7 +1123,9 @@ private fun SmsTemplateEditDialog(
                         value = categoryOptions.find { it.first == category }?.second ?: category,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("লেনদেনের টাইপ (Category)") },
+                        label = {
+                            Text(if (purpose == "custom") "অপারেটর / টাইপ" else "চেকআউট টাইপ")
+                        },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(

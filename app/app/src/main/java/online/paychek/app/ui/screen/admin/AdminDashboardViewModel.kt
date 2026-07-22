@@ -31,6 +31,11 @@ data class AdminUiState(
     ),
     val checkoutDesignTabs: Map<String, CheckoutTabDto> = emptyMap(),
     val providerBranding: Map<String, ProviderBrandingDto> = emptyMap(),
+    val officialWebsiteCms: OfficialWebsiteCmsDto? = null,
+    val helplineIconIds: List<String> = listOf(
+        "whatsapp", "telegram", "youtube", "facebook", "messenger",
+        "instagram", "discord", "twitter", "linkedin", "phone", "mail", "support"
+    ),
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
@@ -197,11 +202,61 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 }
             }
 
+            val jobOfficialWebsite = launch {
+                try {
+                    val res = api.getOfficialWebsiteCms(token)
+                    if (res.isSuccessful) {
+                        val body = res.body()
+                        _state.update {
+                            it.copy(
+                                officialWebsiteCms = body?.content,
+                                helplineIconIds = body?.icons?.takeIf { icons -> icons.isNotEmpty() }
+                                    ?: it.helplineIconIds
+                            )
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
             kotlinx.coroutines.joinAll(
                 jobConfigs, jobTemplates, jobCheckouts, jobEmails, jobSmsSettings,
-                jobUsers, jobOtpFormat, jobPlans, jobAddonPlans, jobCheckoutDesign
+                jobUsers, jobOtpFormat, jobPlans, jobAddonPlans, jobCheckoutDesign, jobOfficialWebsite
             )
             _state.update { it.copy(isLoading = false) }
+        }
+    }
+
+    fun saveOfficialWebsiteCms(content: OfficialWebsiteCmsDto) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, errorMessage = null) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val response = api.saveOfficialWebsiteCms(token, SaveOfficialWebsiteCmsRequest(content))
+                if (response.isSuccessful && response.body()?.success == true) {
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            officialWebsiteCms = response.body()?.content ?: content,
+                            helplineIconIds = response.body()?.icons?.takeIf { icons -> icons.isNotEmpty() }
+                                ?: it.helplineIconIds,
+                            successMessage = "ওয়েবসাইট CMS সেভ হয়েছে।"
+                        )
+                    }
+                } else {
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            errorMessage = response.body()?.error ?: "সেভ ব্যর্থ হয়েছে।"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(isSaving = false, errorMessage = "নেটওয়ার্ক এরর: ${e.localizedMessage}")
+                }
+            }
         }
     }
 
@@ -308,6 +363,44 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                     refreshTemplates()
                 } else {
                     _state.update { it.copy(isSaving = false, errorMessage = "মুছে ফেলা ব্যর্থ হয়েছে।") }
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }
+            }
+        }
+    }
+
+    fun reorderSmsTemplates(ordered: List<SmsTemplateDto>, onDone: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val items = ordered.mapIndexedNotNull { index, t ->
+                    val id = t.id ?: return@mapIndexedNotNull null
+                    SmsTemplateReorderItem(id = id, displayOrder = index + 1)
+                }
+                val response = api.reorderSmsTemplates(token, SmsTemplateReorderRequest(items))
+                if (response.isSuccessful && response.body()?.success == true) {
+                    // Optimistically merge local order into state
+                    val byId = ordered.associateBy { it.id }
+                    val merged = _state.value.smsTemplates.map { cur ->
+                        byId[cur.id]?.copy(displayOrder = items.firstOrNull { it.id == cur.id }?.displayOrder ?: cur.displayOrder)
+                            ?: cur
+                    }.sortedWith(
+                        compareByDescending<SmsTemplateDto> { it.isParseable }
+                            .thenBy { it.displayOrder }
+                            .thenBy { it.id ?: 0 }
+                    )
+                    _state.update {
+                        it.copy(
+                            smsTemplates = merged,
+                            isSaving = false,
+                            successMessage = "অর্ডার সেভ হয়েছে"
+                        )
+                    }
+                    onDone?.invoke()
+                } else {
+                    _state.update { it.copy(isSaving = false, errorMessage = "অর্ডার সেভ ব্যর্থ") }
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }

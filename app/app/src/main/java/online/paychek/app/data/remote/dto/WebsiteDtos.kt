@@ -29,6 +29,10 @@ data class WebsiteDto(
     @SerializedName("allowPaymentTypeCallback") val allowPaymentTypeCallback: Boolean = false,
     @SerializedName("allowCommissionCallback") val allowCommissionCallback: Boolean = false,
     @SerializedName("commissionEnabled") val commissionEnabled: Boolean = false,
+    @SerializedName("websitePurpose") val websitePurpose: String = "add_balance",
+    @SerializedName("purposeSelected") val purposeSelected: Boolean = false,
+    @SerializedName("purposeLocked") val purposeLocked: Boolean = false,
+    @SerializedName("purposeLockedAt") val purposeLockedAt: String? = null,
     @SerializedName("createdAt") val createdAt: String? = null,
     @SerializedName("updatedAt") val updatedAt: String? = null
 )
@@ -64,15 +68,6 @@ data class ActiveNumberDto(
     @SerializedName("tab") val tab: String? = null,
     @SerializedName("enabled") val enabled: Boolean = true,
     @SerializedName("position") val position: Long = Long.MAX_VALUE
-)
-
-/** Official (redirect-based) payment channel configured for a website (Phase 6). */
-data class OfficialGatewayDto(
-    @SerializedName("id") val id: Int = 0,
-    @SerializedName("provider") val provider: String,
-    @SerializedName("displayName") val displayName: String? = null,
-    @SerializedName("redirectUrlTemplate") val redirectUrlTemplate: String = "",
-    @SerializedName("isActive") val isActive: Boolean = true
 )
 
 /** Live merchant account DTO (multiple per provider per website). */
@@ -156,7 +151,8 @@ data class MerchantAccountResponse(
 
 data class CreateWebsiteRequest(
     @SerializedName("domain") val domain: String,
-    @SerializedName("website_name") val websiteName: String? = null
+    @SerializedName("website_name") val websiteName: String? = null,
+    @SerializedName("website_purpose") val websitePurpose: String
 )
 
 data class UpdateWebsiteRequest(
@@ -172,6 +168,7 @@ data class UpdateWebsiteRequest(
     @SerializedName("webhook_url") val webhookUrl: String? = null,
     @SerializedName("receive_payment_type") val receivePaymentType: Boolean? = null,
     @SerializedName("receive_commission") val receiveCommission: Boolean? = null,
+    @SerializedName("website_purpose") val websitePurpose: String? = null,
     @SerializedName("is_active") val isActive: Boolean? = null,
     @SerializedName("checkout_tabs") val checkoutTabs: Map<String, CheckoutTabToggle>? = null
 )
@@ -183,13 +180,6 @@ data class CheckoutTabToggle(
 
 data class NumberOrderRequest(
     @SerializedName("order") val order: List<NumberOrderItem>
-)
-
-data class UpsertOfficialGatewayRequest(
-    @SerializedName("provider") val provider: String,
-    @SerializedName("display_name") val displayName: String? = null,
-    @SerializedName("redirect_url_template") val redirectUrlTemplate: String,
-    @SerializedName("is_active") val isActive: Boolean = true
 )
 
 data class UpsertCommissionRequest(
@@ -263,9 +253,21 @@ data class WebsiteDetailResponse(
     @SerializedName("commissions") val commissions: List<CommissionDto> = emptyList(),
     @SerializedName("numberOrder") val numberOrder: List<NumberOrderItem> = emptyList(),
     @SerializedName("activeNumbers") val activeNumbers: List<ActiveNumberDto> = emptyList(),
+    @SerializedName("incentiveTemplates") val incentiveTemplates: List<IncentiveTemplateDto> = emptyList(),
     @SerializedName("gatewaysByCategory") val gatewaysByCategory: Map<String, List<ActiveNumberDto>>? = null,
     @SerializedName("checkoutTabs") val checkoutTabs: Map<String, CheckoutTabDto>? = null,
     @SerializedName("providerBranding") val providerBranding: Map<String, ProviderBrandingDto>? = null
+)
+
+/** Account-level active SMS template for Commission / Campaign type pickers. */
+data class IncentiveTemplateDto(
+    @SerializedName("id") val id: Int = 0,
+    @SerializedName("name") val name: String = "",
+    @SerializedName("category") val category: String? = null,
+    @SerializedName("provider") val provider: String? = null,
+    /** Unique key stored as payment_type, e.g. tpl_12 */
+    @SerializedName("paymentType") val paymentType: String = "",
+    @SerializedName("token") val token: String = ""
 )
 
 data class CheckoutTabDto(
@@ -292,12 +294,52 @@ data class NumberOrderResponse(
 data class CommissionListResponse(
     @SerializedName("success") val success: Boolean = false,
     @SerializedName("commissionEnabled") val commissionEnabled: Boolean = false,
-    @SerializedName("commissions") val commissions: List<CommissionDto> = emptyList()
+    @SerializedName("commissions") val commissions: List<CommissionDto> = emptyList(),
+    @SerializedName("incentiveTemplates") val incentiveTemplates: List<IncentiveTemplateDto> = emptyList()
 )
 
 data class CommissionUpsertResponse(
     @SerializedName("success") val success: Boolean = false,
     @SerializedName("commission") val commission: CommissionDto? = null,
+    @SerializedName("error") val error: String? = null
+)
+
+// ── Campaign / Extra incentives (amount-range commission or charge) ──────────
+data class CampaignDto(
+    @SerializedName("id") val id: Int = 0,
+    // Empty paymentType = applies to ALL transaction types.
+    @SerializedName("paymentType") val paymentType: String = "",
+    @SerializedName("label") val label: String = "",
+    @SerializedName("minAmount") val minAmount: Double = 0.0,
+    @SerializedName("maxAmount") val maxAmount: Double = 0.0,
+    // mode: commission | charge
+    @SerializedName("mode") val mode: String = "commission",
+    // valueType: percentage | flat
+    @SerializedName("valueType") val valueType: String = "flat",
+    @SerializedName("value") val value: Double = 0.0,
+    @SerializedName("isActive") val isActive: Boolean = true
+)
+
+data class UpsertCampaignRequest(
+    @SerializedName("id") val id: Int? = null,
+    @SerializedName("payment_type") val paymentType: String = "",
+    @SerializedName("label") val label: String = "",
+    @SerializedName("min_amount") val minAmount: Double = 0.0,
+    @SerializedName("max_amount") val maxAmount: Double = 0.0,
+    @SerializedName("mode") val mode: String = "commission",
+    @SerializedName("value_type") val valueType: String = "flat",
+    @SerializedName("value") val value: Double = 0.0,
+    @SerializedName("is_active") val isActive: Boolean = true
+)
+
+data class CampaignListResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("campaigns") val campaigns: List<CampaignDto> = emptyList()
+)
+
+data class CampaignUpsertResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("campaign") val campaign: CampaignDto? = null,
     @SerializedName("error") val error: String? = null
 )
 
@@ -307,13 +349,3 @@ data class SimpleWebsiteActionResponse(
     @SerializedName("error") val error: String? = null
 )
 
-data class OfficialGatewayListResponse(
-    @SerializedName("success") val success: Boolean = false,
-    @SerializedName("officialGateways") val officialGateways: List<OfficialGatewayDto> = emptyList()
-)
-
-data class OfficialGatewayUpsertResponse(
-    @SerializedName("success") val success: Boolean = false,
-    @SerializedName("officialGateway") val officialGateway: OfficialGatewayDto? = null,
-    @SerializedName("error") val error: String? = null
-)

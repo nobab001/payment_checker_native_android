@@ -9,6 +9,7 @@ const { buildMerchantCallbackV1 } = require('../payment/core/merchant-callback-v
 const { PAYMENT_STATUS } = require('../payment/core/payment-status');
 const { deliverHttpMerchantCallback } = require('../payment/callback/merchant-callback-http');
 const { resolveInternalServerUrl, rewriteUrlForOrigin } = require('../utils/localServerUrl');
+const { normalizeSessionPurpose } = require('./websitePurpose');
 
 const WEBSITE_SELECT = {
   id: true,
@@ -126,6 +127,11 @@ async function mergeSessionUrlsIntoLayout(apiData, sessionToken) {
     paymentSessionToken: session.sessionToken,
     orderId: session.orderId,
   };
+
+  const sessionPurpose = normalizeSessionPurpose(session.meta?.purpose);
+  if (sessionPurpose) {
+    payload.purpose = sessionPurpose;
+  }
 
   // Official Test Experience: visitor edits live in session.meta.demoOverrides
   // (never written to gateway_layouts). Apply on checkout load.

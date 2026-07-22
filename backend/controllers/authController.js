@@ -190,8 +190,9 @@ async function reopenRejectedDeviceAsPending(deviceId) {
          custom_device_name = CASE
            WHEN custom_device_name IS NULL OR custom_device_name = ''
                 OR custom_device_name LIKE '%(removed)%'
+                OR custom_device_name LIKE '%(expired)%'
            THEN COALESCE(NULLIF(device_name, ''), 'Co-Parent Device')
-           ELSE REPLACE(custom_device_name, ' (removed)', '')
+           ELSE REPLACE(REPLACE(custom_device_name, ' (removed)', ''), ' (expired)', '')
          END,
          last_seen_at = NOW()
      WHERE id = ? AND is_parent = 0 AND status = 'rejected'`,
@@ -1066,14 +1067,22 @@ async function verifyOtp(req, res) {
        { expiresIn: process.env.USER_TOKEN_EXPIRES_IN || '30d' }
      );
 
-    // Phase 2: Presence Engine alive entry-point (login success).
-    try {
-      await presenceV25.markDeviceAlive(user.id, device.device_id, { source: 'LOGIN_SUCCESS' });
-    } catch (e) {
-      console.warn('[PresenceV25] markDeviceAlive LOGIN_SUCCESS failed:', e.message);
+    // Presence only for approved/active devices — pending waiters must not enter probe SM.
+    if (!isPendingApprovalDevice(device) && isApprovedDevice(device)) {
+      try {
+        await presenceV25.markDeviceAlive(user.id, device.device_id, { source: 'LOGIN_SUCCESS' });
+      } catch (e) {
+        console.warn('[PresenceV25] markDeviceAlive LOGIN_SUCCESS failed:', e.message);
+      }
     }
 
     if (isPendingApprovalDevice(device)) {
+      // Refresh TTL window on each pending login attempt.
+      await query(
+        `UPDATE registered_devices SET last_seen_at = NOW() WHERE id = ? AND status = 'pending'`,
+        [device.id]
+      );
+      device.last_seen_at = new Date();
       await notifyOwnersPendingDevice(req.app, user.id, device);
     }
 
@@ -1093,6 +1102,7 @@ async function verifyOtp(req, res) {
         phone: user.phone,
         email: user.email,
         role: user.role,
+        avatar: user.avatar || null,
         is_paid: !!user.is_paid,
         active_plan_name: user.active_plan_name,
         expiry_date: user.expiry_date,
@@ -1114,6 +1124,7 @@ async function verifyOtp(req, res) {
         trialExpiresAt: device.trial_expires_at,
         lockReason: device.lock_reason,
         isOwnerDevice: device.is_owner_device === 1,
+        setupCompleted: device.setup_completed === 1 || device.setup_completed === true,
         deviceSpecificPin: device.device_specific_pin
       }
     });
@@ -2334,15 +2345,44 @@ async function uploadAvatar(req, res) {
       base64Image = avatarData.split(';base64,').pop();
     }
 
-    const buffer = Buffer.from(base64Image, 'base64');
+    const raw = Buffer.from(base64Image, 'base64');
+
+    // Compress/normalize to a small square JPEG when sharp is available.
+    let outBuf = raw;
+    try {
+      const sharp = require('sharp');
+      outBuf = await sharp(raw)
+        .rotate()
+        .resize(512, 512, { fit: 'cover' })
+        .jpeg({ quality: 82 })
+        .toBuffer();
+    } catch (e) {
+      // sharp not installed — store the raw bytes as-is.
+    }
+
     const dir = path.join(__dirname, '..', 'public', 'uploads', 'avatars');
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    const fileName = `avatar_${userId}.jpg`;
+    // Remove the previous avatar file so old images don't linger (fixed-name
+    // files would also be stuck in immutable CDN/browser cache).
+    try {
+      const prev = await query('SELECT avatar FROM users WHERE id = ? LIMIT 1', [userId]);
+      const prevPath = prev.length ? prev[0].avatar : null;
+      if (prevPath && prevPath.startsWith('uploads/avatars/')) {
+        const prevAbs = path.join(__dirname, '..', 'public', prevPath);
+        if (fs.existsSync(prevAbs)) fs.unlinkSync(prevAbs);
+      }
+    } catch (e) {
+      // ignore cleanup failures
+    }
+
+    // Versioned filename → URL changes on every upload, so every other device
+    // fetches the fresh image instead of a cached stale one.
+    const fileName = `avatar_${userId}_${Date.now()}.jpg`;
     const filePath = path.join(dir, fileName);
-    fs.writeFileSync(filePath, buffer);
+    fs.writeFileSync(filePath, outBuf);
 
     const relativePath = `uploads/avatars/${fileName}`;
 
@@ -2362,17 +2402,24 @@ async function uploadAvatar(req, res) {
 async function getPendingApprovals(req, res) {
   try {
     const userId = req.user.userId;
+    const { expireStalePendingApprovals, PENDING_APPROVAL_TTL_MINUTES } = require('../services/pendingApprovalExpiry');
+    await expireStalePendingApprovals(userId);
+
     const devices = await query(
-      `SELECT id, device_id, custom_device_name, device_name, device_model, android_version, status, is_approved, device_role, created_at 
-       FROM registered_devices 
-       WHERE user_id = ? AND is_approved = 0 AND status = 'pending'`,
-      [userId]
+      `SELECT id, device_id, custom_device_name, device_name, device_model, android_version, status, is_approved, device_role, created_at, last_seen_at
+       FROM registered_devices
+       WHERE user_id = ?
+         AND is_approved = 0
+         AND status = 'pending'
+         AND COALESCE(last_seen_at, created_at) >= DATE_SUB(NOW(), INTERVAL ? MINUTE)`,
+      [userId, PENDING_APPROVAL_TTL_MINUTES]
     );
     const data = devices.map((d) => ({
       ...d,
       custom_device_name: d.custom_device_name || d.device_name || d.device_model || 'নতুন ডিভাইস',
+      expires_in_minutes: PENDING_APPROVAL_TTL_MINUTES,
     }));
-    return res.json({ success: true, data });
+    return res.json({ success: true, data, ttl_minutes: PENDING_APPROVAL_TTL_MINUTES });
   } catch (error) {
     console.error('Error fetching pending approvals:', error);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
@@ -2482,7 +2529,7 @@ async function checkApprovalStatus(req, res) {
     const deviceId = req.user.deviceId;
 
     const devices = await query(
-      `SELECT is_approved, device_role, status, device_specific_pin 
+      `SELECT is_approved, device_role, status, device_specific_pin, setup_completed 
        FROM registered_devices 
        WHERE user_id = ? AND device_id = ? LIMIT 1`,
       [userId, deviceId]
@@ -2498,10 +2545,34 @@ async function checkApprovalStatus(req, res) {
       isApproved: device.is_approved === 1 || device.is_approved === true,
       deviceRole: device.device_role || 'pending',
       status: device.status,
+      setupCompleted: device.setup_completed === 1 || device.setup_completed === true,
       deviceSpecificPin: device.device_specific_pin
     });
   } catch (error) {
     console.error('Error checking approval status:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/**
+ * POST /api/v1/devices/mark-setup-completed
+ * Marks the current device as having completed Background Guard setup
+ * (Accessibility + Battery). Persisted so a reinstall can show a lighter prompt.
+ */
+async function markSetupCompleted(req, res) {
+  try {
+    const userId = req.user.userId;
+    const deviceId = req.user.deviceId;
+    if (!deviceId) {
+      return res.status(400).json({ success: false, error: 'deviceId missing in token' });
+    }
+    await query(
+      `UPDATE registered_devices SET setup_completed = 1 WHERE user_id = ? AND device_id = ?`,
+      [userId, deviceId]
+    );
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error marking setup completed:', error);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 }
@@ -2651,6 +2722,7 @@ module.exports = {
   approveByPin,
   submitRole,
   checkApprovalStatus,
+  markSetupCompleted,
   getProfile,
   uploadAvatar,
   toggleRemoteRole,

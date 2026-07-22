@@ -28,6 +28,15 @@ class SmsServiceWatchWorker(
             SmsServiceGuard.startService(app)
         }
         SmsPollWorker.schedule(app)
+
+        // Doze-safe presence backstop: keep the device's numbers ONLINE even if the
+        // in-service heartbeat loop was suspended while idle. Runs inside the worker
+        // coroutine so the POST completes before the job ends.
+        try {
+            NumberHeartbeatEngine.sendHeartbeatBlocking(app)
+        } catch (e: Exception) {
+            Log.w(TAG, "Watchdog heartbeat failed: ${e.message}")
+        }
         return Result.success()
     }
 

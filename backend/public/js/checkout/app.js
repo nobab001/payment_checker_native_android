@@ -25,6 +25,58 @@ let vibePollTimer = null;
 let successUrl = null;
 let cancelUrl = null;
 let initialLoaded = false;
+/** Provider currently focused (accordion / sheet) — drives charge surcharge pay amount. */
+let activePayProviderId = null;
+
+function findProviderById(id) {
+  if (!checkoutModel || id == null) return null;
+  for (const bucket of Object.values(checkoutModel.tabTree || {})) {
+    const hit = (bucket.providers || []).find((p) => String(p.id) === String(id));
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/**
+ * Amount the customer should actually send (includes commission/charge).
+ * Used for verify / live-init / redirects.
+ */
+function resolveCheckoutPayAmount(providerId = activePayProviderId) {
+  const base = parseFloat(amount) || 0;
+  let id = providerId;
+  if (!id) {
+    const sheet = document.querySelector('.checkout-sheet[data-provider-id]');
+    if (sheet && document.body.classList.contains('sheet-open')) {
+      id = sheet.getAttribute('data-provider-id');
+    }
+  }
+  if (!id) {
+    const openAcc = document.querySelector(
+      '.accordion.provider-block [data-acc-toggle][aria-expanded="true"]',
+    );
+    id = openAcc?.closest('[data-provider-id]')?.getAttribute('data-provider-id');
+  }
+  const p = findProviderById(id);
+  const pay = p?.incentive?.payAmount;
+  return (Number.isFinite(Number(pay)) && Number(pay) > 0) ? Number(pay) : base;
+}
+
+/** Header display amount — payment purpose locks to order base; add_balance follows pay amount. */
+function resolveHeaderAmount(providerId = activePayProviderId) {
+  const base = parseFloat(amount) || 0;
+  if (checkoutModel?.purpose === 'payment') return base;
+  return resolveCheckoutPayAmount(providerId);
+}
+
+function syncPayableHeader(providerId) {
+  if (providerId != null) activePayProviderId = String(providerId);
+  if (!checkoutModel) return;
+  HeaderComponent.mount(checkoutModel.merchant, resolveHeaderAmount(activePayProviderId));
+}
+
+document.addEventListener('checkout:provider-focus', (e) => {
+  syncPayableHeader(e.detail?.id);
+});
 
 window.__checkoutIconFail = function (img) {
   const s = document.createElement('span');
@@ -112,7 +164,7 @@ async function loadCheckoutData({ silent = false } = {}) {
   cancelUrl = checkoutModel.urls.cancelUrl;
 
   if (!initialLoaded) {
-    HeaderComponent.mount(checkoutModel.merchant, checkoutModel.amount);
+    HeaderComponent.mount(checkoutModel.merchant, resolveHeaderAmount());
     activeTabId = checkoutModel.tabs[0]?.id || 'send_money';
     if (!checkoutModel.tabs.find((t) => t.id === activeTabId)) {
       activeTabId = checkoutModel.tabs[0]?.id || 'send_money';
@@ -189,7 +241,7 @@ window.startVibe = async function startVibe() {
   try {
     const r = await fetch(`/api/checkout/${apiKey}/vibe-init`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerNumber: norm, amount: parseFloat(amount), session: sessionToken }),
+      body: JSON.stringify({ customerNumber: norm, amount: resolveCheckoutPayAmount(), session: sessionToken }),
     });
     const res = await r.json();
     if (!res.success) {
@@ -365,7 +417,7 @@ function escapeHtml(str) {
 
 async function startLivePay(provider, merchantAccountId) {
   try {
-    const body = { provider, amount: parseFloat(amount) };
+    const body = { provider, amount: resolveCheckoutPayAmount() };
     if (merchantAccountId != null && Number.isFinite(Number(merchantAccountId))) {
       body.merchantAccountId = Number(merchantAccountId);
     }
@@ -442,7 +494,7 @@ window.triggerVerification = async function triggerVerification() {
   try {
     const r = await fetch('/api/checkout/verify', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey, trxId: trx, amount: parseFloat(amount), session: sessionToken }),
+      body: JSON.stringify({ apiKey, trxId: trx, amount: resolveCheckoutPayAmount(), session: sessionToken }),
     });
     const res = await r.json();
     if (res.success) {
@@ -468,7 +520,7 @@ function redirectSuccess(redirectUrlOrTrx, trxId) {
     : null;
   if (!url && successUrl) {
     const sep = successUrl.includes('?') ? '&' : '?';
-    url = `${successUrl}${sep}trxId=${encodeURIComponent(trxId || redirectUrlOrTrx || '')}&amount=${encodeURIComponent(amount)}&status=success`;
+    url = `${successUrl}${sep}trxId=${encodeURIComponent(trxId || redirectUrlOrTrx || '')}&amount=${encodeURIComponent(String(resolveCheckoutPayAmount()))}&status=success`;
     if (sessionToken) url += `&session=${encodeURIComponent(sessionToken)}`;
   }
   if (!url) return;

@@ -5,11 +5,14 @@ const layoutHelper = require('../services/checkoutLayoutHelper');
 const checkoutData = require('../services/checkoutDataService');
 const vibeMatchService = require('../services/vibeMatchService');
 const checkoutPaymentBridge = require('../services/checkoutPaymentBridge');
+const { normalizeWebsitePurpose, normalizeSessionPurpose, computePurposeAmounts, roundMoney2 } = require('../services/websitePurpose');
+const settlementService = require('../services/checkoutSettlementService');
 
 // Full column set needed to build an enriched, signed merchant callback.
 const MERCHANT_CALLBACK_SELECT = {
   id: true, user_id: true, merchant_id: true, redirect_url: true, success_url: true,
-  callback_url: true, webhook_url: true, api_secret: true,
+  callback_url: true, webhook_url: true, api_secret: true, api_key: true,
+  website_purpose: true,
   allow_payment_type_callback: true, allow_commission_callback: true,
   receive_payment_type: true, receive_commission: true,
 };
@@ -38,7 +41,8 @@ async function getCheckoutLayout(req, res) {
         redirect_url: true, callback_url: true,
         // API Integration v2 additions
         company_name: true, logo_url: true, checkout_theme: true, checkout_mode: true,
-        success_url: true, cancel_url: true, number_order_json: true, merchant_id: true
+        success_url: true, cancel_url: true, number_order_json: true, merchant_id: true,
+        commission_enabled: true, website_purpose: true
       }
     });
 
@@ -73,19 +77,6 @@ async function getCheckoutLayout(req, res) {
     const checkoutDesign = layoutHelper.resolveDesign(layout.checkout_theme);
     const providers = await layoutHelper.resolveProviderBrandingFull(providerBranding);
 
-    // Official (live) payment channels for bank/card/merchant tabs (legacy)
-    const officialRows = await prisma.website_official_gateways.findMany({
-      where: { website_id: layout.id, is_active: 1 },
-      select: { id: true, provider: true, display_name: true, redirect_url_template: true },
-    });
-    const officialGateways = officialRows.map((og) => ({
-      id: og.id,
-      provider: og.provider,
-      displayName: og.display_name || og.provider,
-      tab: layoutHelper.officialProviderTab(og.provider),
-      livePayment: true,
-    }));
-
     // Merchant accounts (multi-account support for live payments)
     const merchantAccountRows = await prisma.merchant_accounts.findMany({
       where: { website_id: layout.id, is_active: 1 },
@@ -115,6 +106,56 @@ async function getCheckoutLayout(req, res) {
     // Enrich synced SIM rows with tab + group metadata for the 3 checkout designs
     formattedGateways = formattedGateways.map((g) => layoutHelper.enrichGatewayRow(g));
 
+    // ── Incentive rules (commission + campaign) exposed to the checkout client ──
+    // Only when admin unlocked commission for this website. The client applies
+    // these per provider using the amount the customer enters; server-side
+    // computeIncentives remains the source of truth for the webhook/merchant payout.
+    const incNP = merchantCallback.normalizePaymentType;
+    const tokenForGateway = (g) => incNP(g.provider || '', `${g.display_name || ''} ${g.category || ''}`);
+    let incentives = { enabled: false, commissions: [], campaigns: [] };
+    if (layout.commission_enabled) {
+      const commRows = await prisma.merchant_commissions.findMany({
+        where: { website_id: layout.id, is_active: 1 },
+      }).catch(() => []);
+      let campRows = [];
+      try {
+        campRows = await prisma.$queryRawUnsafe(
+          `SELECT * FROM merchant_campaigns WHERE website_id = ? AND is_active = 1`, layout.id,
+        );
+      } catch (_) { campRows = []; }
+      incentives = {
+        enabled: true,
+        commissions: commRows.map((c) => ({
+          token: c.payment_type,
+          commissionType: c.commission_type,
+          commissionValue: Number(c.commission_value),
+          chargeType: c.charge_type,
+          chargeValue: Number(c.charge_value),
+        })),
+        campaigns: campRows.map((c) => ({
+          token: c.payment_type || '',
+          label: c.label || '',
+          minAmount: Number(c.min_amount),
+          maxAmount: Number(c.max_amount),
+          mode: c.mode,
+          valueType: c.value_type,
+          value: Number(c.value),
+        })),
+      };
+      // Attach matching keys: coarse token + per-template tpl_<id> when available.
+      formattedGateways = formattedGateways.map((g) => ({
+        ...g,
+        incentiveToken: tokenForGateway(g),
+        incentiveTplKey: g.templateId != null ? `tpl_${g.templateId}` : null,
+      }));
+      for (const grp of merchantAccountsGroups) {
+        grp.incentiveToken = incNP(grp.provider || '', 'merchant');
+        grp.accounts = grp.accounts.map((a) => ({
+          ...a, incentiveToken: incNP(a.provider || '', 'merchant'),
+        }));
+      }
+    }
+
     let payload = {
       siteName: layout.site_name,
       siteUrl: layout.site_url,
@@ -123,6 +164,11 @@ async function getCheckoutLayout(req, res) {
       checkoutTheme: checkoutDesign,
       checkoutDesign,
       checkoutMode: layout.checkout_mode || 'transaction',
+      websitePurpose: normalizeWebsitePurpose(layout.website_purpose),
+      // Effective purpose for this checkout view (overridden by session when present)
+      purpose: normalizeWebsitePurpose(layout.website_purpose) === 'both'
+        ? 'add_balance'
+        : normalizeWebsitePurpose(layout.website_purpose),
       merchantId: layout.merchant_id,
       checkoutTabs: Object.values(checkoutTabs).filter((t) => t.enabled),
       checkoutTabsAll: checkoutTabs,
@@ -130,8 +176,8 @@ async function getCheckoutLayout(req, res) {
       layoutConfig,
       activeGateways: formattedGateways,
       gatewaysByCategory,
-      officialGateways,
       merchantAccountsGroups,
+      incentives,
       redirectUrl: layout.redirect_url,
       successUrl: layout.success_url || layout.redirect_url,
       cancelUrl: layout.cancel_url
@@ -147,7 +193,7 @@ async function getCheckoutLayout(req, res) {
     if (demoSessionId && !sessionQ) {
       try {
         const testCtrl = require('../official-website/controllers/test-controller');
-        payload = testCtrl.applyDemoSessionToLayout(payload, demoSessionId, req);
+        payload = await testCtrl.applyDemoSessionToLayoutAsync(payload, demoSessionId, req);
       } catch (e) {
         console.warn('[CHECKOUT] demoSession overlay failed:', e.message);
       }
@@ -163,70 +209,185 @@ async function getCheckoutLayout(req, res) {
 
 /**
  * POST /api/checkout/verify
- * Public customer verification endpoint for Transaction IDs.
- * Locks the transaction to prevent dual usage.
+ * Purpose-aware verification:
+ *   add_balance — SMS amount must equal checkout amount; walletCredit in callback.
+ *   payment     — accumulate Trx parts until expectedPayable met (max 5); overpay OK.
  */
 async function verifyCheckoutPayment(req, res) {
   try {
-    const { apiKey, trxId, amount, session } = req.body;
+    const { apiKey, trxId, amount, session, purpose: bodyPurpose, expectedPayable, settlementAttemptId } = req.body;
 
-    if (!apiKey || !trxId || !amount) {
-      return res.status(400).json({ error: 'Missing required parameters: apiKey, trxId, amount' });
+    if (!apiKey || !trxId) {
+      return res.status(400).json({ error: 'Missing required parameters: apiKey, trxId' });
     }
 
-    const cleanTrx = trxId.trim().toUpperCase();
-    const cleanAmount = parseFloat(amount);
+    const cleanTrx = String(trxId).trim().toUpperCase();
+    const clientAmount = amount != null && amount !== '' ? parseFloat(amount) : null;
 
-    // 1. Fetch merchant details
     const merchant = await prisma.gateway_layouts.findFirst({
       where: { api_key: apiKey, is_active: 1 },
-      select: MERCHANT_CALLBACK_SELECT
+      select: MERCHANT_CALLBACK_SELECT,
     });
-
     if (!merchant) {
       return res.status(404).json({ error: 'Invalid API Key or Merchant inactive' });
     }
 
-    // 2. Query sms_history for this user/merchant matching trxId and amount
+    // Resolve session purpose (session meta wins over body / website).
+    let sessionPurpose = null;
+    let orderAmount = clientAmount;
+    let sessionRow = null;
+    if (session) {
+      sessionRow = await checkoutPaymentBridge.loadSession(session);
+      if (sessionRow) {
+        sessionPurpose = normalizeSessionPurpose(sessionRow.meta?.purpose);
+        orderAmount = Number(sessionRow.amount);
+      }
+    }
+    if (!sessionPurpose) {
+      const wp = normalizeWebsitePurpose(merchant.website_purpose);
+      if (wp === 'both') {
+        sessionPurpose = normalizeSessionPurpose(bodyPurpose) || 'add_balance';
+      } else {
+        sessionPurpose = wp;
+      }
+    }
+    if (!(orderAmount > 0) && clientAmount > 0) orderAmount = clientAmount;
+
+    // Find SMS by TrxID (amount taken from SMS — source of truth).
     const payment = await prisma.sms_history.findFirst({
       where: {
         user_id: merchant.user_id,
         trx_id: cleanTrx,
-        amount: cleanAmount
       },
-      select: { id: true, is_used: true, used_by_merchant_id: true }
+      select: { id: true, is_used: true, used_by_merchant_id: true, amount: true, provider_tag: true },
     });
 
     if (!payment) {
       return res.json({
         success: false,
-        message: 'পেমেন্ট এখনও আমাদের সিস্টেমে যুক্ত হয়নি। ১-২ মিনিট অপেক্ষা করে আবার ভেরিফাই করুন।'
+        message: 'পেমেন্ট এখনও আমাদের সিস্টেমে যুক্ত হয়নি। ১-২ মিনিট অপেক্ষা করে আবার ভেরিফাই করুন।',
       });
     }
 
-    // 3. Prevent transaction hijack/double-spend
     if (payment.is_used && payment.used_by_merchant_id !== merchant.id) {
       return res.json({
         success: false,
-        message: 'দুঃখিত, এই ট্রানজেকশন আইডিটি অন্য মার্চেন্ট অর্ডারে ইতিমধ্যে ব্যবহার করা হয়েছে।'
+        message: 'দুঃখিত, এই ট্রানজেকশন আইডিটি অন্য মার্চেন্ট অর্ডারে ইতিমধ্যে ব্যবহার করা হয়েছে।',
       });
     }
 
+    const smsAmount = Number(payment.amount);
     const wasUnused = !payment.is_used;
 
-    // 4. Mark transaction as used/sold out for this merchant
+    // ── Add Balance: exact checkout amount ────────────────────────────────
+    if (sessionPurpose === 'add_balance') {
+      if (!(orderAmount > 0)) {
+        return res.status(400).json({ success: false, error: 'AMOUNT_REQUIRED' });
+      }
+      if (Math.abs(smsAmount - Number(orderAmount)) >= 0.01) {
+        return res.json({
+          success: false,
+          purpose: 'add_balance',
+          message: `এড ব্যালেন্সে ঠিক ৳${orderAmount} পাঠাতে হবে। SMS-এ এসেছে ৳${smsAmount}।`,
+        });
+      }
+
+      if (wasUnused) {
+        await prisma.sms_history.update({
+          where: { id: payment.id },
+          data: { is_used: 1, used_at: new Date(), used_by_merchant_id: merchant.id },
+        });
+      }
+
+      const history = await prisma.sms_history.findUnique({
+        where: { id: payment.id },
+        select: HISTORY_CALLBACK_SELECT,
+      });
+
+      const { commission, charge } = await merchantCallback.computeIncentives(
+        merchant.id,
+        merchantCallback.normalizePaymentType(history.provider_tag || '', ''),
+        orderAmount,
+        history.provider_tag || '',
+      );
+      const amounts = computePurposeAmounts(orderAmount, commission, charge, 'add_balance');
+      const extras = {
+        purpose: 'add_balance',
+        checkoutAmount: amounts.checkoutAmount,
+        receivedAmount: smsAmount,
+        walletCredit: amounts.walletCredit,
+      };
+
+      let redirectUrl = null;
+      if (session && history && wasUnused) {
+        const bridge = await checkoutPaymentBridge.notifySessionPaid(session, { history, trxId: cleanTrx });
+        redirectUrl = bridge.redirectUrl;
+      } else if (wasUnused && history) {
+        merchantCallback.sendMerchantCallback(merchant, history, 'SUCCESS', extras)
+          .catch((e) => console.error('[VERIFICATION] callback error:', e.message));
+      }
+
+      if (!redirectUrl) {
+        const successBase = merchant.success_url || merchant.redirect_url;
+        redirectUrl = successBase
+          ? `${successBase}${successBase.includes('?') ? '&' : '?'}trxId=${cleanTrx}&amount=${smsAmount}&status=success`
+          : null;
+      }
+
+      return res.json({
+        success: true,
+        purpose: 'add_balance',
+        message: 'পেমেন্ট সফলভাবে যাচাই করা হয়েছে!',
+        checkoutAmount: amounts.checkoutAmount,
+        receivedAmount: smsAmount,
+        walletCredit: amounts.walletCredit,
+        redirectUrl,
+      });
+    }
+
+    // ── Payment: multi-txn settlement ─────────────────────────────────────
+    const payableHint = expectedPayable != null && expectedPayable !== ''
+      ? Number(expectedPayable)
+      : Number(orderAmount);
+    const expectedPay = roundMoney2(payableHint > 0 ? payableHint : orderAmount);
+
+    const settlementKey = settlementService.buildSettlementKey({
+      sessionToken: session || null,
+      apiKey,
+      orderAmount,
+      attemptId: settlementAttemptId,
+    });
+
+    await settlementService.openOrGetSettlement({
+      settlementKey,
+      websiteId: merchant.id,
+      sessionToken: session || null,
+      orderAmount,
+      expectedPayable: expectedPay,
+      purpose: 'payment',
+    });
+
     if (wasUnused) {
       await prisma.sms_history.update({
         where: { id: payment.id },
-        data: {
-          is_used: 1,
-          used_at: new Date(),
-          used_by_merchant_id: merchant.id
-        }
+        data: { is_used: 1, used_at: new Date(), used_by_merchant_id: merchant.id },
       });
-      console.log(`[VERIFICATION] Trx ${cleanTrx} (৳${cleanAmount}) marked SOLDOUT for merchant ID ${merchant.id}`);
-    } else {
-      console.log(`[VERIFICATION] Trx ${cleanTrx} was already locked for this merchant. Skipping update.`);
+    }
+
+    const applied = await settlementService.applyPart(settlementKey, {
+      trxId: cleanTrx,
+      amount: smsAmount,
+      historyId: payment.id,
+      providerTag: payment.provider_tag,
+    });
+
+    if (!applied.ok) {
+      return res.json({
+        success: false,
+        purpose: 'payment',
+        error: applied.error,
+        message: applied.message || 'Settlement failed',
+      });
     }
 
     const history = await prisma.sms_history.findUnique({
@@ -234,39 +395,63 @@ async function verifyCheckoutPayment(req, res) {
       select: HISTORY_CALLBACK_SELECT,
     });
 
+    if (applied.status === 'PARTIAL') {
+      return res.json({
+        success: false,
+        partial: true,
+        purpose: 'payment',
+        status: 'PARTIAL',
+        orderAmount: applied.orderAmount,
+        expectedPayable: applied.expectedPayable,
+        receivedAmount: applied.receivedAmount,
+        remaining: applied.remaining,
+        transactions: applied.transactions,
+        message: `আপনি ৳${applied.remaining} কম পাঠিয়েছেন। আরও ৳${applied.remaining} পাঠিয়ে Transaction ID দিন।`,
+      });
+    }
+
+    // SUCCESS (exact or overpay)
+    const extras = {
+      purpose: 'payment',
+      orderAmount: applied.orderAmount,
+      expectedPayable: applied.expectedPayable,
+      receivedAmount: applied.receivedAmount,
+      overPaid: applied.overPaid,
+      transactions: applied.transactions,
+    };
+
     let redirectUrl = null;
     if (session && history) {
-      if (wasUnused) {
-        const bridge = await checkoutPaymentBridge.notifySessionPaid(session, {
-          history,
-          trxId: cleanTrx,
-        });
-        redirectUrl = bridge.redirectUrl;
-      } else {
-        const sessionRow = await checkoutPaymentBridge.loadSession(session);
-        redirectUrl = checkoutPaymentBridge.buildSuccessRedirectUrl(sessionRow, {
-          trxId: cleanTrx,
-          amount: cleanAmount,
-        });
-      }
-    } else if (wasUnused && history) {
-      merchantCallback.sendMerchantCallback(merchant, history, 'verified')
+      const bridge = await checkoutPaymentBridge.notifySessionPaid(session, { history, trxId: cleanTrx });
+      redirectUrl = bridge.redirectUrl;
+    } else if (history) {
+      merchantCallback.sendMerchantCallback(merchant, history, 'SUCCESS', extras)
         .catch((e) => console.error('[VERIFICATION] callback error:', e.message));
     }
 
     if (!redirectUrl) {
       const successBase = merchant.success_url || merchant.redirect_url;
       redirectUrl = successBase
-        ? `${successBase}${successBase.includes('?') ? '&' : '?'}trxId=${cleanTrx}&amount=${cleanAmount}&status=success`
+        ? `${successBase}${successBase.includes('?') ? '&' : '?'}trxId=${cleanTrx}&amount=${applied.receivedAmount}&status=success`
         : null;
     }
 
+    const overMsg = applied.overPaid > 0
+      ? ` আপনি ৳${applied.overPaid} বেশি পাঠিয়েছেন। অতিরিক্ত টাকা ফেরত/সমন্বয়ের জন্য মার্চেন্টের সাথে যোগাযোগ করুন।`
+      : '';
+
     return res.json({
       success: true,
-      message: 'পেমেন্ট সফলভাবে যাচাই করা হয়েছে!',
-      redirectUrl
+      purpose: 'payment',
+      status: 'SUCCESS',
+      message: `পেমেন্ট সফলভাবে যাচাই করা হয়েছে!${overMsg}`,
+      orderAmount: applied.orderAmount,
+      expectedPayable: applied.expectedPayable,
+      receivedAmount: applied.receivedAmount,
+      overPaid: applied.overPaid,
+      transactions: applied.transactions,
+      redirectUrl,
     });
-
   } catch (error) {
     console.error('Error verifying payment:', error);
     return res.status(500).json({ error: 'Internal Server Error' });

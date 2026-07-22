@@ -132,6 +132,19 @@ fun LoginScreen(
                 "pcu_user_role",
                 res.user.role
             )
+            // Persist display name + server avatar to plain prefs so Home/Profile
+            // can show them immediately after a fresh login (before opening Profile).
+            context.getSharedPreferences(
+                online.paychek.app.config.AppConfig.PREF_NAME,
+                android.content.Context.MODE_PRIVATE
+            ).edit().apply {
+                if (res.user.name.isNotBlank()) putString("pcu_user_name", res.user.name)
+                res.user.avatar?.takeIf { it.isNotBlank() }?.let { putString("pcu_server_avatar", it) }
+                // Server-backed "device was set up before" flag (survives reinstall).
+                // Only upgrade to true so a stale false can't wipe a local completion.
+                if (res.device.setupCompleted) putBoolean("pcu_setup_completed", true)
+                apply()
+            }
             online.paychek.app.utils.SecurePreferences.encrypt(
                 context,
                 "pcu_contact",

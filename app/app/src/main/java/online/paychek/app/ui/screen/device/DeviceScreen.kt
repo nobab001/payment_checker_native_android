@@ -99,6 +99,7 @@ private fun providerEmoji(tag: String): String = when (tag.lowercase()) {
 fun DeviceScreen(
     onNavigateBack: (() -> Unit)? = null,
     onNavigateToSubscription: (Int) -> Unit = {},
+    onNavigateToCustomSenderReadyMade: (simSlot: Int, targetDeviceId: String?) -> Unit = { _, _ -> },
     externalRefreshTick: Int = 0,
     modifier: Modifier = Modifier,
     viewModel: DeviceViewModel = viewModel()
@@ -217,6 +218,13 @@ fun DeviceScreen(
 
     val currentSubTab = state.selectedSubTab
 
+    // Back on a non-default sub-tab (e.g. "লগইন ডিভাইস") should step back to the
+    // main "ডিভাইস সেটিং" tab first, not jump straight to Home. This inner
+    // BackHandler takes priority over HomeScreen's (which sends to Home).
+    androidx.activity.compose.BackHandler(enabled = currentSubTab != 0) {
+        viewModel.setSubTab(0)
+    }
+
     if (state.pendingSimConflict != null) {
         val conflict = state.pendingSimConflict!!
         AlertDialog(
@@ -287,11 +295,12 @@ fun DeviceScreen(
                             modifier = Modifier.size(24.dp)
                         )
                         Text(
-                            text = "স্বয়ংক্রিয় পেমেন্ট ট্র্যাকিং সচল করতে অ্যাক্সেসিবিলিটি পারমিশন অনুমোদন করুন। (যদি Restricted Settings দেখায়, তবে হোম স্ক্রিন থেকে অ্যাপ আইকনে চাপ দিয়ে ধরে App Info-তে যান এবং ডানদিকের উপরের ৩-ডট মেনু থেকে Allow Restricted Settings সচল করুন)",
+                            text = "এক্সেসিবিলিটি পারমিশন দিন",
                             color = Color.White,
-                            fontSize = 13.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
-                            lineHeight = 18.sp
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                     Icon(
@@ -318,8 +327,10 @@ fun DeviceScreen(
                     onBack = { viewModel.closeRemoteDeviceSettings() },
                     onRemoteAddSender = { slot ->
                         viewModel.onAddCustomSenderClick(slot) { allowedSlot ->
-                            remoteActiveSimSlotForCustomSender = allowedSlot
-                            showRemoteAddSenderDialog = true
+                            onNavigateToCustomSenderReadyMade(
+                                allowedSlot,
+                                remoteDevice.deviceId
+                            )
                         }
                     },
                     onRemoteDeleteSender = { remoteMethodToDelete = it }
@@ -413,8 +424,7 @@ fun DeviceScreen(
                             onToggleTemplate = { viewModel.toggleTemplate(1, it) },
                             onAddCustomSenderClick = { slot ->
                                 viewModel.onAddCustomSenderClick(slot) { allowedSlot ->
-                                    activeSimSlotForCustomSender = allowedSlot
-                                    showAddSenderDialog = true
+                                    onNavigateToCustomSenderReadyMade(allowedSlot, null)
                                 }
                             },
                             onDeleteCustomSenderClick = { method ->
@@ -437,8 +447,7 @@ fun DeviceScreen(
                             onToggleTemplate = { viewModel.toggleTemplate(2, it) },
                             onAddCustomSenderClick = { slot ->
                                 viewModel.onAddCustomSenderClick(slot) { allowedSlot ->
-                                    activeSimSlotForCustomSender = allowedSlot
-                                    showAddSenderDialog = true
+                                    onNavigateToCustomSenderReadyMade(allowedSlot, null)
                                 }
                             },
                             onDeleteCustomSenderClick = { method ->

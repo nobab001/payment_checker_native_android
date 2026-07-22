@@ -30,9 +30,19 @@ async function postHeartbeat(req, res) {
       && req.body.smsServiceActive !== false;
 
     if (!smsActive) {
-      // Monitoring Stop / explicit offline — hide numbers from checkout immediately
+      // Monitoring Stop — hide numbers from checkout immediately
       const watchdog = require('../services/deviceDisconnectWatchdog');
-      await watchdog.deactivateDeviceBindings(userId, deviceId);
+      const v2On = await presenceV25.isPresenceV2Enabled(profile?.id || 'personal');
+      if (v2On) {
+        try {
+          await presenceV25.markDeviceOffline(userId, deviceId, { reason: 'SMS_SERVICE_OFF' });
+        } catch (e) {
+          console.warn('[PresenceV25] markDeviceOffline SMS_SERVICE_OFF failed:', e.message);
+          await watchdog.deactivateDeviceBindings(userId, deviceId);
+        }
+      } else {
+        await watchdog.deactivateDeviceBindings(userId, deviceId);
+      }
       watchdog.cancelDeviceWatch(userId, deviceId);
       return res.json({
         success: true,

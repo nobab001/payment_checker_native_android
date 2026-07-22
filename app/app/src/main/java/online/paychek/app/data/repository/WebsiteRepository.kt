@@ -26,8 +26,11 @@ class WebsiteRepository(private val context: Context) {
         else Result.failure(Exception(parseError(r)))
     }
 
-    suspend fun createWebsite(domain: String, name: String?): Result<CreateWebsiteResponse> = safeCall {
-        val r = api.createWebsite(bearer(), CreateWebsiteRequest(domain = domain, websiteName = name))
+    suspend fun createWebsite(domain: String, name: String?, purpose: String): Result<CreateWebsiteResponse> = safeCall {
+        val r = api.createWebsite(
+            bearer(),
+            CreateWebsiteRequest(domain = domain, websiteName = name, websitePurpose = purpose)
+        )
         val body = r.body()
         if (r.isSuccessful && body?.success == true) Result.success(body)
         else Result.failure(Exception(body?.message ?: body?.error ?: parseError(r)))
@@ -114,22 +117,22 @@ class WebsiteRepository(private val context: Context) {
         else Result.failure(Exception(parseError(r)))
     }
 
-    // ── Official (redirect-based) payment gateways (Phase 6) ──────────────────
-    suspend fun listOfficialGateways(id: Int): Result<List<OfficialGatewayDto>> = safeCall {
-        val r = api.listOfficialGateways(bearer(), id)
-        if (r.isSuccessful && r.body()?.success == true) Result.success(r.body()?.officialGateways ?: emptyList())
+    // ── Campaign / Extra incentives (amount-range) ────────────────────────────
+    suspend fun listCampaigns(id: Int): Result<List<CampaignDto>> = safeCall {
+        val r = api.listCampaigns(bearer(), id)
+        if (r.isSuccessful && r.body()?.success == true) Result.success(r.body()?.campaigns ?: emptyList())
         else Result.failure(Exception(parseError(r)))
     }
 
-    suspend fun upsertOfficialGateway(id: Int, request: UpsertOfficialGatewayRequest): Result<OfficialGatewayDto> = safeCall {
-        val r = api.upsertOfficialGateway(bearer(), id, request)
+    suspend fun upsertCampaign(id: Int, request: UpsertCampaignRequest): Result<CampaignDto> = safeCall {
+        val r = api.upsertCampaign(bearer(), id, request)
         val body = r.body()
-        if (r.isSuccessful && body?.success == true && body.officialGateway != null) Result.success(body.officialGateway)
+        if (r.isSuccessful && body?.success == true && body.campaign != null) Result.success(body.campaign)
         else Result.failure(Exception(body?.error ?: parseError(r)))
     }
 
-    suspend fun deleteOfficialGateway(id: Int, gatewayId: Int): Result<Unit> = safeCall {
-        val r = api.deleteOfficialGateway(bearer(), id, gatewayId)
+    suspend fun deleteCampaign(id: Int, campaignId: Int): Result<Unit> = safeCall {
+        val r = api.deleteCampaign(bearer(), id, campaignId)
         if (r.isSuccessful && r.body()?.success == true) Result.success(Unit)
         else Result.failure(Exception(parseError(r)))
     }

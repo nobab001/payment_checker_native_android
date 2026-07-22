@@ -1,0 +1,156 @@
+[OfficialWebsite] Test Experience at /test
+[Cron] ✅ Subscription Expiry Guard (12:01 AM), FCM Reminder (10:00 AM) & Archive Retention (2:00 AM) scheduled.
+=============================================
+ Payment Checker API Server running on port 3000
+ Database Target: 127.0.0.1:3306
+ Database Name  : paychek_online_v2
+=============================================
+[DB] ✅ gateway_methods table verified via Prisma.
+[DB] ✅ Database check complete!
+[DB] ✅ demo_visitors tables verified.
+[DB] ✅ presence v2.5 schema + comm_policy verified.
+[DB] ✅ sms_templates.display_order verified.
+[DB] ✅ custom_sms_archives meta columns verified.
+[DB] ✅ registered_devices.setup_completed verified.
+[DB] ✅ merchant_campaigns table verified.
+[Entitlements] Migration complete: 1 synced, 0 failed (1 total).
+[PresenceV25] METRICS {"alive_calls":0,"offline_calls":0,"heartbeat_success":0,"boot_success":0,"network_restored_success":0,"sms_success":0,"login_success":0,"probe_started":0,"probe_cancelled":0,"probe_resumed":0,"lock_skipped":0,"state_flip_online":0,"state_flip_offline":0,"false_offline_count":0,"recovery_samples":0,"avg_recovery_ms":0} dryRun=false
+[PresenceV25] SHADOW_MISMATCH user=26 device=548ed64a6836… legacy=0 v2=1 package=gateway
+[PresenceV25] SHADOW_SUMMARY compared=3 mismatches=1
+[PresenceV25] METRICS {"alive_calls":0,"offline_calls":0,"heartbeat_success":0,"boot_success":0,"network_restored_success":0,"sms_success":0,"login_success":0,"probe_started":0,"probe_cancelled":0,"probe_resumed":0,"lock_skipped":0,"state_flip_online":0,"state_flip_offline":0,"false_offline_count":0,"recovery_samples":0,"avg_recovery_ms":0} dryRun=false
+[PresenceV25] SHADOW_MISMATCH user=26 device=548ed64a6836… legacy=0 v2=1 package=gateway
+[PresenceV25] SHADOW_SUMMARY compared=3 mismatches=1
+[2026-07-18 18:13:13] GET /api/v1/devices/check-approval-status
+[2026-07-18 18:13:13] GET /api/v1/devices/my-config
+[2026-07-18 18:13:14] GET /api/v1/account/entitlements
+[2026-07-18 18:13:15] GET /api/ping
+[2026-07-18 18:13:15] GET /api/v1/account/entitlements
+[2026-07-18 18:13:16] GET /api/v1/devices/pending-approvals
+[2026-07-18 18:13:16] GET /api/ping
+[2026-07-18 18:13:16] GET /api/v1/account/entitlements
+[2026-07-18 18:13:16] GET /api/dashboard/stats
+[STATS] Dashboard loaded for user: 26 | Today: 2026-07-18 | Paid: 1 | Plan: Basic 6 Month
+[STATS] Client cache current (1784307315937 >= 1784307315937). Skipping template/method payload.
+[2026-07-18 18:13:16] GET /api/v1/plans
+[2026-07-18 18:13:16] GET /api/v1/account/entitlements
+[2026-07-18 18:13:17] GET /api/v1/devices/pending-approvals
+[2026-07-18 18:13:17] GET /api/v1/account/entitlements
+[2026-07-18 18:13:17] POST /api/gateway/heartbeat
+[DeviceWatch] Armed 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — miss check in 300s
+[PresenceV25] HB_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[2026-07-18 18:13:19] GET /api/v1/devices/check-approval-status
+[2026-07-18 18:13:19] GET /api/v1/account/entitlements
+[2026-07-18 18:13:20] GET /api/v1/devices/pending-approvals
+[2026-07-18 18:13:20] GET /api/v1/devices/my-config
+[2026-07-18 18:13:20] GET /api/v1/account/entitlements
+[2026-07-18 18:13:33] GET /api/v1/devices/pending-approvals
+[2026-07-18 18:13:33] GET /api/ping
+[2026-07-18 18:13:33] GET /api/dashboard/stats
+[STATS] Dashboard loaded for user: 26 | Today: 2026-07-18 | Paid: 1 | Plan: Basic 6 Month
+[STATS] Client cache current (1784307315937 >= 1784307315937). Skipping template/method payload.
+[DeviceWatch] Miss probes 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — 5×60s → is_active=0
+[2026-07-18 18:18:26] POST /api/gateway/heartbeat
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[DeviceWatch] Armed 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — miss check in 300s
+[PresenceV25] HB_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[PresenceV25] METRICS {"alive_calls":2,"offline_calls":0,"heartbeat_success":2,"boot_success":0,"network_restored_success":0,"sms_success":0,"login_success":0,"probe_started":0,"probe_cancelled":0,"probe_resumed":0,"lock_skipped":0,"state_flip_online":0,"state_flip_offline":0,"false_offline_count":0,"recovery_samples":0,"avg_recovery_ms":0} dryRun=false
+[PresenceV25] SHADOW_MISMATCH user=26 device=548ed64a6836… legacy=0 v2=1 package=gateway
+[PresenceV25] SHADOW_SUMMARY compared=3 mismatches=1
+[DeviceWatch] Miss probes 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — 5×60s → is_active=0
+[2026-07-18 18:23:28] POST /api/gateway/heartbeat
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[DeviceWatch] Armed 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — miss check in 300s
+[PresenceV25] HB_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[2026-07-18 18:28:25] POST /api/gateway/heartbeat
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[DeviceWatch] Armed 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — miss check in 300s
+[PresenceV25] HB_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[2026-07-18 18:28:55] POST /api/payment-sms-ingest/bulk
+[PresenceV25] SMS_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[CRON] device sweep checked=1 armed=1
+[DeviceWatch] Miss probes 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — 5×60s → is_active=0
+[DeviceWatch] 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f probe 1/5 — ONLINE again
+[DeviceWatch] Miss probes 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — 5×60s → is_active=0
+[DeviceWatch] 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f probe 1/5 — ONLINE again
+[DeviceWatch] Miss probes 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — 5×60s → is_active=0
+[DeviceWatch] 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f probe 1/5 — ONLINE again
+[DeviceWatch] Miss probes 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — 5×60s → is_active=0
+[DeviceWatch] 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f probe 1/5 — ONLINE again
+[DeviceWatch] Miss probes 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — 5×60s → is_active=0
+[DeviceWatch] 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f probe 1/5 — ONLINE again
+[DeviceWatch] Miss probes 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — 5×60s → is_active=0
+[2026-07-18 18:39:17] POST /api/gateway/heartbeat
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[DeviceWatch] Armed 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — miss check in 300s
+[PresenceV25] HB_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[2026-07-18 18:43:57] POST /api/gateway/heartbeat
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[DeviceWatch] Armed 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — miss check in 300s
+[PresenceV25] HB_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[2026-07-18 18:44:29] POST /api/payment-sms-ingest/bulk
+[PresenceV25] SMS_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[CRON] device sweep checked=1 armed=1
+[DeviceWatch] Miss probes 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — 5×60s → is_active=0
+[DeviceWatch] 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f probe 1/5 — ONLINE again
+[DeviceWatch] Miss probes 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — 5×60s → is_active=0
+[DeviceWatch] 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f probe 1/5 — ONLINE again
+[DeviceWatch] Miss probes 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — 5×60s → is_active=0
+[DeviceWatch] 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f probe 1/5 — ONLINE again
+[DeviceWatch] Miss probes 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — 5×60s → is_active=0
+[DeviceWatch] 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f probe 1/5 — ONLINE again
+[DeviceWatch] Miss probes 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — 5×60s → is_active=0
+[2026-07-18 18:54:11] POST /api/gateway/heartbeat
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[DeviceWatch] Armed 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — miss check in 300s
+[PresenceV25] HB_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[2026-07-18 18:54:35] POST /api/payment-sms-ingest/bulk
+[PresenceV25] SMS_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[2026-07-18 18:58:14] POST /api/payment-sms-ingest/bulk
+[PresenceV25] SMS_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[2026-07-18 18:59:11] POST /api/payment-sms-ingest/bulk
+[PresenceV25] SMS_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[2026-07-18 19:04:53] POST /api/gateway/heartbeat
+[DeviceWatch] Armed 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — miss check in 300s
+[PresenceV25] HB_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[2026-07-18 19:09:33] POST /api/gateway/heartbeat
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[DeviceWatch] Armed 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — miss check in 300s
+[PresenceV25] HB_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[2026-07-18 19:10:28] POST /api/payment-sms-ingest/bulk
+[PresenceV25] SMS_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[CRON] device sweep checked=1 armed=1
+[DeviceWatch] Miss probes 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — 5×60s → is_active=0
+[DeviceWatch] 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f probe 1/5 — ONLINE again
+[DeviceWatch] Miss probes 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — 5×60s → is_active=0
+[2026-07-18 19:17:00] POST /api/payment-sms-ingest/bulk
+[PresenceV25] SMS_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[PresenceV25] METRICS {"alive_calls":16,"offline_calls":0,"heartbeat_success":9,"boot_success":0,"network_restored_success":0,"sms_success":7,"login_success":0,"probe_started":0,"probe_cancelled":0,"probe_resumed":0,"lock_skipped":0,"state_flip_online":0,"state_flip_offline":0,"false_offline_count":0,"recovery_samples":0,"avg_recovery_ms":0} dryRun=false
+[PresenceV25] SHADOW_MISMATCH user=26 device=548ed64a6836… legacy=0 v2=1 package=gateway
+[PresenceV25] SHADOW_SUMMARY compared=3 mismatches=1
+[CRON] device sweep checked=1 armed=1
+[DeviceWatch] Miss probes 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — 5×60s → is_active=0
+[2026-07-18 19:23:48] POST /api/gateway/heartbeat
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[DeviceWatch] Armed 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — miss check in 300s
+[PresenceV25] HB_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[2026-07-18 19:28:20] POST /api/gateway/heartbeat
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[DeviceWatch] Armed 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — miss check in 300s
+[PresenceV25] HB_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[2026-07-18 19:32:54] POST /api/gateway/heartbeat
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[DeviceWatch] Armed 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — miss check in 300s
+[PresenceV25] HB_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[2026-07-18 19:37:25] POST /api/gateway/heartbeat
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[DeviceWatch] Armed 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — miss check in 300s
+[PresenceV25] HB_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway
+[2026-07-18 19:41:59] POST /api/gateway/heartbeat
+[DeviceWatch] Stopped watch for 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f
+[DeviceWatch] Armed 26:de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f (gateway) — miss check in 300s
+[PresenceV25] HB_SUCCESS user=26 device=de3b2a6c735cb5a006bd21122b297a821391a448758bc68974fa9dbe9f62df8f package=gateway

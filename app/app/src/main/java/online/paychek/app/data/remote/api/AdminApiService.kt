@@ -36,6 +36,12 @@ interface AdminApiService {
         @Body request: SmsTemplateDto
     ): Response<AdminGenericResponse>
 
+    @POST("admin/sms-templates/reorder")
+    suspend fun reorderSmsTemplates(
+        @Header("Authorization") token: String,
+        @Body request: SmsTemplateReorderRequest
+    ): Response<AdminGenericResponse>
+
     @DELETE("admin/sms-templates/{id}")
     suspend fun deleteSmsTemplate(
         @Header("Authorization") token: String,
@@ -202,4 +208,15 @@ interface AdminApiService {
         @Header("Authorization") token: String,
         @Body request: UploadImageRequest
     ): Response<UploadImageResponse>
+
+    @GET("admin/official-website")
+    suspend fun getOfficialWebsiteCms(
+        @Header("Authorization") token: String
+    ): Response<OfficialWebsiteCmsResponse>
+
+    @PUT("admin/official-website")
+    suspend fun saveOfficialWebsiteCms(
+        @Header("Authorization") token: String,
+        @Body request: SaveOfficialWebsiteCmsRequest
+    ): Response<OfficialWebsiteCmsResponse>
 }

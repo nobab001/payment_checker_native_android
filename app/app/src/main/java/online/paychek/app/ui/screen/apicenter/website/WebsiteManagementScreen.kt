@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.toClipEntry
@@ -31,6 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import online.paychek.app.data.remote.dto.WebsiteDto
+import online.paychek.app.ui.common.RemoteImage
 
 private val AccentCyan = Color(0xFF22D3EE)
 private val AccentGreen = Color(0xFF10B981)
@@ -130,7 +132,7 @@ fun WebsiteManagementScreen(
         AddWebsiteWizard(
             isCreating = state.isCreating,
             onDismiss = { showWizard = false },
-            onCreate = { domain, name -> viewModel.createWebsite(domain, name) }
+            onCreate = { domain, name, purpose -> viewModel.createWebsite(domain, name, purpose) }
         )
     }
 
@@ -194,7 +196,15 @@ internal fun WebsiteCard(
             Box(
                 Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(AccentCyan.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
-            ) { Icon(Icons.Default.Storefront, null, tint = AccentCyan) }
+            ) {
+                RemoteImage(
+                    url = site.logoUrl,
+                    contentDescription = site.siteName.ifBlank { site.domain ?: "Website" },
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)),
+                    contentScale = ContentScale.Crop,
+                    fallback = { Icon(Icons.Default.Storefront, null, tint = AccentCyan) }
+                )
+            }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
@@ -210,6 +220,16 @@ internal fun WebsiteCard(
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     StatusChip(if (site.isActive) "সচল" else "বন্ধ", if (site.isActive) AccentGreen else Color(0xFFF44336))
+                    Spacer(Modifier.width(6.dp))
+                    StatusChip(
+                        when {
+                            !site.purposeSelected && !site.purposeLocked -> "Purpose?"
+                            site.websitePurpose == "payment" -> "Pay"
+                            site.websitePurpose == "both" -> "Both"
+                            else -> "Add Balance"
+                        },
+                        AccentAmber
+                    )
                     Spacer(Modifier.width(6.dp))
                     StatusChip(if (site.checkoutMode == "merchant_vibe") "Vibe Mode" else "Transaction", AccentCyan)
                 }
@@ -348,44 +368,110 @@ internal fun DeleteWebsitePinDialog(
 internal fun AddWebsiteWizard(
     isCreating: Boolean,
     onDismiss: () -> Unit,
-    onCreate: (String, String?) -> Unit
+    onCreate: (String, String?, String) -> Unit
 ) {
     var domain by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
+    var purpose by remember { mutableStateOf("add_balance") }
+    var step by remember { mutableIntStateOf(0) }
+    var confirmLock by remember { mutableStateOf(false) }
     val card = MaterialTheme.colorScheme.surface
 
     Dialog(onDismissRequest = { if (!isCreating) onDismiss() }) {
         Surface(shape = RoundedCornerShape(24.dp), color = card) {
             Column(Modifier.padding(22.dp)) {
-                Text("নতুন ওয়েবসাইট যুক্ত করুন", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.onBackground)
+                Text(
+                    if (step == 0) "নতুন ওয়েবসাইট যুক্ত করুন" else "উদ্দেশ্য সিলেক্ট ও লক",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
                 Spacer(Modifier.height(4.dp))
-                Text("শুধু ডোমেইন দিন — বাকি সব পরে এডিট করা যাবে।", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text(
+                    if (step == 0) "ডোমেইন দিন — পরের ধাপে Purpose লক হবে।"
+                    else "একবার Confirm করলে Purpose আর চেঞ্জ করা যাবে না (শুধু সুপার অ্যাডমিন আনলক করতে পারে)।",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp
+                )
                 Spacer(Modifier.height(18.dp))
-                OutlinedTextField(
-                    value = domain, onValueChange = { domain = it },
-                    label = { Text("ডোমেইন (আবশ্যক)") },
-                    placeholder = { Text("example.com") },
-                    singleLine = true, enabled = !isCreating,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = name, onValueChange = { name = it },
-                    label = { Text("ওয়েবসাইট নাম (ঐচ্ছিক)") },
-                    singleLine = true, enabled = !isCreating,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(20.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismiss, enabled = !isCreating) { Text("বাতিল") }
-                    Spacer(Modifier.width(8.dp))
-                    Button(
-                        onClick = { onCreate(domain, name) },
-                        enabled = !isCreating && domain.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentCyan, contentColor = Color(0xFF0B0E14))
+
+                if (step == 0) {
+                    OutlinedTextField(
+                        value = domain, onValueChange = { domain = it },
+                        label = { Text("ডোমেইন (আবশ্যক)") },
+                        placeholder = { Text("example.com") },
+                        singleLine = true, enabled = !isCreating,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = name, onValueChange = { name = it },
+                        label = { Text("ওয়েবসাইট নাম (ঐচ্ছিক)") },
+                        singleLine = true, enabled = !isCreating,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = onDismiss, enabled = !isCreating) { Text("বাতিল") }
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = { step = 1 },
+                            enabled = !isCreating && domain.isNotBlank(),
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentCyan, contentColor = Color(0xFF0B0E14))
+                        ) { Text("পরবর্তী", fontWeight = FontWeight.Bold) }
+                    }
+                } else {
+                    listOf(
+                        "add_balance" to "Add Balance",
+                        "payment" to "Pay",
+                        "both" to "Both"
+                    ).forEach { (key, label) ->
+                        val selected = purpose == key
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (selected) AccentCyan.copy(alpha = 0.15f) else Color.Transparent)
+                                .clickable(enabled = !isCreating) { purpose = key }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = selected, onClick = { purpose = key }, enabled = !isCreating)
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(label, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
+                                Text(
+                                    when (key) {
+                                        "add_balance" -> "ওয়ালেট টপ-আপ — কাস্টমার চেকআউট অ্যামাউন্টই পাঠাবে"
+                                        "payment" -> "অর্ডার কমপ্লিট — expectedPayable পরিশোধ"
+                                        else -> "দুই বাটন — purpose=add_balance / payment"
+                                    },
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().clickable { confirmLock = !confirmLock },
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (isCreating) CircularProgressIndicator(Modifier.size(18.dp), color = Color(0xFF0B0E14), strokeWidth = 2.dp)
-                        else Text("তৈরি করুন", fontWeight = FontWeight.Bold)
+                        Checkbox(checked = confirmLock, onCheckedChange = { confirmLock = it }, enabled = !isCreating)
+                        Text("লক করে Confirm করছি — পরে চেঞ্জ করা যাবে না", fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { step = 0 }, enabled = !isCreating) { Text("পেছনে") }
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = { onCreate(domain, name.ifBlank { null }, purpose) },
+                            enabled = !isCreating && confirmLock,
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentCyan, contentColor = Color(0xFF0B0E14))
+                        ) {
+                            if (isCreating) CircularProgressIndicator(Modifier.size(18.dp), color = Color(0xFF0B0E14), strokeWidth = 2.dp)
+                            else Text("লক করে তৈরি", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }

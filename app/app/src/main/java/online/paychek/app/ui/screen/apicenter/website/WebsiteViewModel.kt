@@ -11,17 +11,18 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import online.paychek.app.data.remote.dto.ActiveNumberDto
+import online.paychek.app.data.remote.dto.CampaignDto
 import online.paychek.app.data.remote.dto.CheckoutTabDto
 import online.paychek.app.data.remote.dto.CommissionDto
+import online.paychek.app.data.remote.dto.IncentiveTemplateDto
 import online.paychek.app.data.remote.dto.CreateMerchantAccountRequest
 import online.paychek.app.data.remote.dto.MerchantAccountDto
 import online.paychek.app.data.remote.dto.NumberOrderItem
-import online.paychek.app.data.remote.dto.OfficialGatewayDto
 import online.paychek.app.data.remote.dto.ProviderBrandingDto
 import online.paychek.app.data.remote.dto.UpdateMerchantAccountRequest
 import online.paychek.app.data.remote.dto.UpdateWebsiteRequest
+import online.paychek.app.data.remote.dto.UpsertCampaignRequest
 import online.paychek.app.data.remote.dto.UpsertCommissionRequest
-import online.paychek.app.data.remote.dto.UpsertOfficialGatewayRequest
 import online.paychek.app.data.remote.dto.WebsiteDto
 import online.paychek.app.data.repository.WebsiteRepository
 
@@ -46,11 +47,11 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
         val selected: WebsiteDto? = null,
         val commissions: List<CommissionDto> = emptyList(),
         val commissionEnabled: Boolean = false,
+        val campaigns: List<CampaignDto> = emptyList(),
+        val incentiveTemplates: List<IncentiveTemplateDto> = emptyList(),
         val numberOrder: List<NumberOrderItem> = emptyList(),
         // Auto-synced active SIM numbers merged with checkout order/enable state
         val checkoutNumbers: List<ActiveNumberDto> = emptyList(),
-        // Official (redirect-based) payment gateways configured for this website
-        val officialGateways: List<OfficialGatewayDto> = emptyList(),
         // Live merchant accounts (API credentials — multi-account per provider)
         val merchantAccounts: List<MerchantAccountDto> = emptyList(),
         val checkoutTabs: Map<String, CheckoutTabDto> = emptyMap(),
@@ -78,15 +79,19 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Website Add Wizard — only domain (required) + optional name. */
-    fun createWebsite(domain: String, name: String?) {
+    /** Website Add Wizard — domain + name + purpose (locks on create). */
+    fun createWebsite(domain: String, name: String?, purpose: String) {
         if (domain.isBlank()) {
             _state.update { it.copy(error = "ডোমেইন লিখুন।") }
             return
         }
+        if (purpose !in listOf("add_balance", "payment", "both")) {
+            _state.update { it.copy(error = "ওয়েবসাইটের উদ্দেশ্য সিলেক্ট করুন।") }
+            return
+        }
         _state.update { it.copy(isCreating = true, error = null) }
         viewModelScope.launch {
-            repo.createWebsite(domain.trim(), name?.trim()?.ifBlank { null })
+            repo.createWebsite(domain.trim(), name?.trim()?.ifBlank { null }, purpose)
                 .onSuccess { resp ->
                     _state.update {
                         it.copy(
@@ -114,19 +119,26 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
                             commissions = detail.commissions,
                             numberOrder = detail.numberOrder,
                             checkoutNumbers = detail.activeNumbers,
+                            incentiveTemplates = detail.incentiveTemplates,
                             checkoutTabs = detail.checkoutTabs ?: emptyMap(),
                             providerBranding = detail.providerBranding ?: emptyMap()
                         )
                     }
                     // Commission menu lock state comes from the commissions endpoint too
                     repo.listCommissions(id).onSuccess { cl ->
-                        _state.update { it.copy(commissionEnabled = cl.commissionEnabled, commissions = cl.commissions) }
-                    }
-                    repo.listOfficialGateways(id).onSuccess { gws ->
-                        _state.update { it.copy(officialGateways = gws) }
+                        _state.update {
+                            it.copy(
+                                commissionEnabled = cl.commissionEnabled,
+                                commissions = cl.commissions,
+                                incentiveTemplates = cl.incentiveTemplates.ifEmpty { it.incentiveTemplates }
+                            )
+                        }
                     }
                     repo.listMerchantAccounts(id).onSuccess { accts ->
                         _state.update { it.copy(merchantAccounts = accts) }
+                    }
+                    repo.listCampaigns(id).onSuccess { camps ->
+                        _state.update { it.copy(campaigns = camps) }
                     }
                 }
                 .onFailure { e -> _state.update { it.copy(isLoading = false, error = e.message) } }
@@ -333,7 +345,13 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
                 .onSuccess {
                     _state.update { it.copy(isSaving = false, infoMessage = "Commission সংরক্ষণ হয়েছে।") }
                     repo.listCommissions(id).onSuccess { cl ->
-                        _state.update { s -> s.copy(commissionEnabled = cl.commissionEnabled, commissions = cl.commissions) }
+                        _state.update { s ->
+                            s.copy(
+                                commissionEnabled = cl.commissionEnabled,
+                                commissions = cl.commissions,
+                                incentiveTemplates = cl.incentiveTemplates.ifEmpty { s.incentiveTemplates }
+                            )
+                        }
                     }
                 }
                 .onFailure { e -> _state.update { it.copy(isSaving = false, error = e.message) } }
@@ -345,43 +363,41 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
             repo.deleteCommission(id, commissionId)
                 .onSuccess {
                     repo.listCommissions(id).onSuccess { cl ->
-                        _state.update { s -> s.copy(commissionEnabled = cl.commissionEnabled, commissions = cl.commissions) }
+                        _state.update { s ->
+                            s.copy(
+                                commissionEnabled = cl.commissionEnabled,
+                                commissions = cl.commissions,
+                                incentiveTemplates = cl.incentiveTemplates.ifEmpty { s.incentiveTemplates }
+                            )
+                        }
                     }
                 }
                 .onFailure { e -> _state.update { it.copy(error = e.message) } }
         }
     }
 
-    // ── Official (redirect-based) payment gateways (Phase 6) ──────────────────
-    fun upsertOfficialGateway(id: Int, provider: String, redirectUrl: String, displayName: String?) {
-        if (redirectUrl.isBlank()) {
-            _state.update { it.copy(error = "Redirect URL লিখুন।") }
-            return
-        }
+    // ── Campaign / Extra incentives (amount-range) ────────────────────────────
+    fun upsertCampaign(id: Int, request: UpsertCampaignRequest) {
         _state.update { it.copy(isSaving = true) }
         viewModelScope.launch {
-            repo.upsertOfficialGateway(
-                id,
-                UpsertOfficialGatewayRequest(
-                    provider = provider,
-                    displayName = displayName?.ifBlank { null },
-                    redirectUrlTemplate = redirectUrl.trim(),
-                    isActive = true
-                )
-            )
+            repo.upsertCampaign(id, request)
                 .onSuccess {
-                    _state.update { it.copy(isSaving = false, infoMessage = "Official gateway সংরক্ষণ হয়েছে।") }
-                    repo.listOfficialGateways(id).onSuccess { gws -> _state.update { s -> s.copy(officialGateways = gws) } }
+                    _state.update { it.copy(isSaving = false, infoMessage = "ক্যাম্পেইন সংরক্ষণ হয়েছে।") }
+                    repo.listCampaigns(id).onSuccess { camps ->
+                        _state.update { s -> s.copy(campaigns = camps) }
+                    }
                 }
                 .onFailure { e -> _state.update { it.copy(isSaving = false, error = e.message) } }
         }
     }
 
-    fun deleteOfficialGateway(id: Int, gatewayId: Int) {
+    fun deleteCampaign(id: Int, campaignId: Int) {
         viewModelScope.launch {
-            repo.deleteOfficialGateway(id, gatewayId)
+            repo.deleteCampaign(id, campaignId)
                 .onSuccess {
-                    repo.listOfficialGateways(id).onSuccess { gws -> _state.update { s -> s.copy(officialGateways = gws) } }
+                    repo.listCampaigns(id).onSuccess { camps ->
+                        _state.update { s -> s.copy(campaigns = camps) }
+                    }
                 }
                 .onFailure { e -> _state.update { it.copy(error = e.message) } }
         }

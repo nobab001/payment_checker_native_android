@@ -4,6 +4,7 @@ import { renderNumberList } from '../renderers/shared.js';
 import { fadeIn, fadeOut } from './animation-controller.js';
 import { trapFocus } from './focus-trap.js';
 import { PROVIDER_TYPE } from '../provider-constants.js';
+import { esc } from '../utils.js';
 
 let overlay = null;
 let sheet = null;
@@ -61,7 +62,11 @@ function buildSheetHtml(provider, branding) {
   const numbers = provider.type === PROVIDER_TYPE.SIM
     ? `<div class="checkout-sheet-numbers">${renderNumberList(provider, { branding })}</div>`
     : '';
-  return `${header}${instruction}${numbers}`;
+  const hint = (provider.incentive?.payHint || '').trim();
+  const payBanner = hint
+    ? `<div class="checkout-pay-hint" role="status" style="margin:10px 0 4px;padding:10px 12px;border-radius:10px;background:#f1f5f9;color:var(--muted,#64748b);font-size:13px;font-weight:700;line-height:1.35;">${esc(hint)}</div>`
+    : '';
+  return `${header}${payBanner}${instruction}${numbers}`;
 }
 
 function close() {
@@ -94,6 +99,15 @@ export const BottomSheetController = {
     previousFocus = document.activeElement;
     const body = overlay.querySelector('.checkout-sheet-body');
     body.innerHTML = buildSheetHtml(provider, branding);
+    if (provider?.id != null) {
+      sheet.setAttribute('data-provider-id', String(provider.id));
+      const hint = (provider.incentive?.payHint || '').trim();
+      if (hint) sheet.setAttribute('data-pay-hint', hint);
+      else sheet.removeAttribute('data-pay-hint');
+      document.dispatchEvent(new CustomEvent('checkout:provider-focus', {
+        detail: { id: String(provider.id) },
+      }));
+    }
     $('sheet-mode-tabs')?.classList.add('hidden');
     $('sheet-manual-panel')?.classList.add('hidden');
     $('sheet-wait-footer')?.classList.add('hidden');

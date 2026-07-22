@@ -107,6 +107,16 @@ object NumberHeartbeatEngine {
     }
 
     /**
+     * Suspending one-shot heartbeat — for callers that must keep a wakelock alive
+     * until the POST finishes (AlarmManager BroadcastReceiver.goAsync, CoroutineWorker).
+     * The coroutine `delay` loop is suspended under Android Doze, so these Doze-safe
+     * triggers are what actually keep a backgrounded device ONLINE.
+     */
+    suspend fun sendHeartbeatBlocking(context: Context) {
+        sendHeartbeat(context.applicationContext, smsActive = PrefsHelper.isSmsServiceActive(context))
+    }
+
+    /**
      * Internet restored (offline → online only). Debounced to avoid heartbeat storms.
      * WiFi ↔ mobile handoff does not trigger this — caller must gate on offline→online.
      */

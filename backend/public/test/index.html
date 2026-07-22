@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="bn">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -35,78 +35,127 @@
   </header>
 
   <div class="test-shell container">
-    <div class="test-hero">
-      <h1>Interactive Test Experience</h1>
-      <p>No login. No account. Edit checkout settings temporarily, then open the real PayCheck checkout. Merchant history, balance, and live config stay untouched.</p>
-      <div class="notice" id="noticeBox">
-        <strong>This is a PayCheck Test Environment.</strong>
-        You may send between ৳10 and ৳100.<br />
-        Your payment will be automatically refunded within 24 hours.<br />
-        Please do not send more than ৳100.
+    <!-- LOGIN GATE -->
+    <section class="login-gate" id="loginGate">
+      <div class="login-card">
+        <div class="login-badge">Sandbox Demo</div>
+        <h1>ডেমো অ্যাকাউন্ট</h1>
+        <p>লগইন ছাড়াই এক ক্লিকে ব্যক্তিগত টেস্ট অ্যাকাউন্ট তৈরি হয়। আসল মার্চেন্ট অ্যাকাউন্টে কোনো পরিবর্তন হয় না। ২৪ ঘণ্টা পর অটো ডিলিট।</p>
+        <div class="notice" id="noticeBox">
+          <strong>PayCheck Test Environment</strong>
+          ৳10–৳100 · ২৪ ঘণ্টায় রিফান্ড · ডেমো ডেটা স্বয়ংক্রিয় মুছে যাবে
+        </div>
+        <div class="login-actions" id="loginActions">
+          <button class="btn btn-primary btn-lg" type="button" id="startDemoBtn">ডেমো অ্যাকাউন্ট দিয়ে শুরু</button>
+          <button class="btn btn-ghost btn-lg hidden" type="button" id="resumeDemoBtn">আগের অ্যাকাউন্টে চালিয়ে যান</button>
+          <button class="btn btn-ghost btn-lg hidden" type="button" id="freshDemoBtn">নতুন অ্যাকাউন্ট তৈরি</button>
+        </div>
+        <p class="login-status" id="loginStatus">লোড হচ্ছে…</p>
       </div>
-      <div style="margin-top:12px">
-        <span class="status-pill" id="sessionPill">Starting session…</span>
-      </div>
-    </div>
+    </section>
 
-    <div class="tabs" role="tablist">
-      <button class="tab-btn active" data-tab="edit" type="button">Edit</button>
-      <button class="tab-btn" data-tab="test" type="button">Test</button>
-    </div>
-
-    <div class="workspace">
-      <aside class="panel" id="editPanel">
-        <h2>Checkout editor</h2>
-        <p style="color:var(--muted);font-size:0.85rem;margin:0 0 16px">Changes apply to this temporary demo session only. They expire automatically.</p>
-
-        <div class="field">
-          <label>Checkout mode</label>
-          <div class="seg" id="modeSeg">
-            <button type="button" data-mode="transaction">Transaction</button>
-            <button type="button" data-mode="merchant_vibe">Vibe</button>
-            <button type="button" data-mode="hybrid">Hybrid</button>
+    <!-- WORKSPACE (after auth) -->
+    <div id="workspaceRoot" class="hidden">
+      <div class="test-hero">
+        <div class="account-bar">
+          <div>
+            <h1>Interactive Test</h1>
+            <p class="account-meta">
+              <strong id="accountName">Demo</strong>
+              <span class="dot">·</span>
+              বাকি <span id="accountCountdown">--:--:--</span>
+            </p>
+          </div>
+          <div class="account-actions">
+            <span class="status-pill" id="sessionPill">Ready</span>
+            <button class="btn btn-ghost btn-sm" type="button" id="newAccountBtn">নতুন অ্যাকাউন্ট</button>
+            <button class="btn btn-ghost btn-sm" type="button" id="logoutBtn">লগআউট</button>
           </div>
         </div>
-
-        <div class="field">
-          <label>Design</label>
-          <div class="seg" id="designSeg">
-            <button type="button" data-design="design-1">Design 1</button>
-            <button type="button" data-design="design-2">Design 2</button>
-            <button type="button" data-design="design-3">Design 3</button>
-          </div>
+        <div class="notice compact" id="workspaceNotice">
+          সেটিং শুধু এই ডেমো অ্যাকাউন্টে সেভ হয়। Host মার্চেন্ট রিড‑ওনলি।
         </div>
+      </div>
 
-        <div class="field">
-          <label>Tabs</label>
-          <div class="toggle-list" id="tabsList"></div>
-        </div>
+      <div class="workspace">
+        <aside class="panel" id="editPanel">
+          <h2>সেটিংস</h2>
+          <p class="panel-hint">পরিবর্তন করলে নিচে সেভ বাটন আসবে।</p>
 
-        <div class="field">
-          <label>Numbers / providers</label>
-          <div class="toggle-list" id="gatewayList"></div>
-        </div>
-
-        <div class="pay-bar">
           <div class="field">
-            <label>Preview amount (৳)</label>
-            <input type="number" id="amountInput" min="10" max="100" step="1" value="10" />
+            <label>মোড</label>
+            <div class="seg seg-2" id="surfaceSeg">
+              <button type="button" data-surface="hybrid" class="active">হাইব্রিড</button>
+              <button type="button" data-surface="live">লাইভ</button>
+            </div>
           </div>
-          <button class="btn btn-ghost" type="button" id="refreshPreviewBtn">Refresh preview</button>
-        </div>
-      </aside>
 
-      <section class="preview-frame" id="previewPanel">
-        <div class="preview-toolbar">
-          <span id="previewLabel">Live checkout preview</span>
-          <div style="display:flex;gap:8px;align-items:center">
-            <button class="btn btn-primary" type="button" id="startPayBtn" style="padding:8px 12px;font-size:0.85rem">
-              Start real payment
-            </button>
+          <div id="hybridBlock">
+            <div class="field">
+              <label>চেকআউট টাইপ</label>
+              <div class="seg seg-2" id="hybridTypeSeg">
+                <button type="button" data-hybrid-type="transaction" class="active">ট্রানজেকশন</button>
+                <button type="button" data-hybrid-type="merchant_vibe">ভাইব</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>ডিজাইন</label>
+              <div class="seg" id="designSeg">
+                <button type="button" data-design="design-1" class="active">ডিজাইন ১</button>
+                <button type="button" data-design="design-2">ডিজাইন ২</button>
+                <button type="button" data-design="design-3">ডিজাইন ৩</button>
+              </div>
+            </div>
           </div>
-        </div>
-        <iframe id="checkoutFrame" title="PayCheck Checkout" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation allow-top-navigation-by-user-activation"></iframe>
-      </section>
+
+          <div id="liveBlock" class="hidden">
+            <div class="field">
+              <label>অ্যাটাচড লাইভ পেমেন্ট</label>
+              <div class="live-cards" id="liveCards"></div>
+            </div>
+          </div>
+
+          <div class="save-row hidden" id="saveRow">
+            <button class="btn btn-primary" type="button" id="saveBtn">সেভ</button>
+            <span class="save-hint" id="saveHint">আনসেভড পরিবর্তন আছে</span>
+          </div>
+        </aside>
+
+        <section class="action-panel" id="actionPanel">
+          <h2>পেমেন্ট অ্যাকশন</h2>
+          <p class="panel-hint">ডিফল্ট ৳10 · সর্বনিম্ন ৳10 · সর্বোচ্চ ৳100</p>
+
+          <div class="action-grid">
+            <article class="action-card">
+              <div class="action-card-top">
+                <span class="action-icon" aria-hidden="true"><i data-lucide="wallet"></i></span>
+                <h3>পেয়ে নাও</h3>
+                <p>টেস্ট চেকআউট খুলে পেমেন্ট রিসিভ করুন</p>
+              </div>
+              <div class="amount-edit">
+                <label for="payAmount">পরিমাণ (৳)</label>
+                <input type="number" id="payAmount" min="10" max="100" step="1" value="10" />
+              </div>
+              <button class="btn btn-action" type="button" id="payNowBtn">পেয়ে নাও</button>
+            </article>
+
+            <article class="action-card">
+              <div class="action-card-top">
+                <span class="action-icon" aria-hidden="true"><i data-lucide="plus-circle"></i></span>
+                <h3>এড ব্যালেন্স</h3>
+                <p>টেস্ট ব্যালেন্স টপ‑আপ পেমেন্ট চালান</p>
+              </div>
+              <div class="amount-edit">
+                <label for="balanceAmount">পরিমাণ (৳)</label>
+                <input type="number" id="balanceAmount" min="10" max="100" step="1" value="10" />
+              </div>
+              <button class="btn btn-action btn-action-alt" type="button" id="addBalanceBtn">এড ব্যালেন্স</button>
+            </article>
+          </div>
+
+          <div class="pay-history" id="payHistory"></div>
+        </section>
+      </div>
     </div>
   </div>
 

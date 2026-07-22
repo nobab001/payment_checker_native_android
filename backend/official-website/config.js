@@ -1,7 +1,6 @@
 /**
  * Official Website + Interactive Test Experience config.
- * Uses a real merchant gateway_layouts row (API key/secret from env).
- * Visitors never write to that merchant account.
+ * Host merchant credentials come from env (read-only for visitors).
  */
 
 function env(name, fallback = null) {
@@ -10,8 +9,12 @@ function env(name, fallback = null) {
   return fallback;
 }
 
+function isLoopbackHost(host) {
+  const h = String(host || '').toLowerCase();
+  return /^127\.0\.0\.1(?::|$)/.test(h) || /^localhost(?::|$)/.test(h);
+}
+
 const config = {
-  /** Prefer new names; accept legacy DEMO_MERCHANT_* during migration */
   paychekApiKey:
     env('OFFICIAL_TEST_PAYCHEK_API_KEY') || env('DEMO_MERCHANT_PAYCHEK_API_KEY'),
   paychekApiSecret:
@@ -20,9 +23,19 @@ const config = {
     env('OFFICIAL_TEST_PUBLIC_URL') || env('DEMO_MERCHANT_PUBLIC_URL'),
   paychekApiBaseUrl: env('OFFICIAL_TEST_PAYCHEK_API_URL') || env('DEMO_MERCHANT_PAYCHEK_API_URL'),
 
+  hostWebsiteId: (() => {
+    const n = parseInt(env('OFFICIAL_TEST_HOST_WEBSITE_ID', ''), 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  })(),
+
   minAmount: 10,
   maxAmount: 100,
+
+  demoTtlMs: Number(env('OFFICIAL_TEST_DEMO_TTL_MS', String(24 * 60 * 60 * 1000))),
   sessionTtlMs: Number(env('OFFICIAL_TEST_SESSION_TTL_MS', String(2 * 60 * 60 * 1000))),
+
+  demoMaxAccountsPerHour: Number(env('OFFICIAL_TEST_MAX_ACCOUNTS_PER_HOUR', '3')),
+  demoMaxAccountsPerDay: Number(env('OFFICIAL_TEST_MAX_ACCOUNTS_PER_DAY', '20')),
 
   isConfigured() {
     return Boolean(this.paychekApiKey && this.paychekApiSecret);
@@ -37,8 +50,12 @@ const config = {
   resolveBrowserBaseUrl(req) {
     const proto = req?.headers?.['x-forwarded-proto'] || req?.protocol || 'http';
     const host = req?.headers?.['x-forwarded-host'] || req?.get?.('host');
-    if (host) return `${proto}://${host}`.replace(/\/$/, '');
+    // Prefer LAN/public host — never send phones to 127.0.0.1
+    if (host && !isLoopbackHost(host)) {
+      return `${proto}://${host}`.replace(/\/$/, '');
+    }
     if (this.publicBaseUrl) return this.publicBaseUrl.replace(/\/$/, '');
+    if (host) return `${proto}://${host}`.replace(/\/$/, '');
     const port = Number(process.env.PORT) || 3000;
     return `http://127.0.0.1:${port}`;
   },

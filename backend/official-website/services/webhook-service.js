@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const config = require('../config');
-const sessionStore = require('../services/session-store');
+const demoVisitor = require('./demo-visitor-service');
 
 function verifySignature(rawBody, signature) {
   if (!config.paychekApiSecret || !signature) return false;
@@ -19,8 +19,8 @@ function verifySignature(rawBody, signature) {
 }
 
 /**
- * Webhook only records status on the temporary demo session.
- * Does not expose merchant history/wallet to visitors.
+ * Webhook only records status on the sandbox demo visitor.
+ * Does not touch real merchant history/wallet.
  */
 async function handlePaychekWebhook(rawBody, signature) {
   if (!verifySignature(rawBody, signature)) {
@@ -42,13 +42,13 @@ async function handlePaychekWebhook(rawBody, signature) {
     null;
 
   if (demoSessionId) {
-    sessionStore.recordPayment(demoSessionId, {
+    await demoVisitor.recordPayment(demoSessionId, {
       status: payload.status || payload.paymentStatus || 'success',
-      amount: payload.amount,
-      trxId: payload.trxId || payload.trx_id,
+      amount: payload.amount || 0,
+      purpose: payload?.meta?.purpose || 'pay',
       orderId: payload.orderId,
-      at: Date.now(),
-    });
+      sessionToken: payload.sessionToken || null,
+    }).catch(() => null);
   }
 
   return { success: true, recorded: Boolean(demoSessionId) };

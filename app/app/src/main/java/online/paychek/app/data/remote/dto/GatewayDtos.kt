@@ -206,6 +206,7 @@ data class ApprovalStatusResponse(
     @SerializedName("isApproved") val isApproved: Boolean,
     @SerializedName("deviceRole") val deviceRole: String?,
     @SerializedName("status") val status: String?,
+    @SerializedName("setupCompleted") val setupCompleted: Boolean = false,
     @SerializedName("deviceSpecificPin") val deviceSpecificPin: String? = null
 )
 
@@ -221,6 +222,8 @@ data class CustomSenderSuggestionDto(
     @SerializedName("id") val id: Int,
     @SerializedName("template_name") val templateName: String,
     @SerializedName("sender_id") val senderId: String,
+    @SerializedName("sender_number") val senderNumber: String? = null,
+    @SerializedName("category") val category: String? = null,
     @SerializedName("is_admin_archive") val isAdminArchive: Boolean? = true
 )
 

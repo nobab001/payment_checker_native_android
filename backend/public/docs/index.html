@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PayChek Developer Docs — A to Z Integration Guide</title>
+  <meta name="description" content="PayChek merchant integration: lifecycle, HMAC pay/init, status query, webhooks, Add Balance vs Payment, testing, and go-live checklist." />
+  <script>
+    (function () {
+      try {
+        var k = 'paychek_theme';
+        var s = localStorage.getItem(k);
+        var t = s === 'light' || s === 'dark'
+          ? s
+          : (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/official.css" />
+  <link rel="stylesheet" href="/css/docs.css" />
+  <script src="https://unpkg.com/lucide@0.468.0" defer></script>
+</head>
+<body>
+  <div class="bg-mesh" aria-hidden="true"></div>
+
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark"><i data-lucide="shield-check"></i></span>
+        PayCheck
+      </a>
+      <nav class="nav-links" id="navLinks">
+        <a href="/">Home</a>
+        <a href="/docs" class="active-docs">Documentation</a>
+        <a class="nav-test" href="/test">Test</a>
+        <a href="/#contact">Contact</a>
+      </nav>
+      <div class="nav-actions">
+        <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle theme"><i data-lucide="sun"></i></button>
+        <button class="nav-toggle" id="navToggle" aria-label="Menu"><i data-lucide="menu"></i></button>
+      </div>
+    </div>
+  </header>
+
+  <div class="docs-shell">
+    <aside class="docs-side">
+      <h2>Developer Docs</h2>
+      <p class="hint">Stripe / SSLCommerz স্টাইলে পূর্ণ ইন্টিগ্রেশন গাইড — A → Z।</p>
+
+      <div class="docs-nav-group">
+        <div class="g-label">শুরু</div>
+        <a href="#overview" data-section="overview" class="active">১. Overview</a>
+        <a href="#start" data-section="start">২. Quick start</a>
+        <a href="#purpose" data-section="purpose">৩. Website Purpose</a>
+        <a href="#env" data-section="env">৪. Base URL &amp; Env</a>
+        <a href="#credentials" data-section="credentials">৫. Auth / Credentials</a>
+      </div>
+      <div class="docs-nav-group">
+        <div class="g-label">API</div>
+        <a href="#init" data-section="init">৬. pay/init</a>
+        <a href="#status" data-section="status">৭. Status query</a>
+        <a href="#redirects" data-section="redirects">৮. Redirect URLs</a>
+      </div>
+      <div class="docs-nav-group">
+        <div class="g-label">বিজনেস লজিক</div>
+        <a href="#add-balance" data-section="add-balance">৯. Add Balance</a>
+        <a href="#payment" data-section="payment">১০. Payment</a>
+        <a href="#both" data-section="both">১১. Both মোড</a>
+        <a href="#settlement" data-section="settlement">১২. Settlement</a>
+      </div>
+      <div class="docs-nav-group">
+        <div class="g-label">কলব্যাক</div>
+        <a href="#webhook" data-section="webhook">১৩. Webhook / IPN</a>
+        <a href="#callback-flags" data-section="callback-flags">১৪. Type / Commission</a>
+      </div>
+      <div class="docs-nav-group">
+        <div class="g-label">প্রোডাকশন</div>
+        <a href="#testing" data-section="testing">১৫. Testing</a>
+        <a href="#security" data-section="security">১৬. Security</a>
+        <a href="#golive" data-section="golive">১৭. Go-live</a>
+        <a href="#frameworks" data-section="frameworks">১৮. Frameworks</a>
+        <a href="#errors" data-section="errors">১৯. Errors &amp; FAQ</a>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <div class="docs-hero">
+        <div class="kicker"><i data-lucide="book-open" style="width:14px;height:14px"></i> Merchant Integration Guide</div>
+        <h1>PayChek ডকুমেন্টেশন</h1>
+        <p>Session create → কাস্টমার চেকআউট → webhook/IPN → status verify — জনপ্রিয় পেমেন্ট গেটওয়ের মতো একই ধাপ, PayChek-এর Purpose ও settlement লজিকসহ।</p>
+      </div>
+
+      <!-- 1 Overview -->
+      <section class="docs-section active" id="sec-overview" data-section="overview">
+        <h2>১. Overview — পেমেন্ট লাইফসাইকেল</h2>
+        <p class="lead">SSLCommerz / Stripe-এর মতো তিন ধাপ: <strong>Session</strong> → <strong>Customer checkout</strong> → <strong>Server confirmation</strong>। ক্লায়েন্ট রিডাইরেক্টকে কখনোই সত্যের একমাত্র উৎস ধরবেন না।</p>
+        <div class="flow-steps">
+          <div class="flow-step"><span>1</span><div><strong>Init</strong><p>আপনার সার্ভার <code class="inline">POST /api/v1/pay/init</code> (HMAC)</p></div></div>
+          <div class="flow-step"><span>2</span><div><strong>Redirect</strong><p>কাস্টমারকে <code class="inline">checkoutUrl</code>-এ পাঠান</p></div></div>
+          <div class="flow-step"><span>3</span><div><strong>Pay</strong><p>bKash / Nagad ইত্যাদি দিয়ে টাকা পাঠায় + Trx</p></div></div>
+          <div class="flow-step"><span>4</span><div><strong>Webhook</strong><p>PayChek আপনার URL-এ signed JSON পাঠায়</p></div></div>
+          <div class="flow-step"><span>5</span><div><strong>Verify</strong><p>ঐচ্ছিক: <code class="inline">GET …/status</code> দিয়ে কনফার্ম</p></div></div>
+        </div>
+        <div class="callout"><strong>সত্যের উৎস:</strong> Webhook + Status API। Success পেজের query string শুধু UX — অর্ডার ফাইনাল করতে নয়।</div>
+      </section>
+
+      <!-- 2 Quick start -->
+      <section class="docs-section" id="sec-start" data-section="start">
+        <h2>২. Quick start</h2>
+        <p class="lead">ইন্টিগ্রেশন সবসময় সার্ভার-টু-সার্ভার। Secret কখনো ব্রাউজার/মোবাইল অ্যাপে রাখবেন না।</p>
+        <div class="step"><div class="step-num">1</div><div>
+          <h3>অ্যাপে ওয়েবসাইট তৈরি</h3>
+          <p>PayChek Android → API ট্যাব → নতুন ওয়েবসাইট। Domain + Purpose সিলেক্ট করে লক করুন। API Key ও Secret একবার দেখা যাবে — সেভ করুন।</p>
+        </div></div>
+        <div class="step"><div class="step-num">2</div><div>
+          <h3>Callback / Webhook URL</h3>
+          <p>ওয়েবসাইট সেটিংসে <code class="inline">success_url</code>, <code class="inline">cancel_url</code>, <code class="inline">callback_url</code> / <code class="inline">webhook_url</code> সেট করুন (HTTPS বাধ্যতামূলক প্রোডাকশনে)।</p>
+        </div></div>
+        <div class="step"><div class="step-num">3</div><div>
+          <h3>Init → Redirect → Webhook</h3>
+          <p>HMAC দিয়ে init → কাস্টমারকে checkoutUrl → webhook-এ অর্ডার আপডেট।</p>
+        </div></div>
+        <div class="step"><div class="step-num">4</div><div>
+          <h3>Test Experience</h3>
+          <p>লাইভ চেষ্টা: <a href="/test" style="color:var(--accent)">/test</a> — ছোট অ্যামাউন্টে ফ্লো দেখুন।</p>
+        </div></div>
+      </section>
+
+      <!-- 3 Purpose -->
+      <section class="docs-section" id="sec-purpose" data-section="purpose">
+        <h2>৩. Website Purpose</h2>
+        <p class="lead">প্রতিটি সাইট একবার Purpose বেছে লক হয়। পরে চেঞ্জ শুধু Super Admin।</p>
+        <div class="purpose-grid">
+          <article class="purpose-card">
+            <h4>Add Balance</h4>
+            <p>ওয়ালেট টপ-আপ। কাস্টমার চেকআউট অ্যামাউন্টই পাঠায়। Callback-এ <code class="inline">walletCredit</code> — মার্চেন্ট নিজে ক্রেডিট করে।</p>
+          </article>
+          <article class="purpose-card">
+            <h4>Payment</h4>
+            <p>অর্ডার কমপ্লিট। চার্জ/কমিশন অনুযায়ী <code class="inline">expectedPayable</code> পাঠাতে হবে। কম দিলে multi-Trx settlement।</p>
+          </article>
+          <article class="purpose-card">
+            <h4>Both</h4>
+            <p>একই API। Add Balance বাটন → <code class="inline">purpose=add_balance</code>। Buy/Pay → <code class="inline">purpose=payment</code>। খালি/ভুল → Hard Error।</p>
+          </article>
+        </div>
+        <div class="callout warn"><strong>লক নীতি:</strong> Confirm এর পর মার্চেন্ট UI থেকে চেঞ্জ বন্ধ। জরুরি হলে PayChek অ্যাডমিন আনলক করবে।</div>
+      </section>
+
+      <!-- 4 Env -->
+      <section class="docs-section" id="sec-env" data-section="env">
+        <h2>৪. Base URL &amp; Environment</h2>
+        <p class="lead">একই REST বেস — API Key দিয়ে অ্যাকাউন্ট আলাদা হয়।</p>
+        <div class="table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>আইটেম</th><th>মান</th></tr></thead>
+            <tbody>
+              <tr><td>Base URL</td><td><code class="inline">https://paychek.online</code></td></tr>
+              <tr><td>Init</td><td><code class="inline">POST /api/v1/pay/init</code></td></tr>
+              <tr><td>Status</td><td><code class="inline">GET /api/v1/pay/:sessionToken/status</code></td></tr>
+              <tr><td>Currency</td><td>ডিফল্ট <code class="inline">BDT</code></td></tr>
+              <tr><td>Content-Type</td><td><code class="inline">application/json</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout"><strong>টেস্ট:</strong> অফিসিয়াল <a href="/test" style="color:var(--accent)">/test</a> এক্সপেরিয়েন্স + ছোট অ্যামাউন্ট। প্রোডাকশন Key/Secret আলাদা রাখুন; Secret কখনো গিটে কমিট করবেন না।</div>
+      </section>
+
+      <!-- 5 Credentials -->
+      <section class="docs-section" id="sec-credentials" data-section="credentials">
+        <h2>৫. Authentication &amp; Credentials</h2>
+        <p class="lead">প্রতি ওয়েবসাইটের আলাদা API Key + Secret (Stripe-এর publishable/secret ধারণার মতো)।</p>
+        <div class="table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>আইটেম</th><th>কোথায় ব্যবহার</th><th>নোট</th></tr></thead>
+            <tbody>
+              <tr><td>Merchant ID</td><td>ওয়েবসাইট সেটিংস / callback payload</td><td>পাবলিক আইডেন্টিফায়ার</td></tr>
+              <tr><td>API Key</td><td>হেডার <code class="inline">X-Api-Key</code></td><td>Init + Status</td></tr>
+              <tr><td>API Secret</td><td>HMAC সাইন / webhook verify</td><td>শুধু সার্ভার — তৈরির সময় একবার দেখা যায়</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout warn"><strong>ঘোরানো:</strong> Secret লিক হলে অ্যাপে Regenerate Secret করুন এবং সব সার্ভার env আপডেট করুন।</div>
+      </section>
+
+      <!-- 6 Init -->
+      <section class="docs-section" id="sec-init" data-section="init">
+        <h2>৬. API — pay/init</h2>
+        <p class="lead"><code class="inline">POST https://paychek.online/api/v1/pay/init</code> — বডির উপর HMAC-SHA256 → <code class="inline">X-Signature</code>।</p>
+
+        <h3 class="docs-h3">Headers</h3>
+        <div class="table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>Header</th><th>Required</th><th>বিবরণ</th></tr></thead>
+            <tbody>
+              <tr><td><code class="inline">Content-Type</code></td><td>Yes</td><td><code class="inline">application/json</code></td></tr>
+              <tr><td><code class="inline">X-Api-Key</code></td><td>Yes</td><td>ওয়েবসাইট API Key</td></tr>
+              <tr><td><code class="inline">X-Signature</code></td><td>Yes</td><td>HMAC-SHA256(hex) of raw JSON body</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="docs-h3">Request body</h3>
+        <div class="table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>বিবরণ</th></tr></thead>
+            <tbody>
+              <tr><td><code class="inline">amount</code></td><td>number</td><td>Yes</td><td>&gt; 0। Add Balance = কাস্টমার পাঠাবে; Payment = order base</td></tr>
+              <tr><td><code class="inline">orderId</code></td><td>string</td><td>Recommended</td><td>আপনার অর্ডার/ইনভয়েস আইডি (max ~191)</td></tr>
+              <tr><td><code class="inline">purpose</code></td><td>string</td><td>Both মোডে Yes</td><td><code class="inline">add_balance</code> | <code class="inline">payment</code></td></tr>
+              <tr><td><code class="inline">successUrl</code></td><td>string</td><td>No*</td><td>সফলের পর কাস্টমার রিডাইরেক্ট (*ওয়েবসাইট ডিফল্ট থাকলে)</td></tr>
+              <tr><td><code class="inline">cancelUrl</code></td><td>string</td><td>No*</td><td>বাতিল/এক্সপায়ার</td></tr>
+              <tr><td><code class="inline">callbackUrl</code></td><td>string</td><td>No*</td><td>এই সেশনের callback override</td></tr>
+              <tr><td><code class="inline">webhookUrl</code></td><td>string</td><td>No*</td><td>এই সেশনের webhook override</td></tr>
+              <tr><td><code class="inline">currency</code></td><td>string</td><td>No</td><td>ডিফল্ট <code class="inline">BDT</code></td></tr>
+              <tr><td><code class="inline">customerNumber</code></td><td>string</td><td>No</td><td>ঐচ্ছিক কাস্টমার মোবাইল</td></tr>
+              <tr><td><code class="inline">expiresInSec</code></td><td>number</td><td>No</td><td>১২০–৮৬৪০০; ডিফল্ট ১৮০০</td></tr>
+              <tr><td><code class="inline">meta</code></td><td>object</td><td>No</td><td>কাস্টম ডেটা; <code class="inline">meta.purpose</code>ও গ্রহণযোগ্য</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="code-block">
+          <div class="code-bar"><span>EXAMPLE BODY</span><button type="button" class="copy" data-copy>Copy</button></div>
+<pre>{
+  "amount": 500,
+  "orderId": "ORD-1001",
+  "purpose": "payment",
+  "successUrl": "https://yoursite.com/ok",
+  "cancelUrl": "https://yoursite.com/cancel",
+  "callbackUrl": "https://yoursite.com/hook"
+}</pre>
+        </div>
+
+        <h3 class="docs-h3">Success response <code class="inline">201</code></h3>
+        <div class="code-block">
+          <div class="code-bar"><span>JSON</span><button type="button" class="copy" data-copy>Copy</button></div>
+<pre>{
+  "success": true,
+  "sessionToken": "ps_…",
+  "checkoutUrl": "https://paychek.online/pay/ps_…",
+  "channel": "paycheck",
+  "amount": 500,
+  "purpose": "payment",
+  "expiresAt": "2026-07-22T12:00:00.000Z"
+}</pre>
+        </div>
+        <div class="callout"><strong>গুরুত্বপূর্ণ:</strong> Signature হিসাব করতে যে raw string পাঠাবেন, ঠিক সেই বাইটই HMAC-এ দিন। JSON পরে আবার stringify করলে 401 (<code class="inline">INVALID_SIGNATURE</code>)।</div>
+        <div class="code-block">
+          <div class="code-bar"><span>NODE — SIGN</span><button type="button" class="copy" data-copy>Copy</button></div>
+<pre>const crypto = require('crypto');
+const raw = JSON.stringify(body);
+const sig = crypto.createHmac('sha256', process.env.PAYCHEK_SECRET)
+  .update(raw).digest('hex');
+// headers: Content-Type, X-Api-Key, X-Signature
+// POST the same `raw` bytes as body</pre>
+        </div>
+      </section>
+
+      <!-- 7 Status -->
+      <section class="docs-section" id="sec-status" data-section="status">
+        <h2>৭. Status query (Order validation)</h2>
+        <p class="lead">SSLCommerz Order Validation / bKash Query-এর মতো — সেশন স্ট্যাটাস সার্ভার থেকে নিশ্চিত করুন।</p>
+        <p><code class="inline">GET /api/v1/pay/:sessionToken/status</code></p>
+        <div class="table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>Header / Query</th><th>Required</th><th>বিবরণ</th></tr></thead>
+            <tbody>
+              <tr><td><code class="inline">X-Api-Key</code> বা <code class="inline">?apiKey=</code></td><td>Yes</td><td>সেশন যে ওয়েবসাইটের, সেই Key</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="code-block">
+          <div class="code-bar"><span>RESPONSE</span><button type="button" class="copy" data-copy>Copy</button></div>
+<pre>{
+  "success": true,
+  "status": "success",
+  "channel": "paycheck",
+  "amount": 500,
+  "orderId": "ORD-1001",
+  "trxId": "ABC123",
+  "completedAt": "…",
+  "expiresAt": "…"
+}</pre>
+        </div>
+        <div class="callout"><strong>কখন ব্যবহার:</strong> Webhook মিস হলে, success পেজ লোডে, বা অর্ডার ফাইনাল করার আগে ডাবল-চেক।</div>
+      </section>
+
+      <!-- 8 Redirects -->
+      <section class="docs-section" id="sec-redirects" data-section="redirects">
+        <h2>৮. Customer redirect URLs</h2>
+        <p class="lead">কাস্টমার ব্রাউজার ফ্লো — অর্ডার স্টেট আপডেটের জন্য নয়।</p>
+        <div class="table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>URL</th><th>কখন</th><th>Query (উদাহরণ)</th></tr></thead>
+            <tbody>
+              <tr><td><code class="inline">successUrl</code></td><td>পেমেন্ট সফল</td><td><code class="inline">?trxId=…&amp;amount=…&amp;status=success</code></td></tr>
+              <tr><td><code class="inline">cancelUrl</code></td><td>বাতিল / সেশন এক্সপায়ার</td><td>—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout warn">Success পেজে শুধু «ধন্যবাদ» দেখান। অর্ডার <code class="inline">paid</code> করতে webhook বা status API ব্যবহার করুন।</div>
+      </section>
+
+      <!-- 9 Add Balance -->
+      <section class="docs-section" id="sec-add-balance" data-section="add-balance">
+        <h2>৯. Add Balance ফ্লো</h2>
+        <p class="lead">কাস্টমার সবসময় checkout amount পাঠায়। কমিশন/চার্জ শুধু <code class="inline">walletCredit</code> তথ্য।</p>
+        <div class="step"><div class="step-num">1</div><div>
+          <h3>Init</h3>
+          <p><code class="inline">purpose: "add_balance"</code> (Both সাইটে বাধ্যতামূলক; fixed সাইটে সার্ভার সেট করে)।</p>
+        </div></div>
+        <div class="step"><div class="step-num">2</div><div>
+          <h3>Checkout UI</h3>
+          <p>«আপনি ৳500 পাঠান» + প্রোভাইডার অনুযায়ী «ওয়ালেটে ৳502 / ৳498 যোগ হবে»।</p>
+        </div></div>
+        <div class="step"><div class="step-num">3</div><div>
+          <h3>Callback</h3>
+          <div class="code-block">
+            <div class="code-bar"><span>JSON</span><button type="button" class="copy" data-copy>Copy</button></div>
+<pre>{
+  "purpose": "add_balance",
+  "trxId": "…",
+  "amount": 500,
+  "checkoutAmount": 500,
+  "receivedAmount": 500,
+  "walletCredit": 502,
+  "provider": "bkash",
+  "status": "SUCCESS"
+}</pre>
+          </div>
+          <p>মার্চেন্ট: <code class="inline">customerWallet += walletCredit</code>। PayChek ওয়ালেট ক্রেডিট করে না।</p>
+        </div></div>
+      </section>
+
+      <!-- 10 Payment -->
+      <section class="docs-section" id="sec-payment" data-section="payment">
+        <h2>১০. Payment ফ্লো</h2>
+        <p class="lead">অর্ডার সম্পন্ন করতে <code class="inline">expectedPayable</code> পরিশোধ করতে হবে (চার্জ/কমিশন + ৫০ পয়সা রাউন্ড)।</p>
+        <div class="step"><div class="step-num">1</div><div>
+          <h3>Init</h3>
+          <p><code class="inline">purpose: "payment"</code>, <code class="inline">amount</code> = order base (যেমন ৫০০)।</p>
+        </div></div>
+        <div class="step"><div class="step-num">2</div><div>
+          <h3>Checkout</h3>
+          <p>Order ৳500 → «Please send ৳502»। Verify SMS amount = পাঠানো টাকা।</p>
+        </div></div>
+        <div class="step"><div class="step-num">3</div><div>
+          <h3>সফল Callback</h3>
+          <div class="code-block">
+            <div class="code-bar"><span>JSON</span><button type="button" class="copy" data-copy>Copy</button></div>
+<pre>{
+  "purpose": "payment",
+  "trxId": "A1",
+  "amount": 502,
+  "orderAmount": 500,
+  "expectedPayable": 502,
+  "receivedAmount": 502,
+  "transactions": [{ "trxId": "A1", "amount": 502 }],
+  "status": "SUCCESS"
+}</pre>
+          </div>
+        </div></div>
+      </section>
+
+      <!-- 11 Both -->
+      <section class="docs-section" id="sec-both" data-section="both">
+        <h2>১১. Both মোড</h2>
+        <p class="lead">এক ওয়েবসাইট, দুই বাটন টাইপ — প্রতিটি init-এ purpose আলাদা।</p>
+        <div class="code-block">
+          <div class="code-bar"><span>PSEUDO</span><button type="button" class="copy" data-copy>Copy</button></div>
+<pre>// Add Balance button
+await initPay({ amount: bal, purpose: "add_balance", orderId });
+
+// Buy / Pay buttons
+await initPay({ amount: price, purpose: "payment", orderId });</pre>
+        </div>
+        <div class="callout warn"><strong>Hard Error:</strong> <code class="inline">PURPOSE_REQUIRED</code> / <code class="inline">PURPOSE_INVALID</code></div>
+      </section>
+
+      <!-- 12 Settlement -->
+      <section class="docs-section" id="sec-settlement" data-section="settlement">
+        <h2>১২. Settlement / Overpay</h2>
+        <p class="lead">শুধু Payment মোডে প্রযোজ্য।</p>
+        <div class="step"><div class="step-num">1</div><div>
+          <h3>কম দিলে</h3>
+          <p>প্রথম Trx কম → «আরও ৳X পাঠান»। সর্বোচ্চ ৫টি Trx। যোগফল ≥ expectedPayable হলে SUCCESS।</p>
+        </div></div>
+        <div class="step"><div class="step-num">2</div><div>
+          <h3>বেশি দিলে</h3>
+          <p>SUCCESS + <code class="inline">overPaid</code>। গেটওয়ে রিফান্ড করে না — মার্চেন্ট সিদ্ধান্ত নেবে।</p>
+        </div></div>
+        <div class="step"><div class="step-num">3</div><div>
+          <h3>পয়সা রাউন্ড</h3>
+          <p>&lt; ০.৫০ → floor; ≥ ০.৫০ → ceil। সব প্রোভাইডারে একই।</p>
+        </div></div>
+      </section>
+
+      <!-- 13 Webhook -->
+      <section class="docs-section" id="sec-webhook" data-section="webhook">
+        <h2>১৩. Webhook / IPN</h2>
+        <p class="lead">PayChek আপনার <code class="inline">callback_url</code> এবং/অথবা <code class="inline">webhook_url</code>-এ POST করে (SSLCommerz IPN-এর মতো)।</p>
+        <div class="table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>আইটেম</th><th>বিবরণ</th></tr></thead>
+            <tbody>
+              <tr><td>Method</td><td><code class="inline">POST</code> application/json</td></tr>
+              <tr><td>Signature</td><td><code class="inline">X-Paychek-Signature</code> = HMAC-SHA256(rawBody, api_secret)</td></tr>
+              <tr><td>Retry</td><td>ব্যর্থ হলে bounded exponential retry</td></tr>
+              <tr><td>Idempotency</td><td>একই <code class="inline">trxId</code> একাধিকবার আসতে পারে — একবারই অর্ডার আপডেট</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3 class="docs-h3">Common payload fields</h3>
+        <div class="table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>Field</th><th>সবসময়?</th><th>নোট</th></tr></thead>
+            <tbody>
+              <tr><td><code class="inline">trxId</code>, <code class="inline">amount</code>, <code class="inline">status</code></td><td>Yes</td><td>লেগাসি কী — backward compatible</td></tr>
+              <tr><td><code class="inline">provider</code>, <code class="inline">sender</code>, <code class="inline">merchantId</code></td><td>Yes</td><td>—</td></tr>
+              <tr><td><code class="inline">purpose</code></td><td>যখন জানা</td><td><code class="inline">add_balance</code> / <code class="inline">payment</code></td></tr>
+              <tr><td><code class="inline">walletCredit</code> …</td><td>Add Balance</td><td>মার্চেন্ট ওয়ালেট ক্রেডিট</td></tr>
+              <tr><td><code class="inline">orderAmount</code>, <code class="inline">expectedPayable</code>, <code class="inline">transactions[]</code>, <code class="inline">overPaid</code></td><td>Payment</td><td>settlement সচেতন</td></tr>
+              <tr><td><code class="inline">payment_type</code>, <code class="inline">commission</code>, <code class="inline">charge</code></td><td>অপশনাল</td><td>অ্যাডমিন আনলক + মার্চেন্ট টগল</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="code-block">
+          <div class="code-bar"><span>VERIFY</span><button type="button" class="copy" data-copy>Copy</button></div>
+<pre>const expected = crypto.createHmac('sha256', SECRET).update(rawBody).digest('hex');
+if (sig !== expected) return res.sendStatus(401);
+// respond 2xx quickly, then process async if needed
+res.sendStatus(200);</pre>
+        </div>
+        <div class="callout warn">Webhook এন্ডপয়েন্টে raw body পার্সার ব্যবহার করুন — পুনরায় stringify করলে সিগনেচার মিলবে না।</div>
+      </section>
+
+      <!-- 14 Callback flags -->
+      <section class="docs-section" id="sec-callback-flags" data-section="callback-flags">
+        <h2>১৪. Payment Type / Commission unlock</h2>
+        <p class="lead">অতিরিক্ত ফিল্ড — ডিফল্টে অ্যাডমিন লক।</p>
+        <div class="table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>পরিস্থিতি</th><th>কী করবেন</th></tr></thead>
+            <tbody>
+              <tr><td>নিজের সিস্টেমে provider/কমিশন হিসাব করতে পারেন</td><td>লক রাখুন</td></tr>
+              <tr><td>শুধু কলব্যাকের মান দিয়ে ওয়ালেট ক্রেডিট</td><td>অ্যাডমিন আনলক → সেটিংসে টগল চালু</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout warn">আনলক ছাড়া টগল → <code class="inline">*_CALLBACK_LOCKED</code></div>
+      </section>
+
+      <!-- 15 Testing -->
+      <section class="docs-section" id="sec-testing" data-section="testing">
+        <h2>১৫. Testing</h2>
+        <p class="lead">প্রোডাকশনে যাওয়ার আগে এই চেকলিস্ট চালান।</p>
+        <ul class="docs-list">
+          <li><a href="/test" style="color:var(--accent)">/test</a> দিয়ে checkout UX ও ছোট পেমেন্ট ফ্লো দেখুন</li>
+          <li>Init: valid signature → 201 + checkoutUrl</li>
+          <li>Init: wrong signature → 401 INVALID_SIGNATURE</li>
+          <li>Both মোড: purpose ছাড়া → PURPOSE_REQUIRED</li>
+          <li>Webhook: signature verify + idempotent trxId হ্যান্ডল</li>
+          <li>Status API: সফল সেশনে status/trxId মিলে</li>
+          <li>Add Balance vs Payment callback ফিল্ড আলাদা কিনা যাচাই</li>
+        </ul>
+      </section>
+
+      <!-- 16 Security -->
+      <section class="docs-section" id="sec-security" data-section="security">
+        <h2>১৬. Security best practices</h2>
+        <ul class="docs-list">
+          <li>Secret শুধু সার্ভার env / secret manager-এ</li>
+          <li>সব init HMAC সাইন — Key একা যথেষ্ট নয়</li>
+          <li>Webhook signature verify (timing-safe compare পছন্দনীয়)</li>
+          <li>HTTPS callback/webhook URL</li>
+          <li>ক্লায়েন্ট রিডাইরেক্টকে trust করবেন না</li>
+          <li>Idempotent webhook (trxId / orderId ডুপ্লিকেট গার্ড)</li>
+          <li>Amount/orderId আপনার DB-র সাথে মিলিয়ে নিন</li>
+          <li>Rate limit (HTTP 429) হলে exponential backoff</li>
+        </ul>
+      </section>
+
+      <!-- 17 Go-live -->
+      <section class="docs-section" id="sec-golive" data-section="golive">
+        <h2>১৭. Go-live checklist</h2>
+        <div class="table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>#</th><th>চেক</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>Website Purpose লক (Add Balance / Payment / Both)</td></tr>
+              <tr><td>2</td><td>Production API Key + Secret সেভ; টেস্ট ক্রেডেনশিয়াল আলাদা</td></tr>
+              <tr><td>3</td><td>success / cancel / callback / webhook URL লাইভ ও HTTPS</td></tr>
+              <tr><td>4</td><td>গেটওয়ে নাম্বার ও কমিশন রুলস অ্যাপে কনফিগার</td></tr>
+              <tr><td>5</td><td>Webhook এন্ডপয়েন্ট ২xx + signature + idempotency</td></tr>
+              <tr><td>6</td><td>Status query ফallback ইমপ্লিমেন্ট</td></tr>
+              <tr><td>7</td><td>ছোট রিয়েল পেমেন্ট দিয়ে E2E টেস্ট</td></tr>
+              <tr><td>8</td><td>ডিভাইস অনলাইন / SMS মনিটর চালু (PayChek অ্যাপ)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 18 Frameworks -->
+      <section class="docs-section" id="sec-frameworks" data-section="frameworks">
+        <h2>১৮. Frameworks</h2>
+        <p class="lead">প্রতিটি ভাষায় একই কন্ট্র্যাক্ট: sign → init → redirect → webhook → (status)।</p>
+        <div class="lang-chips" id="langChips"></div>
+        <div id="langPanels"></div>
+      </section>
+
+      <!-- 19 Errors -->
+      <section class="docs-section" id="sec-errors" data-section="errors">
+        <h2>১৯. Errors &amp; FAQ</h2>
+        <div class="table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>কোড / Error</th><th>অর্থ</th><th>সমাধান</th></tr></thead>
+            <tbody>
+              <tr><td>PURPOSE_REQUIRED</td><td>Both মোডে purpose নেই</td><td>add_balance বা payment পাঠান</td></tr>
+              <tr><td>PURPOSE_INVALID</td><td>ভুল purpose</td><td>শুধু দুই মান</td></tr>
+              <tr><td>PURPOSE_LOCKED</td><td>মার্চেন্ট চেঞ্জ করতে চায়</td><td>অ্যাডমিন আনলক</td></tr>
+              <tr><td>INVALID_AMOUNT</td><td>amount ≤ 0</td><td>পজিটিভ নাম্বার</td></tr>
+              <tr><td>INVALID_SIGNATURE</td><td>HMAC মিলেনি</td><td>raw body + secret</td></tr>
+              <tr><td>MISSING_SIGNATURE</td><td>X-Signature নেই</td><td>হেডার যোগ করুন</td></tr>
+              <tr><td>MERCHANT_SECRET_NOT_CONFIGURED</td><td>Secret নেই</td><td>Regenerate / সাপোর্ট</td></tr>
+              <tr><td>SESSION_NOT_FOUND</td><td>স্ট্যাটাস টোকেন ভুল</td><td>init-এর sessionToken</td></tr>
+              <tr><td>FORBIDDEN</td><td>Status-এ ভুল API Key</td><td>সঠিক Key</td></tr>
+              <tr><td>429</td><td>Rate limit</td><td>backoff + retry</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout"><strong>সাহায্য:</strong> <a href="mailto:helaldada510@gmail.com" style="color:var(--accent)">helaldada510@gmail.com</a> · <a href="/test" style="color:var(--accent)">/test</a></div>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    <div class="container footer-inner">
+      <div class="brand"><span class="brand-mark"><i data-lucide="shield-check"></i></span> PayCheck</div>
+      <div>© <span id="y"></span> PayCheck · Developer Docs</div>
+    </div>
+  </footer>
+
+  <div class="helpline" id="helpline" aria-live="polite">
+    <div class="helpline-stack"></div>
+    <button type="button" class="helpline-main" aria-label="Helpline"></button>
+  </div>
+
+  <script src="/js/official/site-app.js"></script>
+  <script src="/js/official/docs-app.js"></script>
+  <script>
+    document.getElementById('y').textContent = new Date().getFullYear();
+    document.getElementById('navToggle')?.addEventListener('click', () => {
+      document.getElementById('navLinks').classList.toggle('open');
+    });
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.lucide) lucide.createIcons();
+      if (window.PaychekSite) PaychekSite.init();
+      if (window.PaychekDocs) PaychekDocs.init();
+    });
+  </script>
+</body>
+</html>

@@ -21,6 +21,8 @@ const layoutHelper = require('../services/checkoutLayoutHelper');
 const checkoutData = require('../services/checkoutDataService');
 const websiteLogoService = require('../services/websiteLogoService');
 const { getUserEntitlements, requirePermission } = require('../services/accountEntitlementsService');
+const { normalizePaymentType } = require('../services/merchantCallback');
+const { normalizeWebsitePurpose } = require('../services/websitePurpose');
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -75,6 +77,10 @@ function toWebsiteDto(row) {
     allowPaymentTypeCallback: !!row.allow_payment_type_callback,
     allowCommissionCallback: !!row.allow_commission_callback,
     commissionEnabled: !!row.commission_enabled,
+    websitePurpose: normalizeWebsitePurpose(row.website_purpose),
+    purposeSelected: !!row.purpose_selected,
+    purposeLocked: !!row.purpose_locked,
+    purposeLockedAt: row.purpose_locked_at || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -115,6 +121,43 @@ async function buildActiveNumbers(userId, numberOrderJson) {
     { excludeDisabled: false }
   );
   return { activeNumbers, gatewaysByCategory };
+}
+
+/**
+ * Option A — all parseable ("one value") templates for Commission / Campaign pickers.
+ * Not limited to currently-enabled gateway numbers: merchant can set rules once;
+ * later number/device changes still match via tpl_<id>.
+ * Includes: official is_parseable=1 + this user's custom is_parseable=1 templates.
+ */
+async function listAccountIncentiveTemplates(userId) {
+  const uid = Number(userId);
+  const rows = await prisma.sms_templates.findMany({
+    where: {
+      is_parseable: 1,
+      OR: [
+        { is_official: 1 },
+        { is_official: 0, user_id: uid },
+      ],
+    },
+    orderBy: [{ display_order: 'asc' }, { template_name: 'asc' }, { id: 'asc' }],
+    select: {
+      id: true,
+      template_name: true,
+      category: true,
+      sender_id: true,
+    },
+  });
+  return rows.map((r) => {
+    const name = r.template_name || r.sender_id || `Template ${r.id}`;
+    return {
+      id: Number(r.id),
+      name,
+      category: r.category || null,
+      provider: r.sender_id || null,
+      paymentType: `tpl_${Number(r.id)}`,
+      token: normalizePaymentType(r.sender_id || '', name),
+    };
+  });
 }
 
 function sanitizeNumberOrder(order) {
@@ -162,14 +205,26 @@ async function findOwnedWebsite(websiteId, userId) {
 
 /**
  * POST /api/v1/websites
- * Website Add Wizard — only Domain (required) and Website Name (optional).
- * Returns the generated Merchant ID, API Key and (once only) the API Secret.
+ * Website Add Wizard — Domain + optional name + required purpose (lock-once).
+ * Returns Merchant ID, API Key and (once only) the API Secret.
  */
 async function createWebsite(req, res) {
   try {
     const userId = req.user.userId;
     const domainRaw = req.body.domain || req.body.site_url || '';
     const websiteName = (req.body.website_name || req.body.site_name || '').trim();
+    const purposeRaw = req.body.website_purpose ?? req.body.websitePurpose ?? req.body.purpose;
+    if (purposeRaw == null || String(purposeRaw).trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'PURPOSE_REQUIRED',
+        message: 'ওয়েবসাইটের উদ্দেশ্য সিলেক্ট করুন: Add Balance, Pay, অথবা Both।',
+      });
+    }
+    const purpose = normalizeWebsitePurpose(purposeRaw);
+    if (!['add_balance', 'payment', 'both'].includes(purpose)) {
+      return res.status(400).json({ success: false, error: 'INVALID_WEBSITE_PURPOSE' });
+    }
 
     const domain = normalizeDomain(domainRaw);
     if (!domain) {
@@ -215,6 +270,7 @@ async function createWebsite(req, res) {
 
     let created = null;
     let plaintextSecret = null;
+    const lockedAt = new Date();
     for (let attempt = 0; attempt < 5 && !created; attempt++) {
       const apiKey = genApiKey();
       const merchantId = genMerchantId();
@@ -238,6 +294,10 @@ async function createWebsite(req, res) {
             checkout_mode: globalCfg.checkout_mode || 'transaction',
             layout_config: globalLayoutStr,
             number_order_json: globalNumberOrderStr,
+            website_purpose: purpose,
+            purpose_selected: 1,
+            purpose_locked: 1,
+            purpose_locked_at: lockedAt,
           },
         });
       } catch (e) {
@@ -252,7 +312,7 @@ async function createWebsite(req, res) {
 
     return res.status(201).json({
       success: true,
-      message: 'ওয়েবসাইট সফলভাবে তৈরি হয়েছে।',
+      message: 'ওয়েবসাইট সফলভাবে তৈরি হয়েছে। Purpose লক করা হয়েছে।',
       website: toWebsiteDto(created),
       // Secret is delivered exactly once — the client must store/show it now.
       apiSecret: plaintextSecret,
@@ -296,6 +356,7 @@ async function getWebsite(req, res) {
     }
 
     const { activeNumbers, gatewaysByCategory } = await buildActiveNumbers(row.user_id, row.number_order_json);
+    const incentiveTemplates = await listAccountIncentiveTemplates(row.user_id);
     const { providerBranding: gBranding } = await layoutHelper.loadGlobalCheckoutDefaults();
     const providerBranding = await layoutHelper.resolveProviderBrandingFull(gBranding);
 
@@ -303,6 +364,7 @@ async function getWebsite(req, res) {
       success: true,
       website: toWebsiteDto(row),
       activeNumbers,
+      incentiveTemplates,
       gatewaysByCategory,
       providerBranding,
       checkoutTabs: await layoutHelper.parseTabsForMerchant(row.layout_config),
@@ -382,8 +444,46 @@ async function updateWebsiteSettings(req, res) {
 
     // Merchant preferences. Effective inclusion is still gated by admin
     // permission at callback dispatch time.
-    if (b.receive_payment_type !== undefined) data.receive_payment_type = b.receive_payment_type ? 1 : 0;
-    if (b.receive_commission !== undefined) data.receive_commission = b.receive_commission ? 1 : 0;
+    if (b.receive_payment_type !== undefined) {
+      if (!row.allow_payment_type_callback && b.receive_payment_type) {
+        return res.status(403).json({
+          success: false,
+          error: 'PAYMENT_TYPE_CALLBACK_LOCKED',
+          message: 'Payment Type Callback লক আছে। আনলক করতে অ্যাডমিনের সাথে যোগাযোগ করুন।',
+        });
+      }
+      data.receive_payment_type = b.receive_payment_type ? 1 : 0;
+    }
+    if (b.receive_commission !== undefined) {
+      if (!row.allow_commission_callback && b.receive_commission) {
+        return res.status(403).json({
+          success: false,
+          error: 'COMMISSION_CALLBACK_LOCKED',
+          message: 'Commission Callback লক আছে। আনলক করতে অ্যাডমিনের সাথে যোগাযোগ করুন।',
+        });
+      }
+      data.receive_commission = b.receive_commission ? 1 : 0;
+    }
+
+    if (b.website_purpose !== undefined || b.websitePurpose !== undefined || b.lockPurpose === true) {
+      const raw = b.website_purpose ?? b.websitePurpose;
+      const purpose = normalizeWebsitePurpose(raw);
+      if (!['add_balance', 'payment', 'both'].includes(purpose)) {
+        return res.status(400).json({ success: false, error: 'INVALID_WEBSITE_PURPOSE' });
+      }
+      if (row.purpose_locked) {
+        return res.status(403).json({
+          success: false,
+          error: 'PURPOSE_LOCKED',
+          message: 'Purpose লক করা আছে। চেঞ্জ করতে সুপার অ্যাডমিনের সাথে যোগাযোগ করুন।',
+        });
+      }
+      // First explicit select → lock forever (merchant cannot unlock).
+      data.website_purpose = purpose;
+      data.purpose_selected = 1;
+      data.purpose_locked = 1;
+      data.purpose_locked_at = new Date();
+    }
 
     if (b.is_active !== undefined) data.is_active = b.is_active ? 1 : 0;
 
@@ -634,9 +734,11 @@ async function listCommissions(req, res) {
       where: { website_id: row.id },
       orderBy: { payment_type: 'asc' },
     });
+    const incentiveTemplates = await listAccountIncentiveTemplates(row.user_id);
     return res.json({
       success: true,
       commissionEnabled: !!row.commission_enabled,
+      incentiveTemplates,
       commissions: commissions.map((c) => ({
         id: c.id,
         paymentType: c.payment_type,
@@ -742,107 +844,133 @@ async function deleteCommission(req, res) {
   }
 }
 
-// ── Official payment gateway configuration (Phase 6) ─────────────────────────
-// Per-website redirect config for official channels (bKash/Nagad/Rocket Merchant,
-// SSLCommerz, Card, Bank). PayCheck never processes these payments itself — it
-// only redirects the customer to the original gateway page and receives a callback.
+// ── Campaign / Extra incentives (amount-range commission or charge) ──────────
+// Raw-SQL over merchant_campaigns (see db/ensure-merchant-campaigns.js). Each row
+// gives a commission (cashback) OR a charge on transactions whose amount falls in
+// [min_amount, max_amount], scoped to one payment type (template) or ALL types.
 
-const OFFICIAL_PROVIDER_SET = new Set([
-  'bkash_merchant', 'nagad_merchant', 'rocket_merchant', 'sslcommerz', 'card', 'bank',
-]);
-
-function toOfficialGatewayDto(row) {
+function campaignRowToDto(c) {
   return {
-    id: row.id,
-    provider: row.provider,
-    displayName: row.display_name || row.provider,
-    redirectUrlTemplate: row.redirect_url_template,
-    isActive: !!row.is_active,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    id: c.id,
+    paymentType: c.payment_type || '',
+    label: c.label || '',
+    minAmount: Number(c.min_amount),
+    maxAmount: Number(c.max_amount),
+    mode: c.mode,
+    valueType: c.value_type,
+    value: Number(c.value),
+    isActive: !!c.is_active,
   };
 }
 
-/** GET /api/v1/websites/:id/official-gateways */
-async function listOfficialGateways(req, res) {
+/** GET /api/v1/websites/:id/campaigns */
+async function listCampaigns(req, res) {
   try {
     const userId = req.user.userId;
     const row = await findOwnedWebsite(req.params.id, userId);
     if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
 
-    const gateways = await prisma.website_official_gateways.findMany({
-      where: { website_id: row.id },
-      orderBy: { provider: 'asc' },
-    });
-    return res.json({ success: true, officialGateways: gateways.map(toOfficialGatewayDto) });
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT * FROM merchant_campaigns WHERE website_id = ? ORDER BY id DESC`,
+      row.id,
+    );
+    return res.json({ success: true, campaigns: rows.map(campaignRowToDto) });
   } catch (error) {
-    console.error('[Website] listOfficialGateways error:', error);
+    console.error('[Website] listCampaigns error:', error);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 }
 
-/** POST /api/v1/websites/:id/official-gateways — upsert one provider config. */
-async function upsertOfficialGateway(req, res) {
+/** POST /api/v1/websites/:id/campaigns — create a campaign/extra rule. */
+async function upsertCampaign(req, res) {
   try {
     const userId = req.user.userId;
     const row = await findOwnedWebsite(req.params.id, userId);
     if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
+
+    // Same admin gate as commissions.
+    if (!row.commission_enabled) {
+      return res.status(403).json({
+        success: false,
+        error: 'COMMISSION_LOCKED',
+        message: 'Commission/Campaign ফিচারটি Admin অনুমতি ছাড়া ব্যবহার করা যাবে না।',
+      });
+    }
 
     const b = req.body || {};
-    const provider = (b.provider || '').trim().toLowerCase();
-    if (!OFFICIAL_PROVIDER_SET.has(provider)) {
-      return res.status(400).json({ success: false, error: 'INVALID_PROVIDER' });
+    // Empty payment_type = ALL transaction types.
+    const paymentType = (b.payment_type || b.paymentType || '').trim();
+    const label = (b.label || '').toString().slice(0, 128);
+    const minAmount = Math.max(0, parseFloat(b.min_amount ?? b.minAmount ?? 0) || 0);
+    const maxAmount = Math.max(0, parseFloat(b.max_amount ?? b.maxAmount ?? 0) || 0);
+    const mode = ['commission', 'charge'].includes(b.mode) ? b.mode : 'commission';
+    const valueType = ['percentage', 'flat'].includes(b.value_type || b.valueType)
+      ? (b.value_type || b.valueType) : 'flat';
+    const value = Math.max(0, parseFloat(b.value ?? 0) || 0);
+    const isActive = b.is_active === undefined && b.isActive === undefined
+      ? 1 : ((b.is_active ?? b.isActive) ? 1 : 0);
+
+    if (value <= 0) return res.status(400).json({ success: false, error: 'VALUE_REQUIRED' });
+    if (maxAmount > 0 && maxAmount < minAmount) {
+      return res.status(400).json({ success: false, error: 'INVALID_RANGE' });
     }
-    const redirectUrlTemplate = (b.redirect_url_template || b.redirectUrlTemplate || '').trim();
-    if (!redirectUrlTemplate || !/^https?:\/\//i.test(redirectUrlTemplate)) {
-      return res.status(400).json({ success: false, error: 'INVALID_REDIRECT_URL' });
+    if (valueType === 'percentage' && value > 100) {
+      return res.status(400).json({ success: false, error: 'PERCENT_TOO_HIGH' });
     }
 
-    const saved = await prisma.website_official_gateways.upsert({
-      where: { website_id_provider: { website_id: row.id, provider } },
-      update: {
-        display_name: b.display_name || b.displayName || null,
-        redirect_url_template: redirectUrlTemplate,
-        is_active: b.is_active === undefined ? 1 : (b.is_active ? 1 : 0),
-        config_json: b.config ? JSON.stringify(b.config) : null,
-        updated_at: new Date(),
-      },
-      create: {
-        website_id: row.id,
-        provider,
-        display_name: b.display_name || b.displayName || null,
-        redirect_url_template: redirectUrlTemplate,
-        is_active: b.is_active === undefined ? 1 : (b.is_active ? 1 : 0),
-        config_json: b.config ? JSON.stringify(b.config) : null,
-      },
-    });
+    const campaignId = parseInt(b.id, 10);
+    if (Number.isFinite(campaignId)) {
+      // Update existing (must belong to this website).
+      const existing = await prisma.$queryRawUnsafe(
+        `SELECT id FROM merchant_campaigns WHERE id = ? AND website_id = ?`,
+        campaignId, row.id,
+      );
+      if (!existing.length) return res.status(404).json({ success: false, error: 'CAMPAIGN_NOT_FOUND' });
+      await prisma.$executeRawUnsafe(
+        `UPDATE merchant_campaigns SET payment_type=?, label=?, min_amount=?, max_amount=?,
+           mode=?, value_type=?, value=?, is_active=?, updated_at=NOW() WHERE id=?`,
+        paymentType, label, minAmount, maxAmount, mode, valueType, value, isActive, campaignId,
+      );
+      const updated = await prisma.$queryRawUnsafe(`SELECT * FROM merchant_campaigns WHERE id=?`, campaignId);
+      return res.json({ success: true, campaign: campaignRowToDto(updated[0]) });
+    }
 
-    return res.json({ success: true, officialGateway: toOfficialGatewayDto(saved) });
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO merchant_campaigns
+         (website_id, payment_type, label, min_amount, max_amount, mode, value_type, value, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      row.id, paymentType, label, minAmount, maxAmount, mode, valueType, value, isActive,
+    );
+    const created = await prisma.$queryRawUnsafe(
+      `SELECT * FROM merchant_campaigns WHERE website_id=? ORDER BY id DESC LIMIT 1`, row.id,
+    );
+    return res.json({ success: true, campaign: campaignRowToDto(created[0]) });
   } catch (error) {
-    console.error('[Website] upsertOfficialGateway error:', error);
+    console.error('[Website] upsertCampaign error:', error);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 }
 
-/** DELETE /api/v1/websites/:id/official-gateways/:gatewayId */
-async function deleteOfficialGateway(req, res) {
+/** DELETE /api/v1/websites/:id/campaigns/:campaignId */
+async function deleteCampaign(req, res) {
   try {
     const userId = req.user.userId;
     const row = await findOwnedWebsite(req.params.id, userId);
     if (!row) return res.status(404).json({ success: false, error: 'WEBSITE_NOT_FOUND' });
 
-    const gatewayId = parseInt(req.params.gatewayId, 10);
-    if (!Number.isFinite(gatewayId)) {
-      return res.status(400).json({ success: false, error: 'INVALID_GATEWAY_ID' });
+    const campaignId = parseInt(req.params.campaignId, 10);
+    if (!Number.isFinite(campaignId)) {
+      return res.status(400).json({ success: false, error: 'INVALID_CAMPAIGN_ID' });
     }
-    const gw = await prisma.website_official_gateways.findUnique({ where: { id: gatewayId } });
-    if (!gw || gw.website_id !== row.id) {
-      return res.status(404).json({ success: false, error: 'GATEWAY_NOT_FOUND' });
-    }
-    await prisma.website_official_gateways.delete({ where: { id: gatewayId } });
-    return res.json({ success: true, message: 'Official gateway মুছে ফেলা হয়েছে।' });
+    const existing = await prisma.$queryRawUnsafe(
+      `SELECT id FROM merchant_campaigns WHERE id = ? AND website_id = ?`,
+      campaignId, row.id,
+    );
+    if (!existing.length) return res.status(404).json({ success: false, error: 'CAMPAIGN_NOT_FOUND' });
+    await prisma.$executeRawUnsafe(`DELETE FROM merchant_campaigns WHERE id = ?`, campaignId);
+    return res.json({ success: true, message: 'ক্যাম্পেইন মুছে ফেলা হয়েছে।' });
   } catch (error) {
-    console.error('[Website] deleteOfficialGateway error:', error);
+    console.error('[Website] deleteCampaign error:', error);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 }
@@ -1360,9 +1488,9 @@ module.exports = {
   listCommissions,
   upsertCommission,
   deleteCommission,
-  listOfficialGateways,
-  upsertOfficialGateway,
-  deleteOfficialGateway,
+  listCampaigns,
+  upsertCampaign,
+  deleteCampaign,
   listMerchantAccounts,
   createMerchantAccount,
   updateMerchantAccount,

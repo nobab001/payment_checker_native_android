@@ -42,11 +42,55 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
   const isParseable = job.data.isParseable !== undefined ? parseInt(job.data.isParseable, 10) : 1;
   if (isParseable === 0) {
     try {
+      const slotNum = simSlot != null && simSlot !== '' ? parseInt(simSlot, 10) : null;
+      let providerTag = (job.data.providerTag || 'Custom').toString().trim() || 'Custom';
+      let archiveSenderId = (job.data.templateSenderId || senderNumber || '').toString().trim() || null;
+
+      const customMatch = /^Custom-(.+)$/i.exec(providerTag);
+      if (customMatch && !archiveSenderId) {
+        archiveSenderId = customMatch[1].trim();
+      }
+
+      // Prefer official ready-made template name for display
+      if (archiveSenderId) {
+        try {
+          const official = await prisma.$queryRaw`
+            SELECT template_name, sender_id
+            FROM sms_templates
+            WHERE is_official = 1 AND is_parseable = 0
+              AND LOWER(sender_id) = LOWER(${archiveSenderId})
+            LIMIT 1
+          `;
+          if (official?.[0]?.template_name && (!providerTag || customMatch)) {
+            providerTag = official[0].template_name;
+            archiveSenderId = official[0].sender_id || archiveSenderId;
+          }
+        } catch (_) { /* non-fatal */ }
+      }
+
+      let resolvedSimNumber = simNumber ? String(simNumber).trim() : '';
+      if (!resolvedSimNumber && Number.isInteger(slotNum) && deviceId) {
+        try {
+          const binding = await prisma.sim_slot_bindings.findFirst({
+            where: {
+              user_id: String(userId),
+              device_id: String(deviceId),
+              sim_slot: slotNum,
+            },
+            select: { phone_number: true },
+          });
+          resolvedSimNumber = (binding?.phone_number || '').trim();
+        } catch (_) { /* optional */ }
+      }
+
       await prisma.custom_sms_archives.create({
         data: {
           user_id: userId,
           device_id: deviceId || 'unknown_device',
-          provider_tag: job.data.providerTag || 'Custom',
+          sim_slot: Number.isInteger(slotNum) && slotNum >= 1 && slotNum <= 2 ? slotNum : null,
+          sim_number: resolvedSimNumber || null,
+          provider_tag: providerTag,
+          sender_id: archiveSenderId,
           full_sms: rawBody
         }
       });

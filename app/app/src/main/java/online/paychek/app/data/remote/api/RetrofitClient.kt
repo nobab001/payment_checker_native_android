@@ -22,11 +22,18 @@ object RetrofitClient {
     private val okHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .addInterceptor { chain ->
-                val builder = chain.request().newBuilder()
-                appContext?.let { ctx ->
-                    val deviceId = DeviceIdHelper.getHashedAndroidId(ctx)
-                    if (deviceId.isNotBlank()) {
-                        builder.header(AppConfig.HEADER_DEVICE_ID, deviceId)
+                val original = chain.request()
+                val builder = original.newBuilder()
+                // Only inject THIS device's id when the caller hasn't set one.
+                // Remote-device settings pass a specific X-Device-Id (another device
+                // under the same account) that MUST be preserved — otherwise every
+                // remote read/write would silently target the current device.
+                if (original.header(AppConfig.HEADER_DEVICE_ID).isNullOrBlank()) {
+                    appContext?.let { ctx ->
+                        val deviceId = DeviceIdHelper.getHashedAndroidId(ctx)
+                        if (deviceId.isNotBlank()) {
+                            builder.header(AppConfig.HEADER_DEVICE_ID, deviceId)
+                        }
                     }
                 }
                 chain.proceed(builder.build())

@@ -187,6 +187,15 @@ fun MainNavigation() {
                     modifier = Modifier.fillMaxSize()
                 )
             }
+
+            entry<NavKey.CustomSenderReadyMade> { key ->
+                online.paychek.app.ui.screen.device.CustomSenderReadyMadeScreen(
+                    simSlot = key.simSlot,
+                    targetDeviceId = key.targetDeviceId.takeIf { it.isNotBlank() },
+                    onNavigateBack = { backStack.removeLastOrNull() },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         },
     )
 }

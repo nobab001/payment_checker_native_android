@@ -826,24 +826,54 @@ async function gatewayMethodExistsForSender(userId, deviceId, simSlot, senderId)
 }
 
 /**
- * GET /api/gateway/custom-sender/suggestions?q=gp
+ * GET /api/gateway/custom-sender/suggestions?q=gp&category=ROBI
  * Admin archive templates (is_parseable=0) visible to all users.
+ * Empty q + category → full ready-made list for that operator tab.
  */
 async function getCustomSenderSuggestions(req, res) {
   try {
     const q = String(req.query.q || '').trim();
-    if (!q) {
+    const category = String(req.query.category || '').trim().toUpperCase();
+    const customCats = ['ROBI', 'AIRTEL', 'GP', 'BL', 'TELETAK', 'BANK', 'OTHERS'];
+
+    if (!q && !category) {
       return res.json({ success: true, suggestions: [] });
     }
-    const like = `%${q.toLowerCase()}%`;
-    const rows = await prisma.$queryRaw`
-      SELECT id, template_name, sender_id, sender_number, is_parseable, is_official
-      FROM sms_templates
-      WHERE is_official = 1 AND is_parseable = 0
-        AND (LOWER(sender_id) LIKE ${like} OR LOWER(template_name) LIKE ${like})
-      ORDER BY template_name ASC
-      LIMIT 8
-    `;
+
+    const like = q ? `%${q.toLowerCase()}%` : null;
+    const catFilter = category && customCats.includes(category) ? category : null;
+
+    let rows;
+    if (catFilter && like) {
+      rows = await prisma.$queryRaw`
+        SELECT id, template_name, sender_id, sender_number, is_parseable, is_official, category, display_order
+        FROM sms_templates
+        WHERE is_official = 1 AND is_parseable = 0
+          AND UPPER(COALESCE(category, '')) = ${catFilter}
+          AND (LOWER(sender_id) LIKE ${like} OR LOWER(template_name) LIKE ${like})
+        ORDER BY display_order ASC, template_name ASC
+        LIMIT 50
+      `;
+    } else if (catFilter) {
+      rows = await prisma.$queryRaw`
+        SELECT id, template_name, sender_id, sender_number, is_parseable, is_official, category, display_order
+        FROM sms_templates
+        WHERE is_official = 1 AND is_parseable = 0
+          AND UPPER(COALESCE(category, '')) = ${catFilter}
+        ORDER BY display_order ASC, template_name ASC
+        LIMIT 100
+      `;
+    } else {
+      rows = await prisma.$queryRaw`
+        SELECT id, template_name, sender_id, sender_number, is_parseable, is_official, category, display_order
+        FROM sms_templates
+        WHERE is_official = 1 AND is_parseable = 0
+          AND (LOWER(sender_id) LIKE ${like} OR LOWER(template_name) LIKE ${like})
+        ORDER BY display_order ASC, template_name ASC
+        LIMIT 8
+      `;
+    }
+
     return res.json({
       success: true,
       suggestions: rows.map((r) => ({
@@ -851,6 +881,7 @@ async function getCustomSenderSuggestions(req, res) {
         template_name: r.template_name,
         sender_id: r.sender_id,
         sender_number: r.sender_number || '',
+        category: r.category || 'OTHERS',
         is_parseable: Number(r.is_parseable ?? 0),
         is_official: 1,
         is_admin_archive: true,
@@ -933,12 +964,13 @@ async function addCustomSender(req, res) {
       const personalExisting = await findUserPersonalBySender(userId, cleanSenderId);
       const officialExisting = await findOfficialArchiveBySender(cleanSenderId);
 
-      if (personalExisting) {
-        template = personalExisting;
-        templateSource = 'personal';
-      } else if (officialExisting && !forcePersonal) {
+      // Prefer official ready-made template unless user explicitly chose "লিস্টের বাইরে".
+      if (officialExisting && !forcePersonal) {
         template = officialExisting;
         templateSource = 'official';
+      } else if (personalExisting) {
+        template = personalExisting;
+        templateSource = 'personal';
       } else if (forcePersonal || !officialExisting) {
         template = await prisma.sms_templates.create({
           data: {
@@ -963,7 +995,9 @@ async function addCustomSender(req, res) {
 
     const providerLabel = templateSource === 'official'
       ? (template.template_name || `Custom-${cleanSenderId}`)
-      : `Custom-${cleanSenderId}`;
+      : (template.template_name && !/^Custom-/i.test(String(template.template_name))
+          ? template.template_name
+          : `Custom-${cleanSenderId}`);
 
     // Check if gateway method already exists for this template on slot
     const existingMethod = await prisma.gateway_methods.findFirst({
@@ -982,6 +1016,13 @@ async function addCustomSender(req, res) {
           data: { is_enabled: 1 }
         });
       }
+      // If an older personal Custom-xxx method exists, also upgrade label when official is chosen.
+      if (templateSource === 'official' && existingMethod.provider !== providerLabel) {
+        await prisma.gateway_methods.update({
+          where: { id: existingMethod.id },
+          data: { provider: providerLabel, template_id: template.id },
+        });
+      }
       const data = await fetchGatewayMethodsForUser(userId, deviceId);
       return res.json({
         success: true,
@@ -997,6 +1038,19 @@ async function addCustomSender(req, res) {
     });
     const nextPriority = (maxPriorityRow._max.priority || 0) + 1;
 
+    let slotPhone = '';
+    try {
+      const binding = await prisma.sim_slot_bindings.findFirst({
+        where: {
+          user_id: String(userId),
+          device_id: String(deviceId),
+          sim_slot: simSlotNum,
+        },
+        select: { phone_number: true },
+      });
+      slotPhone = (binding?.phone_number || '').trim();
+    } catch (_) { /* optional */ }
+
     // Create gateway method
     await prisma.gateway_methods.create({
       data: {
@@ -1005,7 +1059,7 @@ async function addCustomSender(req, res) {
         template_id: template.id,
         sim_slot: simSlotNum,
         provider: providerLabel,
-        number: '',
+        number: slotPhone,
         is_enabled: 1,
         priority: nextPriority,
       },

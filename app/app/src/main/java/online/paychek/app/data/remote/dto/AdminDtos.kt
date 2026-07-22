@@ -28,6 +28,7 @@ data class SmsTemplateDto(
     @SerializedName("is_official") val isOfficial: Int?,
     @SerializedName("is_active") val isActive: Int,
     @SerializedName("is_parseable") val isParseable: Int = 1,
+    @SerializedName("display_order") val displayOrder: Int = 0,
     @SerializedName("category") val category: String? = "SEND_MONEY",
     @SerializedName("is_other_device") val isOtherDevice: Boolean? = false,
     @SerializedName("is_admin_archive") val isAdminArchive: Boolean? = false,
@@ -39,6 +40,15 @@ data class SmsTemplatesResponse(
     @SerializedName("templates") val templates: List<SmsTemplateDto>? = null,
     @SerializedName("data_version") val dataVersion: Long? = null,
     @SerializedName("unchanged") val unchanged: Boolean? = false
+)
+
+data class SmsTemplateReorderItem(
+    @SerializedName("id") val id: Int,
+    @SerializedName("display_order") val displayOrder: Int
+)
+
+data class SmsTemplateReorderRequest(
+    @SerializedName("items") val items: List<SmsTemplateReorderItem>
 )
 
 data class CheckoutTemplateDto(
@@ -203,6 +213,7 @@ data class SubscriptionPlanDto(
     @SerializedName("perm_template") val permTemplate: Int = 1,
     @SerializedName("perm_website") val permWebsite: Int = 1,
     @SerializedName("perm_device") val permDevice: Int = 1,
+    @SerializedName("perm_smart_popup") val permSmartPopup: Int = 0,
     @SerializedName("sort_order") val sortOrder: Int = 0,
     @SerializedName("features") val features: List<PlanFeatureDto>? = null
 )
@@ -225,6 +236,7 @@ data class AddonPlanDto(
     @SerializedName("perm_template") val permTemplate: Int = 0,
     @SerializedName("perm_website") val permWebsite: Int = 0,
     @SerializedName("perm_device") val permDevice: Int = 1,
+    @SerializedName("perm_smart_popup") val permSmartPopup: Int = 0,
     @SerializedName("sort_order") val sortOrder: Int = 0,
     @SerializedName("features") val features: List<PlanFeatureDto>? = null
 )
@@ -293,4 +305,56 @@ data class UploadImageResponse(
     @SerializedName("success") val success: Boolean = false,
     @SerializedName("path") val path: String? = null,
     @SerializedName("error") val error: String? = null
+)
+
+// ── Official marketing website CMS ───────────────────────────────────────────
+
+data class OfficialWebsiteHeroDto(
+    @SerializedName("kicker") val kicker: String = "",
+    @SerializedName("title") val title: String = "",
+    @SerializedName("lead") val lead: String = "",
+    @SerializedName("ctaPrimary") val ctaPrimary: String = "",
+    @SerializedName("ctaSecondary") val ctaSecondary: String = ""
+)
+
+data class OfficialWebsiteCardDto(
+    @SerializedName("icon") val icon: String = "circle",
+    @SerializedName("title") val title: String = "",
+    @SerializedName("body") val body: String = ""
+)
+
+data class OfficialWebsiteTabDto(
+    @SerializedName("id") val id: String = "",
+    @SerializedName("enabled") val enabled: Boolean = true,
+    @SerializedName("order") val order: Int = 0,
+    @SerializedName("navLabel") val navLabel: String = "",
+    @SerializedName("sectionLabel") val sectionLabel: String = "",
+    @SerializedName("title") val title: String = "",
+    @SerializedName("lead") val lead: String = "",
+    @SerializedName("cards") val cards: List<OfficialWebsiteCardDto> = emptyList()
+)
+
+data class OfficialHelplineItemDto(
+    @SerializedName("id") val id: String = "",
+    @SerializedName("icon") val icon: String = "whatsapp",
+    @SerializedName("label") val label: String = "",
+    @SerializedName("url") val url: String = "",
+    @SerializedName("sortOrder") val sortOrder: Int = 0
+)
+
+data class OfficialWebsiteCmsDto(
+    @SerializedName("hero") val hero: OfficialWebsiteHeroDto = OfficialWebsiteHeroDto(),
+    @SerializedName("tabs") val tabs: List<OfficialWebsiteTabDto> = emptyList(),
+    @SerializedName("helpline") val helpline: List<OfficialHelplineItemDto> = emptyList()
+)
+
+data class OfficialWebsiteCmsResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("content") val content: OfficialWebsiteCmsDto? = null,
+    @SerializedName("icons") val icons: List<String>? = null,
+    @SerializedName("error") val error: String? = null
+)
+
+data class SaveOfficialWebsiteCmsRequest(
+    @SerializedName("content") val content: OfficialWebsiteCmsDto
 )

@@ -2,9 +2,10 @@
  * PayCheck Communication Policy v1.1
  * Package-tiered app↔server contact (heartbeat / miss-probe / deactivate).
  *
- * Gateway + Trial: heartbeat every 10 min
- * Personal + Personal Business: heartbeat every 30 min
- * All packages on miss: probe every 1 min × 5, then is_active=0
+ * Trial/Gateway: heartbeat every 5 min (aligned with comm_policy / AppConfig)
+ * Personal: 30 min | Personal Business: 15 min client / 30 min legacy profile
+ * Legacy miss: probe every 1 min × 5, then is_active=0
+ * Trial (welcome) v2.5: presence worker owns offline (not DeviceWatch)
  */
 
 const prisma = require('../db/prisma');
@@ -17,22 +18,27 @@ const MISS_PROBE = {
 };
 
 const PROFILES = {
+  // NOTE on thresholds: online/grace/offline MUST be comfortably larger than the
+  // heartbeat interval, otherwise a single late/jittered heartbeat (common in the
+  // background under Android Doze / OEM battery management) instantly flips a live
+  // device to OFFLINE. Rule of thumb: online ≈ 2× hb (survives one missed beat),
+  // offline ≈ 3× hb.
   welcome: {
     id: 'welcome',
-    heartbeatSec: 600, // 10 min
-    onlineMs: 10 * 60 * 1000,
-    graceMs: 10 * 60 * 1000,
-    offlineMs: 10 * 60 * 1000, // miss deadline = one heartbeat window
+    heartbeatSec: 300, // 5 min — matches presence v2.5 / AppConfig
+    onlineMs: 11 * 60 * 1000,  // ~2× hb — stays ONLINE across one missed beat
+    graceMs: 14 * 60 * 1000,
+    offlineMs: 15 * 60 * 1000, // ~3× hb
     useSocket: false, // HTTP heartbeat only (Comm Policy v1.1)
     deactivateOnOffline: true,
     checkoutHideOnOffline: true,
   },
   gateway: {
     id: 'gateway',
-    heartbeatSec: 600,
-    onlineMs: 10 * 60 * 1000,
-    graceMs: 10 * 60 * 1000,
-    offlineMs: 10 * 60 * 1000,
+    heartbeatSec: 300, // 5 min
+    onlineMs: 11 * 60 * 1000,
+    graceMs: 14 * 60 * 1000,
+    offlineMs: 15 * 60 * 1000,
     useSocket: false, // HTTP heartbeat only
     deactivateOnOffline: true,
     checkoutHideOnOffline: true,
@@ -40,19 +46,19 @@ const PROFILES = {
   personal: {
     id: 'personal',
     heartbeatSec: 1800, // 30 min
-    onlineMs: 30 * 60 * 1000,
-    graceMs: 30 * 60 * 1000,
-    offlineMs: 30 * 60 * 1000,
+    onlineMs: 65 * 60 * 1000,  // ~2× hb
+    graceMs: 85 * 60 * 1000,
+    offlineMs: 90 * 60 * 1000, // ~3× hb
     useSocket: false,
     deactivateOnOffline: true,
     checkoutHideOnOffline: true,
   },
   personal_business: {
     id: 'personal_business',
-    heartbeatSec: 1800,
-    onlineMs: 30 * 60 * 1000,
-    graceMs: 30 * 60 * 1000,
-    offlineMs: 30 * 60 * 1000,
+    heartbeatSec: 900, // 15 min (aligned with app CommPolicyStore)
+    onlineMs: 33 * 60 * 1000,  // ~2× hb
+    graceMs: 42 * 60 * 1000,
+    offlineMs: 45 * 60 * 1000, // ~3× hb
     useSocket: false,
     deactivateOnOffline: true,
     checkoutHideOnOffline: true,

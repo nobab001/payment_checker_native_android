@@ -32,6 +32,7 @@ router.get('/v1/devices/pending-approvals', authenticateToken, authController.ge
 router.post('/v1/devices/approve-by-pin', authenticateToken, authenticateToken.requireOwnerCaller, authController.approveByPin);
 router.post('/v1/devices/submit-role', authenticateToken, authController.submitRole);
 router.get('/v1/devices/check-approval-status', authenticateToken, authController.checkApprovalStatus);
+router.post('/v1/devices/mark-setup-completed', authenticateToken, authController.markSetupCompleted);
 router.post('/v1/devices/toggle-remote-role', authenticateToken, authController.toggleRemoteRole);
 router.post('/v1/devices/delete', authenticateToken, authenticateToken.requireOwnerCaller, authController.deleteDevice);
 

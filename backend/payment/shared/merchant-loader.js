@@ -17,6 +17,7 @@ const MERCHANT_FLAGS_SELECT = {
   callback_url: true,
   webhook_url: true,
   checkout_mode: true,
+  website_purpose: true,
   allow_payment_type_callback: true,
   allow_commission_callback: true,
   receive_payment_type: true,

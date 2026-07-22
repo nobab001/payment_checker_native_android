@@ -100,25 +100,25 @@ interface WebsiteApiService {
         @Path("commissionId") commissionId: Int
     ): Response<SimpleWebsiteActionResponse>
 
-    // ── Official (redirect-based) payment gateways (Phase 6) ──────────────────
-    @GET("v1/websites/{id}/official-gateways")
-    suspend fun listOfficialGateways(
+    // ── Campaign / Extra incentives (amount-range) ─────────────────────────────
+    @GET("v1/websites/{id}/campaigns")
+    suspend fun listCampaigns(
         @Header("Authorization") token: String,
         @Path("id") id: Int
-    ): Response<OfficialGatewayListResponse>
+    ): Response<CampaignListResponse>
 
-    @POST("v1/websites/{id}/official-gateways")
-    suspend fun upsertOfficialGateway(
+    @POST("v1/websites/{id}/campaigns")
+    suspend fun upsertCampaign(
         @Header("Authorization") token: String,
         @Path("id") id: Int,
-        @Body request: UpsertOfficialGatewayRequest
-    ): Response<OfficialGatewayUpsertResponse>
+        @Body request: UpsertCampaignRequest
+    ): Response<CampaignUpsertResponse>
 
-    @DELETE("v1/websites/{id}/official-gateways/{gatewayId}")
-    suspend fun deleteOfficialGateway(
+    @DELETE("v1/websites/{id}/campaigns/{campaignId}")
+    suspend fun deleteCampaign(
         @Header("Authorization") token: String,
         @Path("id") id: Int,
-        @Path("gatewayId") gatewayId: Int
+        @Path("campaignId") campaignId: Int
     ): Response<SimpleWebsiteActionResponse>
 
     // ── Live merchant accounts (multiple per provider) ─────────────────────────

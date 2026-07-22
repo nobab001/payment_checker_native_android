@@ -23,7 +23,7 @@ function isSessionExpired(session) {
 
 function browserBaseUrlFromRequest(req) {
   const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-  const host = req.get('host');
+  const host = req.headers['x-forwarded-host'] || req.get('host');
   return `${proto}://${host}`.replace(/\/$/, '');
 }
 

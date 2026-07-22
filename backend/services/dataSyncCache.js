@@ -174,6 +174,7 @@ async function getActiveTemplatesForDashboard() {
 
   const rows = await prisma.sms_templates.findMany({
     where: { is_active: 1 },
+    orderBy: [{ display_order: 'asc' }, { id: 'asc' }],
   });
 
   await safeRedisSet(KEYS.ACTIVE_TEMPLATES, JSON.stringify(rows), TTL_SECONDS);
@@ -192,6 +193,7 @@ async function getOfficialTemplatesForAdmin() {
 
   const rows = await prisma.sms_templates.findMany({
     where: { is_official: 1 },
+    orderBy: [{ is_parseable: 'desc' }, { display_order: 'asc' }, { id: 'asc' }],
   });
 
   await safeRedisSet(KEYS.OFFICIAL_TEMPLATES_ALL, JSON.stringify(rows), TTL_SECONDS);

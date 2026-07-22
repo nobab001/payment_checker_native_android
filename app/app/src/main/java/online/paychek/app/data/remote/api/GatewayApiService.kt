@@ -98,6 +98,11 @@ interface GatewayApiService {
         @Header("Authorization") token: String
     ): Response<ApprovalStatusResponse>
 
+    @POST("v1/devices/mark-setup-completed")
+    suspend fun markSetupCompleted(
+        @Header("Authorization") token: String
+    ): Response<BasicResponse>
+
     @POST("v1/devices/toggle-remote-role")
     suspend fun toggleRemoteRole(
         @Header("Authorization") token: String,
@@ -120,7 +125,8 @@ interface GatewayApiService {
     @GET("gateway/custom-sender/suggestions")
     suspend fun getCustomSenderSuggestions(
         @Header("Authorization") token: String,
-        @Query("q") query: String,
+        @Query("q") query: String = "",
+        @Query("category") category: String = "",
         @Header("X-Device-Id") deviceId: String = ""
     ): Response<CustomSenderSuggestionsResponse>
 

@@ -136,17 +136,58 @@ async function getSmsTemplates(req, res) {
   try {
     const templates = await dataSyncCache.getOfficialTemplatesForAdmin();
     const { providerBranding: savedBranding } = await layoutHelper.loadGlobalCheckoutDefaults();
-    const mapped = templates.map(t => ({
-      ...t,
-      sender_number: t.sender_number || '',
-      matching_keyword: t.matching_keyword || '',
-      category: t.category || 'SEND_MONEY',
-      regex_pattern: regexToBrackets(t.regex_pattern || ''),
-      logo_url: (savedBranding && savedBranding[layoutHelper.providerKeyForTemplate(t.id)]?.logoUrl) || null,
-    }));
+    const mapped = templates
+      .map(t => ({
+        ...t,
+        sender_number: t.sender_number || '',
+        matching_keyword: t.matching_keyword || '',
+        category: t.category || 'SEND_MONEY',
+        display_order: Number(t.display_order ?? 0),
+        regex_pattern: regexToBrackets(t.regex_pattern || ''),
+        logo_url: (savedBranding && savedBranding[layoutHelper.providerKeyForTemplate(t.id)]?.logoUrl) || null,
+      }))
+      .sort((a, b) => {
+        const pa = Number(a.is_parseable ?? 1);
+        const pb = Number(b.is_parseable ?? 1);
+        if (pa !== pb) return pb - pa; // parseable=1 first
+        const da = Number(a.display_order ?? 0);
+        const db = Number(b.display_order ?? 0);
+        if (da !== db) return da - db;
+        return Number(a.id) - Number(b.id);
+      });
     return res.json({ success: true, templates: mapped });
   } catch (err) {
     console.error(err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+/**
+ * POST /api/admin/sms-templates/reorder
+ * Body: { items: [{ id, display_order }] }
+ */
+async function reorderSmsTemplates(req, res) {
+  try {
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (!items.length) {
+      return res.status(400).json({ success: false, error: 'items আবশ্যক' });
+    }
+
+    for (const item of items) {
+      const id = parseInt(item.id, 10);
+      const order = parseInt(item.display_order, 10);
+      if (!Number.isFinite(id) || !Number.isFinite(order)) continue;
+      await prisma.sms_templates.updateMany({
+        where: { id, is_official: 1 },
+        data: { display_order: order, updated_at: new Date() },
+      });
+    }
+
+    await dataSyncCache.invalidateTemplateListCaches();
+    await dataSyncCache.bumpGlobalTemplateVersion();
+    return res.json({ success: true, message: 'টেমপ্লেট অর্ডার আপডেট হয়েছে' });
+  } catch (err) {
+    console.error('[ADMIN] reorderSmsTemplates:', err);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 }
@@ -158,8 +199,19 @@ async function saveSmsTemplate(req, res) {
       return res.status(400).json({ error: 'Missing required template fields' });
     }
 
-    const allowedCategories = ['SEND_MONEY', 'CASH_OUT', 'PAYMENT', 'BANK', 'CARD'];
-    const resolvedCategory = allowedCategories.includes(category) ? category : 'SEND_MONEY';
+    const checkoutCategories = ['SEND_MONEY', 'CASH_OUT', 'PAYMENT', 'BANK', 'CARD'];
+    const customSenderCategories = ['ROBI', 'AIRTEL', 'GP', 'BL', 'TELETAK', 'BANK', 'OTHERS'];
+    const allowedCategories = [...checkoutCategories, ...customSenderCategories];
+    const resolvedCategory = allowedCategories.includes(String(category || '').toUpperCase())
+      ? String(category).toUpperCase()
+      : 'SEND_MONEY';
+
+    // Operator-only categories are always custom-sender archive (non-parseable) by default.
+    const operatorOnlyCats = ['ROBI', 'AIRTEL', 'GP', 'BL', 'TELETAK', 'OTHERS'];
+    let resolvedParseable = is_parseable === undefined ? 1 : (is_parseable ? 1 : 0);
+    if (operatorOnlyCats.includes(resolvedCategory) && is_parseable === undefined) {
+      resolvedParseable = 0;
+    }
 
     const data = {
       template_name,
@@ -168,7 +220,7 @@ async function saveSmsTemplate(req, res) {
       matching_keyword: matching_keyword || '',
       regex_pattern: generateCustomRegex(regex_pattern ? regex_pattern.trim() : ''),
       is_active: is_active === undefined ? 1 : (is_active ? 1 : 0),
-      is_parseable: is_parseable === undefined ? 1 : (is_parseable ? 1 : 0),
+      is_parseable: resolvedParseable,
       category: resolvedCategory,
       is_official: 1,
       updated_at: new Date()
@@ -695,6 +747,7 @@ async function listAllWebsites(req, res) {
       select: {
         id: true, user_id: true, site_name: true, site_url: true, merchant_id: true,
         api_key: true, is_active: true,
+        website_purpose: true, purpose_selected: true, purpose_locked: true, purpose_locked_at: true,
         allow_payment_type_callback: true, allow_commission_callback: true,
         commission_enabled: true, created_at: true,
       },
@@ -723,6 +776,20 @@ async function setWebsitePermissions(req, res) {
     if (b.allow_commission_callback !== undefined) data.allow_commission_callback = b.allow_commission_callback ? 1 : 0;
     if (b.commission_enabled !== undefined) data.commission_enabled = b.commission_enabled ? 1 : 0;
 
+    // Super-admin only: unlock purpose so merchant can re-select (then re-locks on save).
+    if (b.unlock_purpose === true || b.unlockPurpose === true) {
+      data.purpose_locked = 0;
+      data.purpose_locked_at = null;
+    }
+    if (b.website_purpose !== undefined || b.websitePurpose !== undefined) {
+      const { normalizeWebsitePurpose } = require('../services/websitePurpose');
+      const purpose = normalizeWebsitePurpose(b.website_purpose ?? b.websitePurpose);
+      data.website_purpose = purpose;
+      data.purpose_selected = 1;
+      data.purpose_locked = 1;
+      data.purpose_locked_at = new Date();
+    }
+
     if (Object.keys(data).length === 1) {
       return res.status(400).json({ success: false, error: 'NO_PERMISSION_FIELDS' });
     }
@@ -738,6 +805,10 @@ async function setWebsitePermissions(req, res) {
         merchant_id: updated.merchant_id,
         api_key: updated.api_key,
         is_active: updated.is_active,
+        website_purpose: updated.website_purpose,
+        purpose_selected: updated.purpose_selected,
+        purpose_locked: updated.purpose_locked,
+        purpose_locked_at: updated.purpose_locked_at,
         allow_payment_type_callback: updated.allow_payment_type_callback,
         allow_commission_callback: updated.allow_commission_callback,
         commission_enabled: updated.commission_enabled,
@@ -745,6 +816,94 @@ async function setWebsitePermissions(req, res) {
     });
   } catch (err) {
     console.error('setWebsitePermissions error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+const PURPOSE_HELP_KEY = 'purpose_help_content';
+
+const DEFAULT_PURPOSE_HELP = {
+  overview: {
+    title: 'ওয়েবসাইটের উদ্দেশ্য কী?',
+    body: 'প্রতিটি ওয়েবসাইট একবার Add Balance, Pay, অথবা Both সিলেক্ট করে লক করতে হবে। পরে চেঞ্জ করতে সুপার অ্যাডমিন লাগবে।',
+  },
+  add_balance: {
+    title: 'Add Balance (Wallet Top-up)',
+    body: 'কাস্টমার সবসময় চেকআউটের টাকাই পাঠাবে। কমিশন/চার্জ শুধু walletCredit হিসেবে কলব্যাকে যাবে — মার্চেন্ট নিজে ওয়ালেটে যোগ করবে। পেমেন্ট গেটওয়ে ওয়ালেট ক্রেডিট করে না।',
+  },
+  payment: {
+    title: 'Payment (Order Complete)',
+    body: 'অর্ডার সম্পন্ন করতে expectedPayable পরিশোধ করতে হবে। কম দিলে অতিরিক্ত Trx দিয়ে Settlement; বেশি দিলে SUCCESS + overPaid — রিফান্ড গেটওয়ে করে না।',
+  },
+  both: {
+    title: 'Both (Add Balance + Payment)',
+    body: 'একই API। Add Balance বাটনে purpose=add_balance, Buy/Pay বাটনে purpose=payment পাঠাতে হবে। ভুল/খালি purpose → Hard Error।',
+  },
+};
+
+/** GET /api/admin/purpose-help — global help texts for merchant (i) popups */
+async function getPurposeHelp(req, res) {
+  try {
+    const row = await prisma.global_config.findUnique({ where: { config_key: PURPOSE_HELP_KEY } });
+    let content = DEFAULT_PURPOSE_HELP;
+    if (row?.config_value) {
+      try {
+        content = { ...DEFAULT_PURPOSE_HELP, ...JSON.parse(row.config_value) };
+      } catch (_) { /* keep default */ }
+    }
+    return res.json({ success: true, content });
+  } catch (err) {
+    console.error('getPurposeHelp error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/** PUT /api/admin/purpose-help — create/update help entries (global CRUD) */
+async function savePurposeHelp(req, res) {
+  try {
+    const incoming = req.body?.content || req.body || {};
+    const merged = { ...DEFAULT_PURPOSE_HELP };
+    for (const key of ['overview', 'add_balance', 'payment', 'both']) {
+      if (incoming[key] && typeof incoming[key] === 'object') {
+        merged[key] = {
+          title: String(incoming[key].title || merged[key].title).slice(0, 200),
+          body: String(incoming[key].body || merged[key].body).slice(0, 8000),
+        };
+      }
+    }
+    await prisma.global_config.upsert({
+      where: { config_key: PURPOSE_HELP_KEY },
+      create: { config_key: PURPOSE_HELP_KEY, config_value: JSON.stringify(merged) },
+      update: { config_value: JSON.stringify(merged) },
+    });
+    return res.json({ success: true, content: merged });
+  } catch (err) {
+    console.error('savePurposeHelp error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/** DELETE /api/admin/purpose-help/:key — reset one key to default */
+async function deletePurposeHelpKey(req, res) {
+  try {
+    const key = String(req.params.key || '');
+    if (!['overview', 'add_balance', 'payment', 'both'].includes(key)) {
+      return res.status(400).json({ success: false, error: 'INVALID_KEY' });
+    }
+    const row = await prisma.global_config.findUnique({ where: { config_key: PURPOSE_HELP_KEY } });
+    let content = { ...DEFAULT_PURPOSE_HELP };
+    if (row?.config_value) {
+      try { content = { ...DEFAULT_PURPOSE_HELP, ...JSON.parse(row.config_value) }; } catch (_) {}
+    }
+    content[key] = DEFAULT_PURPOSE_HELP[key];
+    await prisma.global_config.upsert({
+      where: { config_key: PURPOSE_HELP_KEY },
+      create: { config_key: PURPOSE_HELP_KEY, config_value: JSON.stringify(content) },
+      update: { config_value: JSON.stringify(content) },
+    });
+    return res.json({ success: true, content });
+  } catch (err) {
+    console.error('deletePurposeHelpKey error:', err);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 }
@@ -829,17 +988,52 @@ async function uploadCheckoutImage(req, res) {
   }
 }
 
+/** GET /api/admin/official-website — marketing site CMS (tabs + helpline) */
+async function getOfficialWebsiteCms(req, res) {
+  try {
+    const cms = require('../services/officialWebsiteCms');
+    const content = await cms.loadOfficialWebsiteCms();
+    return res.json({
+      success: true,
+      content,
+      icons: cms.HELPLINE_ICON_IDS,
+    });
+  } catch (err) {
+    console.error('getOfficialWebsiteCms error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/** PUT /api/admin/official-website — save marketing site CMS */
+async function saveOfficialWebsiteCms(req, res) {
+  try {
+    const cms = require('../services/officialWebsiteCms');
+    const incoming = req.body?.content || req.body || {};
+    const content = await cms.saveOfficialWebsiteCms(incoming);
+    return res.json({ success: true, content, icons: cms.HELPLINE_ICON_IDS });
+  } catch (err) {
+    console.error('saveOfficialWebsiteCms error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   verifyAdmin,
   listAllWebsites,
   setWebsitePermissions,
+  getPurposeHelp,
+  savePurposeHelp,
+  deletePurposeHelpKey,
   getCheckoutDesignConfig,
   saveCheckoutDesignConfig,
   uploadCheckoutImage,
+  getOfficialWebsiteCms,
+  saveOfficialWebsiteCms,
   getConfigs,
   updateConfig,
   getSmsTemplates,
   saveSmsTemplate,
+  reorderSmsTemplates,
   deleteSmsTemplate,
   getCheckoutTemplates,
   saveCheckoutTemplate,

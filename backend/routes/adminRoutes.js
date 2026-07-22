@@ -31,6 +31,7 @@ router.post('/config', admin.updateConfig);
 // 2. Official SMS Templates
 router.get('/sms-templates', admin.getSmsTemplates);
 router.post('/sms-templates', admin.saveSmsTemplate);
+router.post('/sms-templates/reorder', admin.reorderSmsTemplates);
 router.delete('/sms-templates/:id', admin.deleteSmsTemplate);
 
 // 3. Checkout View Templates
@@ -55,15 +56,24 @@ router.post('/email-accounts/reset-all', admin.resetAllEmailCounters);   // ← 
 router.get('/otp-format', admin.getOtpFormat);
 router.post('/otp-format/update', admin.updateOtpFormat);
 
-// 5d. Website merchant permission control (payment-type / commission callbacks)
+// 5d. Website merchant permission control (payment-type / commission callbacks + purpose unlock)
 router.get('/websites', admin.listAllWebsites);
 router.post('/websites/:id/permissions', admin.setWebsitePermissions);
+
+// 5d2. Global purpose help content (merchant ⓘ popups)
+router.get('/purpose-help', admin.getPurposeHelp);
+router.put('/purpose-help', admin.savePurposeHelp);
+router.delete('/purpose-help/:key', admin.deletePurposeHelpKey);
 
 // 5e. Global checkout design (tabs, icons, provider branding — all merchants)
 router.get('/checkout-design', admin.getCheckoutDesignConfig);
 router.post('/checkout-design', admin.saveCheckoutDesignConfig);
 // Direct image upload for provider logos & checkout tab icons (base64 -> optimized file)
 router.post('/upload-image', admin.uploadCheckoutImage);
+
+// 5f. Official marketing website CMS (tabs + helpline)
+router.get('/official-website', admin.getOfficialWebsiteCms);
+router.put('/official-website', admin.saveOfficialWebsiteCms);
 
 // 6. User and Device management list and toggle endpoints
 router.get('/users', admin.listUsers);

@@ -23,7 +23,7 @@ function maybeLogMetrics() {
 /**
  * Sweep one user's seen ZSET for devices past offline_deadline (by package policy).
  */
-async function sweepUserDevices(userId, packageKey, policy, now = Date.now()) {
+async function sweepUserDevices(userId, packageKey, policy, now = Date.now(), allowedDeviceIds = null) {
   const hbMs = (Number(policy.heartbeat_interval_sec) || 300) * 1000;
   const v2 = await policyLoader.isPresenceV2Enabled(packageKey);
   if (!v2) return { checked: 0, candidates: 0 };
@@ -33,8 +33,17 @@ async function sweepUserDevices(userId, packageKey, policy, now = Date.now()) {
   if (!candidates.length) return { checked: 0, candidates: 0 };
 
   let processed = 0;
+  const allowSet = allowedDeviceIds instanceof Set ? allowedDeviceIds : null;
 
   for (const deviceId of candidates) {
+    // Skip / clean Redis for pending, rejected, or unknown devices (e.g. LOGIN before approve).
+    if (allowSet && !allowSet.has(String(deviceId))) {
+      await store.clearProbeState(userId, deviceId);
+      await store.removeSeen(userId, deviceId);
+      await store.releaseProbeLock(userId, deviceId);
+      continue;
+    }
+
     const probePreview = await store.getProbeState(userId, deviceId);
     const previewStage = probePreview?.stage ? Number(probePreview.stage) : 0;
     const lockTtlSec = store.computeLockTtlSec(policy);
@@ -168,12 +177,13 @@ async function runSweepTick() {
   let totalCandidates = 0;
   let usersChecked = 0;
 
-  for (const [userId] of users) {
+  for (const [userId, deviceIds] of users) {
     usersChecked += 1;
     const packageKey = await resolvePackageKeyForUser(userId);
     const policy = policies[packageKey] || policies.personal || policies.gateway;
     if (!policy) continue;
-    const r = await sweepUserDevices(userId, packageKey, policy);
+    const allowSet = new Set((deviceIds || []).map(String));
+    const r = await sweepUserDevices(userId, packageKey, policy, Date.now(), allowSet);
     totalCandidates += r.candidates || 0;
   }
 

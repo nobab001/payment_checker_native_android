@@ -73,6 +73,9 @@ export const AccordionController = {
     this._openId = item.getAttribute('data-provider-id');
     head.classList.add('open');
     head.setAttribute('aria-expanded', 'true');
+    document.dispatchEvent(new CustomEvent('checkout:provider-focus', {
+      detail: { id: this._openId },
+    }));
     await expandPanel(panel);
   },
 

@@ -56,6 +56,7 @@ async function fetchSecureCheckoutRows(userId, opts = {}) {
     ? await prisma.$queryRaw`
     SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.device_id, gm.priority,
            t.id AS template_id, t.template_name, t.category, t.is_active AS tpl_active, t.is_parseable,
+           COALESCE(t.display_order, 0) AS display_order,
            cvt.single_number_instruction, cvt.multiple_number_instruction,
            rd.device_name
       FROM gateway_methods gm
@@ -91,11 +92,12 @@ async function fetchSecureCheckoutRows(userId, opts = {}) {
        AND gm.number IS NOT NULL AND gm.number != ''
        AND t.is_active = 1
        AND t.is_parseable = 1
-  ORDER BY gm.priority ASC, gm.sim_slot ASC
+  ORDER BY COALESCE(t.display_order, 0) ASC, gm.priority ASC, gm.sim_slot ASC
   `
     : await prisma.$queryRaw`
     SELECT gm.id, gm.sim_slot, gm.provider, gm.number, gm.display_name, gm.device_id, gm.priority,
            t.id AS template_id, t.template_name, t.category, t.is_active AS tpl_active, t.is_parseable,
+           COALESCE(t.display_order, 0) AS display_order,
            cvt.single_number_instruction, cvt.multiple_number_instruction,
            rd.device_name
       FROM gateway_methods gm
@@ -129,7 +131,7 @@ async function fetchSecureCheckoutRows(userId, opts = {}) {
        AND gm.number IS NOT NULL AND gm.number != ''
        AND t.is_active = 1
        AND t.is_parseable = 1
-  ORDER BY gm.priority ASC, gm.sim_slot ASC
+  ORDER BY COALESCE(t.display_order, 0) ASC, gm.priority ASC, gm.sim_slot ASC
   `;
   return rows;
 }
@@ -167,14 +169,21 @@ function formatRow(g, providerCounts) {
     groupLabel: `${provider} ${kind}`,
     kind,
     instruction,
-    position: Number.MAX_SAFE_INTEGER,
+    position: Number.isFinite(Number(g.display_order))
+      ? Number(g.display_order)
+      : (Number.isFinite(Number(g.priority)) ? Number(g.priority) : Number.MAX_SAFE_INTEGER),
     enabled: true,
   };
 }
 
 function applyNumberOrderOverrides(gateways, numberOrderJson, options = {}) {
   const excludeDisabled = options.excludeDisabled === true;
-  if (!numberOrderJson) return gateways;
+  // Default sort by admin template display_order (already in position) when no merchant override
+  if (!numberOrderJson) {
+    const sorted = [...gateways].sort((a, b) => (a.position ?? 999999) - (b.position ?? 999999));
+    if (!excludeDisabled) return sorted;
+    return sorted.filter((g) => g.enabled !== false);
+  }
 
   let overrides = [];
   try { overrides = JSON.parse(numberOrderJson); } catch (_) { return gateways; }

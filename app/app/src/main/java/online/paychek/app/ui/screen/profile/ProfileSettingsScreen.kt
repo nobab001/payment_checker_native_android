@@ -5,6 +5,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -159,6 +160,47 @@ fun ProfileSettingsScreen(
         viewModel.loadCredentials()
     }
 
+    // Sync the server avatar into the local cache when needed: first launch on a
+    // new device, after reinstall, or when the picture was changed on another
+    // device (the server URL is versioned, so a mismatch means "download fresh").
+    LaunchedEffect(state.avatarUrl, state.avatarUploading) {
+        if (state.avatarUploading) return@LaunchedEffect
+        val server = state.avatarUrl
+        if (server.isNullOrEmpty()) return@LaunchedEffect
+        val isRemote = server.startsWith("uploads") || server.startsWith("/uploads") || server.startsWith("http")
+        if (!isRemote) return@LaunchedEffect
+
+        val syncedMarker = sharedPrefs.getString("pcu_synced_avatar", "") ?: ""
+        val needDownload = !localAvatarFile.exists() || syncedMarker != server
+        if (needDownload) {
+            val fullUrl = if (server.startsWith("http")) server
+                          else "${AppConfig.BASE_URL}${server.trimStart('/')}"
+            val ok = withContext(Dispatchers.IO) {
+                try {
+                    val conn = java.net.URL(fullUrl).openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 15000
+                    conn.instanceFollowRedirects = true
+                    conn.setRequestProperty("ngrok-skip-browser-warning", "true")
+                    conn.connect()
+                    if (conn.responseCode != 200) return@withContext false
+                    conn.inputStream.use { input ->
+                        java.io.FileOutputStream(localAvatarFile).use { output -> input.copyTo(output) }
+                    }
+                    true
+                } catch (e: Exception) {
+                    false
+                }
+            }
+            if (ok) {
+                sharedPrefs.edit().putString("pcu_synced_avatar", server).apply()
+                localAvatarPath = localAvatarFile.absolutePath
+            }
+        } else if (localAvatarFile.exists()) {
+            localAvatarPath = localAvatarFile.absolutePath
+        }
+    }
+
     DisposableEffect(Unit) {
         onDispose {
             viewModel.clearMessages()
@@ -263,6 +305,11 @@ fun ProfileSettingsScreen(
                     primaryPhone     = state.primaryPhone,
                     primaryEmail     = state.primaryEmail,
                     subscriptionPlan = state.subscriptionPlan,
+                    isPaid           = state.isPaid,
+                    activePlanName   = state.activePlanName,
+                    expiryDate       = state.expiryDate,
+                    uploading        = state.avatarUploading,
+                    uploadProgress   = state.avatarUploadProgress,
                     avatarUrl        = localAvatarPath ?: state.avatarUrl,
                     onAvatarClick    = {
                          online.paychek.app.MainActivity.isRequestingPermission = true
@@ -329,12 +376,13 @@ fun ProfileSettingsScreen(
                 val localFile = java.io.File(context.filesDir, "profile_avatar.png")
                 try {
                     val outputStream = java.io.FileOutputStream(localFile)
-                    croppedBmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outputStream)
+                    croppedBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, outputStream)
                     outputStream.close()
-                    val localPath = localFile.absolutePath
-                    
-                    localAvatarPath = localPath
-                    viewModel.setLocalAvatar(localPath)
+
+                    // Show the cropped image instantly, then upload to the server
+                    // in the background (progress overlay handled by the header).
+                    localAvatarPath = localFile.absolutePath
+                    viewModel.uploadAvatarFromFile(localFile.absolutePath)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -414,131 +462,259 @@ private fun ProfileHeaderCard(
     primaryPhone: String?,
     primaryEmail: String?,
     subscriptionPlan: String,
+    isPaid: Boolean,
+    activePlanName: String,
+    expiryDate: String?,
+    uploading: Boolean,
+    uploadProgress: Int,
     avatarUrl: String?,
     onAvatarClick: () -> Unit,
     onRenewClick: () -> Unit,
     isRestricted: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    Card(
-        colors   = CardDefaults.cardColors(containerColor = Color.Transparent),
-        shape    = RoundedCornerShape(20.dp),
-        modifier = modifier.fillMaxWidth()
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // ── Profile picture (centered, Facebook-style) ──
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .background(GradHeader, RoundedCornerShape(20.dp))
-                .padding(horizontal = 20.dp, vertical = 24.dp)
+                .size(110.dp)
+                .clip(CircleShape)
+                .background(PsCardAlt)
+                .border(3.dp, if (isRestricted) PsCyan.copy(alpha = 0.5f) else PsCyan, CircleShape)
+                .then(if (!isRestricted) Modifier.clickable { onAvatarClick() } else Modifier),
+            contentAlignment = Alignment.Center
         ) {
-            Row(
-                verticalAlignment    = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Avatar (Image Picker clickable Box)
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.15f))
-                        .border(2.dp, if (isRestricted) PsCyan.copy(alpha = 0.5f) else PsCyan, CircleShape)
-                        .then(if (!isRestricted) Modifier.clickable { onAvatarClick() } else Modifier),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Crossfade(
-                        targetState = avatarUrl,
-                        animationSpec = tween(1000),
-                        label = "AvatarTransition"
-                    ) { currentUrl ->
-                        if (!currentUrl.isNullOrEmpty()) {
-                            val fullUrl = if (currentUrl.startsWith("http") || currentUrl.startsWith("/") || currentUrl.contains(":/")) {
-                                currentUrl
-                            } else {
-                                "${AppConfig.BASE_URL}${currentUrl.trimStart('/')}"
-                            }
-                            AsyncImageLoader(
-                                url = fullUrl,
-                                contentDescription = "Avatar",
-                                modifier = Modifier.fillMaxSize(),
-                                placeholder = {
-                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        CircularProgressIndicator(color = PsCyan, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                                    }
-                                }
-                            )
-                        } else {
+            Crossfade(
+                targetState = avatarUrl,
+                animationSpec = tween(1000),
+                label = "AvatarTransition"
+            ) { currentUrl ->
+                if (!currentUrl.isNullOrEmpty()) {
+                    val fullUrl = if (currentUrl.startsWith("http") || currentUrl.startsWith("/") || currentUrl.contains(":/")) {
+                        currentUrl
+                    } else {
+                        "${AppConfig.BASE_URL}${currentUrl.trimStart('/')}"
+                    }
+                    AsyncImageLoader(
+                        url = fullUrl,
+                        contentDescription = "Avatar",
+                        modifier = Modifier.fillMaxSize(),
+                        placeholder = {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                  Text(
-                                      text     = if (userName.isNotEmpty()) userName.first().uppercase() else "M",
-                                      color    = Color.White,
-                                      fontSize = 26.sp,
-                                      fontWeight = FontWeight.Bold
-                                  )
+                                CircularProgressIndicator(color = PsCyan, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                             }
                         }
-                    }
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    )
+                } else {
                     Text(
-                        text       = userName.ifEmpty { "মার্চেন্ট" },
-                        color      = Color.White,
-                        fontSize   = adaptiveTextSize(18.sp, 20.sp),
+                        text = if (userName.isNotEmpty()) userName.first().uppercase() else "M",
+                        color = TextW,
+                        fontSize = 40.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text       = "Plan: $subscriptionPlan",
-                            color      = PsCyan,
-                            fontSize   = adaptiveTextSize(11.sp, 13.sp),
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        // Renew/Subscription glassmorphic button
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(PsCyan.copy(alpha = 0.2f))
-                                .border(1.dp, PsCyan, RoundedCornerShape(8.dp))
-                                .clickable { onRenewClick() }
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "রিনিউ/সাবস্ক্রিপশন",
-                                color = PsCyan,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+                }
+            }
 
-                    // Display primary phone contact
-                    if (!primaryPhone.isNullOrEmpty()) {
-                        Text(
-                            text     = primaryPhone,
-                            color    = Color.White.copy(alpha = 0.75f),
-                            fontSize = adaptiveTextSize(11.sp, 13.sp)
-                        )
-                    }
+            if (!isRestricted && !uploading) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(PsCyan)
+                        .border(2.dp, PsBg, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PhotoCamera,
+                        contentDescription = "ছবি পরিবর্তন",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
 
-                    // Display primary email right below primary phone in header card
-                    if (!primaryEmail.isNullOrEmpty()) {
-                        Text(
-                            text     = primaryEmail,
-                            color    = Color.White.copy(alpha = 0.60f),
-                            fontSize = adaptiveTextSize(11.sp, 13.sp)
-                        )
-                    }
+            // Upload progress overlay with live percentage
+            if (uploading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.45f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        progress = { uploadProgress / 100f },
+                        color = Color.White,
+                        trackColor = Color.White.copy(alpha = 0.25f),
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(54.dp)
+                    )
+                    Text(
+                        text = "$uploadProgress%",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
+
+        // ── Name (centered) ──
+        Text(
+            text = userName.ifEmpty { "মার্চেন্ট" },
+            color = TextW,
+            fontSize = adaptiveTextSize(20.sp, 24.sp),
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
+
+        // ── Contact lines (centered, subtle) ──
+        if (!primaryPhone.isNullOrEmpty()) {
+            Text(
+                text = primaryPhone,
+                color = TextM,
+                fontSize = adaptiveTextSize(12.sp, 13.sp),
+                textAlign = TextAlign.Center
+            )
+        }
+        if (!primaryEmail.isNullOrEmpty()) {
+            Text(
+                text = primaryEmail,
+                color = TextM,
+                fontSize = adaptiveTextSize(12.sp, 13.sp),
+                textAlign = TextAlign.Center
+            )
+        }
+
+                // ── Pack card (home page style: name + expiry/days + renew) ──
+                val formattedDate = formatExpiryDateToBanglaPs(expiryDate)
+                val daysRemaining = calculateDaysRemainingPs(expiryDate)
+                val expiryLine = when {
+                    !isPaid -> "গেটওয়ে সচল করতে প্যাকেজ কিনুন"
+                    expiryDate.isNullOrEmpty() -> "মেয়াদের তথ্য নেই"
+                    daysRemaining >= 0 -> "মেয়াদ শেষ: $formattedDate • $daysRemaining দিন বাকি"
+                    else -> "মেয়াদ শেষ: $formattedDate"
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(GradHeader, RoundedCornerShape(16.dp))
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.WorkspacePremium,
+                                contentDescription = null,
+                                tint = PsAmber,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = if (isPaid) activePlanName else "ফ্রি প্ল্যান",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier
+                                    .weight(1f, fill = false)
+                                    .basicMarquee()
+                            )
+                        }
+                        Text(
+                            text = expiryLine,
+                            color = Color.White.copy(alpha = 0.65f),
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    // Renew button
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White.copy(alpha = 0.08f))
+                            .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
+                            .clickable { onRenewClick() }
+                            .padding(horizontal = 16.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Autorenew,
+                            contentDescription = null,
+                            tint = PsGreen,
+                            modifier = Modifier.size(17.dp)
+                        )
+                        Text(
+                            text = if (isPaid) "রিনিউ" else "কিনুন",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                    }
+                }
     }
 }
 
+// =============================================================================
+// Pack card date helpers (mirror of home page logic)
+// =============================================================================
 
+private fun formatExpiryDateToBanglaPs(dateStr: String?): String {
+    if (dateStr.isNullOrEmpty()) return ""
+    return try {
+        val inputFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        val date = inputFormat.parse(dateStr) ?: return dateStr
+        val outputFormat = java.text.SimpleDateFormat("dd MMMM, yyyy", java.util.Locale.forLanguageTag("bn-BD"))
+        outputFormat.format(date)
+    } catch (e: Exception) {
+        dateStr
+    }
+}
+
+private fun calculateDaysRemainingPs(expiryDateStr: String?): Long {
+    if (expiryDateStr.isNullOrEmpty()) return -1L
+    return try {
+        val format = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        val expiry = format.parse(expiryDateStr) ?: return -1L
+        val todayCal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val expiryCal = java.util.Calendar.getInstance().apply {
+            time = expiry
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val diffMs = expiryCal.timeInMillis - todayCal.timeInMillis
+        val days = diffMs / (1000 * 60 * 60 * 24)
+        if (days < 0) 0 else days
+    } catch (e: Exception) {
+        -1L
+    }
+}
 
 // =============================================================================
 // Section 3 — Security PIN Card
@@ -1306,9 +1482,15 @@ private fun AsyncImageLoader(
         isLoading = true
         withContext(Dispatchers.IO) {
             try {
-                val bmp = if (url.startsWith("http://") || url.startsWith("https://")) {
-                    val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                val isHttp = url.startsWith("http://") || url.startsWith("https://")
+                val isRemoteRelative = url.startsWith("uploads") || url.startsWith("/uploads")
+                val bmp = if (isHttp || isRemoteRelative) {
+                    val fullUrl = if (isHttp) url
+                                  else "${AppConfig.BASE_URL}${url.trimStart('/')}"
+                    val connection = java.net.URL(fullUrl).openConnection() as java.net.HttpURLConnection
                     connection.doInput = true
+                    connection.instanceFollowRedirects = true
+                    connection.setRequestProperty("ngrok-skip-browser-warning", "true")
                     connection.connect()
                     val input = connection.inputStream
                     val decoded = android.graphics.BitmapFactory.decodeStream(input)

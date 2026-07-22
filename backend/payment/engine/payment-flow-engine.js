@@ -8,7 +8,7 @@ const prisma = require('../../db/prisma');
 const audit = require('../../services/auditLog');
 const { createTraceId, logPayment } = require('../logging/trace-logger');
 const { runWithTrace } = require('../logging/trace-context');
-const { isSessionExpired, baseUrlFromRequest, resolvePublicBaseUrl } = require('../shared/session-utils');
+const { isSessionExpired, baseUrlFromRequest, browserBaseUrlFromRequest, resolvePublicBaseUrl } = require('../shared/session-utils');
 const { loadMerchantByApiKey, loadMerchantByWebsiteId } = require('../shared/merchant-loader');
 const { loadOfficialGateway } = require('../shared/gateway-config-loader');
 const PaymentSessionEngine = require('../session/payment-session');
@@ -121,6 +121,23 @@ const PaymentFlowEngine = {
         return res.status(400).json({ success: false, error: 'INVALID_AMOUNT' });
       }
 
+      const { resolveInitPurpose } = require('../../services/websitePurpose');
+      const purposeResult = resolveInitPurpose(
+        website.website_purpose,
+        req.body.purpose ?? req.body.meta?.purpose,
+      );
+      if (!purposeResult.ok) {
+        const msg = purposeResult.error === 'PURPOSE_INVALID'
+          ? 'Both মোডে purpose শুধু "add_balance" অথবা "payment" হতে পারে'
+          : 'Both মোডে purpose পাঠাতে হবে: "add_balance" অথবা "payment"';
+        return res.status(400).json({
+          success: false,
+          error: purposeResult.error,
+          message: msg,
+        });
+      }
+      const sessionPurpose = purposeResult.purpose;
+
       let channel = (req.body.channel || 'paycheck').toLowerCase();
       let officialProvider = null;
 
@@ -140,6 +157,9 @@ const PaymentFlowEngine = {
       const traceId = createTraceId();
       const expiresInSec = Math.min(Math.max(parseInt(req.body.expiresInSec, 10) || 1800, 120), 86400);
 
+      const metaIn = (req.body.meta && typeof req.body.meta === 'object') ? { ...req.body.meta } : {};
+      metaIn.purpose = sessionPurpose;
+
       const session = await PaymentSessionEngine.createSession({
         websiteId: website.id,
         userId: website.user_id,
@@ -155,26 +175,31 @@ const PaymentFlowEngine = {
         webhookUrl: req.body.webhookUrl || website.webhook_url || null,
         timeoutSec: expiresInSec,
         traceId,
-        meta: req.body.meta || null,
+        meta: metaIn,
       });
 
       audit.log({
         eventType: 'payment.init', entityType: 'payment_session', entityId: session.sessionToken,
         websiteId: website.id, userId: website.user_id, ip: req.ip, status: 'created',
-        detail: { amount, channel, officialProvider, orderId: session.orderId },
+        detail: { amount, channel, officialProvider, orderId: session.orderId, purpose: sessionPurpose },
       });
 
       emitPaymentEvent(PAYMENT_EVENTS.PAYMENT_CREATED, {
         traceId, sessionToken: session.sessionToken, websiteId: website.id, channel,
       });
 
-      const checkoutUrl = RedirectService.buildPayTokenUrl(baseUrlFromRequest(req), session.sessionToken);
+      // Browser checkout must stay on LAN/request host — PUBLIC_BASE_URL is for gateway callbacks only.
+      const checkoutUrl = RedirectService.buildPayTokenUrl(
+        browserBaseUrlFromRequest(req),
+        session.sessionToken,
+      );
       return res.status(201).json({
         success: true,
         sessionToken: session.sessionToken,
         checkoutUrl,
         channel,
         amount,
+        purpose: sessionPurpose,
         expiresAt: session.expiresAt,
       });
     } catch (error) {

@@ -41,10 +41,10 @@ router.get('/:id/commissions', websiteController.listCommissions);
 router.post('/:id/commissions', websiteController.upsertCommission);
 router.delete('/:id/commissions/:commissionId', websiteController.deleteCommission);
 
-// Official payment gateway configuration (Phase 6 — redirect-based channels)
-router.get('/:id/official-gateways', websiteController.listOfficialGateways);
-router.post('/:id/official-gateways', websiteController.upsertOfficialGateway);
-router.delete('/:id/official-gateways/:gatewayId', websiteController.deleteOfficialGateway);
+// Campaign / Extra incentives (amount-range commission or charge; locked like commissions)
+router.get('/:id/campaigns', websiteController.listCampaigns);
+router.post('/:id/campaigns', websiteController.upsertCampaign);
+router.delete('/:id/campaigns/:campaignId', websiteController.deleteCampaign);
 
 // Live merchant accounts (multiple accounts per provider — credential vault)
 router.get('/:id/merchant-accounts', websiteController.listMerchantAccounts);

@@ -25,6 +25,9 @@ data class ProfileSettingsState(
     val primaryEmail: String?      = null,
     val userRole: String           = "",
     val subscriptionPlan: String   = "",   // e.g., "Free", "Premium", "Basic"
+    val isPaid: Boolean            = false,
+    val activePlanName: String     = "",   // raw plan name (for pack card)
+    val expiryDate: String?        = null, // yyyy-MM-dd
 
     // ── Credentials List ─────────────────────────────────────────
     val credentials: List<CredentialItem> = emptyList(),
@@ -51,6 +54,8 @@ data class ProfileSettingsState(
 
     // ── Avatar ────────────────────────────────────────────────────
     val avatarUrl: String?                = null,
+    val avatarUploading: Boolean          = false,
+    val avatarUploadProgress: Int         = 0,
 
     // ── Global feedback ───────────────────────────────────────────
     val isLoading: Boolean                = false,
@@ -409,10 +414,12 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
                         } else {
                             rawPlan
                         }
+                        val serverAvatar = user.avatar?.takeIf { it.isNotBlank() }
                         prefs.edit().apply {
                             putString("pcu_user_name", user.name)
                             putString("pcu_user_role", user.role)
                             putString("pcu_account_level", rawPlan)
+                            if (serverAvatar != null) putString("pcu_server_avatar", serverAvatar)
                             apply()
                         }
                         _state.update {
@@ -421,8 +428,15 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
                                 userName = user.name,
                                 userRole = user.role,
                                 subscriptionPlan = cleanPlan,
+                                isPaid = user.isPaid,
+                                activePlanName = rawPlan,
+                                expiryDate = user.expiryDate,
                                 primaryPhone = user.phone,
-                                primaryEmail = user.email
+                                primaryEmail = user.email,
+                                // Feed the server avatar path into state so the screen's
+                                // sync effect can cache it locally. Keep any existing local
+                                // path if the server has no avatar yet.
+                                avatarUrl = serverAvatar ?: it.avatarUrl
                             )
                         }
                     } else {
@@ -445,6 +459,88 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
             ) 
         }
         prefs.edit().putString("pcu_local_avatar_path", localPath).apply()
+    }
+
+    /**
+     * Compresses the freshly-cropped local avatar and uploads it to the server
+     * with a smooth progress indicator. On success the server returns a
+     * versioned URL that every device will pick up on its next profile load.
+     */
+    fun uploadAvatarFromFile(localPath: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(avatarUploading = true, avatarUploadProgress = 0, errorMessage = null) }
+
+            // Smoothly animate progress up to 90% while the request is in flight.
+            val progressJob = launch {
+                var p = 0
+                while (p < 90) {
+                    kotlinx.coroutines.delay(55)
+                    p += 3
+                    _state.update { it.copy(avatarUploadProgress = p.coerceAtMost(90)) }
+                }
+            }
+
+            try {
+                val base64 = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    compressToBase64(localPath)
+                }
+                val response = api.uploadAvatar(bearerToken(), UploadAvatarRequest(avatarData = base64))
+                progressJob.cancel()
+
+                if (response.isSuccessful && response.body()?.success == true) {
+                    val serverPath = response.body()?.avatar
+                    _state.update { it.copy(avatarUploadProgress = 100) }
+                    if (!serverPath.isNullOrEmpty()) {
+                        // Mark this server version as already cached locally so the
+                        // screen's sync effect won't re-download the image we just sent.
+                        prefs.edit().putString("pcu_synced_avatar", serverPath).apply()
+                        _state.update { it.copy(avatarUrl = serverPath) }
+                    }
+                    kotlinx.coroutines.delay(350)
+                    _state.update {
+                        it.copy(
+                            avatarUploading = false,
+                            successMessage = "প্রোফাইল ছবি আপলোড হয়েছে।"
+                        )
+                    }
+                } else {
+                    _state.update {
+                        it.copy(
+                            avatarUploading = false,
+                            errorMessage = "ছবি আপলোড ব্যর্থ হয়েছে। লোকালি সংরক্ষিত আছে, পরে আবার চেষ্টা করুন।"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                progressJob.cancel()
+                _state.update {
+                    it.copy(
+                        avatarUploading = false,
+                        errorMessage = "ছবি আপলোড ব্যর্থ: ${e.message ?: "নেটওয়ার্ক সমস্যা"}"
+                    )
+                }
+            }
+        }
+    }
+
+    private fun compressToBase64(path: String): String {
+        val src = android.graphics.BitmapFactory.decodeFile(path)
+            ?: throw IllegalStateException("image decode failed")
+        val max = 512
+        val longest = maxOf(src.width, src.height)
+        val scale = if (longest > max) max.toFloat() / longest else 1f
+        val bmp = if (scale < 1f) {
+            android.graphics.Bitmap.createScaledBitmap(
+                src,
+                (src.width * scale).toInt().coerceAtLeast(1),
+                (src.height * scale).toInt().coerceAtLeast(1),
+                true
+            )
+        } else src
+        val baos = java.io.ByteArrayOutputStream()
+        bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, baos)
+        val encoded = android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
+        return "data:image/jpeg;base64,$encoded"
     }
 
     // ─────────────────────────────────────────────────────────────

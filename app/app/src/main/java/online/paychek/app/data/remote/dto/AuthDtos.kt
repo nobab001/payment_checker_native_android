@@ -122,6 +122,7 @@ data class DeviceDto(
     @SerializedName(value = "trialExpiresAt", alternate = ["trial_expires_at"]) val trialExpiresAt: String? = null,
     @SerializedName(value = "lockReason", alternate = ["lock_reason"]) val lockReason: String? = null,
     @SerializedName(value = "isOwnerDevice", alternate = ["is_owner_device"]) val isOwnerDevice: Boolean = false,
+    @SerializedName(value = "setupCompleted", alternate = ["setup_completed"]) val setupCompleted: Boolean = false,
     @SerializedName(value = "deviceSpecificPin", alternate = ["device_specific_pin"]) val deviceSpecificPin: String? = null
 )
 

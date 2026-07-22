@@ -5,13 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>PayCheck — Instant SMS Payment Verification</title>
   <meta name="description" content="PayCheck helps merchants verify mobile-banking payments in seconds. Transaction, Vibe, and Hybrid checkout — real rails, premium UX." />
+  <script>
+    (function () {
+      try {
+        var k = 'paychek_theme';
+        var s = localStorage.getItem(k);
+        var t = s === 'light' || s === 'dark'
+          ? s
+          : (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/official.css" />
   <script src="https://unpkg.com/lucide@0.468.0" defer></script>
 </head>
-<body>
+<body data-page="home">
   <div class="bg-mesh" aria-hidden="true"></div>
 
   <header class="nav">
@@ -21,31 +33,34 @@
         PayCheck
       </a>
       <nav class="nav-links" id="navLinks">
-        <a href="/">Home</a>
-        <a href="#features">Features</a>
-        <a href="#solutions">Solutions</a>
-        <a href="#pricing">Pricing</a>
-        <a href="#documentation">Documentation</a>
-        <a href="#resources">Resources</a>
-        <a class="nav-test" href="/test">Test</a>
-        <a href="#contact">Contact</a>
+        <a href="/" data-nav="home">Home</a>
+        <a href="#features" data-nav="features">Features</a>
+        <a href="#solutions" data-nav="solutions">Solutions</a>
+        <a href="#pricing" data-nav="pricing">Pricing</a>
+        <a href="/docs" data-nav="documentation">Documentation</a>
+        <a href="#resources" data-nav="resources">Resources</a>
+        <a class="nav-test" href="/test" data-nav="test">Test</a>
+        <a href="#contact" data-nav="contact">Contact</a>
       </nav>
-      <button class="nav-toggle" id="navToggle" aria-label="Menu"><i data-lucide="menu"></i></button>
+      <div class="nav-actions">
+        <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle theme"><i data-lucide="sun"></i></button>
+        <button class="nav-toggle" id="navToggle" aria-label="Menu"><i data-lucide="menu"></i></button>
+      </div>
     </div>
   </header>
 
   <main>
     <section class="hero container">
       <div>
-        <div class="hero-kicker"><i data-lucide="zap" style="width:14px;height:14px"></i> Real-time payment verification</div>
-        <h1>PayCheck</h1>
-        <p class="lead">
+        <div class="hero-kicker"><i data-lucide="zap" style="width:14px;height:14px"></i> <span data-cms="hero-kicker">Real-time payment verification</span></div>
+        <h1 data-cms="hero-title">PayCheck</h1>
+        <p class="lead" data-cms="hero-lead">
           The payment layer for Bangladesh merchants — verify bKash, Nagad, Rocket and more from SMS,
           with checkout that feels as polished as Stripe.
         </p>
         <div class="cta-row">
-          <a class="btn btn-primary" href="/test"><i data-lucide="flask-conical" style="width:18px;height:18px"></i> Open Test Experience</a>
-          <a class="btn btn-ghost" href="#features">Explore features</a>
+          <a class="btn btn-primary" href="/test"><i data-lucide="flask-conical" style="width:18px;height:18px"></i> <span data-cms="hero-cta-primary">Open Test Experience</span></a>
+          <a class="btn btn-ghost" href="#features"><span data-cms="hero-cta-secondary">Explore features</span></a>
         </div>
       </div>
     </section>
@@ -55,7 +70,7 @@
         <div class="section-label">Features</div>
         <h2>Built for speed and trust</h2>
         <p class="section-lead">Everything you need to accept mobile banking payments without reconciling spreadsheets.</p>
-        <div class="grid-3">
+        <div class="grid-3" data-cms-cards>
           <article class="card">
             <div class="icon"><i data-lucide="message-square"></i></div>
             <h3>SMS Payment Monitor</h3>
@@ -80,7 +95,7 @@
         <div class="section-label">Solutions</div>
         <h2>Modes that match your storefront</h2>
         <p class="section-lead">Choose how customers prove payment — or let them pick on Hybrid checkout.</p>
-        <div class="grid-3">
+        <div class="grid-3" data-cms-cards>
           <article class="card">
             <div class="icon"><i data-lucide="hash"></i></div>
             <h3>Transaction Mode</h3>
@@ -105,35 +120,23 @@
         <div class="section-label">Pricing</div>
         <h2>Simple plans that scale</h2>
         <p class="section-lead">Start with a trial, upgrade when volume grows. Exact packages are managed in the PayCheck app.</p>
-        <div class="grid-3">
+        <div class="grid-3 pricing-grid" data-cms-cards>
           <div class="pricing-card">
             <strong>Trial</strong>
             <div class="price">Free <span>/ start</span></div>
-            <ul>
-              <li><i data-lucide="check" style="width:16px;color:var(--accent)"></i> Full checkout preview</li>
-              <li><i data-lucide="check" style="width:16px;color:var(--accent)"></i> Device monitoring</li>
-              <li><i data-lucide="check" style="width:16px;color:var(--accent)"></i> Official Test Experience</li>
-            </ul>
+            <p style="color:var(--muted);font-size:0.92rem;margin:0 0 16px">Full checkout preview · Device monitoring · Official Test Experience</p>
             <a class="btn btn-ghost" href="/test">Try checkout</a>
           </div>
           <div class="pricing-card featured">
             <strong>Growth</strong>
             <div class="price">App <span>/ in-product</span></div>
-            <ul>
-              <li><i data-lucide="check" style="width:16px;color:var(--accent)"></i> Multi-website gateways</li>
-              <li><i data-lucide="check" style="width:16px;color:var(--accent)"></i> API Center & webhooks</li>
-              <li><i data-lucide="check" style="width:16px;color:var(--accent)"></i> Priority support path</li>
-            </ul>
+            <p style="color:var(--muted);font-size:0.92rem;margin:0 0 16px">Multi-website gateways · API Center &amp; webhooks · Priority support</p>
             <a class="btn btn-primary" href="#contact">Talk to us</a>
           </div>
           <div class="pricing-card">
             <strong>Enterprise</strong>
             <div class="price">Custom</div>
-            <ul>
-              <li><i data-lucide="check" style="width:16px;color:var(--accent)"></i> Dedicated capacity</li>
-              <li><i data-lucide="check" style="width:16px;color:var(--accent)"></i> Custom integrations</li>
-              <li><i data-lucide="check" style="width:16px;color:var(--accent)"></i> SLA & onboarding</li>
-            </ul>
+            <p style="color:var(--muted);font-size:0.92rem;margin:0 0 16px">Dedicated capacity · Custom integrations · SLA &amp; onboarding</p>
             <a class="btn btn-ghost" href="#contact">Contact sales</a>
           </div>
         </div>
@@ -143,23 +146,24 @@
     <section id="documentation">
       <div class="container">
         <div class="section-label">Documentation</div>
-        <h2>Integrate in minutes</h2>
-        <p class="section-lead">Server-to-server <code style="font-family:var(--mono);font-size:0.9em">POST /api/v1/pay/init</code> with HMAC <code style="font-family:var(--mono);font-size:0.9em">X-Signature</code>, then redirect customers to the checkout URL.</p>
-        <div class="grid-3">
+        <h2>Developer guide — A to Z</h2>
+        <p class="section-lead">Stripe / SSLCommerz স্টাইলে পূর্ণ ডেভেলপার গাইড — lifecycle, HMAC <code style="font-family:var(--mono);font-size:0.9em">pay/init</code>, status query, webhooks, settlement, testing ও go-live।</p>
+        <div class="grid-3" data-cms-cards>
           <article class="card">
-            <div class="icon"><i data-lucide="key-round"></i></div>
-            <h3>API Keys</h3>
-            <p>Create a website in the PayCheck Android app — copy API key & secret once.</p>
+            <div class="icon"><i data-lucide="flag"></i></div>
+            <h3>Purpose lock</h3>
+            <p>Add Balance, Payment, or Both — confirm once, then lock. Super Admin unlock only.</p>
           </article>
           <article class="card">
             <div class="icon"><i data-lucide="file-code-2"></i></div>
-            <h3>API Center</h3>
-            <p>In-app docs cover Node, PHP, Python, Laravel, Go, and more with signature samples.</p>
+            <h3>Signed init</h3>
+            <p><code style="font-family:var(--mono);font-size:0.85em">POST /api/v1/pay/init</code> with <code style="font-family:var(--mono);font-size:0.85em">X-Signature</code> HMAC — Node, PHP, Laravel, Python, Go, and more.</p>
           </article>
           <article class="card">
-            <div class="icon"><i data-lucide="flask-conical"></i></div>
-            <h3>Interactive Test</h3>
-            <p>No register. Open Test, edit checkout live, pay ৳10–100 with auto refund notice.</p>
+            <div class="icon"><i data-lucide="book-open"></i></div>
+            <h3>Full docs</h3>
+            <p>Step-by-step callbacks, walletCredit, multi-Trx settlement, and unlock rules.</p>
+            <a class="btn btn-primary" href="/docs" style="margin-top:14px">Open docs</a>
           </article>
         </div>
       </div>
@@ -169,7 +173,8 @@
       <div class="container">
         <div class="section-label">Resources</div>
         <h2>Operate with confidence</h2>
-        <div class="grid-3">
+        <p class="section-lead"></p>
+        <div class="grid-3" data-cms-cards>
           <article class="card"><div class="icon"><i data-lucide="shield"></i></div><h3>Security</h3><p>HMAC request signing, hashed secrets, device binding, and audit-friendly event logs.</p></article>
           <article class="card"><div class="icon"><i data-lucide="battery-charging"></i></div><h3>Background Guard</h3><p>Accessibility + battery optimization guidance so SMS capture stays reliable.</p></article>
           <article class="card"><div class="icon"><i data-lucide="smartphone"></i></div><h3>Android App</h3><p>Merchant control plane for devices, websites, billing, and checkout designer.</p></article>
@@ -183,7 +188,7 @@
           <div class="section-label">Contact</div>
           <h2>Let’s build your checkout</h2>
           <p class="section-lead">Reach the PayCheck team for onboarding, enterprise packaging, or integration help.</p>
-          <p style="color:var(--muted)">Email: <a href="mailto:helaldada510@gmail.com" style="color:var(--accent)">helaldada510@gmail.com</a></p>
+          <p style="color:var(--muted)" data-cms="contact-email">Email: <a href="mailto:helaldada510@gmail.com" style="color:var(--accent)">helaldada510@gmail.com</a></p>
         </div>
         <form id="contactForm" onsubmit="event.preventDefault(); alert('Thanks — we will reply shortly.'); this.reset();">
           <input type="text" name="name" placeholder="Name" required />
@@ -202,6 +207,12 @@
     </div>
   </footer>
 
+  <div class="helpline" id="helpline" aria-live="polite">
+    <div class="helpline-stack"></div>
+    <button type="button" class="helpline-main" aria-label="Helpline"></button>
+  </div>
+
+  <script src="/js/official/site-app.js"></script>
   <script>
     document.getElementById('y').textContent = new Date().getFullYear();
     document.getElementById('navToggle')?.addEventListener('click', () => {
@@ -209,6 +220,7 @@
     });
     window.addEventListener('DOMContentLoaded', () => {
       if (window.lucide) lucide.createIcons();
+      if (window.PaychekSite) PaychekSite.init();
     });
   </script>
 </body>

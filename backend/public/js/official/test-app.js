@@ -1,17 +1,19 @@
 /**
- * Official Test Experience — temporary demo session + real checkout preview/pay.
- * No login. Visitor edits never touch the main merchant account.
+ * Official Test Experience — demo visitor auth + Hybrid/Live editor + Pay actions.
+ * credentials: include (HttpOnly cookie). Never writes to real merchant rows.
  */
 
 const API = '/api/official/test';
 
 let state = {
-  sessionId: null,
+  visitor: null,
   apiKey: null,
   layout: null,
   baseLayout: null,
   overrides: {},
-  activeTab: 'edit',
+  dirty: false,
+  saving: false,
+  countdownTimer: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -23,203 +25,327 @@ function setPill(text, isErr = false) {
   el.classList.toggle('err', isErr);
 }
 
+function setLoginStatus(text, isErr = false) {
+  const el = $('#loginStatus');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isErr ? 'var(--danger)' : 'var(--muted)';
+}
+
 async function api(path, options = {}) {
   const res = await fetch(`${API}${path}`, {
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     ...options,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.success === false) {
     const err = new Error(data.message || data.error || `HTTP ${res.status}`);
+    err.status = res.status;
     err.data = data;
     throw err;
   }
   return data;
 }
 
-function amountValue() {
-  const n = Number($('#amountInput')?.value || 10);
-  return Math.min(100, Math.max(10, n || 10));
+function clampAmount(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 10;
+  return Math.min(100, Math.max(10, Math.round(n)));
+}
+
+function currentSurface() {
+  return $('#surfaceSeg button.active')?.dataset.surface || 'hybrid';
+}
+
+function currentHybridType() {
+  return $('#hybridTypeSeg button.active')?.dataset.hybridType || 'transaction';
+}
+
+function currentDesign() {
+  return $('#designSeg button.active')?.dataset.design || 'design-1';
 }
 
 function buildOverridesFromUi() {
-  const overrides = { ...state.overrides };
-
-  const modeBtn = $('#modeSeg button.active');
-  if (modeBtn) overrides.checkoutMode = modeBtn.dataset.mode;
-
-  const designBtn = $('#designSeg button.active');
-  if (designBtn) overrides.checkoutTheme = designBtn.dataset.design;
-
-  const tabs = {};
-  document.querySelectorAll('#tabsList input[type=checkbox]').forEach((cb) => {
-    tabs[cb.dataset.tabId] = { enabled: cb.checked };
-  });
-  if (Object.keys(tabs).length) overrides.tabs = tabs;
-
-  const enabled = [];
-  const disabled = [];
-  document.querySelectorAll('#gatewayList input[type=checkbox]').forEach((cb) => {
-    if (cb.checked) enabled.push(cb.dataset.gatewayId);
-    else disabled.push(cb.dataset.gatewayId);
-  });
-  // Prefer disabled list so newly added merchant numbers stay visible by default
-  overrides.disabledGatewayIds = disabled;
-  delete overrides.enabledGatewayIds;
-
+  const surface = currentSurface();
+  const overrides = { ...state.overrides, editorSurface: surface };
+  if (surface === 'live') {
+    overrides.checkoutMode = 'live';
+  } else {
+    overrides.checkoutMode = currentHybridType();
+    overrides.checkoutTheme = currentDesign();
+  }
   return overrides;
 }
 
-function renderEditor(layoutForModes, baseForLists) {
-  const layout = layoutForModes || state.layout;
-  const base = baseForLists || state.baseLayout || layout;
-  if (!layout || !base) return;
-
-  document.querySelectorAll('#modeSeg button').forEach((b) => {
-    b.classList.toggle('active', b.dataset.mode === (layout.checkoutMode || 'transaction'));
-  });
-  const theme = layout.checkoutTheme || layout.checkoutDesign || 'design-1';
-  document.querySelectorAll('#designSeg button').forEach((b) => {
-    b.classList.toggle('active', b.dataset.design === theme);
-  });
-
-  const tabsAll = base.checkoutTabsAll || {};
-  const tabOverrides = state.overrides.tabs || {};
-  const tabsList = $('#tabsList');
-  tabsList.innerHTML = '';
-  const tabEntries = Object.entries(tabsAll);
-  if (!tabEntries.length) {
-    tabsList.innerHTML = '<div style="color:var(--muted);font-size:0.85rem">No tabs from merchant layout.</div>';
-  } else {
-    for (const [id, tab] of tabEntries) {
-      const enabled = tabOverrides[id]
-        ? tabOverrides[id].enabled !== false
-        : tab.enabled !== false;
-      const row = document.createElement('label');
-      row.className = 'toggle-row';
-      row.innerHTML = `
-        <div>
-          <div>${tab.label || tab.name || id}</div>
-          <span>${id}</span>
-        </div>
-        <span class="switch">
-          <input type="checkbox" data-tab-id="${id}" ${enabled ? 'checked' : ''} />
-          <span class="slider"></span>
-        </span>`;
-      tabsList.appendChild(row);
-    }
-  }
-
-  const gateways = base.activeGateways || [];
-  const gwList = $('#gatewayList');
-  gwList.innerHTML = '';
-  if (!gateways.length) {
-    gwList.innerHTML = '<div style="color:var(--muted);font-size:0.85rem">No active numbers on the main merchant yet.</div>';
-  } else {
-    const disabled = new Set((state.overrides.disabledGatewayIds || []).map(String));
-    for (const g of gateways) {
-      const row = document.createElement('label');
-      row.className = 'toggle-row';
-      const title = g.displayName || g.providerTag || 'Number';
-      const sub = [g.providerTag, g.number].filter(Boolean).join(' · ');
-      const checked = !disabled.has(String(g.id));
-      row.innerHTML = `
-        <div>
-          <div>${title}</div>
-          <span>${sub || g.id}</span>
-        </div>
-        <span class="switch">
-          <input type="checkbox" data-gateway-id="${g.id}" ${checked ? 'checked' : ''} />
-          <span class="slider"></span>
-        </span>`;
-      gwList.appendChild(row);
-    }
+function setDirty(dirty) {
+  state.dirty = dirty;
+  const row = $('#saveRow');
+  const hint = $('#saveHint');
+  if (!row) return;
+  row.classList.toggle('hidden', !dirty && !state.saving);
+  if (hint) {
+    hint.textContent = dirty ? 'আনসেভড পরিবর্তন আছে' : 'সেভ হয়েছে';
+    hint.classList.toggle('ok', !dirty);
   }
 }
 
-let saveTimer = null;
-async function persistOverridesAndPreview() {
-  if (!state.sessionId) return;
-  const overrides = buildOverridesFromUi();
+function setSegActive(rootSel, attr, value) {
+  const root = $(rootSel);
+  if (!root) return;
+  root.querySelectorAll('button').forEach((b) => {
+    b.classList.toggle('active', b.dataset[attr] === value);
+  });
+}
+
+function providerShort(provider) {
+  const p = String(provider || '').toLowerCase();
+  if (p.includes('bkash')) return 'bK';
+  if (p.includes('nagad')) return 'Ng';
+  if (p.includes('rocket')) return 'Rk';
+  if (p.includes('upay')) return 'Up';
+  if (p.includes('card')) return 'Cd';
+  if (p.includes('bank')) return 'Bk';
+  return (provider || 'LV').slice(0, 2).toUpperCase();
+}
+
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function collectLiveCards(base) {
+  const cards = [];
+  const seen = new Set();
+  for (const group of base?.merchantAccountsGroups || []) {
+    for (const acct of group.accounts || []) {
+      const id = `ma_${acct.id}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      cards.push({
+        key: id,
+        provider: acct.provider || group.provider,
+        title: acct.displayName || acct.provider || group.provider || 'Live payment',
+        subtitle: acct.accountLabel || group.provider || 'Merchant account',
+      });
+    }
+  }
+  for (const og of base?.officialGateways || []) {
+    const id = `og_${og.id || og.provider}`;
+    if (seen.has(id)) continue;
+    const providerKey = String(og.provider || '').toLowerCase();
+    if (cards.some((c) => String(c.provider).toLowerCase() === providerKey)) continue;
+    seen.add(id);
+    cards.push({
+      key: id,
+      provider: og.provider,
+      title: og.displayName || og.provider || 'Live gateway',
+      subtitle: 'Official gateway',
+    });
+  }
+  return cards;
+}
+
+function renderLiveCards() {
+  const host = $('#liveCards');
+  if (!host) return;
+  const cards = collectLiveCards(state.baseLayout);
+  if (!cards.length) {
+    host.innerHTML = '<div class="live-empty">এই মার্চেন্টে এখনো কোনো লাইভ পেমেন্ট অ্যাটাচ নেই।</div>';
+    return;
+  }
+  host.innerHTML = cards.map((c) => `
+    <div class="live-card">
+      <div class="live-card-badge">${providerShort(c.provider)}</div>
+      <div class="live-card-body">
+        <strong>${escapeHtml(c.title)}</strong>
+        <span>${escapeHtml(c.subtitle)}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function syncSurfaceBlocks() {
+  const surface = currentSurface();
+  $('#hybridBlock')?.classList.toggle('hidden', surface !== 'hybrid');
+  $('#liveBlock')?.classList.toggle('hidden', surface !== 'live');
+  if (surface === 'live') renderLiveCards();
+}
+
+function renderEditor() {
+  const o = state.overrides || {};
+  let surface = o.editorSurface;
+  if (!surface) surface = o.checkoutMode === 'live' ? 'live' : 'hybrid';
+  setSegActive('#surfaceSeg', 'surface', surface);
+  const hybridType = o.checkoutMode === 'merchant_vibe' ? 'merchant_vibe' : 'transaction';
+  setSegActive('#hybridTypeSeg', 'hybridType', hybridType);
+  const theme = o.checkoutTheme || state.layout?.checkoutTheme || 'design-1';
+  setSegActive('#designSeg', 'design', theme);
+  syncSurfaceBlocks();
+  setDirty(false);
+}
+
+function formatCountdown(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = String(Math.floor(total / 3600)).padStart(2, '0');
+  const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+  const s = String(total % 60).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
+function startCountdown() {
+  clearInterval(state.countdownTimer);
+  const tick = () => {
+    if (!state.visitor?.expiresAt) return;
+    const ms = new Date(state.visitor.expiresAt).getTime() - Date.now();
+    const el = $('#accountCountdown');
+    if (el) el.textContent = formatCountdown(ms);
+    if (ms <= 0) {
+      clearInterval(state.countdownTimer);
+      setPill('ডেমো অ্যাকাউন্ট এক্সপায়ার হয়েছে', true);
+      showLogin(true);
+    }
+  };
+  tick();
+  state.countdownTimer = setInterval(tick, 1000);
+}
+
+function renderPayments(payments) {
+  const host = $('#payHistory');
+  if (!host) return;
+  if (!payments?.length) {
+    host.innerHTML = '';
+    return;
+  }
+  host.innerHTML = `
+    <h3>সাম্প্রতিক টেস্ট পেমেন্ট</h3>
+    <ul>
+      ${payments.map((p) => `
+        <li>
+          <span>৳${escapeHtml(p.amount)} · ${escapeHtml(p.purpose)}</span>
+          <span>${escapeHtml(p.status)}</span>
+        </li>
+      `).join('')}
+    </ul>`;
+}
+
+function showLogin(expired = false) {
+  $('#loginGate')?.classList.remove('hidden');
+  $('#workspaceRoot')?.classList.add('hidden');
+  if (expired) setLoginStatus('অ্যাকাউন্ট এক্সপায়ার হয়েছে — নতুন করে শুরু করুন', true);
+}
+
+function showWorkspace() {
+  $('#loginGate')?.classList.add('hidden');
+  $('#workspaceRoot')?.classList.remove('hidden');
+  if ($('#accountName')) $('#accountName').textContent = state.visitor?.displayName || 'Demo';
+  startCountdown();
+  renderEditor();
+  if (window.lucide) lucide.createIcons();
+}
+
+async function saveOverrides() {
+  if (!state.visitor || state.saving) return;
+  state.saving = true;
+  const btn = $('#saveBtn');
+  if (btn) btn.disabled = true;
+  setPill('সেভ হচ্ছে…');
   try {
-    const data = await api(`/session/${encodeURIComponent(state.sessionId)}`, {
+    const overrides = buildOverridesFromUi();
+    const data = await api('/settings', {
       method: 'PATCH',
       body: JSON.stringify(overrides),
     });
-    state.overrides = data.overrides || overrides;
-    state.layout = data.layout;
-    state.baseLayout = data.baseLayout || state.baseLayout;
-    await loadPreview();
+    applyWorkspaceData(data);
+    setDirty(false);
+    setPill('সেভ হয়েছে');
   } catch (e) {
     setPill(e.message || 'Save failed', true);
+  } finally {
+    state.saving = false;
+    if (btn) btn.disabled = false;
   }
 }
 
-function scheduleSave() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(persistOverridesAndPreview, 280);
+function applyWorkspaceData(data) {
+  state.visitor = data.visitor || state.visitor;
+  state.apiKey = data.apiKey || state.apiKey;
+  state.layout = data.layout;
+  state.baseLayout = data.baseLayout || state.baseLayout;
+  state.overrides = data.overrides || data.visitor?.settings || {};
+  if (data.payments) renderPayments(data.payments);
 }
 
-async function loadPreview() {
-  if (!state.sessionId || !state.apiKey) return;
-  const amount = amountValue();
-  const q = new URLSearchParams({
-    apiKey: state.apiKey,
-    amount: String(amount),
-    demoSession: state.sessionId,
-  });
-  const url = `/checkout.html?${q}`;
-  const frame = $('#checkoutFrame');
-  // Bust iframe cache so edit → instant preview
-  frame.src = `${url}&_=${Date.now()}`;
-  $('#previewLabel').textContent =
-    state.activeTab === 'test'
-      ? `Real checkout · ৳${amount}`
-      : `Preview · ৳${amount} (not paid yet)`;
+async function ensureSavedBeforePay() {
+  if (state.dirty) await saveOverrides();
 }
 
-async function startRealPayment() {
-  if (!state.sessionId) return;
-  const amount = amountValue();
-  setPill('Creating payment session…');
+async function startAction(purpose) {
+  const inputId = purpose === 'add_balance' ? '#balanceAmount' : '#payAmount';
+  const amount = clampAmount($(inputId)?.value);
+  if ($(inputId)) $(inputId).value = String(amount);
+
+  const payBtn = $('#payNowBtn');
+  const balBtn = $('#addBalanceBtn');
+  if (payBtn) payBtn.disabled = true;
+  if (balBtn) balBtn.disabled = true;
+  setPill(purpose === 'add_balance' ? 'এড ব্যালেন্স শুরু…' : 'পেমেন্ট শুরু…');
+
   try {
-    // Ensure latest edits are saved first
-    await persistOverridesAndPreview();
+    await ensureSavedBeforePay();
     const data = await api('/pay', {
       method: 'POST',
-      body: JSON.stringify({ demoSessionId: state.sessionId, amount }),
+      body: JSON.stringify({ amount, purpose }),
     });
-    setPill(`Payment session ready · ৳${amount}`);
+    setPill(`${purpose === 'add_balance' ? 'এড ব্যালেন্স' : 'পেমেন্ট'} · ৳${amount}`);
     if (data.checkoutUrl) {
-      $('#checkoutFrame').src = data.checkoutUrl;
-      state.activeTab = 'test';
-      document.querySelectorAll('.tab-btn').forEach((b) => {
-        b.classList.toggle('active', b.dataset.tab === 'test');
-      });
-      $('#previewLabel').textContent = `Live payment · ৳${amount}`;
+      window.location.href = data.checkoutUrl;
+      return;
     }
+    throw new Error('Checkout URL missing');
   } catch (e) {
     setPill(e.message || 'Payment init failed', true);
+  } finally {
+    if (payBtn) payBtn.disabled = false;
+    if (balBtn) balBtn.disabled = false;
   }
+}
+
+function markDirtyFromUi() {
+  syncSurfaceBlocks();
+  setDirty(true);
 }
 
 function wireUi() {
-  document.querySelectorAll('.tab-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.activeTab = btn.dataset.tab;
-      document.querySelectorAll('.tab-btn').forEach((b) => {
-        b.classList.toggle('active', b.dataset.tab === state.activeTab);
-      });
-      if (state.activeTab === 'test') loadPreview();
-    });
+  $('#startDemoBtn')?.addEventListener('click', () => enterDemo(false));
+  $('#resumeDemoBtn')?.addEventListener('click', () => enterDemo(false));
+  $('#freshDemoBtn')?.addEventListener('click', () => enterDemo(true));
+  $('#newAccountBtn')?.addEventListener('click', () => enterDemo(true));
+  $('#logoutBtn')?.addEventListener('click', async () => {
+    try { await api('/auth/logout', { method: 'POST', body: '{}' }); } catch { /* ignore */ }
+    state.visitor = null;
+    showLogin();
+    setLoginStatus('লগআউট হয়েছে — আবার শুরু করতে পারেন');
+    updateLoginButtons(false);
   });
 
-  $('#modeSeg')?.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-mode]');
+  $('#surfaceSeg')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-surface]');
     if (!btn) return;
-    $('#modeSeg').querySelectorAll('button').forEach((b) => b.classList.remove('active'));
+    $('#surfaceSeg').querySelectorAll('button').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
-    scheduleSave();
+    markDirtyFromUi();
+  });
+
+  $('#hybridTypeSeg')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-hybrid-type]');
+    if (!btn) return;
+    $('#hybridTypeSeg').querySelectorAll('button').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    markDirtyFromUi();
   });
 
   $('#designSeg')?.addEventListener('click', (e) => {
@@ -227,14 +353,45 @@ function wireUi() {
     if (!btn) return;
     $('#designSeg').querySelectorAll('button').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
-    scheduleSave();
+    markDirtyFromUi();
   });
 
-  $('#tabsList')?.addEventListener('change', scheduleSave);
-  $('#gatewayList')?.addEventListener('change', scheduleSave);
-  $('#amountInput')?.addEventListener('change', () => loadPreview());
-  $('#refreshPreviewBtn')?.addEventListener('click', () => persistOverridesAndPreview());
-  $('#startPayBtn')?.addEventListener('click', () => startRealPayment());
+  $('#saveBtn')?.addEventListener('click', () => saveOverrides());
+
+  const bindAmount = (sel) => {
+    const el = $(sel);
+    if (!el) return;
+    const clamp = () => { el.value = String(clampAmount(el.value)); };
+    el.addEventListener('change', clamp);
+    el.addEventListener('blur', clamp);
+  };
+  bindAmount('#payAmount');
+  bindAmount('#balanceAmount');
+
+  $('#payNowBtn')?.addEventListener('click', () => startAction('pay'));
+  $('#addBalanceBtn')?.addEventListener('click', () => startAction('add_balance'));
+}
+
+function updateLoginButtons(hasExisting) {
+  $('#resumeDemoBtn')?.classList.toggle('hidden', !hasExisting);
+  $('#freshDemoBtn')?.classList.toggle('hidden', !hasExisting);
+  $('#startDemoBtn')?.classList.toggle('hidden', hasExisting);
+}
+
+async function enterDemo(forceNew) {
+  setLoginStatus(forceNew ? 'নতুন অ্যাকাউন্ট তৈরি হচ্ছে…' : 'লগইন হচ্ছে…');
+  try {
+    const path = forceNew ? '/auth/new' : '/auth/start';
+    const data = await api(path, {
+      method: 'POST',
+      body: JSON.stringify(forceNew ? { forceNew: true } : {}),
+    });
+    applyWorkspaceData(data);
+    showWorkspace();
+    setPill(data.created ? 'নতুন ডেমো অ্যাকাউন্ট তৈরি' : 'ডেমো অ্যাকাউন্টে প্রবেশ');
+  } catch (e) {
+    setLoginStatus(e.message || 'লগইন ব্যর্থ', true);
+  }
 }
 
 async function boot() {
@@ -242,42 +399,41 @@ async function boot() {
   try {
     const status = await api('/status');
     if (status.notice?.lines) {
-      $('#noticeBox').innerHTML =
-        `<strong>${status.notice.title || 'PayCheck Test Environment'}</strong>` +
-        status.notice.lines.slice(1).join('<br />');
+      const html = `<strong>${status.notice.title || 'PayCheck Test Environment'}</strong>`
+        + status.notice.lines.slice(1).join('<br />');
+      if ($('#noticeBox')) $('#noticeBox').innerHTML = html;
     }
     if (!status.configured) {
-      setPill('Server missing OFFICIAL_TEST_PAYCHEK_API_KEY / SECRET', true);
+      setLoginStatus('Server missing OFFICIAL_TEST_PAYCHEK_API_KEY / SECRET', true);
       return;
     }
 
-    const urlSession = new URLSearchParams(location.search).get('demoSession');
-    let data;
-    if (urlSession) {
-      try {
-        data = await api(`/session/${encodeURIComponent(urlSession)}`);
-      } catch {
-        data = await api('/session', { method: 'POST', body: '{}' });
-      }
+    const me = await api('/me');
+    if (me.authenticated && me.visitor) {
+      updateLoginButtons(true);
+      setLoginStatus(`${me.visitor.displayName} · বাকি ~${me.visitor.hoursLeft} ঘণ্টা`);
+      // Auto-resume into workspace for returning visitors
+      const ws = await api('/workspace');
+      applyWorkspaceData(ws);
+      showWorkspace();
+      setPill('ডেমো অ্যাকাউন্টে ফিরে এসেছেন');
     } else {
-      data = await api('/session', { method: 'POST', body: '{}' });
+      updateLoginButtons(false);
+      setLoginStatus('এক ক্লিকে ডেমো অ্যাকাউন্ট তৈরি করুন');
+      showLogin();
     }
 
-    state.sessionId = data.sessionId;
-    state.apiKey = data.apiKey;
-    state.layout = data.layout;
-    state.baseLayout = data.baseLayout || data.layout;
-    state.overrides = data.overrides || {};
-    setPill(`Demo session · ${state.sessionId.slice(0, 14)}…`);
-    renderEditor(state.layout, state.baseLayout);
-    await loadPreview();
-
-    // Keep URL shareable without creating an account
+    // Clean return URL noise
     const u = new URL(location.href);
-    u.searchParams.set('demoSession', state.sessionId);
-    history.replaceState({}, '', u);
+    if (u.searchParams.has('status') || u.searchParams.has('demoSession')) {
+      u.searchParams.delete('status');
+      u.searchParams.delete('demoSession');
+      u.hash = '';
+      history.replaceState({}, '', u.pathname + u.search);
+    }
   } catch (e) {
-    setPill(e.message || 'Failed to start test session', true);
+    setLoginStatus(e.message || 'Failed to load test experience', true);
+    showLogin();
   }
 }
 

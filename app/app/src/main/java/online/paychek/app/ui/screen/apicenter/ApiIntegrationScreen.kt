@@ -149,12 +149,7 @@ fun ApiIntegrationScreen(
                                 Text("গ্লোবাল — সব ওয়েবসাইটের ডিফল্ট চেকআউট", color = Color.White.copy(0.85f), fontSize = 11.sp)
                             }
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = onNavigateToDocs, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.AutoMirrored.Filled.MenuBook, null, tint = Color.White, modifier = Modifier.size(20.dp))
-                            }
-                            Icon(Icons.Default.ChevronRight, null, tint = Color.White)
-                        }
+                        Icon(Icons.Default.ChevronRight, null, tint = Color.White)
                     }
                 }
             }
@@ -236,7 +231,7 @@ fun ApiIntegrationScreen(
         AddWebsiteWizard(
             isCreating = state.isCreating,
             onDismiss = { showWizard = false },
-            onCreate = { domain, name -> viewModel.createWebsite(domain, name) }
+            onCreate = { domain, name, purpose -> viewModel.createWebsite(domain, name, purpose) }
         )
     }
 

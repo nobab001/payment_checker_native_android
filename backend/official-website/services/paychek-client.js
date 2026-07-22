@@ -6,7 +6,7 @@ function signRequestBody(rawBody, secret) {
   return crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
 }
 
-async function initPaychekCheckout(req, { amount, orderId, successUrl, cancelUrl, callbackUrl, meta }) {
+async function initPaychekCheckout(req, { amount, orderId, successUrl, cancelUrl, callbackUrl, purpose, meta }) {
   if (!config.paychekApiKey || !config.paychekApiSecret) {
     const err = new Error('Official Test merchant API key/secret not configured');
     err.code = 'CONFIG_ERROR';
@@ -22,6 +22,7 @@ async function initPaychekCheckout(req, { amount, orderId, successUrl, cancelUrl
     successUrl,
     cancelUrl,
     callbackUrl,
+    purpose: purpose || undefined,
     meta: meta || {},
   };
   const rawBody = JSON.stringify(payload);
@@ -32,6 +33,9 @@ async function initPaychekCheckout(req, { amount, orderId, successUrl, cancelUrl
       'Content-Type': 'application/json',
       'X-API-Key': config.paychekApiKey,
       'X-Signature': signature,
+      // So checkoutUrl uses the visitor's browser host (LAN), not 127.0.0.1
+      'X-Forwarded-Host': req?.headers?.['x-forwarded-host'] || req?.get?.('host') || '',
+      'X-Forwarded-Proto': req?.headers?.['x-forwarded-proto'] || req?.protocol || 'http',
     },
     timeout: 15000,
     validateStatus: () => true,

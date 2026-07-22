@@ -249,6 +249,15 @@ cron.schedule('*/15 * * * * *', () => {
   runOutboxWorker().catch((err) => console.error('[CRON] outbox worker:', err.message));
 });
 
+// Official Test: purge expired sandbox demo accounts hourly
+cron.schedule('15 * * * *', () => {
+  const demoVisitor = require('./official-website/services/demo-visitor-service');
+  demoVisitor.purgeExpired()
+    .then((r) => {
+      if (r.deleted) console.log(`[CRON] demo visitors purged: ${r.deleted}`);
+    })
+    .catch((err) => console.error('[CRON] demo purge:', err.message));
+});
 
 // Comm Policy v1.1: catch silent/uninstalled devices — arm miss probes if heartbeat window elapsed
 cron.schedule('* * * * *', () => {
@@ -267,6 +276,13 @@ cron.schedule('*/30 * * * * *', () => {
   const presenceV25 = require('./services/presenceV25');
   presenceV25.runSweepTick()
     .catch((err) => console.error('[PresenceV25] sweep:', err.message));
+});
+
+// Pending device-approval requests expire after ~12 minutes (soft-reject; re-login reopens)
+cron.schedule('* * * * *', () => {
+  const { expireStalePendingApprovals } = require('./services/pendingApprovalExpiry');
+  expireStalePendingApprovals()
+    .catch((err) => console.error('[CRON] pending approval expiry:', err.message));
 });
 
 // Mount BullMQ Background Worker for SMS Processing
@@ -300,6 +316,13 @@ server.listen(PORT, async () => {
 
     console.log('[DB] ✅ Database check complete!');
 
+    try {
+      const { ensureDemoTables } = require('./official-website/db/ensure-demo-tables');
+      await ensureDemoTables();
+      console.log('[DB] ✅ demo_visitors tables verified.');
+    } catch (demoErr) {
+      console.warn('[DB] demo tables ensure failed:', demoErr.message);
+    }
 
     try {
       const { ensurePresenceV25Schema } = require('./db/ensure-presence-v25');
@@ -309,6 +332,50 @@ server.listen(PORT, async () => {
       console.log('[DB] ✅ presence v2.5 schema + comm_policy verified.');
     } catch (presenceErr) {
       console.warn('[DB] presence v2.5 ensure failed:', presenceErr.message);
+    }
+
+    try {
+      const { ensureSmsTemplateDisplayOrder } = require('./db/ensure-sms-template-order');
+      await ensureSmsTemplateDisplayOrder();
+      console.log('[DB] ✅ sms_templates.display_order verified.');
+    } catch (orderErr) {
+      console.warn('[DB] sms_templates.display_order ensure failed:', orderErr.message);
+    }
+
+    try {
+      const { ensureCustomArchiveMetaColumns } = require('./db/ensure-custom-archive-meta');
+      await ensureCustomArchiveMetaColumns();
+      console.log('[DB] ✅ custom_sms_archives meta columns verified.');
+    } catch (archiveMetaErr) {
+      console.warn('[DB] custom_sms_archives meta ensure failed:', archiveMetaErr.message);
+    }
+
+    try {
+      const { ensureDeviceSetupCompleted } = require('./db/ensure-device-setup-completed');
+      await ensureDeviceSetupCompleted();
+      console.log('[DB] ✅ registered_devices.setup_completed verified.');
+    } catch (setupColErr) {
+      console.warn('[DB] registered_devices.setup_completed ensure failed:', setupColErr.message);
+    }
+
+    try {
+      const { ensureMerchantCampaigns } = require('./db/ensure-merchant-campaigns');
+      await ensureMerchantCampaigns();
+      console.log('[DB] ✅ merchant_campaigns verified.');
+    } catch (campErr) {
+      console.warn('[DB] merchant_campaigns ensure failed:', campErr.message);
+    }
+
+    try {
+      const { ensureWebsitePurposeColumn } = require('./db/ensure-website-purpose');
+      await ensureWebsitePurposeColumn();
+      const { ensureWebsitePurposeLockColumns } = require('./db/ensure-website-purpose-lock');
+      await ensureWebsitePurposeLockColumns();
+      const { ensureCheckoutSettlementsTable } = require('./db/ensure-checkout-settlements');
+      await ensureCheckoutSettlementsTable();
+      console.log('[DB] ✅ website_purpose + lock + settlements verified.');
+    } catch (purposeErr) {
+      console.warn('[DB] website_purpose ensure failed:', purposeErr.message);
     }
 
     try {
