@@ -59,10 +59,16 @@ class PaymentRepository {
         provider: String = "all",
         startDate: String? = null,
         endDate: String? = null,
-        historyLastSync: Long? = null
+        historyLastSync: Long? = null,
+        trxId: String? = null
     ): Result<TransactionHistoryResult> {
         return try {
-            val syncHeader = if (page == 1 && (historyLastSync ?: 0L) > 0L) historyLastSync else null
+            // TrxID lookup must always hit the server (never empty cache_hit shortcut)
+            val syncHeader = if (
+                trxId.isNullOrBlank() &&
+                page == 1 &&
+                (historyLastSync ?: 0L) > 0L
+            ) historyLastSync else null
             val response = api.getTransactionHistory(
                 token    = "Bearer $token",
                 historyLastSync = syncHeader,
@@ -70,7 +76,8 @@ class PaymentRepository {
                 limit    = limit,
                 provider = provider,
                 startDate = startDate,
-                endDate = endDate
+                endDate = endDate,
+                trxId = trxId?.takeIf { it.isNotBlank() }
             )
             if (response.isSuccessful) {
                 val body = response.body()
@@ -92,6 +99,20 @@ class PaymentRepository {
         } catch (e: Exception) {
             Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "Transaction লোড ব্যর্থ")))
         }
+    }
+
+    /** Smart Pop-up: find transaction(s) by exact TrxID on server. */
+    suspend fun findTransactionsByTrxId(token: String, trxId: String): Result<List<TransactionItem>> {
+        val q = trxId.trim()
+        if (q.isEmpty()) return Result.success(emptyList())
+        return fetchTransactionHistory(
+            token = token,
+            page = 1,
+            limit = 20,
+            provider = "all",
+            historyLastSync = null,
+            trxId = q
+        ).map { it.items }
     }
 
 

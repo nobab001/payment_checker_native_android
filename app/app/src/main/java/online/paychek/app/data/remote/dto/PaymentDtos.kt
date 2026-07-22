@@ -251,7 +251,10 @@ data class CustomArchiveItem(
     val id: Int,
     @SerializedName("device_id") val deviceId: String,
     @SerializedName("device_name") val deviceName: String?,
+    @SerializedName("sim_slot") val simSlot: Int? = null,
+    @SerializedName("sim_number") val simNumber: String? = null,
     @SerializedName("provider_tag") val providerTag: String,
+    @SerializedName("sender_id") val senderId: String? = null,
     @SerializedName("full_sms") val fullSms: String,
     @SerializedName("created_at") val createdAt: String
 )

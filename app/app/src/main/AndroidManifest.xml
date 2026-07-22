@@ -35,6 +35,10 @@
     <!-- Post Notifications (Android 13+) — foreground service notification -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Smart Pop-up — overlay on other apps -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- Exact Alarm — WorkManager reliable scheduling on Android 12+ -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
@@ -111,6 +115,16 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!-- Smart Pop-up floating overlay (Personal Business) -->
+        <service
+            android:name=".services.smartpopup.SmartPopupService"
+            android:foregroundServiceType="specialUse"
+            android:exported="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Personal Business users need a floating transaction scanner overlay while using WhatsApp and other apps." />
         </service>
 
     </application>

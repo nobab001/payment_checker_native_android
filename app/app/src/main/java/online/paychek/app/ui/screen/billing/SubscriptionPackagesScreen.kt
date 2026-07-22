@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBackIosNew
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -109,31 +108,7 @@ fun SubscriptionPackagesScreen(
 
     Scaffold(
         containerColor = PackBg,
-        topBar = {
-            TopAppBar(
-                modifier = Modifier.height(56.dp),
-                windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
-                title = {
-                    Text(
-                        text = "সাবস্ক্রিপশন প্যাকেজসমূহ",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowBackIosNew,
-                            contentDescription = "Back",
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = RoyalIndigo)
-            )
-        }
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
         Column(
             modifier = modifier
@@ -143,19 +118,23 @@ fun SubscriptionPackagesScreen(
         ) {
             ScrollableTabRow(
                 selectedTabIndex = selectedTab.coerceIn(0, (tabOrder.size - 1).coerceAtLeast(0)),
-                containerColor = PackBg,
-                contentColor = Color(0xFF22D3EE),
+                containerColor = RoyalIndigo,
+                contentColor = Color.White,
                 edgePadding = 8.dp,
                 indicator = { tabPositions ->
                     val idx = selectedTab.coerceIn(0, (tabPositions.size - 1).coerceAtLeast(0))
                     if (tabPositions.isNotEmpty() && idx < tabPositions.size) {
                         TabRowDefaults.SecondaryIndicator(
                             modifier = Modifier.tabIndicatorOffset(tabPositions[idx]),
-                            color = Color(0xFF22D3EE)
+                            color = Color.White
                         )
                     }
                 },
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(RoyalIndigo)
+                    .statusBarsPadding()
+                    .padding(vertical = 8.dp)
             ) {
                 tabOrder.forEachIndexed { index, key ->
                     Tab(
@@ -164,6 +143,7 @@ fun SubscriptionPackagesScreen(
                         text = {
                             Text(
                                 tabLabel(key),
+                                color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = if (key == "personal_custom_center") 12.sp else 13.sp
                             )
@@ -228,6 +208,7 @@ fun SubscriptionPackagesScreen(
                                                 )
                                                 repository.purchaseSubscriptionAddon(token, planId).fold(
                                                     onSuccess = {
+                                                        online.paychek.app.utils.AccountEntitlementsStore.refresh(context)
                                                         purchasingAddonId = null
                                                         android.widget.Toast.makeText(
                                                             context,
@@ -323,7 +304,8 @@ fun SubscriptionPackagesScreen(
                 permTemplate = plan.permTemplate,
                 permWebsite = plan.permWebsite,
                 permDevice = plan.permDevice,
-                permCustomSender = plan.isCustomSenderAllowed
+                permCustomSender = plan.isCustomSenderAllowed,
+                permSmartPopup = plan.permSmartPopup
             ),
             onDismiss = { previewSubscription = null }
         )
@@ -343,7 +325,8 @@ fun SubscriptionPackagesScreen(
             permissionLines = addonPermissionLines(
                 maxDevices = addon.maxDevices,
                 permCustomSender = addon.permCustomSender,
-                permDevice = addon.permDevice
+                permDevice = addon.permDevice,
+                permSmartPopup = addon.permSmartPopup
             ),
             onDismiss = { previewAddon = null }
         )

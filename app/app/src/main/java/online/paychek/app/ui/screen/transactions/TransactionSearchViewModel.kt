@@ -343,7 +343,11 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
             }
 
             val provider = _state.value.selectedProvider
-            val historyLastSync = if (!isManualRefresh) {
+            // Provider filter must hit the server — cache_hit would return unfiltered empty payload
+            val historyLastSync = if (
+                !isManualRefresh &&
+                provider.equals("all", ignoreCase = true)
+            ) {
                 PrefsHelper.getHistoryLastSync(getApplication()).takeIf { it > 0L }
             } else null
 
@@ -469,13 +473,20 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
     private fun applyLocalFilter() {
         val current  = _state.value
         val query    = current.searchQuery.trim().lowercase()
+        val provider = current.selectedProvider.trim()
 
         val filtered = current.rawList.filter { item ->
             val matchesSearch = query.isEmpty() ||
                     item.trxId.lowercase().contains(query) ||
                     (item.senderNumber?.lowercase()?.contains(query) == true)
 
-            matchesSearch
+            val tag = item.providerTag
+            val matchesProvider = provider.equals("all", ignoreCase = true) ||
+                    tag.equals(provider, ignoreCase = true) ||
+                    tag.contains(provider, ignoreCase = true) ||
+                    provider.contains(tag, ignoreCase = true)
+
+            matchesSearch && matchesProvider
         }
 
         _state.update { it.copy(displayList = filtered) }

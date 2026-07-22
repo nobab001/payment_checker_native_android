@@ -118,21 +118,25 @@ fun subscriptionPermissionLines(
     permTemplate: Int,
     permWebsite: Int,
     permDevice: Int,
-    permCustomSender: Int
+    permCustomSender: Int,
+    permSmartPopup: Int = 0
 ): List<Pair<String, Boolean>> = listOf(
     "কাস্টম সেন্ডার আইডি" to (permCustomSender == 1),
     "টেমপ্লেট যোগ/সক্রিয়" to (permTemplate == 1),
     "ওয়েবসাইট যোগ" to (permWebsite == 1),
-    "ডিভাইস যোগ" to (permDevice == 1)
+    "ডিভাইস যোগ" to (permDevice == 1),
+    "স্মার্ট পপ-আপ" to (permSmartPopup == 1)
 )
 
 fun addonPermissionLines(
     maxDevices: Int,
     permCustomSender: Int = 1,
-    permDevice: Int = 1
+    permDevice: Int = 1,
+    permSmartPopup: Int = 0
 ): List<Pair<String, Boolean>> = listOf(
     "কাস্টম সেন্ডার আইডি" to (permCustomSender == 1),
     "ডিভাইস যোগ (সর্বোচ্চ $maxDevices)" to (permDevice == 1),
     "টেমপ্লেট" to false,
-    "ওয়েবসাইট" to false
+    "ওয়েবসাইট" to false,
+    "স্মার্ট পপ-আপ" to (permSmartPopup == 1)
 )

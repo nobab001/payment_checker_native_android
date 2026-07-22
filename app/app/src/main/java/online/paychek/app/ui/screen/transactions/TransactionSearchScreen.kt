@@ -38,6 +38,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import online.paychek.app.data.remote.dto.TransactionItem
 import online.paychek.app.ui.components.ConnectionStatusBanner
 import online.paychek.app.ui.components.LastUpdateRow
+import online.paychek.app.utils.BanglaDateTimeFormat
 import online.paychek.app.utils.adaptivePadding
 import online.paychek.app.utils.adaptiveTextSize
 import online.paychek.app.utils.screenWidth
@@ -441,14 +442,15 @@ private fun M3FilterChipsRow(
     ) {
         items(templates) { template ->
             val isOther = template.isOtherDevice == true
-            val isSelected = !isOther && selected.lowercase() == template.senderId.lowercase()
+            val isSelected = !isOther && selected.lowercase() == template.templateName.lowercase()
             val labelText = if (isOther) "${template.templateName} (অন্য ডিভাইসে তৈরি)" else template.templateName
 
             FilterChip(
                 selected = isSelected,
                 onClick = {
                     if (!isOther) {
-                        onSelect(template.senderId)
+                        // Filter by template name (= provider_tag on history), not senderId
+                        onSelect(template.templateName)
                     }
                 },
                 label = {
@@ -550,9 +552,11 @@ private fun TransactionCard(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text     = formatTrxTimestamp(item.smsTimestamp),
+                            text     = BanglaDateTimeFormat.formatTrxCard(item.smsTimestamp),
                             color    = TextMuted.copy(alpha = 0.7f),
-                            fontSize = 10.sp
+                            fontSize = 10.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         val simInfo = buildString {
@@ -564,7 +568,8 @@ private fun TransactionCard(
                             color    = TextMuted.copy(alpha = 0.6f),
                             fontSize = 9.sp,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.offset(x = (-12).dp)
                         )
                     }
 
@@ -653,34 +658,6 @@ private fun TransactionCard(
                             color = TextMuted,
                             fontSize = 11.sp
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "Timestamp Details",
-                            color = TextWhite,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "SMS: ${item.smsTimestamp}",
-                            color = TextMuted,
-                            fontSize = 11.sp
-                        )
-                        if (item.senderNumber != null) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "Sender",
-                                color = TextWhite,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = item.senderNumber,
-                                color = TextMuted,
-                                fontSize = 11.sp
-                            )
-                        }
                     }
                 }
             }
@@ -904,23 +881,5 @@ private fun LoadMoreHistoryButton(
 // Utility — Timestamp Format
 // =============================================================================
 private fun formatTrxTimestamp(raw: String): String {
-    return try {
-        val formats = listOf(
-            "yyyy-MM-dd'T'HH:mm:ss",
-            "yyyy-MM-dd HH:mm:ss",
-            "yyyy-MM-dd"
-        )
-        var parsed: Date? = null
-        for (fmt in formats) {
-            try {
-                parsed = SimpleDateFormat(fmt, Locale.US).parse(raw)
-                break
-            } catch (_: Exception) { }
-        }
-        parsed?.let {
-            SimpleDateFormat("dd MMM yy, hh:mm a", Locale.ENGLISH).format(it)
-        } ?: raw.take(16)
-    } catch (_: Exception) {
-        raw.take(16)
-    }
+    return BanglaDateTimeFormat.formatTrxCard(raw)
 }

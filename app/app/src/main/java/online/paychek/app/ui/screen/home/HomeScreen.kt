@@ -54,6 +54,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
@@ -71,6 +72,9 @@ private enum class HomeTab(
     API(Icons.Default.Code, "API"),
     PROFILE(Icons.Default.Person, "Profile")
 }
+
+/** Survives Home leaving composition when Checkout/Website/Docs are pushed. */
+private var retainedHomeTabName: String = HomeTab.HOME.name
 
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
@@ -241,6 +245,12 @@ fun HomeScreen(
                         val response = online.paychek.app.data.remote.api.RetrofitClient.gatewayApiService.checkApprovalStatus("Bearer $token")
                         if (response.isSuccessful && response.body() != null) {
                             val body = response.body()!!
+                            if (body.setupCompleted) {
+                                context.getSharedPreferences(
+                                    online.paychek.app.config.AppConfig.PREF_NAME,
+                                    android.content.Context.MODE_PRIVATE
+                                ).edit().putBoolean("pcu_setup_completed", true).apply()
+                            }
                             if (body.isApproved) {
                                 SecurePreferences.encrypt(context, "pcu_is_approved", "true")
                                 SecurePreferences.encrypt(context, "pcu_device_role", body.deviceRole ?: "pending")
@@ -303,13 +313,13 @@ fun HomeScreen(
         var fresh = fetchPending()
         pendingDevices = fresh
 
-        // Active wait only while a device is actually pending approval.
-        // When empty: soft rediscovery every 45s (no Socket.IO — HTTP only).
+        // Poll fast only while a pending request exists (server TTL ~12 min).
+        // When empty: rely on socket push / resume / tab — rare safety poll every 3 min.
         while (true) {
             if (fresh.isNotEmpty()) {
                 kotlinx.coroutines.delay(5_000L)
             } else {
-                kotlinx.coroutines.delay(45_000L)
+                kotlinx.coroutines.delay(180_000L)
             }
             fresh = fetchPending()
             pendingDevices = fresh
@@ -342,7 +352,16 @@ fun HomeScreen(
             onNavigate(AppNavKey.ApiCenter)
         }
     }
-    var selectedTab by remember { mutableStateOf(HomeTab.HOME) }
+    // Survive leaving Home for Checkout / Website / Docs so back returns to API tab (not Home).
+    var selectedTabName by rememberSaveable { mutableStateOf(retainedHomeTabName) }
+    val selectedTab = remember(selectedTabName) {
+        runCatching { HomeTab.valueOf(selectedTabName) }.getOrDefault(HomeTab.HOME)
+    }
+    fun selectTab(tab: HomeTab) {
+        selectedTabName = tab.name
+        retainedHomeTabName = tab.name
+    }
+    SideEffect { retainedHomeTabName = selectedTabName }
 
     LaunchedEffect(selectedTab) {
         when (selectedTab) {
@@ -356,7 +375,7 @@ fun HomeScreen(
     }
 
     BackHandler(enabled = selectedTab != HomeTab.HOME) {
-        selectedTab = HomeTab.HOME
+        selectTab(HomeTab.HOME)
     }
 
     // 1. Lock Overlay if not approved
@@ -817,7 +836,7 @@ fun HomeScreen(
                 hasWebsitePermission = entitlements.hasWebsite,
                 onApiTabLocked = { showWebsitePermissionDialog = true },
                 onTabSelect = { tab ->
-                    selectedTab = tab
+                    selectTab(tab)
                 }
             )
         }
@@ -879,14 +898,23 @@ fun HomeScreen(
             ) {
                 when (selectedTab) {
                     HomeTab.HOME -> DashboardScreen(
-                        onNavigateToHistory = { selectedTab = HomeTab.SEARCH },
+                        onNavigateToHistory = { selectTab(HomeTab.SEARCH) },
                         onNavigateToSubscription = { onNavigate(AppNavKey.SubscriptionPackages()) },
                         onPullRefresh = triggerPendingRefresh,
+                        hasSmartPopup = entitlements.hasSmartPopup,
                         modifier = Modifier.fillMaxSize()
                     )
                     HomeTab.DEVICE -> DeviceScreen(
-                        onNavigateBack = { selectedTab = HomeTab.HOME },
+                        onNavigateBack = { selectTab(HomeTab.HOME) },
                         onNavigateToSubscription = { tab -> onNavigate(AppNavKey.SubscriptionPackages(tab)) },
+                        onNavigateToCustomSenderReadyMade = { simSlot, targetDeviceId ->
+                            onNavigate(
+                                AppNavKey.CustomSenderReadyMade(
+                                    simSlot = simSlot,
+                                    targetDeviceId = targetDeviceId.orEmpty()
+                                )
+                            )
+                        },
                         externalRefreshTick = approvalPollTick,
                         modifier = Modifier.fillMaxSize()
                     )
@@ -937,7 +965,7 @@ fun HomeScreen(
                         }
                     }
                     HomeTab.PROFILE -> ProfileSettingsScreen(
-                        onNavigateBack = { selectedTab = HomeTab.HOME },
+                        onNavigateBack = { selectTab(HomeTab.HOME) },
                         onNavigateToSubscription = { onNavigate(AppNavKey.SubscriptionPackages()) },
                         modifier = Modifier.fillMaxSize()
                     )

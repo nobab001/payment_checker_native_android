@@ -46,7 +46,8 @@ interface PaymentApiService {
         @Query("limit")    limit: Int    = 20,
         @Query("provider") provider: String = "all",
         @Query("startDate") startDate: String? = null,
-        @Query("endDate") endDate: String? = null
+        @Query("endDate") endDate: String? = null,
+        @Query("trxId") trxId: String? = null
     ): Response<TransactionListResponse>
 
     // ─── Dashboard Stats ─────────────────────────────────────────────────────

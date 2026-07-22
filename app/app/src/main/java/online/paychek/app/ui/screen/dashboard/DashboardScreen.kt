@@ -17,6 +17,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -65,6 +69,7 @@ import online.paychek.app.ui.components.ConnectionStatusBanner
 import online.paychek.app.ui.components.LastUpdateRow
 import online.paychek.app.ui.components.background.BackgroundPersistenceCard
 import online.paychek.app.utils.AccessibilityHelper
+import online.paychek.app.utils.BanglaDateTimeFormat
 import online.paychek.app.utils.BatteryOptimizationHelper
 import online.paychek.app.utils.OemBackgroundHelper
 import online.paychek.app.utils.adaptivePadding
@@ -105,6 +110,7 @@ fun DashboardScreen(
     onNavigateToHistory: () -> Unit,
     onNavigateToSubscription: () -> Unit,
     onPullRefresh: () -> Unit = {},
+    hasSmartPopup: Boolean = false,
     modifier: Modifier = Modifier,
     viewModel: DashboardViewModel = viewModel()
 ) {
@@ -140,12 +146,44 @@ fun DashboardScreen(
     val pendingSetupCount =
         (if (!isAccessibilityEnabled) 1 else 0) + (if (!isBatteryUnrestricted) 1 else 0)
 
+    // Whether Background Guard was ever completed on this device (server-backed,
+    // survives reinstall). Used to show a lighter "re-enable Accessibility" prompt
+    // instead of the full first-time setup nag after a reinstall.
+    val homePrefs = remember {
+        context.getSharedPreferences(
+            online.paychek.app.config.AppConfig.PREF_NAME,
+            android.content.Context.MODE_PRIVATE
+        )
+    }
+    var wasSetupBefore by remember { mutableStateOf(homePrefs.getBoolean("pcu_setup_completed", false)) }
+    // After a reinstall the device is already approved + was set up before, but the
+    // OS wiped the accessibility grant — surface a friendly one-tap re-enable prompt.
+    val reinstallReenable = wasSetupBefore && !isAccessibilityEnabled
+
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
             if (state == androidx.lifecycle.Lifecycle.State.RESUMED) {
                 isAccessibilityEnabled = AccessibilityHelper.isAccessibilityServiceEnabled(context)
                 isBatteryUnrestricted = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
                 viewModel.ensureSmsServiceRunning()
+
+                // First time everything is ready → remember it locally + on the server
+                // so a future reinstall only needs a single accessibility tap.
+                if (isAccessibilityEnabled && isBatteryUnrestricted &&
+                    !homePrefs.getBoolean("pcu_setup_completed", false)
+                ) {
+                    homePrefs.edit().putBoolean("pcu_setup_completed", true).apply()
+                    wasSetupBefore = true
+                    try {
+                        val token = online.paychek.app.utils.SecurePreferences.decrypt(
+                            context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN
+                        )
+                        if (token.isNotEmpty()) {
+                            online.paychek.app.data.remote.api.RetrofitClient
+                                .gatewayApiService.markSetupCompleted("Bearer $token")
+                        }
+                    } catch (_: Exception) { /* best-effort */ }
+                }
             }
         }
     }
@@ -417,20 +455,23 @@ fun DashboardScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Warning,
+                            imageVector = if (reinstallReenable) Icons.Default.Lock else Icons.Default.Warning,
                             contentDescription = "Warning",
                             tint = Color.White,
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
-                            text = "⚠ ${pendingSetupCount}টি সেটিংস সম্পূর্ণ করুন",
+                            text = if (reinstallReenable)
+                                "🔓 Accessibility আবার চালু করুন"
+                            else
+                                "⚠ ${pendingSetupCount}টি সেটিংস সম্পূর্ণ করুন",
                             color = Color.White,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
                     Text(
-                        text = "সেটআপ ➔",
+                        text = if (reinstallReenable) "চালু করুন ➔" else "সেটআপ ➔",
                         color = Color.White,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
@@ -458,7 +499,7 @@ fun DashboardScreen(
         LazyColumn(
             modifier            = Modifier.fillMaxSize(),
             contentPadding      = PaddingValues(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
 
             // ১. Dashboard Header Block (স্বাগতম, প্যাকেজ ও SMS মনিটর সম্বলিত একটি কার্ড)
@@ -557,7 +598,7 @@ fun DashboardScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .padding(horizontal = 16.dp, vertical = 2.dp)
                 ) {
                     Tab(
                         selected = screenState.selectedTab == 0,
@@ -645,13 +686,26 @@ fun DashboardScreen(
                                             )
                                         }
                                     }
-                                    IconButton(onClick = { showDateRangePicker = true }) {
-                                        Icon(
-                                            imageVector = Icons.Default.DateRange,
-                                            contentDescription = "Date Filter",
-                                            tint = if (selectedDate == "custom") AccentCyan else TextMuted,
-                                            modifier = Modifier.size(20.dp)
-                                        )
+                                    if (!hasSmartPopup) {
+                                        IconButton(onClick = { showDateRangePicker = true }) {
+                                            Icon(
+                                                imageVector = Icons.Default.DateRange,
+                                                contentDescription = "Date Filter",
+                                                tint = if (selectedDate == "custom") AccentCyan else TextMuted,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    } else {
+                                        IconButton(onClick = {
+                                            online.paychek.app.services.smartpopup.SmartPopupManager.open(context)
+                                        }) {
+                                            Icon(
+                                                imageVector = Icons.Default.TouchApp,
+                                                contentDescription = "Smart Pop-up",
+                                                tint = AccentCyan,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
                                     }
                                 }
                             },
@@ -1072,32 +1126,19 @@ private fun DashboardHeaderBlock(
                 color = Color(0xFF162A5E),
                 shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)
             )
-            .padding(adaptivePadding(12.dp, 16.dp))
+            .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 4.dp)
     ) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Row 1: Avatar, Welcome Text, Standard Badge, Menu Button
+            // Row 1: Avatar, Welcome Text, Notification Button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Avatar icon
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = "User Icon",
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+                // Avatar — profile photo if set, otherwise person icon
+                HeaderAvatar(sizeDp = 44.dp)
 
                 // Welcome texts
                 Column(modifier = Modifier.weight(1f)) {
@@ -1107,50 +1148,115 @@ private fun DashboardHeaderBlock(
                         fontSize = 12.sp
                     )
                     Text(
-                        text = userName,
+                        text = userName.ifBlank { "ব্যবহারকারী" },
                         color = Color.White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                // Plan Badge
-                Surface(
-                    color = Color.White.copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f))
-                ) {
-                    Text(
-                        text = activePlanName,
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
-                }
-
-                // Three-dots menu button
+                // Notification icon button (replaces old 3-dot menu)
                 Box(
                     modifier = Modifier
                         .size(36.dp)
                         .clip(CircleShape)
                         .background(Color.White.copy(alpha = 0.15f))
                         .clickable {
-                            // Can show more options or info
+                            // Notifications entry point
                         },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.MoreHoriz,
-                        contentDescription = "More options",
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = "নোটিফিকেশন",
                         tint = Color.White,
                         modifier = Modifier.size(20.dp)
                     )
                 }
             }
 
-            // Row 2: Inner Card (Plan details and renew button)
-            Card(
+            // Row 2: Compact glass bar — 2 lines (package name + expiry/days) + small renew button
+            val expiryLine = when {
+                !isPaid -> "গেটওয়ে সচল করতে প্যাকেজ কিনুন"
+                expiryDate.isNullOrEmpty() -> "মেয়াদের তথ্য নেই"
+                daysRemaining >= 0 -> "মেয়াদ শেষ: $formattedDate • $daysRemaining দিন বাকি"
+                else -> "মেয়াদ শেষ: $formattedDate"
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color.White.copy(alpha = 0.10f))
+                    .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(14.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.WorkspacePremium,
+                            contentDescription = null,
+                            tint = AccentAmber,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = if (isPaid) activePlanName else "ফ্রি প্ল্যান",
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .basicMarquee()
+                        )
+                    }
+                    Text(
+                        text = expiryLine,
+                        color = Color.White.copy(alpha = 0.65f),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // Renew button
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White.copy(alpha = 0.08f))
+                        .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
+                        .clickable(onClick = onBuyPlanClick)
+                        .padding(horizontal = 16.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Autorenew,
+                        contentDescription = null,
+                        tint = AccentGreen,
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Text(
+                        text = if (isPaid) "রিনিউ" else "কিনুন",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+            }
+
+            // Legacy plan card retained (disabled) — replaced by glass chips above
+            if (false) Card(
                 colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.08f)),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -1181,7 +1287,7 @@ private fun DashboardHeaderBlock(
                         } else if (!isPaid) {
                             Text(
                                 text = "গেটওয়ে সচল করতে প্যাকেজ কিনুন",
-                                color = Color.White.copy(alpha = 0.6f),
+                                color = Color.White.copy(alpha = 0.62f),
                                 fontSize = 11.sp
                             )
                         }
@@ -1244,6 +1350,71 @@ private fun DashboardHeaderBlock(
     }
 }
 
+
+// Header avatar — shows the saved profile photo if present, otherwise a person icon
+@Composable
+private fun HeaderAvatar(sizeDp: Dp) {
+    val context = LocalContext.current
+    val avatarFile = remember { java.io.File(context.filesDir, "profile_avatar.png") }
+    var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(Unit) {
+        bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val prefs = context.getSharedPreferences(
+                    online.paychek.app.config.AppConfig.PREF_NAME,
+                    android.content.Context.MODE_PRIVATE
+                )
+                val server = prefs.getString("pcu_server_avatar", "") ?: ""
+                val synced = prefs.getString("pcu_synced_avatar", "") ?: ""
+                // Download the server copy once when there's no local cache yet, or
+                // when the versioned server path changed (picture updated elsewhere).
+                if (server.isNotEmpty() && (!avatarFile.exists() || synced != server)) {
+                    val fullUrl = if (server.startsWith("http")) server
+                                  else "${online.paychek.app.config.AppConfig.BASE_URL}${server.trimStart('/')}"
+                    runCatching {
+                        val conn = java.net.URL(fullUrl).openConnection() as java.net.HttpURLConnection
+                        conn.connectTimeout = 10000
+                        conn.readTimeout = 15000
+                        conn.instanceFollowRedirects = true
+                        conn.setRequestProperty("ngrok-skip-browser-warning", "true")
+                        conn.connect()
+                        if (conn.responseCode == 200) {
+                            conn.inputStream.use { input ->
+                                java.io.FileOutputStream(avatarFile).use { output -> input.copyTo(output) }
+                            }
+                            prefs.edit().putString("pcu_synced_avatar", server).apply()
+                        }
+                    }
+                }
+                if (avatarFile.exists()) android.graphics.BitmapFactory.decodeFile(avatarFile.absolutePath) else null
+            }.getOrNull()
+        }
+    }
+    Box(
+        modifier = Modifier
+            .size(sizeDp)
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.15f)),
+        contentAlignment = Alignment.Center
+    ) {
+        val bmp = bitmap
+        if (bmp != null) {
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = "প্রোফাইল ছবি",
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Default.Person,
+                contentDescription = "User Icon",
+                tint = Color.White,
+                modifier = Modifier.size(sizeDp * 0.55f)
+            )
+        }
+    }
+}
 
 // =============================================================================
 // Component 3 — Stats Grid (২×২)
@@ -1487,9 +1658,11 @@ private fun TransactionRow(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text     = formatTimestamp(item.smsTimestamp),
+                            text     = BanglaDateTimeFormat.formatTrxCard(item.smsTimestamp),
                             color    = TextMuted.copy(alpha = 0.7f),
-                            fontSize = 10.sp
+                            fontSize = 10.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         val simInfo = buildString {
@@ -1501,7 +1674,9 @@ private fun TransactionRow(
                             color    = TextMuted.copy(alpha = 0.6f),
                             fontSize = 9.sp,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            // Slightly left of provider / TrxID / date column
+                            modifier = Modifier.offset(x = (-12).dp)
                         )
                     }
 
@@ -1553,64 +1728,34 @@ private fun TransactionRow(
                         }
                     }
                 }
-                
-                
-                // Expanded Area (this empty comment just replacing broken leftovers)
-            }
 
-            androidx.compose.animation.AnimatedVisibility(
-                visible = expanded,
-                enter = androidx.compose.animation.expandVertically(animationSpec = tween(300)) + fadeIn(tween(300)),
-                exit = androidx.compose.animation.shrinkVertically(animationSpec = tween(300)) + fadeOut(tween(300))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(DashCardAlt)
-                        .padding(14.dp)
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = expanded,
+                    enter = androidx.compose.animation.expandVertically(animationSpec = tween(300)) + fadeIn(tween(300)),
+                    exit = androidx.compose.animation.shrinkVertically(animationSpec = tween(300)) + fadeOut(tween(300))
                 ) {
-                    Text(
-                        text = "Raw SMS",
-                        color = TextWhite,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = item.fullSms ?: "No SMS text available",
-                        color = TextMuted,
-                        fontSize = 11.sp
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "Timestamp Details",
-                        color = TextWhite,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "SMS: ${item.smsTimestamp}",
-                        color = TextMuted,
-                        fontSize = 11.sp
-                    )
-                    if (item.senderNumber != null) {
-                        Spacer(modifier = Modifier.height(12.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(DashCardAlt)
+                            .padding(14.dp)
+                    ) {
                         Text(
-                            text = "Sender",
+                            text = "Raw SMS",
                             color = TextWhite,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = item.senderNumber,
+                            text = item.fullSms ?: "No SMS text available",
                             color = TextMuted,
                             fontSize = 11.sp
                         )
                     }
                 }
             }
+
             // The absolute positioned expand arrow
             Icon(
                 imageVector = Icons.Default.ExpandMore,
@@ -1741,22 +1886,11 @@ private fun ErrorCard(
 }
 
 // =============================================================================
-// Utility — Timestamp Format
+// Utility — Timestamp Format (kept for expiry / account-age helpers above)
 // =============================================================================
 
 private fun formatTimestamp(raw: String): String {
-    return try {
-        // ISO 8601 format handle
-        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
-        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
-        val date = sdf.parse(raw) ?: Date()
-        
-        val outSdf = SimpleDateFormat("dd MMM, hh:mm a", Locale.forLanguageTag("bn-BD"))
-        outSdf.timeZone = java.util.TimeZone.getDefault()
-        outSdf.format(date)
-    } catch (e: Exception) {
-        raw.take(16)
-    }
+    return BanglaDateTimeFormat.formatTrxCard(raw)
 }
 
 private fun formatExpiryDateToBangla(dateStr: String?): String {
@@ -2205,13 +2339,16 @@ private fun CustomArchiveRow(
                             overflow = TextOverflow.Ellipsis,
                             softWrap = true
                         )
-                        Text(
-                            text = item.deviceName ?: "মূল ডিভাইস",
-                            color = TextMuted,
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        val senderLabel = item.senderId?.takeIf { it.isNotBlank() }
+                        if (senderLabel != null) {
+                            Text(
+                                text = senderLabel,
+                                color = TextMuted,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
 
@@ -2256,11 +2393,23 @@ private fun CustomArchiveRow(
                 }
             }
 
-            // Copy Action Button
+            // Device meta (left) + Copy (right)
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                Text(
+                    text = buildCustomArchiveDeviceLine(item),
+                    color = TextMuted,
+                    fontSize = 10.sp,
+                    lineHeight = 12.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
+                )
                 TextButton(
                     onClick = {
                         val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -2285,22 +2434,66 @@ private fun CustomArchiveRow(
     }
 }
 
+private fun buildCustomArchiveDeviceLine(item: online.paychek.app.data.remote.dto.CustomArchiveItem): String {
+    val device = item.deviceName?.takeIf { it.isNotBlank() } ?: "মূল ডিভাইস"
+    val slot = item.simSlot?.takeIf { it in 1..2 }?.let { "SIM $it" }
+    val number = item.simNumber?.trim()?.takeIf { it.isNotEmpty() }
+    return listOfNotNull(device, slot, number).joinToString(" · ")
+}
+
 private fun formatCustomArchiveTime(isoString: String): String {
     val parts = formatCustomArchiveTimeParts(isoString)
     return if (parts.second.isBlank()) parts.first else "${parts.first}, ${parts.second}"
 }
 
-/** Returns (time, date) so the header never squeezes into a vertical strip. */
+/** Returns (time, date) in Asia/Dhaka so home archive cards show Bangladesh time. */
 private fun formatCustomArchiveTimeParts(isoString: String): Pair<String, String> {
     return try {
-        val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
-        val date = inputFormat.parse(isoString) ?: return isoString to ""
-        val timeFormat = SimpleDateFormat("hh:mm a", Locale.US)
-        val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale.US)
+        val date = parseCustomArchiveDate(isoString) ?: return isoString to ""
+        val bd = java.util.TimeZone.getTimeZone("Asia/Dhaka")
+        val timeFormat = SimpleDateFormat("hh:mm a", Locale.US).apply { timeZone = bd }
+        val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale.US).apply { timeZone = bd }
         timeFormat.format(date) to dateFormat.format(date)
     } catch (_: Exception) {
         isoString to ""
     }
+}
+
+private fun parseCustomArchiveDate(raw: String): java.util.Date? {
+    val s = raw.trim()
+    if (s.isEmpty()) return null
+    try {
+        var normalized = s.replace(' ', 'T')
+        if (!normalized.contains("T")) {
+            normalized = normalized.replace(' ', 'T')
+        }
+        if (!normalized.endsWith("Z") && !normalized.contains("+") && normalized.count { it == '-' } <= 2) {
+            // MySQL/Prisma UTC timestamps without zone → treat as UTC
+            if (normalized.length >= 19) normalized = normalized.take(23).trimEnd('Z') + "Z"
+        }
+        return java.util.Date.from(java.time.Instant.parse(normalized))
+    } catch (_: Exception) {
+        // fall through
+    }
+    val patterns = listOf(
+        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss.SSS",
+        "yyyy-MM-dd'T'HH:mm:ss",
+        "yyyy-MM-dd HH:mm:ss.SSS",
+        "yyyy-MM-dd HH:mm:ss"
+    )
+    for (p in patterns) {
+        try {
+            val f = SimpleDateFormat(p, Locale.US)
+            f.timeZone = java.util.TimeZone.getTimeZone("UTC")
+            f.isLenient = true
+            f.parse(s)?.let { return it }
+        } catch (_: Exception) {
+            // try next
+        }
+    }
+    return null
 }
 
 

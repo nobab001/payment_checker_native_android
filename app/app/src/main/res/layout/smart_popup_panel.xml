@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Compact Smart Pop-up: appbar(search+actions) | status | content | scan row -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:id="@+id/smartPopupContent"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@drawable/bg_smart_popup"
+        android:elevation="10dp"
+        android:paddingBottom="8dp">
+
+        <!-- App bar: search fills left, minimize + close on right -->
+        <LinearLayout
+            android:id="@+id/smartPopupHeader"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="4dp"
+            android:background="@drawable/bg_smart_popup_header">
+
+            <LinearLayout
+                android:id="@+id/smartPopupSearchBar"
+                android:layout_width="0dp"
+                android:layout_height="32dp"
+                android:layout_weight="1"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="8dp"
+                android:paddingEnd="2dp"
+                android:background="@drawable/bg_smart_popup_search">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="⌕"
+                    android:textSize="14sp"
+                    android:textColor="#22D3EE"
+                    android:paddingEnd="6dp" />
+
+                <EditText
+                    android:id="@+id/tvSmartPopupQuery"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="@android:color/transparent"
+                    android:textColor="#0F172A"
+                    android:textSize="12sp"
+                    android:maxLines="1"
+                    android:singleLine="true"
+                    android:inputType="text"
+                    android:imeOptions="actionSearch"
+                    android:focusable="true"
+                    android:focusableInTouchMode="true"
+                    android:cursorVisible="true"
+                    android:hint="ট্রানজেকশন খুঁজুন..."
+                    android:textColorHint="#94A3B8"
+                    android:paddingEnd="4dp" />
+
+                <ImageButton
+                    android:id="@+id/btnSmartPopupClear"
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:src="@drawable/ic_smart_popup_clear"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/smart_popup_clear"
+                    android:padding="5dp"
+                    android:scaleType="centerInside"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <ImageButton
+                android:id="@+id/btnSmartPopupMinimize"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:layout_marginStart="2dp"
+                android:src="@drawable/ic_smart_popup_minimize"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/smart_popup_minimize"
+                android:padding="8dp"
+                android:scaleType="centerInside"
+                android:tint="#64748B" />
+
+            <ImageButton
+                android:id="@+id/btnSmartPopupClose"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:src="@drawable/ic_smart_popup_close"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/smart_popup_close"
+                android:padding="8dp"
+                android:scaleType="centerInside"
+                android:tint="#64748B" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvSmartPopupStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="12dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="4dp"
+            android:textColor="#64748B"
+            android:textSize="11sp"
+            android:text="@string/smart_popup_history_loaded" />
+
+        <!-- Mid content: idle empty / SMS result / session history -->
+        <FrameLayout
+            android:id="@+id/smartPopupMid"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:visibility="gone"
+            android:paddingHorizontal="8dp">
+
+            <!-- After scan: SMS body + matched card -->
+            <ScrollView
+                android:id="@+id/smartPopupResultScroll"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:fillViewport="false"
+                android:scrollbars="vertical">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingBottom="4dp">
+
+                    <TextView
+                        android:id="@+id/tvSmartPopupSms"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_smart_popup_sms"
+                        android:padding="10dp"
+                        android:textColor="#334155"
+                        android:textSize="11sp"
+                        android:lineSpacingExtra="2dp"
+                        android:visibility="gone" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rvSmartPopupResults"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:nestedScrollingEnabled="false"
+                        android:layout_marginTop="6dp"
+                        android:overScrollMode="never" />
+                </LinearLayout>
+            </ScrollView>
+
+            <!-- Session history (2 cards visible, scroll) -->
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rvSmartPopupSession"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone"
+                android:scrollbars="vertical"
+                android:clipToPadding="false"
+                android:paddingBottom="4dp" />
+        </FrameLayout>
+
+        <!-- Scan row: optional history icon + scan pill -->
+        <LinearLayout
+            android:id="@+id/smartPopupScanRow"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:layout_marginHorizontal="10dp"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@drawable/bg_smart_popup_scan_btn">
+
+            <ImageButton
+                android:id="@+id/btnSmartPopupHistory"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/ic_smart_popup_history"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/smart_popup_session_history"
+                android:padding="10dp"
+                android:scaleType="centerInside"
+                android:tint="#475569"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/btnSmartPopupScan"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="@string/smart_popup_scan"
+                android:textColor="#1E293B"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <View
+        android:id="@+id/smartPopupResizeLeft"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_gravity="bottom|start"
+        android:contentDescription="Resize left" />
+
+    <View
+        android:id="@+id/smartPopupResizeRight"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_gravity="bottom|end"
+        android:contentDescription="Resize right" />
+</FrameLayout>

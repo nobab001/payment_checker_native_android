@@ -5,6 +5,7 @@ const USER_PERM_COLUMNS = [
   'perm_template',
   'perm_website',
   'perm_device',
+  'perm_smart_popup',
   'eff_max_devices',
   'eff_max_sites',
   'active_addon_plan_id',
@@ -15,6 +16,7 @@ const SUB_PLAN_EXTRA_COLUMNS = [
   'perm_template',
   'perm_website',
   'perm_device',
+  'perm_smart_popup',
 ];
 
 const ADDON_EXTRA_COLUMNS = [
@@ -23,6 +25,7 @@ const ADDON_EXTRA_COLUMNS = [
   'perm_template',
   'perm_website',
   'perm_device',
+  'perm_smart_popup',
 ];
 
 let schemaReady = false;
@@ -67,12 +70,14 @@ async function ensureEntitlementSchema() {
   await ensureColumn('subscription_plans', 'perm_template', '`perm_template` TINYINT NOT NULL DEFAULT 1');
   await ensureColumn('subscription_plans', 'perm_website', '`perm_website` TINYINT NOT NULL DEFAULT 1');
   await ensureColumn('subscription_plans', 'perm_device', '`perm_device` TINYINT NOT NULL DEFAULT 1');
+  await ensureColumn('subscription_plans', 'perm_smart_popup', '`perm_smart_popup` TINYINT NOT NULL DEFAULT 0');
 
   await ensureColumn('addon_plans', 'max_devices', '`max_devices` INT NOT NULL DEFAULT 2');
   await ensureColumn('addon_plans', 'perm_custom_sender', '`perm_custom_sender` TINYINT NOT NULL DEFAULT 1');
   await ensureColumn('addon_plans', 'perm_template', '`perm_template` TINYINT NOT NULL DEFAULT 0');
   await ensureColumn('addon_plans', 'perm_website', '`perm_website` TINYINT NOT NULL DEFAULT 0');
   await ensureColumn('addon_plans', 'perm_device', '`perm_device` TINYINT NOT NULL DEFAULT 1');
+  await ensureColumn('addon_plans', 'perm_smart_popup', '`perm_smart_popup` TINYINT NOT NULL DEFAULT 0');
 
   schemaReady = true;
 }
@@ -101,6 +106,7 @@ async function getTrialEntitlements() {
     perm_template: 1,
     perm_website: 1,
     perm_device: 1,
+    perm_smart_popup: 0,
     eff_max_devices: parseInt(map.trial_max_devices || '1', 10) || 1,
     eff_max_sites: parseInt(map.trial_max_sites || '1', 10) || 1,
   };
@@ -117,6 +123,7 @@ function mergeEntitlements(snapshots) {
     perm_template: 0,
     perm_website: 0,
     perm_device: 0,
+    perm_smart_popup: 0,
     eff_max_devices: 0,
     eff_max_sites: 0,
   };
@@ -126,6 +133,7 @@ function mergeEntitlements(snapshots) {
     base.perm_template = Math.max(base.perm_template, Number(snap.perm_template || 0));
     base.perm_website = Math.max(base.perm_website, Number(snap.perm_website || 0));
     base.perm_device = Math.max(base.perm_device, Number(snap.perm_device || 0));
+    base.perm_smart_popup = Math.max(base.perm_smart_popup, Number(snap.perm_smart_popup || 0));
     base.eff_max_devices = Math.max(base.eff_max_devices, Number(snap.eff_max_devices || 0));
     base.eff_max_sites = Math.max(base.eff_max_sites, Number(snap.eff_max_sites || 0));
   }
@@ -155,6 +163,7 @@ async function computeEntitlementsForUser(userId) {
       perm_template: 1,
       perm_website: 1,
       perm_device: 1,
+      perm_smart_popup: 1,
       eff_max_devices: 999,
       eff_max_sites: 999,
     };
@@ -165,15 +174,22 @@ async function computeEntitlementsForUser(userId) {
   if (user.active_plan_name === 'Trial Package') {
     snapshots.push(await getTrialEntitlements());
   } else if (user.is_paid && isActiveDate(user.expiry_date)) {
-    const plan = await prisma.subscription_plans.findFirst({
-      where: { plan_name: user.active_plan_name || '' },
-    });
+    // Raw SQL — Prisma schema may lag behind ALTER-added columns (e.g. perm_smart_popup)
+    const planRows = await prisma.$queryRaw`
+      SELECT is_custom_sender_allowed, perm_template, perm_website, perm_device, perm_smart_popup,
+             max_devices, max_sites
+      FROM subscription_plans
+      WHERE plan_name = ${user.active_plan_name || ''}
+      LIMIT 1
+    `;
+    const plan = planRows[0];
     if (plan) {
       snapshots.push({
         perm_custom_sender: Number(plan.is_custom_sender_allowed || 0),
         perm_template: Number(plan.perm_template ?? 1),
         perm_website: Number(plan.perm_website ?? 1),
         perm_device: Number(plan.perm_device ?? 1),
+        perm_smart_popup: Number(plan.perm_smart_popup ?? 0),
         eff_max_devices: Number(plan.max_devices || 1),
         eff_max_sites: Number(plan.max_sites || 1),
       });
@@ -184,14 +200,14 @@ async function computeEntitlementsForUser(userId) {
     let addon = null;
     if (user.active_addon_plan_id) {
       const addonRows = await prisma.$queryRaw`
-        SELECT max_devices, perm_custom_sender, perm_template, perm_website, perm_device
+        SELECT max_devices, perm_custom_sender, perm_template, perm_website, perm_device, perm_smart_popup
         FROM addon_plans WHERE id = ${Number(user.active_addon_plan_id)} LIMIT 1
       `;
       addon = addonRows[0];
     }
     if (!addon) {
       const addonRows = await prisma.$queryRaw`
-        SELECT max_devices, perm_custom_sender, perm_template, perm_website, perm_device
+        SELECT max_devices, perm_custom_sender, perm_template, perm_website, perm_device, perm_smart_popup
         FROM addon_plans WHERE is_active = 1 ORDER BY max_devices DESC LIMIT 1
       `;
       addon = addonRows[0];
@@ -202,6 +218,7 @@ async function computeEntitlementsForUser(userId) {
         perm_template: Number(addon.perm_template ?? 0),
         perm_website: Number(addon.perm_website ?? 0),
         perm_device: Number(addon.perm_device ?? 1),
+        perm_smart_popup: Number(addon.perm_smart_popup ?? 0),
         eff_max_devices: Number(addon.max_devices || 2),
         eff_max_sites: 0,
       });
@@ -211,6 +228,7 @@ async function computeEntitlementsForUser(userId) {
         perm_template: 0,
         perm_website: 0,
         perm_device: 1,
+        perm_smart_popup: 0,
         eff_max_devices: 2,
         eff_max_sites: 0,
       });
@@ -223,6 +241,7 @@ async function computeEntitlementsForUser(userId) {
       perm_template: 0,
       perm_website: 0,
       perm_device: 0,
+      perm_smart_popup: 0,
       eff_max_devices: 0,
       eff_max_sites: 0,
     };
@@ -240,6 +259,7 @@ async function syncUserEntitlements(userId) {
         perm_template = ${ent.perm_template},
         perm_website = ${ent.perm_website},
         perm_device = ${ent.perm_device},
+        perm_smart_popup = ${ent.perm_smart_popup},
         eff_max_devices = ${ent.eff_max_devices},
         eff_max_sites = ${ent.eff_max_sites}
     WHERE id = ${Number(userId)}
@@ -253,7 +273,8 @@ async function getUserEntitlements(userId, { refresh = false } = {}) {
     return syncUserEntitlements(userId);
   }
   const rows = await prisma.$queryRaw`
-    SELECT perm_custom_sender, perm_template, perm_website, perm_device, eff_max_devices, eff_max_sites
+    SELECT perm_custom_sender, perm_template, perm_website, perm_device, perm_smart_popup,
+           eff_max_devices, eff_max_sites
     FROM users WHERE id = ${Number(userId)} LIMIT 1
   `;
   if (!rows.length) return null;
@@ -267,6 +288,7 @@ async function getUserEntitlements(userId, { refresh = false } = {}) {
     perm_template: Number(row.perm_template || 0),
     perm_website: Number(row.perm_website || 0),
     perm_device: Number(row.perm_device || 0),
+    perm_smart_popup: Number(row.perm_smart_popup || 0),
     eff_max_devices: Number(row.eff_max_devices || 0),
     eff_max_sites: Number(row.eff_max_sites || 0),
   };

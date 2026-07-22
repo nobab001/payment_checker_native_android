@@ -145,6 +145,10 @@ class MainActivity : FragmentActivity() {
                 val statusRes = RetrofitClient.gatewayApiService.checkApprovalStatus(authHeader)
                 if (statusRes.isSuccessful) {
                     val body = statusRes.body() ?: return@launch
+                    if (body.setupCompleted) {
+                        getSharedPreferences(AppConfig.PREF_NAME, MODE_PRIVATE)
+                            .edit().putBoolean("pcu_setup_completed", true).apply()
+                    }
                     SecurePreferences.encrypt(this@MainActivity, "pcu_is_approved", if (body.isApproved) "true" else "false")
                     SecurePreferences.encrypt(this@MainActivity, "pcu_device_role", body.deviceRole ?: "pending")
                     SecurePreferences.encrypt(

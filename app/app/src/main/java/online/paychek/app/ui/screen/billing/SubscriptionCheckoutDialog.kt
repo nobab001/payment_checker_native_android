@@ -162,6 +162,7 @@ fun SubscriptionCheckoutDialog(
                                         val token = SecurePreferences.decrypt(context, AppConfig.KEY_AUTH_TOKEN)
                                         repository.purchaseSubscription(token, planName).fold(
                                             onSuccess = {
+                                                online.paychek.app.utils.AccountEntitlementsStore.refresh(context)
                                                 isPurchasing = false
                                                 onPurchased(it.message ?: "${planTitle} সক্রিয় হয়েছে।")
                                                 onDismiss()

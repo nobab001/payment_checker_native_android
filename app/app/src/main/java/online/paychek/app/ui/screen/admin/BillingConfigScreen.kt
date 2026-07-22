@@ -71,6 +71,7 @@ fun BillingConfigScreen(
     var planPermTemplate by remember { mutableStateOf(true) }
     var planPermWebsite by remember { mutableStateOf(true) }
     var planPermDevice by remember { mutableStateOf(true) }
+    var planPermSmartPopup by remember { mutableStateOf(false) }
 
     // PIN Verification Dialog states
     var showPinDialog by remember { mutableStateOf(false) }
@@ -320,6 +321,14 @@ fun BillingConfigScreen(
                         Text("ডিভাইস পারমিশন", color = TextPrimary, fontSize = 13.sp)
                         Switch(checked = planPermDevice, onCheckedChange = { planPermDevice = it })
                     }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("স্মার্ট পপ-আপ", color = TextPrimary, fontSize = 13.sp)
+                        Switch(checked = planPermSmartPopup, onCheckedChange = { planPermSmartPopup = it })
+                    }
                 }
             },
             confirmButton = {
@@ -347,6 +356,7 @@ fun BillingConfigScreen(
                                     permTemplate = if (planPermTemplate) 1 else 0,
                                     permWebsite = if (planPermWebsite) 1 else 0,
                                     permDevice = if (planPermDevice) 1 else 0,
+                                    permSmartPopup = if (planPermSmartPopup) 1 else 0,
                                     features = featuresToSave
                                 )
                             ) { success ->
@@ -1004,6 +1014,7 @@ fun BillingConfigScreen(
                             planPermTemplate = true
                             planPermWebsite = true
                             planPermDevice = true
+                            planPermSmartPopup = false
                             planFeatures = emptyList()
                             showCreatePlanDialog = true
                         }
@@ -1189,6 +1200,7 @@ fun BillingConfigScreen(
                                 planPermTemplate = plan.permTemplate == 1
                                 planPermWebsite = plan.permWebsite == 1
                                 planPermDevice = plan.permDevice == 1
+                                planPermSmartPopup = plan.permSmartPopup == 1
                                 planFeatures = plan.features.orEmpty()
                                 showCreatePlanDialog = true
                             }
@@ -1264,7 +1276,8 @@ fun BillingConfigScreen(
                 permTemplate = plan.permTemplate,
                 permWebsite = plan.permWebsite,
                 permDevice = plan.permDevice,
-                permCustomSender = plan.isCustomSenderAllowed
+                permCustomSender = plan.isCustomSenderAllowed,
+                permSmartPopup = plan.permSmartPopup
             ),
             onDismiss = { previewSubscriptionPlan = null },
             onEdit = {
@@ -1280,6 +1293,7 @@ fun BillingConfigScreen(
                 planPermTemplate = plan.permTemplate == 1
                 planPermWebsite = plan.permWebsite == 1
                 planPermDevice = plan.permDevice == 1
+                planPermSmartPopup = plan.permSmartPopup == 1
                 planFeatures = plan.features.orEmpty()
                 showCreatePlanDialog = true
             }
@@ -1300,7 +1314,8 @@ fun BillingConfigScreen(
             permissionLines = addonPermissionLines(
                 maxDevices = addon.maxDevices,
                 permCustomSender = addon.permCustomSender,
-                permDevice = addon.permDevice
+                permDevice = addon.permDevice,
+                permSmartPopup = addon.permSmartPopup
             ),
             onDismiss = { previewAddonPlan = null },
             onEdit = {

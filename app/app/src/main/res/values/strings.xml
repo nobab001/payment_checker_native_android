@@ -3,4 +3,16 @@
     <string name="app_description">Payment Checker &amp; Gateway</string>
     <string name="accessibility_service_desc">Paychek ব্যাকগ্রাউন্ডে SMS ট্র্যাকিং চালু রাখতে এই সার্ভিস প্রয়োজন। অন্যান্য পেমেন্ট অ্যাপের মতো Accessibility + Battery Unrestricted দিলে ২৪ ঘণ্টা চালু থাকবে।</string>
     <string name="accessibility_service_label">Paychek Background Guard</string>
+    <string name="smart_popup_title">স্মার্ট পপ-আপ</string>
+    <string name="smart_popup_scan">স্ক্যান</string>
+    <string name="smart_popup_minimize">মিনিমাইজ</string>
+    <string name="smart_popup_close">বন্ধ</string>
+    <string name="smart_popup_hint">স্ক্যান বাটনে চাপ দিয়ে নম্বর সিলেক্ট করুন</string>
+    <string name="smart_popup_history_loaded">গত ৭ দিনের হিস্টোরি লোড করা হয়েছে</string>
+    <string name="smart_popup_session_history">সেশন হিস্টোরি</string>
+    <string name="smart_popup_clear">সার্চ মুছুন</string>
+    <string name="smart_popup_available">Available</string>
+    <string name="smart_popup_soldout">SOLDOUT</string>
+    <string name="smart_popup_notif_title">স্মার্ট পপ-আপ চালু</string>
+    <string name="smart_popup_notif_text">অন্যান্য অ্যাপে থাকাকালীন ট্রানজেকশন স্ক্যান করুন</string>
 </resources>

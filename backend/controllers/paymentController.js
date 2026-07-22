@@ -51,6 +51,7 @@ async function paymentSmsIngest(req, res) {
       simSlot: req.body.simSlot,
       simNumber: req.body.simNumber,
       providerTag: req.body.providerTag,
+      templateSenderId: req.body.templateSenderId || req.body.template_sender_id || null,
       amount: req.body.amount,
       trxId: req.body.trxId,
       isParseable: req.body.is_parseable !== undefined ? parseInt(req.body.is_parseable, 10) : (req.body.isParseable !== undefined ? parseInt(req.body.isParseable, 10) : 1)
@@ -135,6 +136,7 @@ async function paymentSmsIngestBulk(req, res) {
           simSlot: item.simSlot,
           simNumber: item.simNumber,
           providerTag: item.providerTag,
+          templateSenderId: item.templateSenderId || item.template_sender_id || item.senderId || null,
           amount: item.amount,
           trxId: item.trxId,
           isParseable: item.is_parseable !== undefined ? parseInt(item.is_parseable, 10) : (item.isParseable !== undefined ? parseInt(item.isParseable, 10) : 1)
@@ -185,9 +187,10 @@ async function getSmsHistory(req, res) {
     const offset   = (page - 1) * limit;
     const lastSync = req.headers['x-history-last-sync'] ? parseInt(req.headers['x-history-last-sync'], 10) : 0;
     const historyVersion = await dataSyncCache.getUserHistoryVersion(userId);
-    const cacheHit = page === 1 && lastSync > 0 && dataSyncCache.isClientSyncCurrent(lastSync, historyVersion);
+    const trxIdQuery = String(req.query.trxId || req.query.trx_id || '').trim();
+    const cacheHit = !trxIdQuery && page === 1 && lastSync > 0 && dataSyncCache.isClientSyncCurrent(lastSync, historyVersion);
 
-    if (page > 1 && lastSync > 0 && dataSyncCache.isClientSyncCurrent(lastSync, historyVersion)) {
+    if (!trxIdQuery && page > 1 && lastSync > 0 && dataSyncCache.isClientSyncCurrent(lastSync, historyVersion)) {
       return res.json({
         success: true,
         cache_hit: true,
@@ -223,7 +226,16 @@ async function getSmsHistory(req, res) {
       whereClause.provider_tag = { contains: providerQuery };
     }
 
-    const hasDateFilter = req.query.startDate && req.query.endDate;
+    // Exact TrxID lookup (Smart Pop-up: local miss → server fetch)
+    // Try exact + upper/lower so OCR case variants still match.
+    if (trxIdQuery) {
+      const upper = trxIdQuery.toUpperCase();
+      const lower = trxIdQuery.toLowerCase();
+      const variants = Array.from(new Set([trxIdQuery, upper, lower]));
+      whereClause.OR = variants.map((v) => ({ trx_id: v }));
+    }
+
+    const hasDateFilter = !trxIdQuery && req.query.startDate && req.query.endDate;
     if (hasDateFilter) {
       whereClause.sms_date = {
         gte: new Date(req.query.startDate),
@@ -254,9 +266,11 @@ async function getSmsHistory(req, res) {
       orderBy: { sms_timestamp: 'desc' }
     };
 
-    if (!hasDateFilter) {
+    if (!hasDateFilter && !trxIdQuery) {
       queryOptions.skip = offset;
       queryOptions.take = limit;
+    } else if (trxIdQuery) {
+      queryOptions.take = Math.min(20, limit);
     }
 
     const rows = await prisma.sms_history.findMany(queryOptions);
@@ -523,14 +537,85 @@ async function getCustomArchives(req, res) {
       deviceMap[d.device_id] = d.custom_device_name || d.device_model || 'Unknown Device';
     });
 
-    const mappedRows = rows.map(r => ({
-      id: r.id,
-      device_id: r.device_id,
-      device_name: deviceMap[r.device_id] || 'Unknown Device',
-      provider_tag: r.provider_tag,
-      full_sms: r.full_sms,
-      created_at: r.created_at
-    }));
+    // Official archive templates → nicer display name by sender_id
+    const officialTemplates = await prisma.$queryRaw`
+      SELECT LOWER(sender_id) AS sid, template_name, sender_id
+      FROM sms_templates
+      WHERE is_official = 1 AND is_parseable = 0 AND sender_id IS NOT NULL AND sender_id != ''
+    `;
+    const officialBySender = {};
+    const officialByName = {};
+    for (const t of officialTemplates || []) {
+      const key = String(t.sid || '').toLowerCase();
+      if (key && !officialBySender[key]) {
+        officialBySender[key] = {
+          template_name: t.template_name,
+          sender_id: t.sender_id,
+        };
+      }
+      const nameKey = String(t.template_name || '').trim().toLowerCase();
+      if (nameKey && !officialByName[nameKey]) {
+        officialByName[nameKey] = {
+          template_name: t.template_name,
+          sender_id: t.sender_id,
+        };
+      }
+    }
+
+    // SIM phone numbers from bindings (fallback when archive row lacks sim_number)
+    const bindings = await prisma.sim_slot_bindings.findMany({
+      where: { user_id: String(userId) },
+      select: { device_id: true, sim_slot: true, phone_number: true },
+    });
+    const phoneByDeviceSlot = {};
+    for (const b of bindings || []) {
+      const phone = (b.phone_number || '').trim();
+      if (!phone) continue;
+      phoneByDeviceSlot[`${b.device_id}:${b.sim_slot}`] = phone;
+    }
+
+    const mappedRows = rows.map(r => {
+      let senderId = (r.sender_id || '').trim() || null;
+      let providerTag = r.provider_tag || 'Custom';
+
+      // Custom-21209 → extract sender + resolve official template name
+      const customMatch = /^Custom-(.+)$/i.exec(providerTag);
+      if (customMatch && !senderId) {
+        senderId = customMatch[1].trim();
+      }
+      if (senderId) {
+        const official = officialBySender[senderId.toLowerCase()];
+        if (official) {
+          if (!providerTag || customMatch) {
+            providerTag = official.template_name || providerTag;
+          }
+          if (!senderId) senderId = official.sender_id;
+        }
+      } else if (providerTag) {
+        const byName = officialByName[providerTag.trim().toLowerCase()];
+        if (byName?.sender_id) {
+          senderId = byName.sender_id;
+        }
+      }
+
+      const slot = r.sim_slot != null ? Number(r.sim_slot) : null;
+      let simNumber = (r.sim_number || '').trim() || null;
+      if (!simNumber && slot != null && r.device_id) {
+        simNumber = phoneByDeviceSlot[`${r.device_id}:${slot}`] || null;
+      }
+
+      return {
+        id: r.id,
+        device_id: r.device_id,
+        device_name: deviceMap[r.device_id] || 'Unknown Device',
+        sim_slot: slot,
+        sim_number: simNumber,
+        provider_tag: providerTag,
+        sender_id: senderId,
+        full_sms: r.full_sms,
+        created_at: r.created_at,
+      };
+    });
 
     return res.json({ success: true, data: mappedRows });
   } catch (error) {

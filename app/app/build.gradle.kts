@@ -116,8 +116,14 @@ dependencies {
   // Socket.IO for Push-Driven Cache Sync
   implementation("io.socket:socket.io-client:2.1.0")
 
+  // Smart Pop-up crop scan — OCR only the square region (AccessibilityService.takeScreenshot)
+  implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.0")
+
   // Root Detection — Layer 1: RootBeer (lightweight, no Google Play Services dependency)
   // Architecture: RootBeer first → Play Integrity API (optional layer 2, future)
   // RootBeer detects: su binary, Magisk, dangerous props, test-keys, etc.
   implementation("com.scottyab:rootbeer-lib:0.1.0")
+
+  // Smart Pop-up overlay UI
+  implementation("androidx.recyclerview:recyclerview:1.3.2")
 }

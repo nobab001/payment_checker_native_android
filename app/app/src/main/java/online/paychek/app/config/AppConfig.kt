@@ -41,6 +41,7 @@ object AppConfig {
     const val KEY_PERM_TEMPLATE         = "pcu_perm_template"
     const val KEY_PERM_WEBSITE          = "pcu_perm_website"
     const val KEY_PERM_DEVICE           = "pcu_perm_device"
+    const val KEY_PERM_SMART_POPUP      = "pcu_perm_smart_popup"
     const val KEY_EFF_MAX_DEVICES       = "pcu_eff_max_devices"
     const val KEY_EFF_MAX_SITES         = "pcu_eff_max_sites"
     const val KEY_COMM_PROFILE          = "pcu_comm_profile"

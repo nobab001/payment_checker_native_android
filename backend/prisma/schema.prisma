@@ -50,7 +50,7 @@ model gateway_layouts {
   created_at    DateTime @default(now()) @db.Timestamp(0)
   updated_at    DateTime @default(now()) @db.Timestamp(0)
 
-  // GöÇGöÇ API Integration v2 (additive, backward-compatible) GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
+  // ?? API Integration v2 (additive, backward-compatible) ?????????????
   merchant_id                 String?  @unique(map: "uniq_merchant_id") @db.VarChar(64)
   company_name                String?  @db.VarChar(255)
   logo_url                    String?  @db.VarChar(512)
@@ -68,6 +68,10 @@ model gateway_layouts {
   allow_payment_type_callback Int      @default(0) @db.TinyInt // admin permission
   allow_commission_callback   Int      @default(0) @db.TinyInt // admin permission
   commission_enabled          Int      @default(0) @db.TinyInt // admin unlock for commission menu
+  website_purpose             String   @default("add_balance") @db.VarChar(32) // add_balance | payment | both
+  purpose_selected            Int      @default(0) @db.TinyInt // merchant explicitly chose purpose
+  purpose_locked              Int      @default(0) @db.TinyInt // lock-once; super-admin unlock only
+  purpose_locked_at           DateTime? @db.DateTime(0)
 
   users               users                   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_gateway_user")
   merchant_commissions merchant_commissions[]
@@ -116,7 +120,7 @@ model checkout_vibe_requests {
   @@index([expires_at], map: "idx_vibe_expiry")
 }
 
-// GöÇGöÇ API Integration v2: Payment Flow routing (Phase 6) GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
+// ?? API Integration v2: Payment Flow routing (Phase 6) ?????????????????????
 // A payment session is created when a merchant server initiates a payment. It
 // records the intended amount server-side (tamper-proof) and routes the customer
 // either to the PayCheck checkout (transaction/vibe) or to an official gateway.
@@ -150,7 +154,7 @@ model payment_sessions {
   @@unique([website_id, trx_id], map: "uniq_website_trx")
 }
 
-/// Merchant callback outbox GÇö durable delivery after payment SUCCESS (Phase-3B.5).
+/// Merchant callback outbox ? durable delivery after payment SUCCESS (Phase-3B.5).
 model merchant_callback_outbox {
   id            Int       @id @default(autoincrement())
   delivery_key  String    @unique(map: "uniq_mcb_delivery_key") @db.VarChar(191)
@@ -191,7 +195,7 @@ model website_official_gateways {
   @@index([website_id, is_active], map: "idx_official_website_active")
 }
 
-// Live merchant accounts GÇö multiple accounts per provider per website.
+// Live merchant accounts ? multiple accounts per provider per website.
 // Sensitive credentials (api_secret, password, app_secret) are AES-encrypted
 // (iv:ciphertext hex) via utils/merchantCrypto.js. Never returned in plaintext.
 model merchant_accounts {
@@ -260,11 +264,11 @@ model gateway_methods {
 }
 
 model sim_slot_bindings {
-  id           Int      @id @default(autoincrement())
-  user_id      String   @db.VarChar(255)
-  device_id    String   @default("") @db.VarChar(255)
-  sim_slot     Int      @default(1) @db.TinyInt
-  phone_number String   @default("") @db.VarChar(20)
+  id                Int      @id @default(autoincrement())
+  user_id           String   @db.VarChar(255)
+  device_id         String   @default("") @db.VarChar(255)
+  sim_slot          Int      @default(1) @db.TinyInt
+  phone_number      String   @default("") @db.VarChar(20)
   is_active         Int      @default(0) @db.TinyInt
   merchant_enabled  Int      @default(1) @db.TinyInt
   created_at        DateTime @default(now()) @db.Timestamp(0)
@@ -273,7 +277,6 @@ model sim_slot_bindings {
   @@unique([user_id, device_id, sim_slot], map: "uniq_user_device_slot")
   @@index([user_id, phone_number, is_active], map: "idx_user_number_active")
 }
-
 
 model comm_policy {
   id                      Int      @id @default(autoincrement())
@@ -288,6 +291,7 @@ model comm_policy {
   created_at              DateTime @default(now()) @db.Timestamp(0)
   updated_at              DateTime @default(now()) @db.Timestamp(0)
 }
+
 model global_config {
   config_key   String   @id @db.VarChar(128)
   config_value String   @db.Text
@@ -445,6 +449,7 @@ model sms_templates {
   is_official             Int                      @default(1) @db.TinyInt
   is_active               Int                      @default(1) @db.TinyInt
   is_parseable            Int                      @default(1) @db.TinyInt
+  display_order           Int                      @default(0)
   created_at              DateTime                 @default(now()) @db.Timestamp(0)
   updated_at              DateTime                 @default(now()) @db.Timestamp(0)
   sender_number           String?                  @db.VarChar(64)
@@ -484,6 +489,7 @@ model subscription_plans {
   perm_template            Int      @default(1) @db.TinyInt
   perm_website             Int      @default(1) @db.TinyInt
   perm_device              Int      @default(1) @db.TinyInt
+  perm_smart_popup         Int      @default(0) @db.TinyInt
   features_json            String?  @db.Text
   sort_order               Int      @default(0)
   created_at               DateTime @default(now()) @db.Timestamp(0)
@@ -501,6 +507,7 @@ model addon_plans {
   perm_template     Int      @default(0) @db.TinyInt
   perm_website      Int      @default(0) @db.TinyInt
   perm_device       Int      @default(1) @db.TinyInt
+  perm_smart_popup  Int      @default(0) @db.TinyInt
   features_json     String?  @db.Text
   sort_order        Int      @default(0)
   created_at        DateTime @default(now()) @db.Timestamp(0)
@@ -576,7 +583,10 @@ model custom_sms_archives {
   id           Int      @id @default(autoincrement())
   user_id      Int
   device_id    String   @db.VarChar(255)
+  sim_slot     Int?     @db.TinyInt
+  sim_number   String?  @db.VarChar(32)
   provider_tag String   @db.VarChar(128)
+  sender_id    String?  @db.VarChar(128)
   full_sms     String   @db.Text
   created_at   DateTime @default(now()) @db.Timestamp(0)
 
@@ -584,3 +594,37 @@ model custom_sms_archives {
   @@index([user_id, created_at])
 }
 
+
+/// Official website sandbox visitors ? isolated from real users/merchants. Auto-purge after TTL.
+model demo_visitors {
+  id              Int             @id @default(autoincrement())
+  public_id       String          @unique(map: "uniq_demo_public_id") @db.VarChar(40)
+  display_name    String          @db.VarChar(64)
+  token_hash      String          @db.VarChar(64)
+  host_website_id Int?
+  settings_json   String?         @db.LongText
+  ip_hash         String?         @db.VarChar(64)
+  user_agent_hash String?         @db.VarChar(64)
+  status          String          @default("active") @db.VarChar(16)
+  expires_at      DateTime        @db.Timestamp(0)
+  last_seen_at    DateTime        @db.Timestamp(0)
+  created_at      DateTime        @default(now()) @db.Timestamp(0)
+  payments        demo_payments[]
+
+  @@index([status, expires_at], map: "idx_demo_visitors_expiry")
+  @@index([ip_hash, created_at], map: "idx_demo_visitors_ip")
+}
+
+model demo_payments {
+  id            Int           @id @default(autoincrement())
+  visitor_id    Int
+  amount        Decimal       @db.Decimal(12, 2)
+  purpose       String        @default("pay") @db.VarChar(32)
+  order_id      String?       @db.VarChar(128)
+  session_token String?       @db.VarChar(128)
+  status        String        @default("initiated") @db.VarChar(32)
+  created_at    DateTime      @default(now()) @db.Timestamp(0)
+  visitor       demo_visitors @relation(fields: [visitor_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_demo_payment_visitor")
+
+  @@index([visitor_id, created_at], map: "idx_demo_payments_visitor")
+}
