@@ -337,16 +337,31 @@ fun ProfileCredentialsCard(
                                     }
                                 }
                             },
+                            enabled = if (!viewModel.isOtpSentForLinking) {
+                                !viewModel.isSendingOtp
+                            } else {
+                                !viewModel.isVerifyingOtp
+                            },
                             colors = ButtonDefaults.buttonColors(containerColor = PsCyan),
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp),
                             contentPadding = PaddingValues(vertical = 12.dp)
                         ) {
-                            Text(
-                                text = if (!viewModel.isOtpSentForLinking) "কোড পাঠান" else "যাচাই করুন",
-                                color = PsCard,
-                                fontWeight = FontWeight.Bold
-                            )
+                            if ((!viewModel.isOtpSentForLinking && viewModel.isSendingOtp) ||
+                                (viewModel.isOtpSentForLinking && viewModel.isVerifyingOtp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    color = PsCard,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text(
+                                    text = if (!viewModel.isOtpSentForLinking) "কোড পাঠান" else "যাচাই করুন",
+                                    color = PsCard,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }

@@ -98,31 +98,77 @@
                 android:tint="#64748B" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/tvSmartPopupStatus"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
             android:paddingHorizontal="12dp"
-            android:paddingTop="6dp"
-            android:paddingBottom="4dp"
-            android:textColor="#64748B"
-            android:textSize="11sp"
-            android:text="@string/smart_popup_history_loaded" />
+            android:paddingTop="4dp"
+            android:paddingBottom="6dp">
+
+            <TextView
+                android:id="@+id/tvSmartPopupStatus"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="#64748B"
+                android:textSize="11sp"
+                android:text="@string/smart_popup_history_loaded" />
+
+            <!-- Persistable result view: SMS | Card -->
+            <LinearLayout
+                android:id="@+id/smartPopupResultModeToggle"
+                android:layout_width="wrap_content"
+                android:layout_height="20dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/btnSmartPopupModeSms"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="0dp"
+                    android:text="@string/smart_popup_mode_sms"
+                    android:textSize="9sp"
+                    android:textStyle="bold"
+                    android:textColor="#0E7490"
+                    android:background="@drawable/bg_smart_popup_toggle_on"
+                    android:includeFontPadding="false" />
+
+                <TextView
+                    android:id="@+id/btnSmartPopupModeCard"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:layout_marginStart="3dp"
+                    android:gravity="center"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="0dp"
+                    android:text="@string/smart_popup_mode_card"
+                    android:textSize="9sp"
+                    android:textStyle="bold"
+                    android:textColor="#64748B"
+                    android:background="@drawable/bg_smart_popup_toggle_off"
+                    android:includeFontPadding="false" />
+            </LinearLayout>
+        </LinearLayout>
 
         <!-- Mid content: idle empty / SMS result / session history -->
         <FrameLayout
             android:id="@+id/smartPopupMid"
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
+            android:layout_height="wrap_content"
             android:visibility="gone"
-            android:paddingHorizontal="8dp">
+            android:paddingHorizontal="8dp"
+            android:paddingTop="4dp">
 
-            <!-- After scan: SMS body + matched card -->
+            <!-- After scan: SMS body OR matched card (user toggle) -->
             <ScrollView
                 android:id="@+id/smartPopupResultScroll"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
+                android:layout_height="wrap_content"
                 android:fillViewport="false"
                 android:scrollbars="vertical">
 
@@ -132,23 +178,53 @@
                     android:orientation="vertical"
                     android:paddingBottom="4dp">
 
-                    <TextView
-                        android:id="@+id/tvSmartPopupSms"
+                    <!-- SMS left (fills) + compact Available on right, vertically centered -->
+                    <LinearLayout
+                        android:id="@+id/smartPopupSmsRow"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:baselineAligned="false"
                         android:background="@drawable/bg_smart_popup_sms"
-                        android:padding="10dp"
-                        android:textColor="#334155"
-                        android:textSize="11sp"
-                        android:lineSpacingExtra="2dp"
-                        android:visibility="gone" />
+                        android:paddingStart="10dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="8dp"
+                        android:paddingBottom="8dp"
+                        android:visibility="gone">
+
+                        <TextView
+                            android:id="@+id/tvSmartPopupSms"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="6dp"
+                            android:textColor="#334155"
+                            android:textSize="11sp"
+                            android:lineSpacingExtra="2dp" />
+
+                        <TextView
+                            android:id="@+id/btnSmartPopupSmsSoldOut"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:gravity="center"
+                            android:paddingHorizontal="8dp"
+                            android:paddingVertical="4dp"
+                            android:background="@drawable/bg_smart_popup_badge_ok"
+                            android:text="@string/smart_popup_available"
+                            android:textSize="9sp"
+                            android:textStyle="bold"
+                            android:textColor="#10B981"
+                            android:maxLines="1"
+                            android:singleLine="true"
+                            android:visibility="gone" />
+                    </LinearLayout>
 
                     <androidx.recyclerview.widget.RecyclerView
                         android:id="@+id/rvSmartPopupResults"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:nestedScrollingEnabled="false"
-                        android:layout_marginTop="6dp"
                         android:overScrollMode="never" />
                 </LinearLayout>
             </ScrollView>

@@ -14,6 +14,9 @@ object SmartPopupState {
     /** Idle | Result (after scan) | SessionHistory */
     @Volatile var viewMode: ViewMode = ViewMode.IDLE
 
+    /** How matched history is shown after scan — persisted separately. */
+    enum class ResultDisplayMode { SMS, CARD }
+
     /** Searched / sold-out items since this popup session opened. */
     private val sessionHistory = LinkedHashMap<Int, TransactionItem>()
 

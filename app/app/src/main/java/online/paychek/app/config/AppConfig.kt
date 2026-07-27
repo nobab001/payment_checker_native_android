@@ -7,19 +7,24 @@ package online.paychek.app.config
  * VPS-Ready: শুধু BASE_URL পরিবর্তন করলেই production-এ কাজ করবে।
  * Local  → BASE_URL = "http://10.0.2.2:3000/"   (Android Emulator → localhost)
  * XAMPP  → BASE_URL = "http://192.168.x.x:3000/" (Real device → LAN IP)
- * VPS    → BASE_URL = "https://paychek.online/"
+ * VPS    → BASE_URL = "https://paycheckbd.com/"
  */
 object AppConfig {
 
     // -----------------------------------------------------------------------
-    // Server URLs — VPS-ready: শুধু এই একটি লাইন পরিবর্তন করুন
+    // Server URLs — শুধু BASE_URL এক লাইন অ্যাক্টিভ রাখুন
     // -----------------------------------------------------------------------
-    // 🔴 XAMPP LOCAL TEST MODE (আপনার LAN IP + Node.js port)
-    const val BASE_URL        = "https://drastic-fringe-unlined.ngrok-free.dev/"
-    // ✅ VPS PRODUCTION — সার্ভারে deploy করার সময় এই লাইনটি uncomment করুন:
-    // const val BASE_URL     = "https://paychek.online/"
-    const val API_BASE_URL    = "${BASE_URL}api/"
-    const val SOCKET_URL      = BASE_URL
+    // Local XAMPP / LAN:
+    // const val BASE_URL = "http://192.168.x.x:3000/"
+    // Emulator → PC localhost:
+    // const val BASE_URL = "http://10.0.2.2:3000/"
+    // Temporary ngrok tunnel (লোকাল টেস্ট):
+    // const val BASE_URL = "https://xxxx.ngrok-free.dev/"
+
+    /** Production VPS */
+    const val BASE_URL = "https://paycheckbd.com/"
+    const val API_BASE_URL = "${BASE_URL}api/"
+    const val SOCKET_URL = BASE_URL
 
     // -----------------------------------------------------------------------
     // SharedPreferences keys

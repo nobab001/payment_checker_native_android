@@ -73,6 +73,30 @@ class LoginViewModel : ViewModel() {
         _uiState.update { it.copy(errorMessage = null) }
     }
 
+    /** OTP পাঠানো ব্যর্থ / গেট ফেল — OTP UI সরিয়ে এরর/ডায়ালগ দেখাও */
+    private fun revertOtpUi(
+        errorMessage: String? = null,
+        showRegisterDialog: Boolean = false,
+        showDeviceBoundDialog: Boolean = false,
+        boundPhones: List<String> = emptyList(),
+        boundEmails: List<String> = emptyList()
+    ) {
+        timerJob?.cancel()
+        _uiState.update {
+            it.copy(
+                isLoading = false,
+                isOtpSent = false,
+                otpCode = "",
+                timerSeconds = 0,
+                errorMessage = errorMessage,
+                showRegisterDialog = showRegisterDialog,
+                showDeviceBoundDialog = showDeviceBoundDialog,
+                boundPhones = boundPhones,
+                boundEmails = boundEmails
+            )
+        }
+    }
+
     fun checkContactAndRequestOtp(context: Context) {
         if (_uiState.value.isLoading) return
         val contact = _uiState.value.contact.trim()
@@ -96,7 +120,18 @@ class LoginViewModel : ViewModel() {
         val hardwareFingerprint = DeviceIdHelper.getBuildFingerprint()
         val simSlotIds        = DeviceIdHelper.getSimSlotIds(context)
 
-        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        // Optimistic UI: যাচাই ক্লিকেই OTP বক্স — ব্যাকএন্ড পরে আসুক
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                errorMessage = null,
+                isOtpSent = true,
+                otpCode = "",
+                timerSeconds = 0,
+                showRegisterDialog = false,
+                showDeviceBoundDialog = false
+            )
+        }
 
         viewModelScope.launch {
             try {
@@ -127,15 +162,11 @@ class LoginViewModel : ViewModel() {
                             val phones = if (parsedCreds.first.isNotEmpty()) parsedCreds.first else responseBody?.boundPhones ?: emptyList()
                             val emails = if (parsedCreds.second.isNotEmpty()) parsedCreds.second else responseBody?.boundEmails ?: emptyList()
 
-                            _uiState.update {
-                                it.copy(
-                                    isLoading              = false,
-                                    showRegisterDialog     = false,
-                                    showDeviceBoundDialog  = true,
-                                    boundPhones            = phones,
-                                    boundEmails            = emails
-                                )
-                            }
+                            revertOtpUi(
+                                showDeviceBoundDialog = true,
+                                boundPhones = phones,
+                                boundEmails = emails
+                            )
                             return@launch
                         }
                     } catch (gateEx: Exception) {
@@ -166,15 +197,10 @@ class LoginViewModel : ViewModel() {
                     _uiState.update { it.copy(isNewUser = !exists) }
 
                     if (!exists) {
-                        // নতুন ইউজার → "অ্যাকাউন্ট পাওয়া যায়নি" ডায়ালগ
-                        _uiState.update {
-                            it.copy(
-                                isLoading          = false,
-                                showRegisterDialog = true
-                            )
-                        }
+                        // নতুন ইউজার → OTP UI সরিয়ে রেজিস্টার ডায়ালগ
+                        revertOtpUi(showRegisterDialog = true)
                     } else {
-                        // পুরনো ইউজার → OTP পাঠাও সরাসরি (কোনো পপআপ ছাড়া)
+                        // পুরনো ইউজার → OTP পাঠাও (UI ইতিমধ্যে OTP স্টেজে)
                         sendOtpApi(
                             contact = contact,
                             deviceId = deviceId,
@@ -185,28 +211,19 @@ class LoginViewModel : ViewModel() {
                         )
                     }
                 } else if (checkResponse.code() == 403) {
-                    // Backend double-check: ডিভাইস বাউন্ড থাকলে এখানেও ব্লক
                     val errorBody = checkResponse.errorBody()?.string()
                     val (phones, emails) = parseBoundCredentials(errorBody)
-                    _uiState.update {
-                        it.copy(
-                            isLoading              = false,
-                            showRegisterDialog     = false,
-                            showDeviceBoundDialog  = true,
-                            boundPhones            = phones,
-                            boundEmails            = emails
-                        )
-                    }
+                    revertOtpUi(
+                        showDeviceBoundDialog = true,
+                        boundPhones = phones,
+                        boundEmails = emails
+                    )
                 } else {
-                    _uiState.update {
-                        it.copy(isLoading = false, errorMessage = "সার্ভার রেসপন্স করছে না। অনুগ্রহ করে পরে চেষ্টা করুন।")
-                    }
+                    revertOtpUi(errorMessage = "সার্ভার রেসপন্স করছে না। অনুগ্রহ করে পরে চেষ্টা করুন।")
                 }
 
             } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(isLoading = false, errorMessage = "নেটওয়ার্ক ত্রুটি: ${e.localizedMessage ?: "সংযোগ ব্যর্থ"}")
-                }
+                revertOtpUi(errorMessage = "নেটওয়ার্ক ত্রুটি: ${e.localizedMessage ?: "সংযোগ ব্যর্থ"}")
             }
         }
     }
@@ -219,53 +236,48 @@ class LoginViewModel : ViewModel() {
         hardwareFingerprint: String? = null,
         simSlotIds: String? = null
     ) {
-        val request = SendOtpRequest(
-            contact = contact,
-            deviceId = deviceId,
-            androidId = androidId,
-            hardwareFingerprint = hardwareFingerprint,
-            simSlotIds = simSlotIds
-        )
-        val response = if (isNew) {
-            apiService.sendOtpNew(request)
-        } else {
-            apiService.sendOtp(request)
-        }
-
-        if (response.isSuccessful && response.body()?.success == true) {
-            _uiState.update {
-                it.copy(
-                    isLoading = false,
-                    isOtpSent = true,
-                    otpCode = "",
-                    timerSeconds = 60
-                )
+        try {
+            val request = SendOtpRequest(
+                contact = contact,
+                deviceId = deviceId,
+                androidId = androidId,
+                hardwareFingerprint = hardwareFingerprint,
+                simSlotIds = simSlotIds
+            )
+            val response = if (isNew) {
+                apiService.sendOtpNew(request)
+            } else {
+                apiService.sendOtp(request)
             }
-            startTimer()
-        } else {
-            val errorBody = response.errorBody()?.string()
-            if (response.code() == 403 && (errorBody?.contains("DEVICE_ALREADY_BOUND") == true || errorBody?.contains("TRIAL_EXPIRED_FOR_DEVICE") == true)) {
-                val (phones, emails) = parseBoundCredentials(errorBody)
+
+            if (response.isSuccessful && response.body()?.success == true) {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        showRegisterDialog = false,
-                        showDeviceBoundDialog = true,
-                        boundPhones = phones,
-                        boundEmails = emails
+                        isOtpSent = true,
+                        otpCode = "",
+                        timerSeconds = 60,
+                        errorMessage = null
                     )
                 }
+                startTimer()
+                return
+            }
+
+            val errorBody = response.errorBody()?.string()
+            if (response.code() == 403 && (errorBody?.contains("DEVICE_ALREADY_BOUND") == true || errorBody?.contains("TRIAL_EXPIRED_FOR_DEVICE") == true)) {
+                val (phones, emails) = parseBoundCredentials(errorBody)
+                revertOtpUi(
+                    showDeviceBoundDialog = true,
+                    boundPhones = phones,
+                    boundEmails = emails
+                )
                 return
             }
 
             if (response.code() == 404) {
                 if (errorBody?.contains("SHOW_NOT_FOUND_DIALOG") == true) {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            showRegisterDialog = true
-                        )
-                    }
+                    revertOtpUi(showRegisterDialog = true)
                     return
                 }
             }
@@ -296,7 +308,9 @@ class LoginViewModel : ViewModel() {
                 else -> rawErrorMsg
             }
 
-            _uiState.update { it.copy(isLoading = false, errorMessage = errorMsg) }
+            revertOtpUi(errorMessage = errorMsg)
+        } catch (e: Exception) {
+            revertOtpUi(errorMessage = "ওটিপি পাঠানো যায়নি: ${e.localizedMessage ?: "নেটওয়ার্ক এরর"}")
         }
     }
 
@@ -319,18 +333,21 @@ class LoginViewModel : ViewModel() {
         val hardwareFingerprint = DeviceIdHelper.getBuildFingerprint()
         val simSlotIds = DeviceIdHelper.getSimSlotIds(context)
 
+        // Optimistic OTP UI for new registration path too
         _uiState.update {
             it.copy(
                 isLoading = true,
                 showRegisterDialog = false,
-                errorMessage = null
+                errorMessage = null,
+                isNewUser = true,
+                isOtpSent = true,
+                otpCode = "",
+                timerSeconds = 0
             )
         }
 
         viewModelScope.launch {
             try {
-                // সরাসরি নতুন অ্যাকাউন্ট তৈরি করার জন্য ওটিপি পাঠাও
-                _uiState.update { it.copy(isNewUser = true) }
                 sendOtpApi(
                     contact = contact,
                     deviceId = deviceId,
@@ -340,12 +357,7 @@ class LoginViewModel : ViewModel() {
                     simSlotIds = simSlotIds
                 )
             } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        errorMessage = "রেজিস্ট্রেশন ত্রুটি: ${e.localizedMessage ?: "সংযোগ ব্যর্থ"}"
-                    )
-                }
+                revertOtpUi(errorMessage = "রেজিস্ট্রেশন ত্রুটি: ${e.localizedMessage ?: "সংযোগ ব্যর্থ"}")
             }
         }
     }

@@ -29,8 +29,8 @@ import kotlinx.coroutines.flow.stateIn
 // =============================================================================
 data class DeviceUiState(
     val methods:          List<GatewayMethod> = emptyList(),
-    val sim1Enabled:      Boolean             = true,
-    val sim2Enabled:      Boolean             = true,
+    val sim1Enabled:      Boolean             = false,
+    val sim2Enabled:      Boolean             = false,
     val isLoading:        Boolean             = true,
     val isSaving:         Boolean             = false,
     val errorMessage:     String?             = null,
@@ -129,9 +129,6 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     private val lastConfirmedLookupNumber = mutableMapOf(1 to "", 2 to "")
 
     init {
-        val sim1 = prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, true)
-        val sim2 = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, true)
-        
         // Load cached methods to show offline/instantly
         val cachedJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(application)
         val cachedList = if (cachedJson.isNotEmpty() && cachedJson != "[]") {
@@ -155,6 +152,22 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
         val cachedSim1Num = cachedList.find { it.simSlot == 1 && !it.number.isNullOrEmpty() }?.number ?: ""
         val cachedSim2Num = cachedList.find { it.simSlot == 2 && !it.number.isNullOrEmpty() }?.number ?: ""
+        // SIM কেবল তখনই ON ধরা হবে যখন ইউজার আগে চালু রেখেছে এবং স্লট এখনো বৈধ
+        // (নম্বর + অন্তত একটি enabled টেমপ্লেট)। নাহলে টেমপ্লেট ক্লিকে অটো-ON হয়।
+        val cachedSim1Valid = cachedSim1Num.length == 11 &&
+            cachedList.any { it.simSlot == 1 && it.isEnabled == 1 }
+        val cachedSim2Valid = cachedSim2Num.length == 11 &&
+            cachedList.any { it.simSlot == 2 && it.isEnabled == 1 }
+        val sim1 = prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, false) && cachedSim1Valid
+        val sim2 = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, false) && cachedSim2Valid
+        if (prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, false) != sim1 ||
+            prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, false) != sim2
+        ) {
+            prefs.edit()
+                .putBoolean(AppConfig.KEY_SIM1_ENABLED, sim1)
+                .putBoolean(AppConfig.KEY_SIM2_ENABLED, sim2)
+                .apply()
+        }
         val cachedEnt = online.paychek.app.utils.AccountEntitlementsStore.readCached(application)
 
         RetrofitClient.init(application)
@@ -1397,7 +1410,8 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
             saveMethodsToCache(updated)
             current.copy(methods = updated)
         }
-        validateAndSyncSimToggles()
+        // ড্রাফট সিলেকশন — SIM অটো-ON / server reactivate করা যাবে না।
+        // ইউজার ম্যানুয়ালি SIM চালু করলেই bulk-sync + activate হবে।
     }
 
     fun onSimNumberChanged(simSlot: Int, num: String) {
@@ -1692,14 +1706,11 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         val methods = stateVal.methods
 
         // ---------------------------------------------------------------------
-        // CHURN GUARD: টেমপ্লেট/মেথড এখনো সার্ভার থেকে পুরোপুরি লোড হয়নি এমন
-        // অবস্থায় SIM জোর করে OFF করলে বারবার ON→OFF churn হয় (ইউজারের অভিযোগ)।
-        // তাই — মেথড লিস্ট খালি থাকলে বা টেমপ্লেট এখনো লোড হচ্ছে/খালি থাকলে
-        // toggle-এ হাত দিই না; শুধু re-activate পাস চালিয়ে যাই।
+        // CHURN GUARD: শুধু প্রথম লোড চলাকালীন SIM জোর করে OFF করা এড়াই।
+        // আগে methods.isEmpty() গার্ড থাকায় নতুন সেটআপে simEnabled=true থেকে যেত,
+        // আর প্রথম টেমপ্লেট ক্লিকেই SIM অটো-ON + bulk activate হয়ে যেত।
         // ---------------------------------------------------------------------
-        val dataNotReady = methods.isEmpty() ||
-            stateVal.isTemplatesLoading ||
-            stateVal.templates.isEmpty()
+        val dataNotReady = stateVal.isLoading || stateVal.isTemplatesLoading
 
         val hasActiveMethodSim1 = methods.any { it.simSlot == 1 && it.isEnabled == 1 }
         val hasActiveMethodSim2 = methods.any { it.simSlot == 2 && it.isEnabled == 1 }
@@ -1708,6 +1719,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         val isSim2Valid = sim2Num.length == 11 && hasActiveMethodSim2
 
         if (!dataNotReady) {
+            // কখনোই অটো-ON নয় — শুধু অবৈধ স্লট OFF করা হয়।
             val newSim1Enabled = if (isSim1Valid) stateVal.sim1Enabled else false
             val newSim2Enabled = if (isSim2Valid) stateVal.sim2Enabled else false
 
@@ -1726,8 +1738,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
 
-        // লগইন/রিস্টোরে যে slot গুলো ON + বৈধ, সেগুলো ব্যাকএন্ডে re-activate করে
-        // sim_slot_bindings.is_active=1 নিশ্চিত করা হয় (নাহলে চেকআউট পেজে দেখা যায় না)।
+        // শুধু ইউজার যে স্লট আগে থেকে চালু রেখেছে (বা ম্যানুয়ালি চালু করেছে) সেগুলো re-activate।
         reactivateOnlineSlots(
             sim1On = _state.value.sim1Enabled && isSim1Valid,
             sim2On = _state.value.sim2Enabled && isSim2Valid

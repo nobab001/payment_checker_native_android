@@ -34,8 +34,15 @@ class KeepAliveAlarmReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
             try {
                 NumberHeartbeatEngine.sendHeartbeatBlocking(app)
+                // Heartbeat path flushes pending SMS when server is reachable.
+                // Also arm durable probe if queue still has items (covers HB skip / empty numbers).
+                val dao = online.paychek.app.data.local.AppDatabase.getInstance(app).pendingSmsDao()
+                if (dao.countPendingUnsynced() > 0) {
+                    online.paychek.app.services.sync.ServerProbeWorker.scheduleSoon(app)
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "Keep-alive heartbeat failed: ${e.message}")
+                online.paychek.app.services.sync.ServerProbeWorker.scheduleSoon(app)
             } finally {
                 try { pending.finish() } catch (_: Exception) {}
             }

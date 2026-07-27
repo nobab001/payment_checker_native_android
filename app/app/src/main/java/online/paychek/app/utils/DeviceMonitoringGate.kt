@@ -16,8 +16,8 @@ object DeviceMonitoringGate {
 
     fun check(context: Context): Result {
         val prefs = context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
-        val sim1On = prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, true)
-        val sim2On = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, true)
+        val sim1On = prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, false)
+        val sim2On = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, false)
         if (!sim1On && !sim2On) {
             return Result(false, "ডিভাইস পেজে গিয়ে কমপক্ষে একটি SIM চালু করুন")
         }

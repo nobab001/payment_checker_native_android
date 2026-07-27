@@ -215,11 +215,38 @@ object NumberHeartbeatEngine {
                     "Heartbeat OK — numbers=${numbers.size} trigger=${presenceTrigger ?: "scheduled"} "
                         + "next=${CommPolicyStore.heartbeatIntervalMs(context)}ms socketConnected=$socketConnected"
                 )
+                // Server reachable again (even after long outage) — flush queued SMS without
+                // waiting for the user to open the app. Connectivity alone is not enough:
+                // the phone stays "online" while the API is down.
+                flushPendingSmsIfAny(context)
             } else {
                 Log.w(TAG, "Heartbeat HTTP ${res.code()}")
+                if (smsActive) ServerProbeWorker.scheduleSoon(context)
             }
         }.onFailure { e ->
             Log.w(TAG, "Heartbeat failed: ${e.message}")
+            if (smsActive) ServerProbeWorker.scheduleSoon(context)
+        }
+    }
+
+    private fun flushPendingSmsIfAny(context: Context) {
+        scope.launch {
+            try {
+                val dao = online.paychek.app.data.local.AppDatabase.getInstance(context).pendingSmsDao()
+                val pending = dao.countPendingUnsynced()
+                if (pending <= 0) return@launch
+                Log.i(TAG, "Heartbeat OK with $pending pending SMS — flushing queue")
+                dao.clearBackoffForPending()
+                dao.recoverOutageFailedItems()
+                val ok = online.paychek.app.services.sms.SmsReceiver.syncPendingQueueAndAwait(context)
+                if (!ok) {
+                    Log.w(TAG, "Post-heartbeat flush incomplete — scheduling ServerProbeWorker")
+                    ServerProbeWorker.scheduleSoon(context)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Post-heartbeat flush failed: ${e.message}")
+                ServerProbeWorker.scheduleSoon(context)
+            }
         }
     }
 

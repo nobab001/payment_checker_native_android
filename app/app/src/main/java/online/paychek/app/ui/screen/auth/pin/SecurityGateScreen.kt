@@ -46,24 +46,52 @@ fun SecurityGateScreen(
     val context = LocalContext.current
     val activity = remember(context) { context.findFragmentActivity() }
 
-    val deviceRole = online.paychek.app.utils.SecurePreferences.decrypt(context, "pcu_device_role")
-    val isOwnerDevice = deviceRole == "owner"
+    var isOwnerDevice by remember {
+        mutableStateOf(online.paychek.app.utils.DeviceSecurityCache.isOwnerDevice(context))
+    }
+    var roleReady by remember { mutableStateOf(false) }
+    var biometricPrompted by remember { mutableStateOf(false) }
+
+    // রোল চেঞ্জের পর স্টেল ক্যাশ এড়াতে লক স্ক্রিনে সার্ভার থেকে রোল/পিন সিঙ্ক।
+    LaunchedEffect(Unit) {
+        isOwnerDevice = online.paychek.app.utils.DeviceSecurityCache.refreshFromServer(context)
+        roleReady = true
+    }
+
+    DisposableEffect(context) {
+        val sharedPrefs = context.getSharedPreferences("paychek_secure_prefs", Context.MODE_PRIVATE)
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "pcu_device_role" || key == online.paychek.app.config.AppConfig.KEY_IS_OWNER_DEVICE) {
+                val ownerNow = online.paychek.app.utils.DeviceSecurityCache.isOwnerDevice(context)
+                if (ownerNow != isOwnerDevice) {
+                    isOwnerDevice = ownerNow
+                    biometricPrompted = false
+                }
+            }
+        }
+        sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
+    // Owner হলে (সিঙ্কের পর) একবার biometric prompt — স্টাফে কখনো নয়।
+    LaunchedEffect(roleReady, isOwnerDevice) {
+        if (!roleReady || !isOwnerDevice || biometricPrompted) return@LaunchedEffect
+        if (activity != null && isBiometricEnrolled(activity)) {
+            biometricPrompted = true
+            showBiometricPrompt(
+                activity = activity,
+                onSuccess = onUnlockSuccess,
+                onError = { }
+            )
+        }
+    }
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, activity) {
+    DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                if (isOwnerDevice && activity != null && isBiometricEnrolled(activity)) {
-                    showBiometricPrompt(
-                        activity = activity,
-                        onSuccess = onUnlockSuccess,
-                        onError = { err ->
-                            // Optional: set error message
-                        }
-                    )
-                }
-            } else if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) {
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) {
                 viewModel.clearPin()
+                biometricPrompted = false
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

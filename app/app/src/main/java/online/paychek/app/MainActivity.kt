@@ -144,35 +144,33 @@ class MainActivity : FragmentActivity() {
                 val authHeader = "Bearer $token"
                 val statusRes = RetrofitClient.gatewayApiService.checkApprovalStatus(authHeader)
                 if (statusRes.isSuccessful) {
-                    val body = statusRes.body() ?: return@launch
-                    if (body.setupCompleted) {
-                        getSharedPreferences(AppConfig.PREF_NAME, MODE_PRIVATE)
-                            .edit().putBoolean("pcu_setup_completed", true).apply()
-                    }
-                    SecurePreferences.encrypt(this@MainActivity, "pcu_is_approved", if (body.isApproved) "true" else "false")
-                    SecurePreferences.encrypt(this@MainActivity, "pcu_device_role", body.deviceRole ?: "pending")
-                    SecurePreferences.encrypt(
-                        this@MainActivity,
-                        AppConfig.KEY_IS_OWNER_DEVICE,
-                        if (body.deviceRole == "owner") "true" else "false"
-                    )
-                    if (!body.deviceSpecificPin.isNullOrEmpty()) {
-                        SecurePreferences.encrypt(this@MainActivity, AppConfig.KEY_DEVICE_SPECIFIC_PIN, body.deviceSpecificPin)
-                    } else {
-                        SecurePreferences.remove(this@MainActivity, AppConfig.KEY_DEVICE_SPECIFIC_PIN)
+                    val body = statusRes.body()
+                    if (body != null) {
+                        if (body.setupCompleted) {
+                            getSharedPreferences(AppConfig.PREF_NAME, MODE_PRIVATE)
+                                .edit().putBoolean("pcu_setup_completed", true).apply()
+                        }
+                        SecurePreferences.encrypt(
+                            this@MainActivity,
+                            "pcu_is_approved",
+                            if (body.isApproved) "true" else "false"
+                        )
+                        online.paychek.app.utils.DeviceSecurityCache.applyRoleAndPin(
+                            this@MainActivity,
+                            body.deviceRole,
+                            body.deviceSpecificPin
+                        )
                     }
                 }
                 val configRes = RetrofitClient.gatewayApiService.getMyDeviceConfig(authHeader)
                 if (configRes.isSuccessful && configRes.body()?.success == true) {
-                    val device = configRes.body()!!.data
-                    SecurePreferences.encrypt(this@MainActivity, "pcu_device_role", device.deviceRole)
-                    SecurePreferences.encrypt(
-                        this@MainActivity,
-                        AppConfig.KEY_IS_OWNER_DEVICE,
-                        if (device.deviceRole == "owner") "true" else "false"
-                    )
-                    if (!device.deviceSpecificPin.isNullOrEmpty()) {
-                        SecurePreferences.encrypt(this@MainActivity, AppConfig.KEY_DEVICE_SPECIFIC_PIN, device.deviceSpecificPin)
+                    val device = configRes.body()?.data
+                    if (device != null) {
+                        online.paychek.app.utils.DeviceSecurityCache.applyRoleAndPin(
+                            this@MainActivity,
+                            device.deviceRole,
+                            device.deviceSpecificPin
+                        )
                     }
                 }
                 online.paychek.app.utils.AccountEntitlementsStore.refresh(this@MainActivity)

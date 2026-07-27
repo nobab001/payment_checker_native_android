@@ -1,0 +1,45 @@
+---
+description: PayChek design tokens — colors, type, radius, elevation, motion
+globs: app/**/ui/**/*.{kt,kts}
+alwaysApply: false
+---
+
+# Design System Enforcement
+
+Canonical tokens live in `docs/design/*` and `app/.../ui/theme/`.
+
+## Brand (app-wide)
+
+| Token | Hex | Use |
+|-------|-----|-----|
+| Royal Indigo | `#1A237E` | Legacy brand / admin accents |
+| Royal Indigo Light | `#3949AB` | Containers / gradients |
+| Login Primary | `#1D45D9` | Premium auth / CTAs |
+| Login Primary Light | `#2D5BFF` | Gradients |
+| Success | `#4CAF50` | Valid / success |
+| Warning | `#FF9800` | Maintenance / caution |
+| Danger | `#F44336` | Errors |
+
+Operator colors (bKash/Nagad/Rocket/Upay) only for gateway branding — never as global theme primary.
+
+## Surfaces
+
+- Light bg: soft off-white / cool grey-blue (`#F5F7FA`–`#EEF4FF` family).
+- Dark bg: navy black (`#0B0E14`–`#0F172A`), surfaces `#131722`–`#1A2336`.
+- Cards: white / dark surface with `8dp` elevation (or soft shadow), radius `24–28dp` for premium cards.
+
+## Type scale (Compose)
+
+Use Material 3 `Typography` + explicit sizes when needed: 11 / 12 / 13 / 14 / 16 / 22 / 28 sp. Title bold; body regular; captions medium. No random 15/17/19 sizes without reason.
+
+## Spacing / radius / control sizes
+
+- Spacing: 4-point grid.
+- Radius: 12 (chips), 16–20 (inputs/buttons), 24–28 (cards), full (pills/avatars).
+- Button height: 48–56dp. Input height: 56–60dp. Icon: 20/24/28. Avatar: 32/40/48/72.
+
+## Motion
+
+Enter: fade / slight slide-up. Press: scale ~0.96–0.98. Prefer `tween(200–400)` + Material easing.
+
+When adding tokens, update `Color.kt` / `Theme.kt` / `docs/design/color-system.md` together.

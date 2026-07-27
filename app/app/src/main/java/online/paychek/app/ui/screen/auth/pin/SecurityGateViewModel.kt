@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.data.remote.dto.VerifyPinRequest
+import online.paychek.app.utils.DeviceSecurityCache
 import online.paychek.app.utils.SecurePreferences
 
 /**
@@ -157,27 +158,28 @@ class SecurityGateViewModel : ViewModel() {
         val pinCode = _uiState.value.pin
         if (pinCode.length < 4 || pinCode.length > 6) return
 
-        val deviceRole = SecurePreferences.decrypt(context, "pcu_device_role")
-        val isOwnerDevice = deviceRole == "owner"
+        val isOwnerDevice = DeviceSecurityCache.isOwnerDevice(context)
 
+        // স্টাফ ডিভাইস: এক্সট্রা পিন থাকলে শুধু সেটাই; মেইন পিন চলবে না।
+        // এক্সট্রা পিন না থাকলে নিচে মেইন (অ্যাকাউন্ট) পিন API দিয়ে যাচাই।
         if (!isOwnerDevice) {
             val deviceSpecificPin = SecurePreferences.decrypt(context, AppConfig.KEY_DEVICE_SPECIFIC_PIN)
-            if (deviceSpecificPin.isNotEmpty() && pinCode == deviceSpecificPin) {
-                _uiState.update { it.copy(isLoading = false, isUnlocked = true) }
-                onUnlockSuccess()
-                return
-            } else if (deviceSpecificPin.isNotEmpty() && pinCode != deviceSpecificPin) {
-                 _uiState.update {
-                    it.copy(
-                        isLoading   = false,
-                        cells       = List(PIN_LENGTH) { null },
-                        cursorIndex = 0,
-                        showMaintenanceDialog = true
-                    )
+            if (deviceSpecificPin.isNotEmpty()) {
+                if (pinCode == deviceSpecificPin) {
+                    _uiState.update { it.copy(isLoading = false, isUnlocked = true) }
+                    onUnlockSuccess()
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            cells = List(PIN_LENGTH) { null },
+                            cursorIndex = 0,
+                            showMaintenanceDialog = true
+                        )
+                    }
                 }
                 return
             }
-            // If deviceSpecificPin is empty, proceed to check against API (owner's PIN)
         }
 
         val token = SecurePreferences.decrypt(context, AppConfig.KEY_AUTH_TOKEN)

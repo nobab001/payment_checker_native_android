@@ -172,12 +172,14 @@ class SmsReceiver(
                                 chunk.forEach { item -> handleSyncFailure(dao, item, nowMs) }
                                 Log.w(TAG, "[Sync] HTTP 503 QUEUE_UNAVAILABLE — keeping offline, starting PingEngine")
                                 online.paychek.app.services.sync.PingEngine.start(context)
+                                online.paychek.app.services.sync.ServerProbeWorker.scheduleSoon(context)
                                 syncHadFailure = true
                             }
                             else -> {
                                 chunk.forEach { item -> handleSyncFailure(dao, item, nowMs) }
                                 Log.w(TAG, "[Sync] FAIL Bulk HTTP ${response.code()} — starting PingEngine")
                                 online.paychek.app.services.sync.PingEngine.start(context)
+                                online.paychek.app.services.sync.ServerProbeWorker.scheduleSoon(context)
                                 syncHadFailure = true
                             }
                         }
@@ -185,6 +187,7 @@ class SmsReceiver(
                         chunk.forEach { item -> handleSyncFailure(dao, item, nowMs) }
                         Log.e(TAG, "[Sync] EXCEPTION Bulk Sync: ${e.message} — starting PingEngine")
                         online.paychek.app.services.sync.PingEngine.start(context)
+                        online.paychek.app.services.sync.ServerProbeWorker.scheduleSoon(context)
                         syncHadFailure = true
                     }
                 }
@@ -253,8 +256,8 @@ class SmsReceiver(
                 Log.d(TAG, "SMS ignored: monitor service disabled by user")
                 return
             }
-            val sim1Enabled = prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, true)
-            val sim2Enabled = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, true)
+            val sim1Enabled = prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, false)
+            val sim2Enabled = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, false)
 
             // Condition 1: SIM Slot filter (SIM Slot is active/enabled)
             if (simSlot != null) {

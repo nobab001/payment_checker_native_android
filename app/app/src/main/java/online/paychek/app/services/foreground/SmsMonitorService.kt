@@ -24,6 +24,7 @@ import online.paychek.app.services.sms.SmsReceiver
 import online.paychek.app.services.sync.NumberHeartbeatEngine
 import online.paychek.app.services.sync.CommPolicyStore
 import online.paychek.app.services.sync.PingEngine
+import online.paychek.app.services.sync.ServerProbeWorker
 import online.paychek.app.services.sync.SmsPollWorker
 import online.paychek.app.services.sync.SyncWorker
 import online.paychek.app.utils.OemBackgroundHelper
@@ -60,6 +61,7 @@ class SmsMonitorService : Service() {
     private var socket: Socket? = null
     @Volatile private var socketListenersRegistered = false
     private var connectivityJob: Job? = null
+    private var pendingFlushJob: Job? = null
 
     // সর্বশেষ সফল পেমেন্টের সময় (notification-এ দেখানোর জন্য)
     private var lastPaymentTime: String = "এখনো কোনো পেমেন্ট আসেনি"
@@ -249,22 +251,55 @@ class SmsMonitorService : Service() {
         serviceScope.launch {
             flushPendingOnStartup()
         }
+
+        // While FGS is alive: periodically re-check pending queue even when the phone
+        // never lost network (API server outage). Heartbeat + ServerProbeWorker cover
+        // Doze; this covers the always-awake FGS case.
+        if (pendingFlushJob?.isActive != true) {
+            pendingFlushJob = serviceScope.launch {
+                while (isActive) {
+                    delay(5 * 60_000L)
+                    try {
+                        val dao = AppDatabase.getInstance(this@SmsMonitorService).pendingSmsDao()
+                        val pending = dao.countPendingUnsynced()
+                        if (pending > 0) {
+                            Log.i(TAG, "Periodic pending check — $pending items, attempting flush")
+                            dao.clearBackoffForPending()
+                            val ok = SmsReceiver.syncPendingQueueAndAwait(this@SmsMonitorService)
+                            if (!ok) {
+                                PingEngine.start(this@SmsMonitorService)
+                                ServerProbeWorker.scheduleSoon(this@SmsMonitorService)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Periodic pending flush error: ${e.message}")
+                    }
+                }
+            }
+        }
     }
 
     private suspend fun flushPendingOnStartup() {
         val connectivity = ConnectivityService(this)
         val dao = AppDatabase.getInstance(this).pendingSmsDao()
         val nowMs = System.currentTimeMillis()
-        val hasPending = dao.getPendingItemsForRetry(nowMs).isNotEmpty()
+        val hasPending = dao.countPendingUnsynced() > 0
 
         if (!hasPending) return
 
         if (connectivity.isOnline()) {
             Log.i(TAG, "Service start — pending queue found, flushing")
-            SmsReceiver.syncPendingQueueAndAwait(this)
+            dao.clearBackoffForPending()
+            dao.recoverOutageFailedItems()
+            val ok = SmsReceiver.syncPendingQueueAndAwait(this)
+            if (!ok) {
+                PingEngine.start(this)
+                ServerProbeWorker.scheduleSoon(this)
+            }
         } else {
-            Log.i(TAG, "Service start — pending queue found while offline, starting PingEngine")
+            Log.i(TAG, "Service start — pending queue found while offline, starting PingEngine + probe")
             PingEngine.start(this)
+            ServerProbeWorker.scheduleSoon(this)
         }
     }
 
@@ -384,7 +419,14 @@ class SmsMonitorService : Service() {
                         else -> org.json.JSONObject(raw.toString())
                     }
                     val pin = json.optString("device_specific_pin", "")
-                    if (pin.isNotEmpty() && pin != "null") {
+                    val role = json.optString("device_role", "")
+                    if (role.isNotEmpty()) {
+                        online.paychek.app.utils.DeviceSecurityCache.applyRoleAndPin(
+                            this@SmsMonitorService,
+                            role,
+                            if (pin.isNotEmpty() && pin != "null") pin else null
+                        )
+                    } else if (pin.isNotEmpty() && pin != "null") {
                         SecurePreferences.encrypt(
                             this@SmsMonitorService,
                             AppConfig.KEY_DEVICE_SPECIFIC_PIN,
@@ -394,15 +436,6 @@ class SmsMonitorService : Service() {
                         SecurePreferences.remove(
                             this@SmsMonitorService,
                             AppConfig.KEY_DEVICE_SPECIFIC_PIN
-                        )
-                    }
-                    val role = json.optString("device_role", "")
-                    if (role.isNotEmpty()) {
-                        SecurePreferences.encrypt(this@SmsMonitorService, "pcu_device_role", role)
-                        SecurePreferences.encrypt(
-                            this@SmsMonitorService,
-                            AppConfig.KEY_IS_OWNER_DEVICE,
-                            if (role == "owner") "true" else "false"
                         )
                     }
                     Log.i(TAG, "✅ Push-Driven Cache Sync: Device config updated via Socket.IO")
@@ -625,6 +658,8 @@ class SmsMonitorService : Service() {
         unregisterScreenReceiver()
         connectivityJob?.cancel()
         connectivityJob = null
+        pendingFlushJob?.cancel()
+        pendingFlushJob = null
         socket?.disconnect()
         socket?.off()
         teardownSocket()

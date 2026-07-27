@@ -56,9 +56,8 @@ class SyncWorker(
         Log.i(TAG, "[SyncWorker] Periodic flush triggered")
 
         return try {
-            // Delegate all precondition checks and sync logic to the use case.
-            // SyncWorker owns zero business logic — it is a pure scheduler.
-            val result = FlushOfflineQueueUseCase(context).execute(force = false)
+            // Force-clear backoff so long server-outage items are eligible immediately.
+            val result = FlushOfflineQueueUseCase(context).execute(force = true)
 
             result.fold(
                 onSuccess = { pendingCount ->
@@ -68,15 +67,25 @@ class SyncWorker(
                     } else {
                         Log.d(TAG, "[SyncWorker] Nothing to flush")
                     }
+                    // If anything still pending (race / partial), keep probing server
+                    val still = AppDatabase.getInstance(context).pendingSmsDao().countPendingUnsynced()
+                    if (still > 0) {
+                        Log.w(TAG, "[SyncWorker] Still pending=$still — scheduling ServerProbeWorker")
+                        ServerProbeWorker.scheduleSoon(context)
+                        PingEngine.start(context)
+                    }
                     Result.success()
                 },
                 onFailure = { e ->
                     Log.e(TAG, "[SyncWorker] Flush failed: ${e.message}")
+                    PingEngine.start(context)
+                    ServerProbeWorker.scheduleSoon(context)
                     Result.retry()
                 }
             )
         } catch (e: Exception) {
             Log.e(TAG, "[SyncWorker] Unexpected error: ${e.message}", e)
+            ServerProbeWorker.scheduleSoon(context)
             Result.retry()
         }
     }

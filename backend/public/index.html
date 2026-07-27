@@ -212,6 +212,31 @@
     <button type="button" class="helpline-main" aria-label="Helpline"></button>
   </div>
 
+  <!-- Morphing APK download: large hero + small dock (crossfade on light scroll) -->
+  <a
+    id="appDownloadFabHero"
+    class="app-download app-download-hero"
+    href="/downloads/paycheck.apk"
+    download
+    data-cms-download-href
+    aria-label="Download PayCheck Android app"
+  >
+    <span class="app-download-icon" aria-hidden="true"><i data-lucide="download"></i></span>
+    <span class="app-download-label" data-cms="download-label">Download App</span>
+  </a>
+  <a
+    id="appDownloadFabDock"
+    class="app-download app-download-dock"
+    href="/downloads/paycheck.apk"
+    download
+    data-cms-download-href
+    aria-label="Download PayCheck Android app"
+    aria-hidden="true"
+  >
+    <span class="app-download-icon" aria-hidden="true"><i data-lucide="download"></i></span>
+    <span class="app-download-label" data-cms="download-label">Download App</span>
+  </a>
+
   <script src="/js/official/site-app.js"></script>
   <script>
     document.getElementById('y').textContent = new Date().getFullYear();

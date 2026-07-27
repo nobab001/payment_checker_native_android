@@ -19,6 +19,8 @@ class CredentialViewModel(private val repository: CredentialRepository) : ViewMo
     var primaryPhone by mutableStateOf<String?>(null)
     var primaryEmail by mutableStateOf<String?>(null)
     var isOtpSentForLinking by mutableStateOf(false)
+    var isSendingOtp by mutableStateOf(false)
+    var isVerifyingOtp by mutableStateOf(false)
     var errorMessage by mutableStateOf<String?>(null)
 
     companion object {
@@ -44,8 +46,10 @@ class CredentialViewModel(private val repository: CredentialRepository) : ViewMo
         }
     }
 
-    // ওটিপি পাঠানোর আগে ফ্রন্টএন্ড গেট চেক
+    // ওটিপি পাঠানোর আগে ফ্রন্টএন্ড গেট চেক — ভ্যালিড হলে সাথে সাথে OTP UI দেখায়
     fun sendOtpForNewCredential(value: String, type: String) {
+        if (isSendingOtp || isOtpSentForLinking) return
+
         val formatted = if (type == "phone") {
             CredentialInputUtils.formatPhoneInput(value)
         } else {
@@ -64,19 +68,33 @@ class CredentialViewModel(private val repository: CredentialRepository) : ViewMo
             return
         }
 
+        // Optimistic UI: ব্যাকএন্ড রেসপন্সের আগেই OTP বক্স দেখাও
+        isOtpSentForLinking = true
+        isSendingOtp = true
+        errorMessage = null
+
         viewModelScope.launch {
-            val response = repository.sendLinkOtp(LinkCredentialOtpRequest(formatted, type))
-            if (response.isSuccessful) {
-                isOtpSentForLinking = true
-                errorMessage = null
-            } else {
-                val errBody = response.errorBody()?.string() ?: ""
-                errorMessage = parseErrorMessage(errBody, "ওটিপি পাঠানো সম্ভব হয়নি")
+            try {
+                val response = repository.sendLinkOtp(LinkCredentialOtpRequest(formatted, type))
+                if (response.isSuccessful) {
+                    errorMessage = null
+                } else {
+                    val errBody = response.errorBody()?.string() ?: ""
+                    isOtpSentForLinking = false
+                    errorMessage = parseErrorMessage(errBody, "ওটিপি পাঠানো সম্ভব হয়নি")
+                }
+            } catch (e: Exception) {
+                isOtpSentForLinking = false
+                errorMessage = e.message?.takeIf { it.isNotBlank() } ?: "নেটওয়ার্ক সমস্যা। আবার চেষ্টা করুন।"
+            } finally {
+                isSendingOtp = false
             }
         }
     }
 
     fun verifyAndLinkCredential(value: String, type: String, otp: String, onSuccess: () -> Unit) {
+        if (isVerifyingOtp) return
+
         val cleanOtp = CredentialInputUtils.cleanOtp(otp)
         if (cleanOtp.length != 6) {
             errorMessage = "৬-সংখ্যার OTP দিন"
@@ -89,18 +107,27 @@ class CredentialViewModel(private val repository: CredentialRepository) : ViewMo
             CredentialInputUtils.formatEmailInput(value)
         }
 
+        isVerifyingOtp = true
+        errorMessage = null
+
         viewModelScope.launch {
-            val response = repository.verifyLinkCredential(
-                VerifyLinkCredentialRequest(formatted, type, cleanOtp)
-            )
-            if (response.isSuccessful) {
-                isOtpSentForLinking = false
-                errorMessage = null
-                loadCredentials()
-                onSuccess()
-            } else {
-                val errBody = response.errorBody()?.string() ?: ""
-                errorMessage = parseErrorMessage(errBody, "ওটিপি ভেরিফিকেশন ব্যর্থ হয়েছে")
+            try {
+                val response = repository.verifyLinkCredential(
+                    VerifyLinkCredentialRequest(formatted, type, cleanOtp)
+                )
+                if (response.isSuccessful) {
+                    isOtpSentForLinking = false
+                    errorMessage = null
+                    loadCredentials()
+                    onSuccess()
+                } else {
+                    val errBody = response.errorBody()?.string() ?: ""
+                    errorMessage = parseErrorMessage(errBody, "ওটিপি ভেরিফিকেশন ব্যর্থ হয়েছে")
+                }
+            } catch (e: Exception) {
+                errorMessage = e.message?.takeIf { it.isNotBlank() } ?: "নেটওয়ার্ক সমস্যা। আবার চেষ্টা করুন।"
+            } finally {
+                isVerifyingOtp = false
             }
         }
     }

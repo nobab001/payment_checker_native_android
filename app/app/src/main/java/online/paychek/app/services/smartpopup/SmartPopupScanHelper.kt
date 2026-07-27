@@ -14,14 +14,15 @@ import kotlin.math.min
  * - Prefer OCR text taken from the crop bitmap only (caller responsibility).
  * - Accessibility fallback: only compact nodes mostly inside the crop — never
  *   scrape full SMS bubbles (that pulled "Grameenphone" / phones from outside).
- * - Token must look like a real TrxID: 8–15 chars, mix of letters + digits.
- *   Pure words ("Grameenphone", "encrypted") are rejected.
+ * - Token: 8–15 chars — mixed letters+digits (bKash etc.) OR pure digits that
+ *   are not BD phone numbers (Rocket numeric TxnId).
  */
 object SmartPopupScanHelper {
 
     private val tokenRun = Regex("(?<![A-Za-z0-9])[A-Za-z0-9]{8,15}(?![A-Za-z0-9])")
-    private val trxIdLabeled = Regex("""(?i)trx\s*id[:\s#-]*([A-Za-z0-9]{8,15})""")
+    private val trxIdLabeled = Regex("""(?i)(?:trx|txn)\s*id[:\s#-]*([A-Za-z0-9]{8,15})""")
     private val bdMobile = Regex("^01[3-9]\\d{8}$")
+    private val bdMobileIntl = Regex("^8801[3-9]\\d{8}$")
 
     private data class Hit(
         val value: String,
@@ -50,10 +51,10 @@ object SmartPopupScanHelper {
         if (isPhoneNumber(token)) return false
         val hasLetter = token.any { it.isLetter() }
         val hasDigit = token.any { it.isDigit() }
-        // Real bank/MFS TrxIDs are mixed (e.g. DGM5M7INHD). Reject "Grameenphone", "encrypted".
-        if (!hasLetter || !hasDigit) return false
-        if (token.all { it.isLetter() }) return false
-        return true
+        if (!hasDigit) return false
+        // Mixed alphanumeric (bKash / Nagad) OR pure numeric non-phone (Rocket)
+        if (hasLetter) return true
+        return token.all { it.isDigit() }
     }
 
     private fun pickBest(hits: List<Hit>): String? {
@@ -131,18 +132,25 @@ object SmartPopupScanHelper {
         }
     }
 
+    /** BD mobiles only — do not reject Rocket-style numeric TxnIds (e.g. 6771494274). */
     private fun isPhoneNumber(token: String): Boolean {
         if (!token.all { it.isDigit() }) return false
         if (bdMobile.matches(token)) return true
+        if (bdMobileIntl.matches(token)) return true
         if (token.startsWith("01") && token.length == 11) return true
         if (token.startsWith("8801") && token.length in 13..14) return true
-        if (token.length in 10..15) return true
         return false
     }
 
     private fun qualityScore(token: String, sourceText: String): Int {
         var score = 0
-        if (token.any { it.isLetter() } && token.any { it.isDigit() }) score += 250
+        val hasLetter = token.any { it.isLetter() }
+        val hasDigit = token.any { it.isDigit() }
+        when {
+            hasLetter && hasDigit -> score += 250
+            // Pure numeric TrxID (Rocket) — still strong when crop-only
+            !hasLetter && hasDigit -> score += 200
+        }
         val labeled = trxIdLabeled.find(sourceText)?.groupValues?.getOrNull(1)
         if (labeled != null && labeled.equals(token, ignoreCase = true)) score += 120
         score += (10 - abs(token.length - 10)) * 3

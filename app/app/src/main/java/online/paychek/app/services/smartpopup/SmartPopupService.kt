@@ -71,9 +71,14 @@ class SmartPopupService : Service() {
     private var etQuery: EditText? = null
     private var tvStatus: TextView? = null
     private var tvSms: TextView? = null
+    private var smsRow: View? = null
+    private var btnSmsSoldOut: TextView? = null
+    private var btnModeSms: TextView? = null
+    private var btnModeCard: TextView? = null
     private var btnHistory: ImageButton? = null
     private var btnClear: ImageButton? = null
     private var hasResultCards: Boolean = false
+    private var lastResults: List<TransactionItem> = emptyList()
     private var searchGeneration: Int = 0
 
     private lateinit var resultAdapter: SmartPopupTransactionAdapter
@@ -93,13 +98,19 @@ class SmartPopupService : Service() {
                 ACTION_CACHE_UPDATED -> refreshIdleStatus()
                 ACTION_SCAN_RESULT -> {
                     val query = intent.getStringExtra(EXTRA_QUERY).orEmpty()
+                    SmartPopupState.isScanning = false
                     if (query.isNotBlank()) {
                         SmartPopupState.currentQuery = query
-                        SmartPopupState.isScanning = false
                         showPanel()
                         applySearch(query)
                     } else {
-                        Toast.makeText(this@SmartPopupService, "স্কয়ারের ভিতরে TrxID পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                        // Scan miss — drop previous SMS/card so old history is not kept
+                        clearDisplayedResults(keepQuery = false)
+                        Toast.makeText(
+                            this@SmartPopupService,
+                            "স্কয়ারের ভিতরে TrxID পাওয়া যায়নি",
+                            Toast.LENGTH_SHORT
+                        ).show()
                         showPanel()
                     }
                 }
@@ -175,6 +186,10 @@ class SmartPopupService : Service() {
         etQuery = view.findViewById(R.id.tvSmartPopupQuery)
         tvStatus = view.findViewById(R.id.tvSmartPopupStatus)
         tvSms = view.findViewById(R.id.tvSmartPopupSms)
+        smsRow = view.findViewById(R.id.smartPopupSmsRow)
+        btnSmsSoldOut = view.findViewById(R.id.btnSmartPopupSmsSoldOut)
+        btnModeSms = view.findViewById(R.id.btnSmartPopupModeSms)
+        btnModeCard = view.findViewById(R.id.btnSmartPopupModeCard)
         btnHistory = view.findViewById(R.id.btnSmartPopupHistory)
         btnClear = view.findViewById(R.id.btnSmartPopupClear)
 
@@ -184,6 +199,7 @@ class SmartPopupService : Service() {
         rvSession?.adapter = sessionAdapter
 
         wireSearchBox()
+        wireResultModeToggle()
 
         val screen = screenSize()
         val margin = dp(12)
@@ -208,6 +224,7 @@ class SmartPopupService : Service() {
         view.findViewById<View>(R.id.btnSmartPopupScan).setOnClickListener { showCropBox() }
         btnHistory?.setOnClickListener { toggleSessionHistory() }
         btnClear?.setOnClickListener { clearSearch() }
+        refreshResultModeToggleUi()
 
         makeDraggable(view.findViewById(R.id.smartPopupHeader), view, params)
         attachResizeHandles(
@@ -271,16 +288,126 @@ class SmartPopupService : Service() {
     }
 
     private fun clearSearch() {
-        etQuery?.setText("")
-        SmartPopupState.currentQuery = ""
-        hasResultCards = false
-        resultAdapter.submitList(emptyList())
-        tvSms?.visibility = View.GONE
-        SmartPopupState.viewMode = SmartPopupState.ViewMode.IDLE
+        clearDisplayedResults(keepQuery = false)
         hideKeyboard()
         disablePanelIme()
-        updateClearVisibility("")
+    }
+
+    private fun clearDisplayedResults(keepQuery: Boolean) {
+        searchGeneration++
+        if (!keepQuery) {
+            etQuery?.setText("")
+            SmartPopupState.currentQuery = ""
+            updateClearVisibility("")
+        }
+        hasResultCards = false
+        lastResults = emptyList()
+        resultAdapter.submitList(emptyList())
+        smsRow?.visibility = View.GONE
+        tvSms?.text = ""
+        btnSmsSoldOut?.visibility = View.GONE
+        SmartPopupState.viewMode = SmartPopupState.ViewMode.IDLE
         renderMode()
+    }
+
+    private fun wireResultModeToggle() {
+        btnModeSms?.setOnClickListener {
+            saveResultDisplayMode(SmartPopupState.ResultDisplayMode.SMS)
+            refreshResultModeToggleUi()
+            if (hasResultCards) applyResultDisplayMode(lastResults)
+            renderMode()
+        }
+        btnModeCard?.setOnClickListener {
+            saveResultDisplayMode(SmartPopupState.ResultDisplayMode.CARD)
+            refreshResultModeToggleUi()
+            if (hasResultCards) applyResultDisplayMode(lastResults)
+            renderMode()
+        }
+    }
+
+    private fun resultDisplayMode(): SmartPopupState.ResultDisplayMode {
+        val raw = getSharedPreferences(PREF, MODE_PRIVATE)
+            .getString("result_display_mode", SmartPopupState.ResultDisplayMode.CARD.name)
+        return runCatching {
+            SmartPopupState.ResultDisplayMode.valueOf(raw ?: SmartPopupState.ResultDisplayMode.CARD.name)
+        }.getOrDefault(SmartPopupState.ResultDisplayMode.CARD)
+    }
+
+    private fun saveResultDisplayMode(mode: SmartPopupState.ResultDisplayMode) {
+        getSharedPreferences(PREF, MODE_PRIVATE).edit()
+            .putString("result_display_mode", mode.name)
+            .apply()
+    }
+
+    private fun refreshResultModeToggleUi() {
+        val mode = resultDisplayMode()
+        val smsOn = mode == SmartPopupState.ResultDisplayMode.SMS
+        btnModeSms?.setBackgroundResource(
+            if (smsOn) R.drawable.bg_smart_popup_toggle_on else R.drawable.bg_smart_popup_toggle_off
+        )
+        btnModeCard?.setBackgroundResource(
+            if (smsOn) R.drawable.bg_smart_popup_toggle_off else R.drawable.bg_smart_popup_toggle_on
+        )
+        btnModeSms?.setTextColor(
+            if (smsOn) android.graphics.Color.parseColor("#0E7490")
+            else android.graphics.Color.parseColor("#64748B")
+        )
+        btnModeCard?.setTextColor(
+            if (smsOn) android.graphics.Color.parseColor("#64748B")
+            else android.graphics.Color.parseColor("#0E7490")
+        )
+    }
+
+    private fun applyResultDisplayMode(results: List<TransactionItem>) {
+        val mode = resultDisplayMode()
+        val primary = results.firstOrNull()
+        when (mode) {
+            SmartPopupState.ResultDisplayMode.SMS -> {
+                rvResults?.visibility = View.GONE
+                resultAdapter.submitList(emptyList())
+                val sms = primary?.fullSms?.takeIf { it.isNotBlank() }
+                if (sms != null) {
+                    smsRow?.visibility = View.VISIBLE
+                    tvSms?.text = sms
+                    bindSmsSoldOut(primary)
+                } else {
+                    // No SMS body — fall back to card so user still sees a result
+                    smsRow?.visibility = View.GONE
+                    btnSmsSoldOut?.visibility = View.GONE
+                    rvResults?.visibility = View.VISIBLE
+                    resultAdapter.submitList(results)
+                }
+            }
+            SmartPopupState.ResultDisplayMode.CARD -> {
+                smsRow?.visibility = View.GONE
+                tvSms?.text = ""
+                btnSmsSoldOut?.visibility = View.GONE
+                rvResults?.visibility = View.VISIBLE
+                resultAdapter.submitList(results)
+            }
+        }
+    }
+
+    private fun bindSmsSoldOut(item: TransactionItem?) {
+        val btn = btnSmsSoldOut ?: return
+        if (item == null) {
+            btn.visibility = View.GONE
+            return
+        }
+        btn.visibility = View.VISIBLE
+        if (item.isUsed == 1) {
+            btn.text = getString(R.string.smart_popup_soldout)
+            btn.setTextColor(android.graphics.Color.parseColor("#EF4444"))
+            btn.setBackgroundResource(R.drawable.bg_smart_popup_badge_sold)
+            btn.isClickable = false
+            btn.setOnClickListener(null)
+        } else {
+            btn.text = getString(R.string.smart_popup_available)
+            btn.setTextColor(android.graphics.Color.parseColor("#10B981"))
+            btn.setBackgroundResource(R.drawable.bg_smart_popup_badge_ok)
+            btn.isClickable = true
+            btn.setOnClickListener { markSoldOut(item) }
+        }
     }
 
     private fun enablePanelIme() {
@@ -366,12 +493,13 @@ class SmartPopupService : Service() {
                 if (hasResultCards) {
                     mid?.visibility = View.VISIBLE
                     resultScroll?.visibility = View.VISIBLE
-                    resizePanel(expandedHeight())
+                    // Wrap SMS/card content — no tall empty mid
+                    resizePanel(compactHeight())
                 } else {
                     // Compact like idle — only status line (no huge empty mid)
                     mid?.visibility = View.GONE
                     resultScroll?.visibility = View.GONE
-                    tvSms?.visibility = View.GONE
+                    smsRow?.visibility = View.GONE
                     resizePanel(noResultHeight())
                 }
             }
@@ -420,6 +548,10 @@ class SmartPopupService : Service() {
         etQuery = null
         tvStatus = null
         tvSms = null
+        smsRow = null
+        btnSmsSoldOut = null
+        btnModeSms = null
+        btnModeCard = null
         btnHistory = null
         btnClear = null
         SmartPopupState.isMinimized = true
@@ -487,6 +619,10 @@ class SmartPopupService : Service() {
         etQuery = null
         tvStatus = null
         tvSms = null
+        smsRow = null
+        btnSmsSoldOut = null
+        btnModeSms = null
+        btnModeCard = null
         btnHistory = null
         btnClear = null
         removeBubble()
@@ -582,14 +718,7 @@ class SmartPopupService : Service() {
     private fun applySearch(query: String) {
         val q = query.trim()
         if (q.isEmpty()) {
-            searchGeneration++
-            etQuery?.setText("")
-            updateClearVisibility("")
-            hasResultCards = false
-            resultAdapter.submitList(emptyList())
-            tvSms?.visibility = View.GONE
-            SmartPopupState.viewMode = SmartPopupState.ViewMode.IDLE
-            renderMode()
+            clearDisplayedResults(keepQuery = false)
             return
         }
         if (etQuery?.text?.toString() != q) {
@@ -608,8 +737,11 @@ class SmartPopupService : Service() {
         // Local miss (e.g. SMS arrived after popup opened) → fetch from server
         val gen = ++searchGeneration
         hasResultCards = false
+        lastResults = emptyList()
         resultAdapter.submitList(emptyList())
-        tvSms?.visibility = View.GONE
+        smsRow?.visibility = View.GONE
+        tvSms?.text = ""
+        btnSmsSoldOut?.visibility = View.GONE
         SmartPopupState.viewMode = SmartPopupState.ViewMode.RESULT
         tvStatus?.text = "সার্ভারে খোঁজা হচ্ছে..."
         renderMode()
@@ -644,15 +776,16 @@ class SmartPopupService : Service() {
 
     private fun renderSearchResults(results: List<TransactionItem>) {
         SmartPopupState.trackSessionItems(results)
-        resultAdapter.submitList(results)
+        lastResults = results
         hasResultCards = results.isNotEmpty()
 
-        val sms = results.firstOrNull()?.fullSms?.takeIf { it.isNotBlank() }
-        if (sms != null) {
-            tvSms?.visibility = View.VISIBLE
-            tvSms?.text = sms
+        if (results.isEmpty()) {
+            resultAdapter.submitList(emptyList())
+            smsRow?.visibility = View.GONE
+            tvSms?.text = ""
+            btnSmsSoldOut?.visibility = View.GONE
         } else {
-            tvSms?.visibility = View.GONE
+            applyResultDisplayMode(results)
         }
 
         SmartPopupState.viewMode = SmartPopupState.ViewMode.RESULT

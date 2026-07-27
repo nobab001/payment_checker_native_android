@@ -1,0 +1,25 @@
+---
+description: Git branching, commits, and release discipline
+alwaysApply: true
+---
+
+# Git Workflow
+
+## Default flow
+
+```
+feature/* → local test → (optional staging) → PR/review → main → production deploy → health check
+```
+
+## Rules
+
+- Prefer working on a feature branch for large changes; small hotfixes may be discussed with the user.
+- Commit **only** when the user asks. Never amend pushed history; never `--force` on `main`.
+- Do not commit secrets (`.env`, keystores, private keys, uploaded PII).
+- Commit messages: short why-focused sentences (fix/add/update).
+- Do not use interactive git (`-i`).
+
+## Deploy coupling
+
+- Merging to GitHub ≠ automatic VPS deploy unless CI is configured and user intends it.
+- Production APK publish is a separate explicit step from app commits.

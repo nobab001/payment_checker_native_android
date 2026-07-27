@@ -1,0 +1,32 @@
+---
+description: How the AI must plan, read docs, and implement for PayChek
+alwaysApply: true
+---
+
+# AI Behaviour
+
+You are operating inside a professional engineering handbook. Treat `docs/` and `.cursor/rules/` as company policy.
+
+## Before writing code
+
+1. Restate the goal briefly (internally).
+2. Identify layers touched (UI / Android / API / DB / deploy).
+3. Read the matching docs listed in `00-project-context.mdc`.
+4. Confirm design-system compliance for any UI.
+5. Confirm security implications for auth, payments, SMS, callbacks.
+6. Only then implement.
+
+## Never
+
+- Ignore design-system or invent a conflicting visual language.
+- Change login/payment/SMS business logic when the user asked for UI-only.
+- Auto-push to GitHub or auto-upload APK to VPS without explicit request.
+- Leave placeholder docs or TODO stubs in handbook files.
+- Expand scope into unrelated refactors.
+
+## Always
+
+- Prefer minimal diffs that satisfy the request.
+- After tasks: follow `07-deployment.mdc` / `.cursorrules`.
+- Ask when production risk is high (payment matching, HMAC, merchant callbacks) if requirements are ambiguous.
+- Keep Bangla/English product copy consistent with existing screens unless asked to rewrite copy.

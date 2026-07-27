@@ -1,0 +1,30 @@
+---
+description: Security, secrets, HMAC, JWT, and mobile keystore rules
+alwaysApply: true
+---
+
+# Security Rules
+
+Read: `docs/security/security-policy.md`, `docs/security/hmac.md`, `docs/security/token-system.md`
+
+## Always
+
+- Store secrets in env / Android Keystore / `SecurePreferences` — never commit `.env`, private keys, or live API secrets.
+- JWT for session auth; verify expiry and role claims server-side.
+- HMAC for SMS / device integrity paths — preserve replay protection and timestamp/nonce checks where implemented.
+- Parameterized queries via Prisma only — no string-concat SQL.
+- Sanitize/validate all external input; escape output in any HTML surfaces.
+- Rate-limit auth/OTP/public payment init.
+- CSRF: cookie-based browser flows need same-site / CSRF strategy; mobile bearer APIs rely on token + TLS.
+
+## Android
+
+- Prefer encrypted prefs for tokens (`SecurePreferences`).
+- Do not log auth tokens, OTP codes, or HMAC secrets.
+- Root / lock screens exist for a reason — do not weaken them casually.
+
+## AI / agent
+
+- Never write exploit PoCs against production.
+- Never paste production secrets into docs or chat logs.
+- Do not disable TLS verification.

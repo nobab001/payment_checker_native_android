@@ -34,6 +34,13 @@ class SmartPopupTransactionAdapter(
 
     override fun onBindViewHolder(holder: VH, position: Int) {
         holder.bind(items[position], onSoldOut)
+        // Match SMS↔Scan gap for last card; keep spacing only between session cards
+        val lp = holder.itemView.layoutParams as? ViewGroup.MarginLayoutParams
+        if (lp != null) {
+            val density = holder.itemView.resources.displayMetrics.density
+            lp.bottomMargin = if (position < items.lastIndex) (6 * density).toInt() else 0
+            holder.itemView.layoutParams = lp
+        }
     }
 
     class VH(itemView: View) : RecyclerView.ViewHolder(itemView) {

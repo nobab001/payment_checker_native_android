@@ -119,20 +119,6 @@ fun BackgroundPersistenceCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                if (!allReady) {
-                    TextButton(
-                        onClick = { refreshChecks() },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text("পরীক্ষা", fontSize = 11.sp)
-                    }
-                }
             }
 
             if (!allReady || showReadyCelebration) {

@@ -1,0 +1,28 @@
+---
+description: Local vs VPS deploy, APK, PM2, Nginx workflow
+alwaysApply: true
+---
+
+# Deployment Rules
+
+Read: `docs/deployment/vps.md`, `docs/deployment/staging.md`, `docs/deployment/production.md`, `docs/deployment/github-workflow.md`
+
+## After coding tasks (local agent)
+
+1. **App changed** (`app/**`): `gradlew assembleDebug` in `app/`; report `app/app/build/outputs/apk/debug/app-debug.apk`; if `adb devices` shows `device`, `adb install -r` + launch MainActivity.
+2. **Backend only** (`backend/**`): restart local Node (port 3000). Do **not** build APK.
+3. **Both**: restart server + build APK.
+4. **GitHub**: never auto stage/commit/push unless user asks.
+
+## Production truth
+
+- Local APK does **not** update `https://paycheckbd.com/downloads/paycheck.apk`.
+- Upload production APK only when user explicitly requests: shared path `/var/www/payment-checker/shared/downloads/paycheck.apk`.
+- Backend live deploy (PM2 reload / release symlink) only when user explicitly requests.
+- Prefer: feature branch → test → staging (if available) → production → health check.
+
+## Never
+
+- Force-push `main`
+- Deploy untested payment-flow changes directly to production without confirmation
+- Overwrite VPS `.env` DB credentials with local `.env` blindly

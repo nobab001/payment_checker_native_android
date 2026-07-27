@@ -27,25 +27,21 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Support
+import androidx.compose.material.icons.outlined.VerifiedUser
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.material3.*
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.*
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -58,11 +54,14 @@ import online.paychek.app.ui.theme.*
 import online.paychek.app.utils.adaptivePadding
 import online.paychek.app.utils.adaptiveTextSize
 import online.paychek.app.utils.screenWidth
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.animation.core.*
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
@@ -72,12 +71,27 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import kotlinx.coroutines.launch
 
-// Premium Material 3 design palette — local to this screen
-private val PremiumPrimary = Color(0xFF1F2A8A)
-private val PremiumBackground = Color(0xFFF8F9FC)
-private val PremiumTextSecondary = Color(0xFF6B7280)
+// Screenshot audit palette — 95–98% match target
+private val LoginPrimary = Color(0xFF2D4CFF)
+private val LoginPrimaryDeep = Color(0xFF1A3DE0)
+private val LoginLogoBlue = Color(0xFF1E3A8A)
+private val LoginBadgeText = Color(0xFF1D4ED8)
+private val LoginBadgeBg = Color(0xFFEEF4FF)
+private val LoginBgLight = Color(0xFFF8FAFF)
+private val LoginBgLightEnd = Color(0xFFF0F4FF)
+private val LoginBgTopDark = Color(0xFF0F172A)
+private val LoginBgBottomDark = Color(0xFF1E295B)
+private val LoginTextPrimary = Color(0xFF1A1C1E)
+private val LoginTextSecondary = Color(0xFF74777F)
+private val LoginSurfaceDark = Color(0xFF1A2336)
+private val LoginShadowCard = Color(0x280F172A)
+private val SocialWhatsApp = Color(0xFF25D366)
+private val SocialFacebook = Color(0xFF1877F2)
+private val SocialTelegram = Color(0xFF2CA5E0)
+private val SocialYouTube = Color(0xFFFF0000)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,6 +116,33 @@ fun LoginScreen(
 
     val isBypass = uiState.contact == uiState.adminSecretUsername
     var adminBypassOpenedAt by remember { mutableStateOf<Long?>(null) }
+
+    // Subtle enter animations only (screenshot reference)
+    var logoVisible by remember { mutableStateOf(false) }
+    var cardVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        logoVisible = true
+        kotlinx.coroutines.delay(120)
+        cardVisible = true
+    }
+
+    val isDarkBg = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val screenW = screenWidth()
+    val contentMaxWidth = 560.dp
+    // Wider card for long Gmail addresses
+    val horizontalPad = 10.dp
+    val titleColor = if (isDarkBg) Color.White else LoginTextPrimary
+    val subtitleColor = if (isDarkBg) Color(0xFFB0B8C4) else LoginTextSecondary
+    val cardSurface = if (isDarkBg) LoginSurfaceDark else Color.White
+    val socialCircleSize = when {
+        screenW.value < 360f -> 52.dp
+        screenW.value < 400f -> 56.dp
+        else -> 60.dp
+    }
+    val socialIconSize = when {
+        screenW.value < 360f -> 24.dp
+        else -> 26.dp
+    }
 
     LaunchedEffect(isBypass) {
         if (isBypass) {
@@ -404,42 +445,116 @@ fun LoginScreen(
         }
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+
+    BoxWithConstraints(
+        modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter
     ) {
-        // Decorative background gradient blobs for a premium/modern feel
+        val topPad = if (maxHeight < 640.dp) 40.dp else 64.dp
+        val logoSize = if (maxWidth < 360.dp) 68.dp else 76.dp
+
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(320.dp)
-                .align(Alignment.TopCenter)
+                .fillMaxSize()
                 .background(
-                    brush = androidx.compose.ui.graphics.Brush.radialGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-                            Color.Transparent
-                        )
+                    brush = Brush.verticalGradient(
+                        colors = if (isDarkBg) {
+                            listOf(LoginBgTopDark, LoginBgBottomDark)
+                        } else {
+                            listOf(LoginBgLight, LoginBgLightEnd)
+                        }
                     )
                 )
         )
+        Box(
+            modifier = Modifier
+                .size(260.dp)
+                .offset(x = (-70).dp, y = (-40).dp)
+                .align(Alignment.TopStart)
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            if (isDarkBg) LoginPrimary.copy(alpha = 0.28f) else Color(0xFFB8C9FF).copy(alpha = 0.60f),
+                            Color.Transparent
+                        )
+                    ),
+                    shape = CircleShape
+                )
+        )
+        // Soft dotted pattern — top-left (audit #6)
+        Canvas(
+            modifier = Modifier
+                .size(180.dp)
+                .offset(x = (-20).dp, y = 8.dp)
+                .align(Alignment.TopStart)
+                .alpha(if (isDarkBg) 0.25f else 0.55f)
+        ) {
+            val step = 14.dp.toPx()
+            val radius = 1.6.dp.toPx()
+            val dotColor = if (isDarkBg) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.85f)
+            var y = 0f
+            while (y < size.height) {
+                var x = 0f
+                while (x < size.width) {
+                    drawCircle(color = dotColor, radius = radius, center = Offset(x, y))
+                    x += step
+                }
+                y += step
+            }
+        }
+        Box(
+            modifier = Modifier
+                .size(220.dp)
+                .offset(x = 40.dp, y = (-20).dp)
+                .align(Alignment.TopEnd)
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            if (isDarkBg) Color.White.copy(alpha = 0.08f) else Color(0xFFC5CDD8).copy(alpha = 0.40f),
+                            Color.Transparent
+                        )
+                    ),
+                    shape = CircleShape
+                )
+        )
+        // Soft dotted pattern — top-right (audit #6)
+        Canvas(
+            modifier = Modifier
+                .size(150.dp)
+                .offset(x = 12.dp, y = 20.dp)
+                .align(Alignment.TopEnd)
+                .alpha(if (isDarkBg) 0.20f else 0.45f)
+        ) {
+            val step = 14.dp.toPx()
+            val radius = 1.4.dp.toPx()
+            val dotColor = if (isDarkBg) Color.White.copy(alpha = 0.30f) else Color.White.copy(alpha = 0.80f)
+            var y = 0f
+            while (y < size.height) {
+                var x = 0f
+                while (x < size.width) {
+                    drawCircle(color = dotColor, radius = radius, center = Offset(x, y))
+                    x += step
+                }
+                y += step
+            }
+        }
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 0.dp),
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .padding(horizontal = horizontalPad)
+                .padding(top = topPad, bottom = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 1. Maintenance Banner
             if (uiState.isMaintenanceMode) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = StatusOrange),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 16.dp),
+                        .widthIn(max = contentMaxWidth)
+                        .padding(bottom = 16.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Row(
@@ -462,162 +577,191 @@ fun LoginScreen(
                 }
             }
 
-            // 2. Logo Header & Brand Identity
-            Spacer(modifier = Modifier.height(96.dp))
-
-            val infiniteTransition = rememberInfiniteTransition(label = "LogoScaleTransition")
-            val logoScale by infiniteTransition.animateFloat(
-                initialValue = 1.0f,
-                targetValue = 1.05f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 2000, easing = FastOutSlowInEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "LogoScale"
-            )
-
-            AnimatedVisibility(
-                visible = true,
-                enter = fadeIn(animationSpec = tween(700)),
+            val logoAlpha by animateFloatAsState(
+                targetValue = if (logoVisible) 1f else 0f,
+                animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
                 label = "LogoFade"
+            )
+            Box(
+                modifier = Modifier
+                    .graphicsLayer(alpha = logoAlpha)
+                    // Layout = logo only; glow overflows so no huge gap under logo
+                    .size(logoSize),
+                contentAlignment = Alignment.Center
             ) {
+                // Outer glow (does not inflate layout height)
                 Box(
                     modifier = Modifier
-                        .size(80.dp)
-                        .graphicsLayer(scaleX = logoScale, scaleY = logoScale)
-                        .clip(RoundedCornerShape(26.dp))
+                        .requiredSize(logoSize + 40.dp)
                         .background(
-                            brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                            brush = Brush.radialGradient(
                                 colors = listOf(
-                                    MaterialTheme.colorScheme.primary,
-                                    MaterialTheme.colorScheme.primaryContainer
+                                    LoginPrimary.copy(alpha = if (isDarkBg) 0.50f else 0.40f),
+                                    LoginPrimary.copy(alpha = 0.16f),
+                                    Color.Transparent
                                 )
-                            )
+                            ),
+                            shape = CircleShape
                         )
+                )
+                Box(
+                    modifier = Modifier
+                        .requiredSize(logoSize + 22.dp)
+                        .background(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    LoginPrimary.copy(alpha = if (isDarkBg) 0.32f else 0.24f),
+                                    Color.Transparent
+                                )
+                            ),
+                            shape = CircleShape
+                        )
+                )
+                Box(
+                    modifier = Modifier
+                        .size(logoSize)
                         .shadow(
-                            elevation = 8.dp,
-                            shape = RoundedCornerShape(26.dp),
+                            elevation = 18.dp,
+                            shape = RoundedCornerShape(22.dp),
                             clip = false,
-                            spotColor = MaterialTheme.colorScheme.primary
+                            ambientColor = LoginPrimary.copy(alpha = 0.45f),
+                            spotColor = LoginPrimary.copy(alpha = 0.55f)
                         )
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                            shape = RoundedCornerShape(26.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(
+                            brush = Brush.linearGradient(
+                                colors = listOf(LoginLogoBlue, LoginPrimaryDeep)
+                            )
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.AccountBalanceWallet,
                         contentDescription = "Wallet Logo",
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(48.dp)
+                        tint = Color.White,
+                        modifier = Modifier.size(logoSize * 0.48f)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            AnimatedVisibility(
-                visible = true,
-                enter = slideInVertically(animationSpec = tween(700, delayMillis = 150), initialOffsetY = { it / 4 }) + fadeIn(animationSpec = tween(700, delayMillis = 150)),
-                label = "TitleSlide"
-            ) {
-                Text(
-                    text = "Payment Checker",
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
             Spacer(modifier = Modifier.height(8.dp))
 
-            AnimatedVisibility(
-                visible = true,
-                enter = fadeIn(animationSpec = tween(700, delayMillis = 250)),
-                label = "SubtitleFade"
-            ) {
-                Text(
-                    text = "SMS Payment Verification System",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            Text(
+                text = "Payment Checker",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                color = titleColor,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.graphicsLayer(alpha = logoAlpha)
+            )
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            AnimatedVisibility(
-                visible = true,
-                enter = fadeIn(animationSpec = tween(700, delayMillis = 350)),
-                label = "TaglineFade"
+            Text(
+                text = "SMS Payment Verification System",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Normal,
+                color = subtitleColor,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.graphicsLayer(alpha = logoAlpha)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Badge — subtle #EEF4FF (~7% blue wash), text #1D4ED8 (audit #3)
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = if (isDarkBg) {
+                    LoginBadgeText.copy(alpha = 0.08f)
+                } else {
+                    LoginBadgeBg.copy(alpha = 0.55f)
+                },
+                border = androidx.compose.foundation.BorderStroke(
+                    width = 1.dp,
+                    color = LoginBadgeText.copy(alpha = if (isDarkBg) 0.35f else 0.22f)
+                ),
+                shadowElevation = 0.dp,
+                modifier = Modifier.graphicsLayer(alpha = logoAlpha)
             ) {
-                Text(
-                    text = "Secure • Fast • Reliable",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 0.5.sp,
-                    color = MaterialTheme.colorScheme.primary,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.VerifiedUser,
+                        contentDescription = null,
+                        tint = LoginBadgeText,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "Secure • Fast • Reliable",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = LoginBadgeText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
-            // Spacing to push inputs slightly down as requested
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // 3. Flat Form Container
+            AnimatedVisibility(
+                visible = cardVisible,
+                enter = fadeIn(animationSpec = tween(380)) +
+                    slideInVertically(animationSpec = tween(380), initialOffsetY = { it / 5 }),
+                label = "CardFadeUp"
+            ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = contentMaxWidth)
+                    .shadow(
+                        elevation = 20.dp,
+                        shape = RoundedCornerShape(32.dp),
+                        clip = false,
+                        ambientColor = LoginShadowCard,
+                        spotColor = LoginShadowCard
+                    ),
+                shape = RoundedCornerShape(32.dp),
+                colors = CardDefaults.cardColors(containerColor = cardSurface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                    .padding(horizontal = 12.dp, vertical = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                    // Contact Input Box
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedTextField(
+                        val contact = uiState.contact.trim()
+                        val isValidEmail = android.util.Patterns.EMAIL_ADDRESS.matcher(contact).matches() &&
+                            contact.substringAfterLast('.', "").length >= 2
+                        val isValidPhone = contact.length == 11 && contact.all { it.isDigit() } && contact.startsWith("01")
+                        val fieldFocused = remember { MutableInteractionSource() }
+                        val isFieldFocused by fieldFocused.collectIsFocusedAsState()
+
+                        BasicTextField(
                             value = uiState.contact,
                             onValueChange = { newValue ->
                                 val filtered = newValue.replace(Regex("^\\+?88"), "").replace(" ", "").replace("-", "")
                                 viewModel.onContactChanged(filtered)
                             },
-                            placeholder = {
-                                Text(
-                                    text = "মোবাইল নাম্বার অথবা জিমেইল এড্রেস",
-                                    fontSize = 14.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Person,
-                                    contentDescription = "Contact Icon",
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            },
-                            trailingIcon = {
-                                val contact = uiState.contact.trim()
-                                val isValidEmail = android.util.Patterns.EMAIL_ADDRESS.matcher(contact).matches() && contact.substringAfterLast('.', "").length >= 2
-                                val isValidPhone = contact.length == 11 && contact.all { it.isDigit() } && contact.startsWith("01")
-                                if (isValidEmail || isValidPhone) {
-                                    Icon(
-                                        imageVector = Icons.Default.CheckCircle,
-                                        contentDescription = "Valid Input",
-                                        tint = StatusGreen,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            },
+                            singleLine = true,
+                            readOnly = uiState.isOtpSent,
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                fontSize = 15.sp,
+                                lineHeight = 22.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = titleColor
+                            ),
+                            cursorBrush = SolidColor(LoginPrimary),
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Email,
                                 imeAction = if (uiState.isOtpSent) ImeAction.Next else ImeAction.Done
@@ -628,27 +772,65 @@ fun LoginScreen(
                                     viewModel.checkContactAndRequestOtp(context)
                                 }
                             ),
-                            singleLine = true,
-                            readOnly = uiState.isOtpSent,
-                            textStyle = androidx.compose.ui.text.TextStyle(
-                                fontSize = 14.sp
-                            ),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                                unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-                                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                                focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            ),
+                            interactionSource = fieldFocused,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(58.dp)
+                                .height(60.dp),
+                            decorationBox = { innerTextField ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .border(
+                                            width = if (isFieldFocused) 1.5.dp else 1.dp,
+                                            color = when {
+                                                isFieldFocused -> LoginPrimary.copy(alpha = 0.55f)
+                                                isDarkBg -> Color.White.copy(alpha = 0.08f)
+                                                else -> Color(0xFFD0D5DD).copy(alpha = 0.55f)
+                                            },
+                                            shape = RoundedCornerShape(14.dp)
+                                        )
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(cardSurface)
+                                        .padding(horizontal = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = "Contact Icon",
+                                        tint = LoginLogoBlue,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight(),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        if (uiState.contact.isEmpty()) {
+                                            Text(
+                                                text = "মোবাইল নাম্বার অথবা জিমেইল এড্রেস",
+                                                fontSize = 14.sp,
+                                                lineHeight = 20.sp,
+                                                fontWeight = FontWeight.Normal,
+                                                color = subtitleColor,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                    if (isValidEmail || isValidPhone) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = "Valid Input",
+                                            tint = StatusGreen,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
                         )
-                        // Email suggestions removed per user request
                     }
 
                     // OTP Fields Section (Dynamic Animation)
@@ -970,21 +1152,48 @@ fun LoginScreen(
                           }
                       }
 
-                      // Main Action Buttons
-                      if (uiState.isLoading) {
-                          CircularProgressIndicator(
-                              color = MaterialTheme.colorScheme.primary,
-                              modifier = Modifier.padding(vertical = 8.dp)
-                          )
-                      } else {
-                          Button(
-                              onClick = {
+
+                      // Verify button — screenshot: ~58dp, gradient, soft blue shadow, press scale
+                      val verifyInteraction = remember { MutableInteractionSource() }
+                      val verifyPressed by verifyInteraction.collectIsPressedAsState()
+                      val verifyScale by animateFloatAsState(
+                          targetValue = if (verifyPressed) 0.97f else 1f,
+                          animationSpec = spring(
+                              dampingRatio = Spring.DampingRatioMediumBouncy,
+                              stiffness = Spring.StiffnessMedium
+                          ),
+                          label = "VerifyPressScale"
+                      )
+
+                      Box(
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .graphicsLayer(scaleX = verifyScale, scaleY = verifyScale)
+                              .height(62.dp)
+                              .shadow(
+                                  elevation = if (verifyPressed) 4.dp else 12.dp,
+                                  shape = RoundedCornerShape(16.dp),
+                                  clip = false,
+                                  ambientColor = LoginPrimary.copy(alpha = 0.35f),
+                                  spotColor = LoginPrimary.copy(alpha = 0.50f)
+                              )
+                              .clip(RoundedCornerShape(16.dp))
+                              .background(
+                                  brush = Brush.horizontalGradient(
+                                      colors = listOf(LoginPrimary, LoginPrimaryDeep)
+                                  )
+                              )
+                              .clickable(
+                                  interactionSource = verifyInteraction,
+                                  indication = ripple(color = Color.White.copy(alpha = 0.35f)),
+                                  enabled = !uiState.isTrialBlocked && isButtonClickable && !uiState.isLoading
+                              ) {
                                   val currentTime = System.currentTimeMillis()
-                                  if (isButtonClickable && currentTime - lastClickTime >= 5000L) {
+                                  if (isButtonClickable && currentTime - lastClickTime >= 2000L) {
                                       lastClickTime = currentTime
                                       isButtonClickable = false
                                       coroutineScope.launch {
-                                          kotlinx.coroutines.delay(5000L)
+                                          kotlinx.coroutines.delay(2000L)
                                           isButtonClickable = true
                                       }
                                       focusManager.clearFocus()
@@ -1002,39 +1211,37 @@ fun LoginScreen(
                                       }
                                   }
                               },
-                              colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                              shape = RoundedCornerShape(16.dp),
-                              enabled = !uiState.isTrialBlocked && isButtonClickable,
-                              modifier = Modifier
-                                  .fillMaxWidth()
-                                  .height(52.dp)
-                                  .shadow(
-                                      elevation = 4.dp,
-                                      shape = RoundedCornerShape(16.dp),
-                                      clip = false,
-                                      spotColor = MaterialTheme.colorScheme.primary
-                                  )
-                          ) {
+                          contentAlignment = Alignment.Center
+                      ) {
+                          if (uiState.isLoading) {
+                              CircularProgressIndicator(
+                                  color = Color.White,
+                                  strokeWidth = 2.5.dp,
+                                  modifier = Modifier.size(22.dp)
+                              )
+                          } else {
                               Text(
                                   text = if (uiState.isOtpSent || isBypass) "লগইন করুন" else "যাচাই করুন",
                                   fontSize = 16.sp,
                                   fontWeight = FontWeight.Bold,
-                                  color = MaterialTheme.colorScheme.onPrimary
+                                  color = Color.White
                               )
                           }
-                  }
+                      }
+              }
+              }
               }
 
-              // Spacer — compact gap between the form container and the social support footer
-              Spacer(modifier = Modifier.height(48.dp))
+              // Title slightly higher; icons keep previous vertical position
+              Spacer(modifier = Modifier.height(28.dp))
 
-              // 4. Social / Support section
               Column(
                   modifier = Modifier
                       .fillMaxWidth()
-                      .padding(bottom = 60.dp), // leaves safety bottom margin
+                      .widthIn(max = contentMaxWidth)
+                      .padding(bottom = 8.dp),
                   horizontalAlignment = Alignment.CenterHorizontally,
-                  verticalArrangement = Arrangement.spacedBy(16.dp)
+                  verticalArrangement = Arrangement.spacedBy(32.dp)
               ) {
                   Row(
                       modifier = Modifier.fillMaxWidth(),
@@ -1042,35 +1249,36 @@ fun LoginScreen(
                   ) {
                       HorizontalDivider(
                           modifier = Modifier.weight(1f),
-                          color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                          color = if (isDarkBg) Color.White.copy(alpha = 0.12f) else Color(0xFFD8DCE3)
                       )
                       Text(
                           text = "আমাদের সাথে থাকুন",
                           fontSize = 14.sp,
                           fontWeight = FontWeight.Medium,
-                          color = MaterialTheme.colorScheme.onSurfaceVariant,
+                          color = subtitleColor,
                           modifier = Modifier.padding(horizontal = 12.dp)
                       )
                       HorizontalDivider(
                           modifier = Modifier.weight(1f),
-                          color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                          color = if (isDarkBg) Color.White.copy(alpha = 0.12f) else Color(0xFFD8DCE3)
                       )
                   }
 
                   Row(
                       modifier = Modifier.fillMaxWidth(),
-                      horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                      horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
                       verticalAlignment = Alignment.CenterVertically
                   ) {
-                      // WhatsApp
                       val waLink = uiState.whatsappSupportLink
                       if (waLink.isNotBlank()) {
                           SocialItem(
                               name = "WhatsApp",
-                              iconColor = Color(0xFF25D366),
-                              iconBg = Color(0xFF25D366).copy(alpha = 0.1f),
+                              iconColor = SocialWhatsApp,
+                              iconBg = SocialWhatsApp.copy(alpha = 0.12f),
                               icon = ImageVector.vectorResource(id = R.drawable.ic_whatsapp),
-                              modifier = Modifier.weight(1f),
+                              circleSize = socialCircleSize,
+                              iconSize = socialIconSize,
+                              labelColor = subtitleColor,
                               onClick = {
                                   val rawLink = waLink.trim()
                                   val finalUrl = when {
@@ -1081,62 +1289,58 @@ fun LoginScreen(
                                       }
                                       else -> "https://wa.me/$rawLink"
                                   }
-                                  val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
-                                  context.startActivity(intent)
+                                  context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl)))
                               }
                           )
                       }
-
-                      // Facebook
                       val fbLink = uiState.facebookSupportLink
                       if (fbLink.isNotBlank()) {
                           SocialItem(
                               name = "Facebook",
-                              iconColor = Color(0xFF1877F2),
-                              iconBg = Color(0xFF1877F2).copy(alpha = 0.1f),
-                              icon = Icons.Default.Person,
-                              modifier = Modifier.weight(1f),
+                              iconColor = SocialFacebook,
+                              iconBg = SocialFacebook.copy(alpha = 0.12f),
+                              icon = ImageVector.vectorResource(id = R.drawable.ic_facebook),
+                              circleSize = socialCircleSize,
+                              iconSize = socialIconSize,
+                              labelColor = subtitleColor,
                               onClick = {
                                   val rawLink = fbLink.trim()
                                   val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
-                                  val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
-                                  context.startActivity(intent)
+                                  context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl)))
                               }
                           )
                       }
-
-                      // Telegram
                       val tgLink = uiState.telegramSupportLink
                       if (tgLink.isNotBlank()) {
                           SocialItem(
                               name = "Telegram",
-                              iconColor = Color(0xFF24A1DE),
-                              iconBg = Color(0xFF24A1DE).copy(alpha = 0.1f),
-                              icon = Icons.AutoMirrored.Filled.Send,
-                              modifier = Modifier.weight(1f),
+                              iconColor = SocialTelegram,
+                              iconBg = SocialTelegram.copy(alpha = 0.12f),
+                              icon = ImageVector.vectorResource(id = R.drawable.ic_telegram),
+                              circleSize = socialCircleSize,
+                              iconSize = socialIconSize,
+                              labelColor = subtitleColor,
                               onClick = {
                                   val rawLink = tgLink.trim()
                                   val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
-                                  val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
-                                  context.startActivity(intent)
+                                  context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl)))
                               }
                           )
                       }
-
-                      // YouTube
                       val ytLink = uiState.youtubeSupportLink
                       if (ytLink.isNotBlank()) {
                           SocialItem(
                               name = "YouTube",
-                              iconColor = Color(0xFFFF0000),
-                              iconBg = Color(0xFFFF0000).copy(alpha = 0.1f),
-                              icon = Icons.Default.PlayArrow,
-                              modifier = Modifier.weight(1f),
+                              iconColor = SocialYouTube,
+                              iconBg = SocialYouTube.copy(alpha = 0.12f),
+                              icon = ImageVector.vectorResource(id = R.drawable.ic_youtube),
+                              circleSize = socialCircleSize,
+                              iconSize = socialIconSize,
+                              labelColor = subtitleColor,
                               onClick = {
                                   val rawLink = ytLink.trim()
                                   val finalUrl = if (rawLink.startsWith("http://") || rawLink.startsWith("https://")) rawLink else "https://$rawLink"
-                                  val intent = Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl))
-                                  context.startActivity(intent)
+                                  context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl)))
                               }
                           )
                       }
@@ -1144,7 +1348,6 @@ fun LoginScreen(
               }
           }
 
-          // Floating Error Message overlay (Top-overlay banner)
           AnimatedVisibility(
               visible = uiState.errorMessage != null,
               enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
@@ -1153,6 +1356,9 @@ fun LoginScreen(
                   .align(Alignment.TopCenter)
                   .windowInsetsPadding(WindowInsets.statusBars)
                   .padding(top = 16.dp)
+                  .padding(horizontal = horizontalPad)
+                  .fillMaxWidth()
+                  .widthIn(max = contentMaxWidth)
                   .zIndex(99f)
           ) {
               uiState.errorMessage?.let { error ->
@@ -1162,66 +1368,72 @@ fun LoginScreen(
       }
   }
 
-  @Composable
-  fun SocialItem(
-      name: String,
-      iconColor: Color,
-      iconBg: Color,
-      icon: androidx.compose.ui.graphics.vector.ImageVector,
-      modifier: Modifier = Modifier,
-      onClick: () -> Unit
-  ) {
-      val interactionSource = remember { MutableInteractionSource() }
-      val isPressed by interactionSource.collectIsPressedAsState()
-      val scale by animateFloatAsState(
-          targetValue = if (isPressed) 0.92f else 1.0f,
-          animationSpec = spring(
-              dampingRatio = Spring.DampingRatioMediumBouncy,
-              stiffness = Spring.StiffnessLow
-          ),
-          label = "SocialItemScale"
-      )
+@Composable
+fun SocialItem(
+    name: String,
+    iconColor: Color,
+    iconBg: Color,
+    icon: ImageVector,
+    circleSize: androidx.compose.ui.unit.Dp = 60.dp,
+    iconSize: androidx.compose.ui.unit.Dp = 26.dp,
+    labelColor: Color = LoginTextSecondary,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.94f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "SocialItemScale"
+    )
 
-      Column(
-          horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.spacedBy(6.dp),
-          modifier = modifier
-              .graphicsLayer(scaleX = scale, scaleY = scale)
-              .clickable(
-                  interactionSource = interactionSource,
-                  indication = null
-              ) { onClick() }
-      ) {
-          Box(
-              modifier = Modifier
-                  .size(48.dp)
-                  .clip(CircleShape)
-                  .background(iconBg)
-                  .border(
-                      width = 1.dp,
-                      color = iconColor.copy(alpha = 0.2f),
-                      shape = CircleShape
-                  ),
-              contentAlignment = Alignment.Center
-          ) {
-              Icon(
-                  imageVector = icon,
-                  contentDescription = name,
-                  tint = iconColor,
-                  modifier = Modifier.size(24.dp)
-              )
-          }
-          Text(
-              text = name,
-              fontSize = 12.sp,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              fontWeight = FontWeight.Medium,
-              textAlign = TextAlign.Center,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis
-          )
-      }
-  }
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier.graphicsLayer(scaleX = scale, scaleY = scale)
+    ) {
+        Surface(
+            onClick = onClick,
+            modifier = Modifier
+                .size(circleSize)
+                .shadow(
+                    elevation = 4.dp,
+                    shape = CircleShape,
+                    clip = false,
+                    ambientColor = Color(0x14000000),
+                    spotColor = Color(0x14000000)
+                ),
+            shape = CircleShape,
+            color = iconBg,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+            interactionSource = interactionSource
+        ) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = name,
+                    tint = iconColor,
+                    modifier = Modifier.size(iconSize)
+                )
+            }
+        }
+        Text(
+            text = name,
+            fontSize = 12.sp,
+            color = labelColor,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
 
 @Composable
 fun PremiumRegisterDialog(

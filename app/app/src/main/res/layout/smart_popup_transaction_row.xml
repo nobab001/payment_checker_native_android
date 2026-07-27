@@ -3,7 +3,7 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="8dp"
+    android:layout_marginBottom="0dp"
     android:background="@drawable/bg_smart_popup_trx_card"
     android:padding="12dp">
 
@@ -88,13 +88,17 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="3dp"
+                android:minWidth="72dp"
+                android:gravity="center"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="5dp"
                 android:background="@drawable/bg_smart_popup_badge_ok"
                 android:text="@string/smart_popup_available"
-                android:textSize="8sp"
+                android:textSize="10sp"
                 android:textStyle="bold"
-                android:textColor="#10B981" />
+                android:textColor="#10B981"
+                android:maxLines="1"
+                android:singleLine="true" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

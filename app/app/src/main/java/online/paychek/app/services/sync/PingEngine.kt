@@ -78,9 +78,10 @@ object PingEngine {
                     delay(stage.intervalMs)
                 }
             }
-            // সব stage শেষ — সার্ভার দীর্ঘ সময়েও ফেরেনি। ping বন্ধ; SMS queue-তে জমা থাকবে,
-            // পরের নতুন SMS বা periodic SyncWorker আবার চেষ্টা করবে।
-            Log.w(TAG, "All ping stages exhausted — stopping PingEngine (SMS remain safely queued).")
+            // সব stage শেষ — সার্ভার দীর্ঘ সময়েও ফেরেনি। in-memory ping বন্ধ,
+            // কিন্তু durable WorkManager probe চালু রাখি যাতে সার্ভার ফিরলে অ্যাপ না খুলেও flush হয়।
+            Log.w(TAG, "All ping stages exhausted — handing off to ServerProbeWorker")
+            ServerProbeWorker.scheduleSoon(appContext)
             stop()
         }
     }

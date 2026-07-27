@@ -97,8 +97,9 @@ class ProcessIncomingSmsUseCase(private val context: Context) {
             if (connectivity.isOnline()) {
                 SmsReceiver.syncPendingQueue(context)
             } else {
-                Log.i(TAG, "[Queue] Offline — Triggering Lightweight Ping Engine")
+                Log.i(TAG, "[Queue] Offline — Triggering Lightweight Ping Engine + durable probe")
                 online.paychek.app.services.sync.PingEngine.start(context)
+                online.paychek.app.services.sync.ServerProbeWorker.scheduleSoon(context)
             }
 
             Result.success(insertedId)

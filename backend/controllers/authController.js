@@ -480,15 +480,13 @@ async function sendOtp(req, res) {
         'INSERT INTO otps (contact, code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))',
         [cleanedContact, encryptOtp(otpCode)]
       );
-      const success = await sendOtpDispatch(cleanedContact, otpCode);
-      if (!success) {
-        return res.status(503).json({
-          success: false,
-          action: 'EMAIL_ALL_FAILED',
-          message: 'ইমেইল OTP পাঠানো সম্ভব হয়নি। মোবাইল নম্বর দিয়ে লগইন করুন বা পুনরায় চেষ্টা করুন।'
-        });
-      }
-      return res.json({ success: true, message: 'এডমিন ওটিপি পাঠানো হয়েছে আপনার জিমেইলে।' });
+      await respondAfterOtpDispatch(
+        res,
+        cleanedContact,
+        otpCode,
+        'এডমিন ওটিপি পাঠানো হয়েছে আপনার জিমেইলে।'
+      );
+      return;
     }
 
     if (cleanedContact === adminSecretUsername) {
@@ -548,29 +546,17 @@ async function sendOtp(req, res) {
       [cleanedContact, encryptOtp(otpCode)]
     );
 
-    // Dispatch OTP via SMS or Email
-    const success = await sendOtpDispatch(cleanedContact, otpCode);
-    if (!success) {
-      const isEmail = cleanedContact.includes('@');
-      if (isEmail) {
-        return res.status(503).json({
-          success: false,
-          action: 'EMAIL_ALL_FAILED',
-          message: 'ইমেইল OTP পাঠানো সম্ভব হয়নি। মোবাইল নম্বর দিয়ে লগইন করুন অথবা সাপোর্টে যোগাযোগ করুন।'
-        });
-      } else {
-        return res.status(503).json({
-          success: false,
-          action: 'SMS_ALL_FAILED',
-          message: 'এসএমএস সার্ভারে কাজ চলছে, অনুগ্রহ করে জিমেইল মেথড ব্যবহার করুন অথবা সাপোর্টে যোগাযোগ করুন।'
-        });
-      }
-    }
-
-    return res.json({ success: true, message: 'ওটিপি কোড সফলভাবে পাঠানো হয়েছে।' });
+    await respondAfterOtpDispatch(
+      res,
+      cleanedContact,
+      otpCode,
+      'ওটিপি কোড সফলভাবে পাঠানো হয়েছে।'
+    );
   } catch (error) {
     console.error('Error sending OTP:', error);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
   }
 }
 
@@ -649,29 +635,17 @@ async function registerSendOtp(req, res) {
       [cleanedContact, encryptOtp(otpCode)]
     );
 
-    // Dispatch OTP
-    const success = await sendOtpDispatch(cleanedContact, otpCode);
-    if (!success) {
-      const isEmail = cleanedContact.includes('@');
-      if (isEmail) {
-        return res.status(503).json({
-          success: false,
-          action: 'EMAIL_ALL_FAILED',
-          message: 'ইমেইল OTP পাঠানো সম্ভব হয়নি। মোবাইল নম্বর দিয়ে লগইন করুন অথবা সাপোর্টে যোগাযোগ করুন।'
-        });
-      } else {
-        return res.status(503).json({
-          success: false,
-          action: 'SMS_ALL_FAILED',
-          message: 'এসএমএস সার্ভারে কাজ চলছে, অনুগ্রহ করে জিমেইল মেথড ব্যবহার করুন অথবা সাপোর্টে যোগাযোগ করুন।'
-        });
-      }
-    }
-
-    return res.json({ success: true, message: 'রেজিস্ট্রেশন ওটিপি সফলভাবে পাঠানো হয়েছে।' });
+    await respondAfterOtpDispatch(
+      res,
+      cleanedContact,
+      otpCode,
+      'রেজিস্ট্রেশন ওটিপি সফলভাবে পাঠানো হয়েছে।'
+    );
   } catch (error) {
     console.error('Error sending registration OTP:', error);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
   }
 }
 
@@ -1725,6 +1699,42 @@ async function executePostRequest(url, payloadObj, headers = {}, timeout = 15000
  *  Use whichever single gateway has is_active = 1
  *  Return false → caller sends SMS_ALL_FAILED
  */
+/**
+ * Deliver OTP then finish HTTP response.
+ * Email SMTP often exceeds mobile OkHttp defaults (~10s) while mail still arrives —
+ * so for email we ACK immediately after DB insert and dispatch in the background.
+ * SMS stays awaited so the client gets a real success/failure.
+ */
+function respondAfterOtpDispatch(res, cleanedContact, otpCode, successMessage) {
+  const isEmail = cleanedContact.includes('@');
+
+  if (isEmail) {
+    res.json({ success: true, message: successMessage });
+    sendOtpDispatch(cleanedContact, otpCode)
+      .then((ok) => {
+        if (!ok) {
+          console.error(`[OTP] Async email dispatch failed for ${cleanedContact}`);
+        }
+      })
+      .catch((err) => {
+        console.error(`[OTP] Async email dispatch error for ${cleanedContact}:`, err && err.message ? err.message : err);
+      });
+    return Promise.resolve();
+  }
+
+  return sendOtpDispatch(cleanedContact, otpCode).then((success) => {
+    if (res.headersSent) return;
+    if (!success) {
+      return res.status(503).json({
+        success: false,
+        action: 'SMS_ALL_FAILED',
+        message: 'এসএমএস সার্ভারে কাজ চলছে, অনুগ্রহ করে জিমেইল মেথড ব্যবহার করুন অথবা সাপোর্টে যোগাযোগ করুন।'
+      });
+    }
+    return res.json({ success: true, message: successMessage });
+  });
+}
+
 async function sendOtpDispatch(contact, otpCode) {
   const isEmail = contact.includes('@');
 
@@ -2240,6 +2250,7 @@ async function getMyDeviceConfig(req, res) {
 
     const devices = await query(
       `SELECT id, device_id, custom_device_name, is_parent, is_approved, device_role,
+              is_owner_device, device_specific_pin,
               sim_one_number, sim_one_active, sim_two_number, sim_two_active, is_app_active 
        FROM registered_devices 
        WHERE user_id = ? AND device_id = ? LIMIT 1`,
@@ -2250,7 +2261,15 @@ async function getMyDeviceConfig(req, res) {
       return res.status(404).json({ success: false, error: 'Device not found' });
     }
 
-    return res.json({ success: true, data: devices[0] });
+    const device = devices[0];
+    return res.json({
+      success: true,
+      data: {
+        ...device,
+        device_specific_pin: device.device_specific_pin || null,
+        is_owner: device.is_owner_device === 1 ? 1 : 0,
+      },
+    });
   } catch (error) {
     console.error('Error fetching own device config:', error);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });

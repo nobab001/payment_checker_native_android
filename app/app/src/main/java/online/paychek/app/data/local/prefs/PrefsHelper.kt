@@ -36,10 +36,10 @@ object PrefsHelper {
     // -------------------------------------------------------------------------
 
     fun isSim1Enabled(context: Context): Boolean =
-        prefs(context).getBoolean(AppConfig.KEY_SIM1_ENABLED, true)
+        prefs(context).getBoolean(AppConfig.KEY_SIM1_ENABLED, false)
 
     fun isSim2Enabled(context: Context): Boolean =
-        prefs(context).getBoolean(AppConfig.KEY_SIM2_ENABLED, true)
+        prefs(context).getBoolean(AppConfig.KEY_SIM2_ENABLED, false)
 
     fun setSim1Enabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(AppConfig.KEY_SIM1_ENABLED, enabled).apply()

@@ -156,8 +156,8 @@ class SmsPollWorker(
 
         // ── SharedPrefs থেকে SIM enabled state পড়া ──────────────────────
         val prefs       = context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
-        val sim1Enabled = prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, true)
-        val sim2Enabled = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, true)
+        val sim1Enabled = prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, false)
+        val sim2Enabled = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, false)
 
         var processedCount = 0
 
