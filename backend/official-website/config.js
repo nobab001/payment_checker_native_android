@@ -29,7 +29,7 @@ const config = {
   })(),
 
   minAmount: 10,
-  maxAmount: 100,
+  maxAmount: 1000,
 
   demoTtlMs: Number(env('OFFICIAL_TEST_DEMO_TTL_MS', String(24 * 60 * 60 * 1000))),
   sessionTtlMs: Number(env('OFFICIAL_TEST_SESSION_TTL_MS', String(2 * 60 * 60 * 1000))),

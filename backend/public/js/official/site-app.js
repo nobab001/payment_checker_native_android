@@ -239,22 +239,146 @@
     });
   }
 
+  function applyDownload(download) {
+    const cfg = download && typeof download === 'object' ? download : {};
+    const enabled = !(cfg.enabled === false || cfg.enabled === 0);
+    const url = cfg.url || '/downloads/paycheck.apk';
+    const labelText = cfg.label || 'Download App';
+
+    document.querySelectorAll('[data-cms-download-href]').forEach((el) => {
+      el.setAttribute('href', url);
+      if (!enabled) {
+        el.classList.add('is-hidden');
+        el.setAttribute('aria-hidden', 'true');
+      } else {
+        el.classList.remove('is-hidden');
+        // dock visibility is controlled by scroll morph
+        if (!el.classList.contains('app-download-dock')) {
+          el.removeAttribute('aria-hidden');
+        }
+      }
+    });
+
+    document.querySelectorAll('[data-cms="download-label"], [data-cms="download-label-hero"]').forEach((label) => {
+      label.textContent = labelText;
+    });
+
+    const nodes = [];
+    const hero = document.getElementById('appDownloadFabHero');
+    const dock = document.getElementById('appDownloadFabDock');
+    if (hero) nodes.push(hero);
+    if (dock) nodes.push(dock);
+    if (nodes.length && window.lucide) lucide.createIcons({ nodes });
+  }
+
+  function initDownloadMorph() {
+    const hero = document.getElementById('appDownloadFabHero');
+    const dock = document.getElementById('appDownloadFabDock');
+    if (!dock) return;
+
+    const isHome = document.body?.dataset?.page === 'home';
+    const isMobile = () => window.matchMedia('(max-width: 720px)').matches;
+
+    const showDockOnly = () => {
+      if (hero) {
+        hero.classList.add('is-hidden');
+        hero.setAttribute('aria-hidden', 'true');
+        hero.style.opacity = '0';
+        hero.style.pointerEvents = 'none';
+      }
+      dock.style.opacity = '1';
+      dock.style.pointerEvents = 'auto';
+      dock.removeAttribute('aria-hidden');
+    };
+
+    const applyMobileIconMode = (scrolled) => {
+      showDockOnly();
+      dock.classList.toggle('is-icon', scrolled);
+    };
+
+    // Non-home pages: compact top-right only (icon after any scroll)
+    if (!isHome) {
+      const sync = () => {
+        if (isMobile()) {
+          applyMobileIconMode((window.scrollY || 0) > 2);
+        } else {
+          showDockOnly();
+          dock.classList.remove('is-icon');
+        }
+      };
+      window.addEventListener('scroll', sync, { passive: true });
+      window.addEventListener('resize', sync, { passive: true });
+      sync();
+      return;
+    }
+
+    // ~0.75–1 inch of scroll → full crossfade (desktop).
+    // Mobile: dock always visible; text collapses to icon on first scroll.
+    const morphRangePx = () => Math.round(96 * 0.85);
+
+    let ticking = false;
+    const applyProgress = (t) => {
+      if (!hero) return;
+      hero.classList.remove('is-hidden');
+      hero.style.opacity = String(1 - t);
+      hero.style.transform = `translateX(-50%) scale(${(1 - t * 0.08).toFixed(4)})`;
+      hero.style.pointerEvents = t > 0.88 ? 'none' : 'auto';
+      if (t > 0.92) hero.setAttribute('aria-hidden', 'true');
+      else hero.removeAttribute('aria-hidden');
+
+      dock.style.opacity = String(t);
+      dock.style.pointerEvents = t < 0.12 ? 'none' : 'auto';
+      if (t < 0.08) dock.setAttribute('aria-hidden', 'true');
+      else dock.removeAttribute('aria-hidden');
+      dock.classList.remove('is-icon');
+    };
+
+    const update = () => {
+      ticking = false;
+      const y = window.scrollY || window.pageYOffset || 0;
+      if (isMobile()) {
+        applyMobileIconMode(y > 2);
+        return;
+      }
+      const range = Math.max(48, morphRangePx());
+      applyProgress(Math.min(1, Math.max(0, y / range)));
+    };
+
+    const onScroll = () => {
+      if (!ticking) {
+        ticking = true;
+        window.requestAnimationFrame(update);
+      }
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', update, { passive: true });
+    update();
+  }
+
   window.PaychekSite = {
     init() {
       initTheme();
       const isHome = document.body?.dataset?.page === 'home';
+      initDownloadMorph();
       fetch('/api/official/site', { credentials: 'same-origin' })
         .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
         .then((data) => {
           if (!data?.success || !data.content) throw new Error('bad cms');
           if (isHome) applyCms(data.content);
           renderHelpline(data.content.helpline);
+          applyDownload(data.content.download);
         })
         .catch((err) => {
           console.warn('[PaychekSite] CMS load failed', err);
           renderHelpline([
             { icon: 'whatsapp', label: 'WhatsApp', url: 'https://wa.me/8801700000000' },
           ]);
+          applyDownload({
+            enabled: true,
+            label: 'Download App',
+            url: '/downloads/paycheck.apk',
+          });
         });
     },
     ICON_SVG,

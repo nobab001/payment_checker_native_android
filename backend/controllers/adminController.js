@@ -1017,6 +1017,50 @@ async function saveOfficialWebsiteCms(req, res) {
   }
 }
 
+/** GET /api/admin/demo-payments — Official Test sandbox payments (for refunds) */
+async function listDemoPayments(req, res) {
+  try {
+    const demoVisitor = require('../official-website/services/demo-visitor-service');
+    const limit = parseInt(req.query.limit, 10) || 100;
+    const offset = parseInt(req.query.offset, 10) || 0;
+    const refundStatus = req.query.refundStatus || 'all';
+    const data = await demoVisitor.listAllPaymentsAdmin({ limit, offset, refundStatus });
+    return res.json({
+      success: true,
+      total: data.total,
+      payments: data.payments,
+      amountRange: {
+        min: require('../official-website/config').minAmount,
+        max: require('../official-website/config').maxAmount,
+      },
+    });
+  } catch (err) {
+    console.error('listDemoPayments error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/** PATCH /api/admin/demo-payments/:id/refund — mark refund none|pending|refunded */
+async function updateDemoPaymentRefund(req, res) {
+  try {
+    const demoVisitor = require('../official-website/services/demo-visitor-service');
+    const payment = await demoVisitor.setRefundStatus(req.params.id, {
+      refundStatus: req.body?.refundStatus || req.body?.refund_status,
+      refundNote: req.body?.refundNote || req.body?.refund_note,
+    });
+    if (!payment) {
+      return res.status(404).json({ success: false, error: 'NOT_FOUND' });
+    }
+    return res.json({ success: true, payment });
+  } catch (err) {
+    if (err.code === 'INVALID_REFUND_STATUS') {
+      return res.status(400).json({ success: false, error: err.code, message: err.message });
+    }
+    console.error('updateDemoPaymentRefund error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   verifyAdmin,
   listAllWebsites,
@@ -1029,6 +1073,8 @@ module.exports = {
   uploadCheckoutImage,
   getOfficialWebsiteCms,
   saveOfficialWebsiteCms,
+  listDemoPayments,
+  updateDemoPaymentRefund,
   getConfigs,
   updateConfig,
   getSmsTemplates,

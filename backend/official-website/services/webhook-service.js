@@ -19,8 +19,8 @@ function verifySignature(rawBody, signature) {
 }
 
 /**
- * Webhook only records status on the sandbox demo visitor.
- * Does not touch real merchant history/wallet.
+ * Webhook records/updates sandbox demo payment for refund history.
+ * Does not touch real merchant wallet.
  */
 async function handlePaychekWebhook(rawBody, signature) {
   if (!verifySignature(rawBody, signature)) {
@@ -41,17 +41,61 @@ async function handlePaychekWebhook(rawBody, signature) {
     payload?.metadata?.demoSessionId ||
     null;
 
+  const orderId =
+    payload.orderId ||
+    payload.merchantTransactionId ||
+    null;
+  const sessionToken =
+    payload.sessionToken ||
+    payload.sessionId ||
+    payload.paymentId ||
+    null;
+  const trxId =
+    payload.trxId ||
+    payload.providerTransactionId ||
+    null;
+  const status = payload.status || payload.paymentStatus || 'success';
+  const amount = payload.amount != null ? Number(payload.amount) : null;
+  const provider = payload.provider || null;
+  const senderNumber = payload.sender || payload.senderNumber || null;
+  const receiverNumber = payload.receiver || payload.receiverNumber || null;
+  const fullSms = payload.fullSms || payload.full_sms || payload.rawSms || null;
+  const purpose = payload?.meta?.purpose || payload.purpose || 'pay';
+
+  let recorded = false;
+
   if (demoSessionId) {
-    await demoVisitor.recordPayment(demoSessionId, {
-      status: payload.status || payload.paymentStatus || 'success',
-      amount: payload.amount || 0,
-      purpose: payload?.meta?.purpose || 'pay',
-      orderId: payload.orderId,
-      sessionToken: payload.sessionToken || null,
+    const id = await demoVisitor.recordPayment(demoSessionId, {
+      status,
+      amount,
+      purpose,
+      orderId,
+      sessionToken,
+      trxId,
+      provider,
+      senderNumber,
+      receiverNumber,
+      fullSms,
     }).catch(() => null);
+    recorded = Boolean(id);
   }
 
-  return { success: true, recorded: Boolean(demoSessionId) };
+  if (!recorded) {
+    const id = await demoVisitor.updatePaymentByRefs({
+      orderId,
+      sessionToken,
+      status,
+      amount,
+      trxId,
+      provider,
+      senderNumber,
+      receiverNumber,
+      fullSms,
+    }).catch(() => null);
+    recorded = Boolean(id);
+  }
+
+  return { success: true, recorded };
 }
 
 module.exports = { handlePaychekWebhook, verifySignature };

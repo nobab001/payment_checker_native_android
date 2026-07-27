@@ -187,6 +187,11 @@ const DEFAULT_CMS = Object.freeze({
       sortOrder: 0,
     },
   ],
+  download: {
+    enabled: true,
+    label: 'Download App',
+    url: '/downloads/paycheck.apk',
+  },
 });
 
 function deepClone(obj) {
@@ -237,6 +242,25 @@ function sanitizeHelplineItem(h, index) {
   };
 }
 
+function sanitizeDownload(d) {
+  const base = deepClone(DEFAULT_CMS.download);
+  if (!d || typeof d !== 'object') return base;
+  let url = String(d.url ?? base.url).trim().slice(0, 500);
+  if (
+    url &&
+    !/^https?:\/\//i.test(url) &&
+    !url.startsWith('/') &&
+    !/^mailto:/i.test(url)
+  ) {
+    url = `https://${url}`;
+  }
+  return {
+    enabled: d.enabled !== false && d.enabled !== 0,
+    label: String(d.label ?? base.label).slice(0, 60) || base.label,
+    url: url || base.url,
+  };
+}
+
 function normalizeCms(raw) {
   const base = deepClone(DEFAULT_CMS);
   if (!raw || typeof raw !== 'object') return base;
@@ -267,6 +291,10 @@ function normalizeCms(raw) {
       h.sortOrder = i;
     });
     base.helpline = items.length ? items : deepClone(DEFAULT_CMS.helpline);
+  }
+
+  if (raw.download && typeof raw.download === 'object') {
+    base.download = sanitizeDownload(raw.download);
   }
 
   return base;

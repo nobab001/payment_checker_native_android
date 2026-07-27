@@ -32,6 +32,8 @@ data class AdminUiState(
     val checkoutDesignTabs: Map<String, CheckoutTabDto> = emptyMap(),
     val providerBranding: Map<String, ProviderBrandingDto> = emptyMap(),
     val officialWebsiteCms: OfficialWebsiteCmsDto? = null,
+    val demoPayments: List<DemoPaymentDto> = emptyList(),
+    val demoPaymentsTotal: Int = 0,
     val helplineIconIds: List<String> = listOf(
         "whatsapp", "telegram", "youtube", "facebook", "messenger",
         "instagram", "discord", "twitter", "linkedin", "phone", "mail", "support"
@@ -220,11 +222,86 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 }
             }
 
+            val jobDemoPayments = launch {
+                try {
+                    val res = api.getDemoPayments(token, limit = 100, refundStatus = "all")
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        _state.update {
+                            it.copy(
+                                demoPayments = res.body()?.payments ?: emptyList(),
+                                demoPaymentsTotal = res.body()?.total ?: 0
+                            )
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
             kotlinx.coroutines.joinAll(
                 jobConfigs, jobTemplates, jobCheckouts, jobEmails, jobSmsSettings,
-                jobUsers, jobOtpFormat, jobPlans, jobAddonPlans, jobCheckoutDesign, jobOfficialWebsite
+                jobUsers, jobOtpFormat, jobPlans, jobAddonPlans, jobCheckoutDesign,
+                jobOfficialWebsite, jobDemoPayments
             )
             _state.update { it.copy(isLoading = false) }
+        }
+    }
+
+    fun loadDemoPayments(refundStatus: String = "all") {
+        viewModelScope.launch {
+            try {
+                val token = "Bearer ${getToken()}"
+                val res = api.getDemoPayments(token, limit = 100, refundStatus = refundStatus)
+                if (res.isSuccessful && res.body()?.success == true) {
+                    _state.update {
+                        it.copy(
+                            demoPayments = res.body()?.payments ?: emptyList(),
+                            demoPaymentsTotal = res.body()?.total ?: 0
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(errorMessage = "টেস্ট পেমেন্ট লোড ব্যর্থ: ${e.localizedMessage}") }
+            }
+        }
+    }
+
+    fun updateDemoPaymentRefund(id: Int, refundStatus: String, refundNote: String? = null) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, errorMessage = null) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val response = api.updateDemoPaymentRefund(
+                    token, id, UpdateDemoPaymentRefundRequest(refundStatus, refundNote)
+                )
+                if (response.isSuccessful && response.body()?.success == true) {
+                    val updated = response.body()?.payment
+                    _state.update { state ->
+                        state.copy(
+                            isSaving = false,
+                            demoPayments = state.demoPayments.map { p ->
+                                if (p.id == id && updated != null) updated else p
+                            },
+                            successMessage = when (refundStatus) {
+                                "refunded" -> "রিফান্ড সম্পন্ন হিসেবে মার্ক করা হয়েছে।"
+                                "pending" -> "রিফান্ড পেন্ডিং মার্ক করা হয়েছে।"
+                                else -> "রিফান্ড স্ট্যাটাস আপডেট হয়েছে।"
+                            }
+                        )
+                    }
+                } else {
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            errorMessage = response.body()?.error ?: "রিফান্ড আপডেট ব্যর্থ।"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(isSaving = false, errorMessage = "নেটওয়ার্ক এরর: ${e.localizedMessage}")
+                }
+            }
         }
     }
 

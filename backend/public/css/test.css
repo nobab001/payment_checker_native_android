@@ -272,6 +272,13 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
+.amount-error {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: var(--danger, #f87171);
+}
+.amount-error.hidden { display: none; }
+
 .amount-edit input {
   width: 100%;
   background: var(--surface);
@@ -317,13 +324,31 @@
 .pay-history ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .pay-history li {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;
+  gap: 6px;
   padding: 10px 12px;
   border-radius: 10px;
   background: var(--bg);
   border: 1px solid var(--border);
   font-size: 0.85rem;
+}
+.pay-history li strong {
+  display: block;
+  margin-bottom: 2px;
+}
+.pay-history li span,
+.pay-history li div {
+  word-break: break-word;
+}
+.pay-history-sms {
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.04);
+  border: 1px solid var(--border);
+  white-space: pre-wrap;
+  font-size: 0.8rem;
+  color: var(--muted);
 }
 
 .status-pill {

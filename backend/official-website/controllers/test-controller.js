@@ -76,7 +76,8 @@ async function getStatus(_req, res) {
       lines: [
         'This is a PayCheck Test Environment.',
         `You may send between ৳${config.minAmount} and ৳${config.maxAmount}.`,
-        'Your payment will be automatically refunded within 24 hours.',
+        'Admin refund status will appear in your history after verification.',
+        'History stays visible until refund is completed, then for 5 more days.',
         `Demo accounts expire after ${Math.round(config.demoTtlMs / 3600000)} hours.`,
         `Please do not send more than ৳${config.maxAmount}.`,
       ],
@@ -244,6 +245,13 @@ async function startTestPayment(req, res) {
       success: false,
       error: 'DEMO_AUTH_REQUIRED',
       message: 'ডেমো অ্যাকাউন্ট দিয়ে লগইন করুন',
+    });
+  }
+  if (!visitor.canTransact) {
+    return res.status(410).json({
+      success: false,
+      error: 'DEMO_SESSION_EXPIRED',
+      message: 'ডেমো অ্যাকাউন্টের পেমেন্ট সময় শেষ হয়েছে। নতুন অ্যাকাউন্ট নিয়ে আবার চেষ্টা করুন।',
     });
   }
 

@@ -14,6 +14,8 @@ let state = {
   dirty: false,
   saving: false,
   countdownTimer: null,
+  amountMin: 10,
+  amountMax: 1000,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -50,8 +52,64 @@ async function api(path, options = {}) {
 
 function clampAmount(raw) {
   const n = Number(raw);
-  if (!Number.isFinite(n)) return 10;
-  return Math.min(100, Math.max(10, Math.round(n)));
+  if (!Number.isFinite(n)) return state.amountMin;
+  return Math.min(state.amountMax, Math.max(state.amountMin, Math.round(n)));
+}
+
+function parseAmount(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n);
+}
+
+function validateAmount(raw) {
+  const n = parseAmount(raw);
+  if (n == null) {
+    return { ok: false, message: `৳${state.amountMin} থেকে ৳${state.amountMax} এর মধ্যে দিন` };
+  }
+  if (n < state.amountMin) {
+    return { ok: false, message: `সর্বনিম্ন ৳${state.amountMin}` };
+  }
+  if (n > state.amountMax) {
+    return { ok: false, message: `সর্বোচ্চ ৳${state.amountMax}` };
+  }
+  return { ok: true, amount: n };
+}
+
+function setAmountError(inputId, message) {
+  const err = $(`${inputId}Error`);
+  if (!err) return;
+  if (message) {
+    err.textContent = message;
+    err.classList.remove('hidden');
+  } else {
+    err.textContent = '';
+    err.classList.add('hidden');
+  }
+}
+
+function applyAmountRange(range) {
+  if (!range) return;
+  const min = Number(range.min);
+  const max = Number(range.max);
+  if (Number.isFinite(min) && min > 0) state.amountMin = min;
+  if (Number.isFinite(max) && max >= state.amountMin) state.amountMax = max;
+
+  ['#payAmount', '#balanceAmount'].forEach((sel) => {
+    const el = $(sel);
+    if (!el) return;
+    el.min = String(state.amountMin);
+    el.max = String(state.amountMax);
+    const n = parseAmount(el.value);
+    if (n != null && (n < state.amountMin || n > state.amountMax)) {
+      el.value = String(state.amountMin);
+    }
+  });
+
+  const hint = $('#amountHint');
+  if (hint) {
+    hint.textContent = `ডিফল্ট ৳${state.amountMin} · সর্বনিম্ন ৳${state.amountMin} · সর্বোচ্চ ৳${state.amountMax}`;
+  }
 }
 
 function currentSurface() {
@@ -220,13 +278,29 @@ function renderPayments(payments) {
     host.innerHTML = '';
     return;
   }
+  const refundLabel = (value) => {
+    switch (String(value || 'none').toLowerCase()) {
+      case 'refunded': return 'রিফান্ড সম্পন্ন';
+      case 'pending': return 'রিফান্ড চলছে';
+      default: return 'রিফান্ড বাকি';
+    }
+  };
   host.innerHTML = `
     <h3>সাম্প্রতিক টেস্ট পেমেন্ট</h3>
     <ul>
       ${payments.map((p) => `
         <li>
-          <span>৳${escapeHtml(p.amount)} · ${escapeHtml(p.purpose)}</span>
-          <span>${escapeHtml(p.status)}</span>
+          <div>
+            <strong>৳${escapeHtml(p.amount)} · ${escapeHtml(p.purpose || 'payment')}</strong>
+            <span>${escapeHtml(p.status || 'unknown')} · ${escapeHtml(refundLabel(p.refundStatus))}</span>
+          </div>
+          ${p.trxId ? `<div>Trx ID: ${escapeHtml(p.trxId)}</div>` : ''}
+          ${(p.senderNumber || p.receiverNumber || p.provider) ? `
+            <div>
+              ${p.provider ? `${escapeHtml(p.provider)} · ` : ''}${p.senderNumber ? `From ${escapeHtml(p.senderNumber)}` : ''}${p.senderNumber && p.receiverNumber ? ' · ' : ''}${p.receiverNumber ? `To ${escapeHtml(p.receiverNumber)}` : ''}
+            </div>
+          ` : ''}
+          ${p.fullSms ? `<div class="pay-history-sms">${escapeHtml(p.fullSms)}</div>` : ''}
         </li>
       `).join('')}
     </ul>`;
@@ -244,6 +318,12 @@ function showWorkspace() {
   if ($('#accountName')) $('#accountName').textContent = state.visitor?.displayName || 'Demo';
   startCountdown();
   renderEditor();
+  const locked = state.visitor && state.visitor.canTransact === false;
+  $('#payNowBtn') && ($('#payNowBtn').disabled = locked);
+  $('#addBalanceBtn') && ($('#addBalanceBtn').disabled = locked);
+  if (locked) {
+    setPill('পেমেন্ট সময় শেষ, তবে হিস্টরি এখনো দেখা যাবে');
+  }
   if (window.lucide) lucide.createIcons();
 }
 
@@ -285,7 +365,13 @@ async function ensureSavedBeforePay() {
 
 async function startAction(purpose) {
   const inputId = purpose === 'add_balance' ? '#balanceAmount' : '#payAmount';
-  const amount = clampAmount($(inputId)?.value);
+  const check = validateAmount($(inputId)?.value);
+  setAmountError(inputId, check.ok ? null : check.message);
+  if (!check.ok) {
+    setPill(check.message, true);
+    return;
+  }
+  const amount = check.amount;
   if ($(inputId)) $(inputId).value = String(amount);
 
   const payBtn = $('#payNowBtn');
@@ -361,9 +447,18 @@ function wireUi() {
   const bindAmount = (sel) => {
     const el = $(sel);
     if (!el) return;
-    const clamp = () => { el.value = String(clampAmount(el.value)); };
-    el.addEventListener('change', clamp);
-    el.addEventListener('blur', clamp);
+    const validate = () => {
+      const check = validateAmount(el.value);
+      setAmountError(sel, check.ok ? null : check.message);
+      // Out of range: keep typed value so user can fix — do not silently clamp past max.
+      if (check.ok) el.value = String(check.amount);
+    };
+    el.addEventListener('change', validate);
+    el.addEventListener('blur', validate);
+    el.addEventListener('input', () => {
+      const check = validateAmount(el.value);
+      setAmountError(sel, check.ok || el.value === '' ? null : check.message);
+    });
   };
   bindAmount('#payAmount');
   bindAmount('#balanceAmount');
@@ -398,6 +493,7 @@ async function boot() {
   wireUi();
   try {
     const status = await api('/status');
+    applyAmountRange(status.amountRange);
     if (status.notice?.lines) {
       const html = `<strong>${status.notice.title || 'PayCheck Test Environment'}</strong>`
         + status.notice.lines.slice(1).join('<br />');

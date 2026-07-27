@@ -9,6 +9,8 @@ const { sanitizeOverrides, applyOverrides, defaultOverrides } = require('./sessi
 
 const COOKIE_NAME = 'pc_demo';
 const STATUS = { ACTIVE: 'active', EXPIRED: 'expired', PURGED: 'purged' };
+const HISTORY_COOKIE_MS = 90 * 24 * 60 * 60 * 1000;
+const REFUND_RETENTION_MS = 5 * 24 * 60 * 60 * 1000;
 
 function sha256(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
@@ -55,7 +57,7 @@ function parseSettings(raw) {
   }
 }
 
-function publicVisitor(row) {
+function publicVisitor(row, meta = {}) {
   if (!row) return null;
   const settings = parseSettings(row.settings_json);
   const expiresAt = new Date(row.expires_at).getTime();
@@ -71,6 +73,10 @@ function publicVisitor(row) {
     hoursLeft: Math.round((msLeft / 3600000) * 10) / 10,
     settings,
     hostWebsiteId: row.host_website_id,
+    canTransact: meta.canTransact ?? msLeft > 0,
+    historyAccessible: meta.historyAccessible ?? true,
+    hasOpenRefund: meta.hasOpenRefund ?? false,
+    historyVisibleUntil: meta.historyVisibleUntil || null,
   };
 }
 
@@ -100,13 +106,56 @@ function readDemoCookie(req) {
 }
 
 function setDemoCookie(res, publicId, token, expiresAt) {
-  const maxAge = Math.max(60, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
+  const cookieUntil = Math.max(new Date(expiresAt).getTime(), Date.now() + HISTORY_COOKIE_MS);
+  const maxAge = Math.max(60, Math.floor((cookieUntil - Date.now()) / 1000));
   const secure = String(process.env.APP_ENV || '').toLowerCase() === 'production' ? '; Secure' : '';
   const value = encodeURIComponent(`${publicId}.${token}`);
   res.setHeader(
     'Set-Cookie',
     `${COOKIE_NAME}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`,
   );
+}
+
+async function computeHistoryAccess(row) {
+  const nowMs = Date.now();
+  const expiresMs = new Date(row.expires_at).getTime();
+  const canTransact = row.status === STATUS.ACTIVE && expiresMs > nowMs;
+
+  const [openRefundCount, latestRefunded] = await Promise.all([
+    prisma.demo_payments.count({
+      where: {
+        visitor_id: row.id,
+        refund_status: { not: 'refunded' },
+      },
+    }),
+    prisma.demo_payments.findFirst({
+      where: {
+        visitor_id: row.id,
+        refund_status: 'refunded',
+        refunded_at: { not: null },
+      },
+      orderBy: { refunded_at: 'desc' },
+      select: { refunded_at: true },
+    }),
+  ]);
+
+  const hasOpenRefund = openRefundCount > 0;
+  let historyVisibleUntil = null;
+  if (hasOpenRefund) {
+    historyVisibleUntil = null;
+  } else if (latestRefunded?.refunded_at) {
+    historyVisibleUntil = new Date(latestRefunded.refunded_at.getTime() + REFUND_RETENTION_MS);
+  } else {
+    historyVisibleUntil = new Date(row.expires_at);
+  }
+
+  const historyAccessible = !historyVisibleUntil || historyVisibleUntil.getTime() > nowMs;
+  return {
+    canTransact,
+    hasOpenRefund,
+    historyAccessible,
+    historyVisibleUntil: historyVisibleUntil ? historyVisibleUntil.toISOString() : null,
+  };
 }
 
 function clearDemoCookie(res) {
@@ -179,31 +228,37 @@ async function findActiveByCookie(req) {
   const row = await prisma.demo_visitors.findUnique({
     where: { public_id: parsed.publicId },
   });
-  if (!row || row.status !== STATUS.ACTIVE) return null;
+  if (!row) return null;
   if (row.token_hash !== sha256(parsed.token)) return null;
-  if (new Date(row.expires_at).getTime() <= Date.now()) {
+  if (new Date(row.expires_at).getTime() <= Date.now() && row.status === STATUS.ACTIVE) {
     await prisma.demo_visitors.update({
       where: { id: row.id },
       data: { status: STATUS.EXPIRED },
     }).catch(() => {});
-    return null;
   }
+
+  const freshRow = row.status === STATUS.ACTIVE && new Date(row.expires_at).getTime() > Date.now()
+    ? row
+    : await prisma.demo_visitors.findUnique({ where: { id: row.id } });
+  const access = await computeHistoryAccess(freshRow || row);
+  if (!access.canTransact && !access.historyAccessible) return null;
 
   const updated = await prisma.demo_visitors.update({
     where: { id: row.id },
     data: { last_seen_at: new Date() },
   });
-  return publicVisitor(updated);
+  return publicVisitor(updated, access);
 }
 
-async function getByPublicId(publicId) {
+async function getByPublicId(publicId, { allowExpired = false } = {}) {
   if (!publicId) return null;
   const row = await prisma.demo_visitors.findUnique({
     where: { public_id: String(publicId) },
   });
-  if (!row || row.status !== STATUS.ACTIVE) return null;
-  if (new Date(row.expires_at).getTime() <= Date.now()) return null;
-  return { row, visitor: publicVisitor(row) };
+  if (!row) return null;
+  const access = await computeHistoryAccess(row);
+  if (!allowExpired && !access.canTransact && !access.historyAccessible) return null;
+  return { row, visitor: publicVisitor(row, access) };
 }
 
 async function updateSettings(publicId, patch) {
@@ -224,19 +279,119 @@ async function updateSettings(publicId, patch) {
 }
 
 async function recordPayment(publicId, payment) {
-  const found = await getByPublicId(publicId);
+  // Allow expired visitors so success webhook can still update refund history
+  const found = await getByPublicId(publicId, { allowExpired: true });
   if (!found) return null;
-  await prisma.demo_payments.create({
+
+  const orderId = payment.orderId || null;
+  const sessionToken = payment.sessionToken || null;
+  const now = new Date();
+
+  // Prefer updating existing initiated row (same order/session) instead of duplicating on webhook.
+  let existing = null;
+  if (orderId) {
+    existing = await prisma.demo_payments.findFirst({
+      where: { visitor_id: found.row.id, order_id: orderId },
+      orderBy: { id: 'desc' },
+    });
+  }
+  if (!existing && sessionToken) {
+    existing = await prisma.demo_payments.findFirst({
+      where: { visitor_id: found.row.id, session_token: sessionToken },
+      orderBy: { id: 'desc' },
+    });
+  }
+
+  const data = {
+    amount: payment.amount != null ? payment.amount : existing?.amount ?? 0,
+    purpose: payment.purpose || existing?.purpose || 'pay',
+    order_id: orderId || existing?.order_id || null,
+    session_token: sessionToken || existing?.session_token || null,
+    status: payment.status || existing?.status || 'initiated',
+    trx_id: payment.trxId || existing?.trx_id || null,
+    provider: payment.provider || existing?.provider || null,
+    sender_number: payment.senderNumber || existing?.sender_number || null,
+    receiver_number: payment.receiverNumber || existing?.receiver_number || null,
+    full_sms: payment.fullSms || existing?.full_sms || null,
+    visitor_public_id: found.row.public_id,
+    visitor_display_name: found.row.display_name,
+    updated_at: now,
+  };
+
+  if (existing) {
+    await prisma.demo_payments.update({
+      where: { id: existing.id },
+      data,
+    });
+    return existing.id;
+  }
+
+  const created = await prisma.demo_payments.create({
     data: {
       visitor_id: found.row.id,
-      amount: payment.amount,
-      purpose: payment.purpose || 'pay',
-      order_id: payment.orderId || null,
-      session_token: payment.sessionToken || null,
-      status: payment.status || 'initiated',
+      ...data,
+      refund_status: 'none',
     },
   });
-  return true;
+  return created.id;
+}
+
+/**
+ * Update demo payment by orderId / sessionToken (works after visitor soft-expiry).
+ */
+async function updatePaymentByRefs({ orderId, sessionToken, status, amount, trxId, provider, senderNumber, receiverNumber, fullSms }) {
+  let row = null;
+  if (orderId) {
+    row = await prisma.demo_payments.findFirst({
+      where: { order_id: String(orderId) },
+      orderBy: { id: 'desc' },
+    });
+  }
+  if (!row && sessionToken) {
+    row = await prisma.demo_payments.findFirst({
+      where: { session_token: String(sessionToken) },
+      orderBy: { id: 'desc' },
+    });
+  }
+  if (!row) return null;
+
+  const updated = await prisma.demo_payments.update({
+    where: { id: row.id },
+    data: {
+      status: status || row.status,
+      amount: amount != null ? amount : row.amount,
+      trx_id: trxId || row.trx_id,
+      provider: provider || row.provider,
+      sender_number: senderNumber || row.sender_number,
+      receiver_number: receiverNumber || row.receiver_number,
+      full_sms: fullSms || row.full_sms,
+      updated_at: new Date(),
+    },
+  });
+  return updated.id;
+}
+
+function mapPaymentRow(r) {
+  return {
+    id: r.id,
+    amount: Number(r.amount),
+    purpose: r.purpose,
+    orderId: r.order_id,
+    sessionToken: r.session_token,
+    status: r.status,
+    trxId: r.trx_id,
+    provider: r.provider,
+    senderNumber: r.sender_number,
+    receiverNumber: r.receiver_number,
+    fullSms: r.full_sms,
+    visitorPublicId: r.visitor_public_id,
+    visitorDisplayName: r.visitor_display_name,
+    refundStatus: r.refund_status || 'none',
+    refundNote: r.refund_note,
+    refundedAt: r.refunded_at,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
 }
 
 async function listPayments(publicId, limit = 20) {
@@ -247,35 +402,120 @@ async function listPayments(publicId, limit = 20) {
     orderBy: { created_at: 'desc' },
     take: Math.min(50, limit),
   });
-  return rows.map((r) => ({
-    id: r.id,
-    amount: Number(r.amount),
-    purpose: r.purpose,
-    orderId: r.order_id,
-    status: r.status,
-    createdAt: r.created_at,
-  }));
+  return rows.map(mapPaymentRow);
 }
 
+/**
+ * Admin: all sandbox test payments with full refund history visibility.
+ */
+async function listAllPaymentsAdmin({ limit = 100, offset = 0, refundStatus } = {}) {
+  const where = {};
+  if (refundStatus && refundStatus !== 'all') {
+    where.refund_status = String(refundStatus);
+  }
+  const take = Math.min(200, Math.max(1, Number(limit) || 100));
+  const skip = Math.max(0, Number(offset) || 0);
+  const [rows, total] = await Promise.all([
+    prisma.demo_payments.findMany({
+      where,
+      orderBy: { created_at: 'desc' },
+      take,
+      skip,
+      include: {
+        visitor: {
+          select: { public_id: true, display_name: true, status: true, expires_at: true },
+        },
+      },
+    }),
+    prisma.demo_payments.count({ where }),
+  ]);
+
+  return {
+    total,
+    payments: rows.map((r) => ({
+      ...mapPaymentRow(r),
+      visitorPublicId: r.visitor_public_id || r.visitor?.public_id || null,
+      visitorDisplayName: r.visitor_display_name || r.visitor?.display_name || null,
+      visitorStatus: r.visitor?.status || null,
+    })),
+  };
+}
+
+async function setRefundStatus(paymentId, { refundStatus, refundNote } = {}) {
+  const id = Number(paymentId);
+  if (!Number.isFinite(id) || id < 1) return null;
+  const allowed = new Set(['none', 'pending', 'refunded']);
+  const next = String(refundStatus || '').toLowerCase();
+  if (!allowed.has(next)) {
+    const err = new Error('refundStatus must be none|pending|refunded');
+    err.status = 400;
+    err.code = 'INVALID_REFUND_STATUS';
+    throw err;
+  }
+  const existing = await prisma.demo_payments.findUnique({ where: { id } });
+  if (!existing) return null;
+  return prisma.demo_payments.update({
+    where: { id },
+    data: {
+      refund_status: next,
+      refund_note: refundNote != null ? String(refundNote).slice(0, 255) : existing.refund_note,
+      refunded_at: next === 'refunded' ? new Date() : null,
+      updated_at: new Date(),
+    },
+  }).then(mapPaymentRow);
+}
+
+/**
+ * Soft-expire active visitors past TTL; hard-delete only after 30 days
+ * so admins can still refund within the window.
+ */
 async function purgeExpired() {
   const now = new Date();
-  const expired = await prisma.demo_visitors.findMany({
+  const hardDeleteBefore = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const refundedDeleteBefore = new Date(now.getTime() - REFUND_RETENTION_MS);
+
+  await prisma.demo_visitors.updateMany({
     where: {
-      OR: [
-        { expires_at: { lte: now }, status: STATUS.ACTIVE },
-        { status: STATUS.EXPIRED },
-      ],
+      status: STATUS.ACTIVE,
+      expires_at: { lte: now },
     },
-    select: { id: true },
+    data: { status: STATUS.EXPIRED },
+  });
+
+  const stale = await prisma.demo_visitors.findMany({
+    where: {
+      status: { in: [STATUS.EXPIRED, STATUS.PURGED] },
+    },
+    select: {
+      id: true,
+      expires_at: true,
+      payments: {
+        select: { refund_status: true, refunded_at: true },
+      },
+    },
     take: 500,
   });
-  if (!expired.length) return { deleted: 0 };
-  const ids = expired.map((r) => r.id);
-  // payments cascade
+  const ids = stale
+    .filter((row) => {
+      if (!row.payments.length) {
+        return new Date(row.expires_at).getTime() <= hardDeleteBefore.getTime();
+      }
+      if (row.payments.some((payment) => payment.refund_status !== 'refunded')) {
+        return false;
+      }
+      const latestRefundedAt = row.payments
+        .map((payment) => payment.refunded_at)
+        .filter(Boolean)
+        .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
+      if (!latestRefundedAt) return false;
+      return new Date(latestRefundedAt).getTime() <= refundedDeleteBefore.getTime();
+    })
+    .map((row) => row.id);
+  if (!ids.length) return { deleted: 0, expired: 0 };
   const result = await prisma.demo_visitors.deleteMany({
     where: { id: { in: ids } },
   });
-  return { deleted: result.count };
+  return { deleted: result.count, expired: 0 };
 }
 
 /**
@@ -311,7 +551,10 @@ module.exports = {
   getByPublicId,
   updateSettings,
   recordPayment,
+  updatePaymentByRefs,
   listPayments,
+  listAllPaymentsAdmin,
+  setRefundStatus,
   purgeExpired,
   setDemoCookie,
   clearDemoCookie,

@@ -43,7 +43,7 @@
         <p>লগইন ছাড়াই এক ক্লিকে ব্যক্তিগত টেস্ট অ্যাকাউন্ট তৈরি হয়। আসল মার্চেন্ট অ্যাকাউন্টে কোনো পরিবর্তন হয় না। ২৪ ঘণ্টা পর অটো ডিলিট।</p>
         <div class="notice" id="noticeBox">
           <strong>PayCheck Test Environment</strong>
-          ৳10–৳100 · ২৪ ঘণ্টায় রিফান্ড · ডেমো ডেটা স্বয়ংক্রিয় মুছে যাবে
+          ৳10–৳1000 · ২৪ ঘণ্টায় রিফান্ড · ডেমো ডেটা স্বয়ংক্রিয় মুছে যাবে
         </div>
         <div class="login-actions" id="loginActions">
           <button class="btn btn-primary btn-lg" type="button" id="startDemoBtn">ডেমো অ্যাকাউন্ট দিয়ে শুরু</button>
@@ -123,7 +123,7 @@
 
         <section class="action-panel" id="actionPanel">
           <h2>পেমেন্ট অ্যাকশন</h2>
-          <p class="panel-hint">ডিফল্ট ৳10 · সর্বনিম্ন ৳10 · সর্বোচ্চ ৳100</p>
+          <p class="panel-hint" id="amountHint">ডিফল্ট ৳10 · সর্বনিম্ন ৳10 · সর্বোচ্চ ৳1000</p>
 
           <div class="action-grid">
             <article class="action-card">
@@ -134,7 +134,8 @@
               </div>
               <div class="amount-edit">
                 <label for="payAmount">পরিমাণ (৳)</label>
-                <input type="number" id="payAmount" min="10" max="100" step="1" value="10" />
+                <input type="number" id="payAmount" min="10" max="1000" step="1" value="10" />
+                <p class="amount-error hidden" id="payAmountError"></p>
               </div>
               <button class="btn btn-action" type="button" id="payNowBtn">পেয়ে নাও</button>
             </article>
@@ -147,7 +148,8 @@
               </div>
               <div class="amount-edit">
                 <label for="balanceAmount">পরিমাণ (৳)</label>
-                <input type="number" id="balanceAmount" min="10" max="100" step="1" value="10" />
+                <input type="number" id="balanceAmount" min="10" max="1000" step="1" value="10" />
+                <p class="amount-error hidden" id="balanceAmountError"></p>
               </div>
               <button class="btn btn-action btn-action-alt" type="button" id="addBalanceBtn">এড ব্যালেন্স</button>
             </article>

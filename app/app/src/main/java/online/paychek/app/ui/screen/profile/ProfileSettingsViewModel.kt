@@ -26,7 +26,7 @@ data class ProfileSettingsState(
     val userRole: String           = "",
     val subscriptionPlan: String   = "",   // e.g., "Free", "Premium", "Basic"
     val isPaid: Boolean            = false,
-    val activePlanName: String     = "",   // raw plan name (for pack card)
+    val activePlanName: String   = "",   // raw plan name (for pack card)
     val expiryDate: String?        = null, // yyyy-MM-dd
 
     // ── Credentials List ─────────────────────────────────────────
@@ -61,6 +61,12 @@ data class ProfileSettingsState(
     val isLoading: Boolean                = false,
     val successMessage: String?           = null,
     val errorMessage: String?             = null
+)
+
+data class ResetPinContactOption(
+    val value: String,
+    val type: String, // "phone" | "email"
+    val isPrimary: Boolean = false
 )
 
 // =============================================================================
@@ -199,25 +205,45 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
             return
         }
 
-        _state.update { it.copy(addCredentialContact = contact) }
+        // Optimistic UI: OTP স্ক্রিন সাথে সাথে দেখাও
+        _state.update {
+            it.copy(
+                addCredentialContact = contact,
+                isLoading = true,
+                errorMessage = null,
+                addCredentialOtpSent = true,
+                addCredentialTimer = 60
+            )
+        }
+        startAddCredentialTimer()
 
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, errorMessage = null) }
             try {
                 val response = api.sendCredentialOtp(bearerToken(), CredentialOtpRequest(contact))
                 if (response.isSuccessful) {
-                    _state.update {
-                        it.copy(isLoading = false, addCredentialOtpSent = true, addCredentialTimer = 60)
-                    }
-                    startAddCredentialTimer()
+                    _state.update { it.copy(isLoading = false) }
                 } else {
                     val errBody = response.errorBody()?.string() ?: ""
                     _state.update {
-                        it.copy(isLoading = false, errorMessage = parseErrorMessage(errBody, "OTP পাঠাতে ব্যর্থ।"))
+                        it.copy(
+                            isLoading = false,
+                            addCredentialOtpSent = false,
+                            addCredentialTimer = 0,
+                            errorMessage = parseErrorMessage(errBody, "OTP পাঠাতে ব্যর্থ।")
+                        )
                     }
+                    timerJob?.cancel()
                 }
             } catch (e: Exception) {
-                _state.update { it.copy(isLoading = false, errorMessage = "নেটওয়ার্ক সমস্যা।") }
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        addCredentialOtpSent = false,
+                        addCredentialTimer = 0,
+                        errorMessage = "নেটওয়ার্ক সমস্যা।"
+                    )
+                }
+                timerJob?.cancel()
             }
         }
     }
@@ -334,14 +360,14 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Reset PIN (Forgot PIN flow)
+    // Reset PIN (Forgot PIN flow) — শুধু অ্যাকাউন্টের নিজস্ব কন্টাক্ট
     // ─────────────────────────────────────────────────────────────
     fun openResetPinDialog() {
-        val contact = _state.value.primaryPhone ?: _state.value.primaryEmail ?: ""
+        loadCredentials()
         _state.update {
             it.copy(
                 showResetPinDialog = true,
-                resetPinContact    = contact,
+                resetPinContact    = "",
                 resetPinOtpSent    = false,
                 resetPinOtpCode    = "",
                 resetPinNewPin     = "",
@@ -351,47 +377,153 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
     }
 
     fun dismissResetPinDialog() {
-        _state.update { it.copy(showResetPinDialog = false) }
+        _state.update {
+            it.copy(
+                showResetPinDialog = false,
+                resetPinContact = "",
+                resetPinOtpSent = false,
+                resetPinOtpCode = "",
+                resetPinNewPin = "",
+                errorMessage = null
+            )
+        }
     }
 
-    fun onResetPinContactChange(v: String)  { _state.update { it.copy(resetPinContact = v) } }
+    fun backToResetPinContactPicker() {
+        _state.update {
+            it.copy(
+                resetPinOtpSent = false,
+                resetPinOtpCode = "",
+                resetPinNewPin = "",
+                errorMessage = null,
+                isLoading = false
+            )
+        }
+    }
+
     fun onResetPinOtpChange(v: String)      { _state.update { it.copy(resetPinOtpCode = v) } }
     fun onResetPinNewPinChange(v: String)   { _state.update { it.copy(resetPinNewPin  = v) } }
 
-    fun sendResetPinOtp() {
-        val contact = _state.value.resetPinContact.trim()
-        if (contact.isEmpty()) { _state.update { it.copy(errorMessage = "নম্বর বা ইমেইল দিন।") }; return }
+    /** অ্যাকাউন্টের প্রাইমারি + লিঙ্কড ফোন/ইমেইল (ডুপ্লিকেট ছাড়া)। */
+    fun resetPinContactOptions(): List<ResetPinContactOption> {
+        val s = _state.value
+        val map = LinkedHashMap<String, ResetPinContactOption>()
+        fun put(value: String?, type: String, isPrimary: Boolean) {
+            val v = value?.trim().orEmpty()
+            if (v.isEmpty()) return
+            map.putIfAbsent(
+                v.lowercase(),
+                ResetPinContactOption(value = v, type = type, isPrimary = isPrimary)
+            )
+        }
+        put(s.primaryPhone, "phone", true)
+        put(s.primaryEmail, "email", true)
+        s.credentials.forEach { cred ->
+            val type = when {
+                cred.type.equals("email", true) -> "email"
+                cred.type.equals("phone", true) -> "phone"
+                cred.value.contains("@") -> "email"
+                else -> "phone"
+            }
+            put(cred.value, type, false)
+        }
+        return map.values.toList()
+    }
+
+    fun sendResetPinOtp(contact: String) {
+        val clean = contact.trim()
+        if (clean.isEmpty()) {
+            _state.update { it.copy(errorMessage = "কন্টাক্ট সিলেক্ট করুন।") }
+            return
+        }
+        val allowed = resetPinContactOptions().any {
+            it.value.equals(clean, ignoreCase = true)
+        }
+        if (!allowed) {
+            _state.update {
+                it.copy(errorMessage = "শুধু আপনার অ্যাকাউন্টের মোবাইল নম্বর বা জিমেইল ব্যবহার করা যাবে।")
+            }
+            return
+        }
+
+        // Optimistic UI — OTP বক্স সাথে সাথে
+        _state.update {
+            it.copy(
+                resetPinContact = clean,
+                resetPinOtpSent = true,
+                resetPinOtpCode = "",
+                resetPinNewPin = "",
+                isLoading = true,
+                errorMessage = null
+            )
+        }
+
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, errorMessage = null) }
             try {
-                val response = RetrofitClient.profileApiService.resetPinSendOtp(ResetPinSendOtpRequest(contact))
+                val response = RetrofitClient.profileApiService.resetPinSendOtp(
+                    ResetPinSendOtpRequest(clean)
+                )
                 if (response.isSuccessful) {
-                    _state.update { it.copy(isLoading = false, resetPinOtpSent = true) }
+                    _state.update { it.copy(isLoading = false) }
                 } else {
                     val errBody = response.errorBody()?.string() ?: ""
-                    _state.update { it.copy(isLoading = false, errorMessage = parseErrorMessage(errBody, "OTP পাঠানো ব্যর্থ।")) }
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            resetPinOtpSent = false,
+                            errorMessage = parseErrorMessage(errBody, "OTP পাঠানো ব্যর্থ।")
+                        )
+                    }
                 }
             } catch (e: Exception) {
-                _state.update { it.copy(isLoading = false, errorMessage = "নেটওয়ার্ক সমস্যা।") }
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        resetPinOtpSent = false,
+                        errorMessage = "নেটওয়ার্ক সমস্যা।"
+                    )
+                }
             }
         }
     }
 
     fun submitResetPin() {
         val s = _state.value
-        if (s.resetPinOtpCode.length != 6) { _state.update { it.copy(errorMessage = "৬ সংখ্যার OTP দিন।") }; return }
-        if (s.resetPinNewPin.length < 4 || s.resetPinNewPin.length > 6)  { _state.update { it.copy(errorMessage = "নতুন PIN ৪ থেকে ৬ সংখ্যার হতে হবে।") }; return }
+        if (s.resetPinContact.isBlank()) {
+            _state.update { it.copy(errorMessage = "কন্টাক্ট সিলেক্ট করুন।") }
+            return
+        }
+        if (s.resetPinOtpCode.filter { it.isDigit() }.length != 6) {
+            _state.update { it.copy(errorMessage = "৬ সংখ্যার OTP দিন।") }
+            return
+        }
+        if (s.resetPinNewPin.trim().length < 4 || s.resetPinNewPin.trim().length > 6) {
+            _state.update { it.copy(errorMessage = "নতুন PIN ৪ থেকে ৬ সংখ্যার হতে হবে।") }
+            return
+        }
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, errorMessage = null) }
             try {
+                val otp = s.resetPinOtpCode.filter { it.isDigit() }.take(6)
                 val response = RetrofitClient.profileApiService.resetPinVerify(
-                    ResetPinVerifyRequest(s.resetPinContact, s.resetPinOtpCode, s.resetPinNewPin)
+                    ResetPinVerifyRequest(s.resetPinContact, otp, s.resetPinNewPin)
                 )
                 if (response.isSuccessful) {
-                    _state.update { it.copy(isLoading = false, showResetPinDialog = false, successMessage = "PIN সফলভাবে রিসেট হয়েছে।") }
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            showResetPinDialog = false,
+                            successMessage = "PIN সফলভাবে রিসেট হয়েছে।"
+                        )
+                    }
                 } else {
                     val errBody = response.errorBody()?.string() ?: ""
-                    _state.update { it.copy(isLoading = false, errorMessage = parseErrorMessage(errBody, "PIN রিসেট ব্যর্থ।")) }
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = parseErrorMessage(errBody, "PIN রিসেট ব্যর্থ।")
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(isLoading = false, errorMessage = "নেটওয়ার্ক সমস্যা।") }

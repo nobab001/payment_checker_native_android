@@ -380,11 +380,11 @@ footer {
   gap: 8px;
 }
 
-/* Helpline FAB */
+/* Helpline FAB — slightly lower so it sits above the home-indicator / edge */
 .helpline {
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  bottom: max(36px, calc(16px + env(safe-area-inset-bottom, 0px)));
   z-index: 80;
   display: flex;
   flex-direction: column-reverse;
@@ -467,5 +467,149 @@ footer {
 .helpline-item[data-icon="phone"] .hi-btn { background: #0d9488; }
 .helpline-item[data-icon="mail"] .hi-btn { background: #64748b; }
 .helpline-item[data-icon="support"] .hi-btn { background: #0f766e; }
+
+/* Morphing App Download FAB — dual layers crossfade on light scroll */
+.app-download {
+  position: fixed;
+  z-index: 90;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--btn-primary-fg);
+  background: var(--accent);
+  font-family: var(--font);
+  font-weight: 700;
+  box-shadow: var(--fab-shadow);
+  border: none;
+  cursor: pointer;
+  will-change: opacity, transform;
+  transition: filter 0.2s ease;
+}
+.app-download:hover { filter: brightness(1.05); }
+.app-download:active { transform: scale(0.97); }
+.app-download-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.app-download-icon svg,
+.app-download-icon i {
+  width: 1em;
+  height: 1em;
+}
+
+/* Large center button — desktop/home only (JS hides on mobile) */
+.app-download-hero {
+  top: auto;
+  left: 50%;
+  right: auto;
+  /* Clear WhatsApp FAB (~56px) + gap */
+  bottom: max(126px, calc(20vh + env(safe-area-inset-bottom, 0px)));
+  transform: translateX(-50%);
+  min-width: min(280px, calc(100vw - 48px));
+  height: 64px;
+  padding: 0 28px;
+  border-radius: 999px;
+  font-size: 1.15rem;
+  letter-spacing: 0.01em;
+  opacity: 1;
+  pointer-events: auto;
+}
+.app-download-hero .app-download-icon {
+  font-size: 1.35rem;
+}
+
+/* Compact dock — always below sticky nav (never inside header) */
+.app-download-dock {
+  top: calc(var(--nav-h) + 10px + env(safe-area-inset-top, 0px));
+  right: 16px;
+  left: auto;
+  bottom: auto;
+  transform: none;
+  min-width: 0;
+  width: auto;
+  height: 44px;
+  padding: 0 14px 0 12px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+}
+.app-download-dock .app-download-icon {
+  font-size: 1.05rem;
+}
+
+.app-download.is-hidden {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+
+@media (max-width: 720px) {
+  /* Mobile: no mid-page hero FAB — WhatsApp stays clear */
+  .app-download-hero {
+    display: none !important;
+  }
+  .app-download-dock {
+    /* Slightly higher + tighter pill so it doesn't crowd the hero badge */
+    top: calc(var(--nav-h) + 4px + env(safe-area-inset-top, 0px));
+    right: 10px;
+    height: 36px;
+    font-size: 0.72rem;
+    gap: 4px;
+    padding: 0 10px 0 8px;
+    /* Always visible on mobile (JS also forces opacity) */
+    opacity: 1;
+    pointer-events: auto;
+    transition: width 0.22s ease, height 0.22s ease, padding 0.22s ease,
+      border-radius 0.22s ease, gap 0.22s ease, filter 0.2s ease;
+  }
+  .app-download-dock .app-download-icon {
+    font-size: 0.95rem;
+  }
+  .app-download-dock .app-download-label {
+    max-width: 7.5rem;
+    overflow: hidden;
+    white-space: nowrap;
+    transition: max-width 0.22s ease, opacity 0.18s ease, margin 0.22s ease;
+  }
+  /* Scroll → icon-only circle */
+  .app-download-dock.is-icon {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    padding: 0;
+    gap: 0;
+    border-radius: 50%;
+  }
+  .app-download-dock.is-icon .app-download-label {
+    max-width: 0;
+    opacity: 0;
+    margin: 0;
+    pointer-events: none;
+  }
+  .app-download-dock.is-icon .app-download-icon {
+    font-size: 1.1rem;
+  }
+  .helpline {
+    right: 14px;
+    bottom: max(44px, calc(20px + env(safe-area-inset-bottom, 0px)));
+  }
+}
+
+@media (min-width: 721px) {
+  .app-download-dock {
+    /* Extra clearance under wide desktop nav / Test CTA */
+    top: calc(var(--nav-h) + 12px);
+    right: 20px;
+  }
+  .app-download-hero {
+    /* Keep clear of bottom-right helpline on wide screens */
+    bottom: max(132px, calc(18vh + env(safe-area-inset-bottom, 0px)));
+  }
+}
 
 .section-is-hidden { display: none !important; }

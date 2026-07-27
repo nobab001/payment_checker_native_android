@@ -219,4 +219,19 @@ interface AdminApiService {
         @Header("Authorization") token: String,
         @Body request: SaveOfficialWebsiteCmsRequest
     ): Response<OfficialWebsiteCmsResponse>
+
+    @GET("admin/demo-payments")
+    suspend fun getDemoPayments(
+        @Header("Authorization") token: String,
+        @Query("limit") limit: Int = 100,
+        @Query("offset") offset: Int = 0,
+        @Query("refundStatus") refundStatus: String = "all"
+    ): Response<DemoPaymentsResponse>
+
+    @PATCH("admin/demo-payments/{id}/refund")
+    suspend fun updateDemoPaymentRefund(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Body request: UpdateDemoPaymentRefundRequest
+    ): Response<DemoPaymentRefundResponse>
 }

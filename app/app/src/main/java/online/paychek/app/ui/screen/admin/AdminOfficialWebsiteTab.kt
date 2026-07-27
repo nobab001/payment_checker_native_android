@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,6 +31,8 @@ import java.util.UUID
 fun OfficialWebsiteAdminTab(
     uiState: AdminUiState,
     onSave: (OfficialWebsiteCmsDto) -> Unit,
+    onRefreshDemoPayments: () -> Unit = {},
+    onMarkRefund: (Int, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val cms = uiState.officialWebsiteCms
@@ -54,15 +57,17 @@ fun OfficialWebsiteAdminTab(
     ) {
         Text("ওয়েবসাইট", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text(
-            "মার্কেটিং সাইটের ট্যাব, লেখা এবং হেল্পলাইন আইকন ম্যানেজ করুন।",
+            "মার্কেটিং সাইটের ট্যাব, লেখা, হেল্পলাইন এবং টেস্ট পেমেন্ট হিস্টরি।",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        TabRow(selectedTabIndex = subTab) {
+        ScrollableTabRow(selectedTabIndex = subTab, edgePadding = 0.dp) {
             Tab(selected = subTab == 0, onClick = { subTab = 0 }, text = { Text("Hero") })
             Tab(selected = subTab == 1, onClick = { subTab = 1 }, text = { Text("ট্যাব") })
             Tab(selected = subTab == 2, onClick = { subTab = 2 }, text = { Text("হেল্পলাইন") })
+            Tab(selected = subTab == 3, onClick = { subTab = 3 }, text = { Text("ডাউনলোড") })
+            Tab(selected = subTab == 4, onClick = { subTab = 4 }, text = { Text("টেস্ট পে") })
         }
 
         when (subTab) {
@@ -96,18 +101,30 @@ fun OfficialWebsiteAdminTab(
                     editingHelplineIndex = next.lastIndex
                 }
             )
+            3 -> DownloadEditor(
+                download = draft.download,
+                onChange = { draft = draft.copy(download = it) }
+            )
+            4 -> DemoPaymentsAdminSection(
+                payments = uiState.demoPayments,
+                total = uiState.demoPaymentsTotal,
+                onRefresh = onRefreshDemoPayments,
+                onMarkRefund = onMarkRefund
+            )
         }
 
-        Button(
-            onClick = { onSave(draft) },
-            enabled = !uiState.isSaving,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            if (uiState.isSaving) {
-                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(8.dp))
+        if (subTab != 4) {
+            Button(
+                onClick = { onSave(draft) },
+                enabled = !uiState.isSaving,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (uiState.isSaving) {
+                    CircularProgressIndicator(modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text("সেভ করুন")
             }
-            Text("সেভ করুন")
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -161,12 +178,187 @@ fun OfficialWebsiteAdminTab(
 }
 
 @Composable
+private fun DemoPaymentsAdminSection(
+    payments: List<DemoPaymentDto>,
+    total: Int,
+    onRefresh: () -> Unit,
+    onMarkRefund: (Int, String) -> Unit
+) {
+    Text("টেস্ট পেমেন্ট হিস্টরি", fontWeight = FontWeight.SemiBold)
+    Text(
+        "ওয়েবসাইট টেস্ট থেকে আসা টাকা এখানে দেখাবে। Trx ID দেখে কাস্টমারকে রিফান্ড করুন, তারপর স্ট্যাটাস মার্ক করুন। মার্চেন্ট অ্যাকাউন্টে নয় — শুধু Admin।",
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("মোট $total টি", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick = onRefresh) { Text("রিফ্রেশ") }
+    }
+
+    if (payments.isEmpty()) {
+        Text(
+            "এখনো কোনো টেস্ট পেমেন্ট নেই।",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        return
+    }
+
+    payments.forEach { p ->
+        val refund = (p.refundStatus ?: "none").lowercase()
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+            )
+        ) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "৳${p.amount.toInt()} · ${p.purpose ?: "pay"}",
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        p.status ?: "—",
+                        fontSize = 12.sp,
+                        color = when ((p.status ?: "").lowercase()) {
+                            "success", "verified", "completed" -> Color(0xFF10B981)
+                            "initiated", "pending" -> Color(0xFFF59E0B)
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+                Text(
+                    p.visitorDisplayName ?: p.visitorPublicId ?: "Demo visitor",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                if (!p.trxId.isNullOrBlank()) {
+                    Text("Trx: ${p.trxId}", fontSize = 12.sp)
+                }
+                if (!p.provider.isNullOrBlank() || !p.senderNumber.isNullOrBlank() || !p.receiverNumber.isNullOrBlank()) {
+                    Text(
+                        listOfNotNull(
+                            p.provider?.takeIf { it.isNotBlank() },
+                            p.senderNumber?.let { "From $it" },
+                            p.receiverNumber?.let { "To $it" }
+                        ).joinToString(" · "),
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (!p.orderId.isNullOrBlank()) {
+                    Text("Order: ${p.orderId}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (!p.sessionToken.isNullOrBlank()) {
+                    Text("Session: ${p.sessionToken}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (!p.createdAt.isNullOrBlank()) {
+                    Text(p.createdAt, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (!p.fullSms.isNullOrBlank()) {
+                    Text(
+                        "Full SMS",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    SelectionContainer {
+                        Text(
+                            p.fullSms,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .padding(10.dp)
+                        )
+                    }
+                }
+                Text(
+                    when (refund) {
+                        "refunded" -> "রিফান্ড: সম্পন্ন"
+                        "pending" -> "রিফান্ড: পেন্ডিং"
+                        else -> "রিফান্ড: হয়নি"
+                    },
+                    fontSize = 12.sp,
+                    color = when (refund) {
+                        "refunded" -> Color(0xFF10B981)
+                        "pending" -> Color(0xFFF59E0B)
+                        else -> Color(0xFFEF4444)
+                    },
+                    fontWeight = FontWeight.SemiBold
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (refund != "pending") {
+                        OutlinedButton(onClick = { onMarkRefund(p.id, "pending") }) {
+                            Text("পেন্ডিং", fontSize = 11.sp)
+                        }
+                    }
+                    if (refund != "refunded") {
+                        Button(onClick = { onMarkRefund(p.id, "refunded") }) {
+                            Text("রিফান্ডেড", fontSize = 11.sp)
+                        }
+                    }
+                    if (refund != "none") {
+                        TextButton(onClick = { onMarkRefund(p.id, "none") }) {
+                            Text("রিসেট", fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun HeroEditor(hero: OfficialWebsiteHeroDto, onChange: (OfficialWebsiteHeroDto) -> Unit) {
     OutlinedTextField(hero.kicker, { onChange(hero.copy(kicker = it)) }, label = { Text("Kicker") }, modifier = Modifier.fillMaxWidth())
     OutlinedTextField(hero.title, { onChange(hero.copy(title = it)) }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth())
     OutlinedTextField(hero.lead, { onChange(hero.copy(lead = it)) }, label = { Text("Lead") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
     OutlinedTextField(hero.ctaPrimary, { onChange(hero.copy(ctaPrimary = it)) }, label = { Text("Primary CTA") }, modifier = Modifier.fillMaxWidth())
     OutlinedTextField(hero.ctaSecondary, { onChange(hero.copy(ctaSecondary = it)) }, label = { Text("Secondary CTA") }, modifier = Modifier.fillMaxWidth())
+}
+
+@Composable
+private fun DownloadEditor(
+    download: OfficialWebsiteDownloadDto,
+    onChange: (OfficialWebsiteDownloadDto) -> Unit
+) {
+    Text("অ্যাপ ডাউনলোড বাটন", fontWeight = FontWeight.SemiBold)
+    Text(
+        "হোমে মাঝখানে বড় বাটন; স্ক্রল/অন্য পেজে ডান-উপরে ছোট বাটন।",
+        fontSize = 12.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Switch(checked = download.enabled, onCheckedChange = { onChange(download.copy(enabled = it)) })
+        Spacer(Modifier.width(8.dp))
+        Text(if (download.enabled) "Enabled" else "Hidden")
+    }
+    OutlinedTextField(
+        download.label,
+        { onChange(download.copy(label = it)) },
+        label = { Text("Button label") },
+        modifier = Modifier.fillMaxWidth()
+    )
+    OutlinedTextField(
+        download.url,
+        { onChange(download.copy(url = it)) },
+        label = { Text("Download URL") },
+        modifier = Modifier.fillMaxWidth(),
+        supportingText = { Text("/downloads/paycheck.apk বা Play Store লিংক") }
+    )
 }
 
 @Composable

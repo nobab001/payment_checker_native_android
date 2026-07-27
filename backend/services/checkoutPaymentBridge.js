@@ -74,6 +74,9 @@ async function notifySessionPaid(sessionToken, { history, trxId } = {}) {
     });
   }
 
+  // Official Test sandbox — keep refund history even if no merchant callback URL
+  await syncDemoPaymentFromSession(session, history, finalTrxId);
+
   const callbackUrl = resolveInternalServerUrl(session.callbackUrl || website.callback_url);
   if (!callbackUrl) {
     return {
@@ -112,6 +115,33 @@ async function notifySessionPaid(sessionToken, { history, trxId } = {}) {
     callback: true,
     redirectUrl: buildSuccessRedirectUrl(session, { trxId: finalTrxId }),
   };
+}
+
+async function syncDemoPaymentFromSession(session, history, finalTrxId) {
+  const demoSessionId = session?.meta?.demoSessionId;
+  if (!demoSessionId && !session?.meta?.officialTest) return;
+  try {
+    const demoVisitor = require('../official-website/services/demo-visitor-service');
+    const patch = {
+      status: PAYMENT_STATUS.SUCCESS,
+      amount: Number(session.amount),
+      orderId: session.orderId,
+      sessionToken: session.sessionToken,
+      trxId: finalTrxId,
+      provider: (history?.provider_tag || session.officialProvider || '').toLowerCase() || null,
+      senderNumber: history?.sender_number || null,
+      receiverNumber: history?.receiver_number || history?.sim_number || null,
+      fullSms: history?.full_sms || null,
+      purpose: session.meta?.purpose || 'pay',
+    };
+    if (demoSessionId) {
+      await demoVisitor.recordPayment(demoSessionId, patch);
+    } else {
+      await demoVisitor.updatePaymentByRefs(patch);
+    }
+  } catch (e) {
+    console.warn('[CHECKOUT BRIDGE] demo payment update failed:', e.message);
+  }
 }
 
 async function mergeSessionUrlsIntoLayout(apiData, sessionToken) {

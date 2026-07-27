@@ -342,10 +342,17 @@ data class OfficialHelplineItemDto(
     @SerializedName("sortOrder") val sortOrder: Int = 0
 )
 
+data class OfficialWebsiteDownloadDto(
+    @SerializedName("enabled") val enabled: Boolean = true,
+    @SerializedName("label") val label: String = "Download App",
+    @SerializedName("url") val url: String = "/downloads/paycheck.apk"
+)
+
 data class OfficialWebsiteCmsDto(
     @SerializedName("hero") val hero: OfficialWebsiteHeroDto = OfficialWebsiteHeroDto(),
     @SerializedName("tabs") val tabs: List<OfficialWebsiteTabDto> = emptyList(),
-    @SerializedName("helpline") val helpline: List<OfficialHelplineItemDto> = emptyList()
+    @SerializedName("helpline") val helpline: List<OfficialHelplineItemDto> = emptyList(),
+    @SerializedName("download") val download: OfficialWebsiteDownloadDto = OfficialWebsiteDownloadDto()
 )
 
 data class OfficialWebsiteCmsResponse(
@@ -357,4 +364,44 @@ data class OfficialWebsiteCmsResponse(
 
 data class SaveOfficialWebsiteCmsRequest(
     @SerializedName("content") val content: OfficialWebsiteCmsDto
+)
+
+data class DemoPaymentDto(
+    @SerializedName("id") val id: Int = 0,
+    @SerializedName("amount") val amount: Double = 0.0,
+    @SerializedName("purpose") val purpose: String? = null,
+    @SerializedName("orderId") val orderId: String? = null,
+    @SerializedName("sessionToken") val sessionToken: String? = null,
+    @SerializedName("status") val status: String? = null,
+    @SerializedName("trxId") val trxId: String? = null,
+    @SerializedName("provider") val provider: String? = null,
+    @SerializedName("senderNumber") val senderNumber: String? = null,
+    @SerializedName("receiverNumber") val receiverNumber: String? = null,
+    @SerializedName("fullSms") val fullSms: String? = null,
+    @SerializedName("visitorPublicId") val visitorPublicId: String? = null,
+    @SerializedName("visitorDisplayName") val visitorDisplayName: String? = null,
+    @SerializedName("visitorStatus") val visitorStatus: String? = null,
+    @SerializedName("refundStatus") val refundStatus: String? = "none",
+    @SerializedName("refundNote") val refundNote: String? = null,
+    @SerializedName("refundedAt") val refundedAt: String? = null,
+    @SerializedName("createdAt") val createdAt: String? = null,
+    @SerializedName("updatedAt") val updatedAt: String? = null
+)
+
+data class DemoPaymentsResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("total") val total: Int = 0,
+    @SerializedName("payments") val payments: List<DemoPaymentDto>? = null,
+    @SerializedName("error") val error: String? = null
+)
+
+data class UpdateDemoPaymentRefundRequest(
+    @SerializedName("refundStatus") val refundStatus: String,
+    @SerializedName("refundNote") val refundNote: String? = null
+)
+
+data class DemoPaymentRefundResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("payment") val payment: DemoPaymentDto? = null,
+    @SerializedName("error") val error: String? = null
 )

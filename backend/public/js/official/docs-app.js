@@ -2,7 +2,7 @@
  * PayChek Developer Docs — section nav + framework snippets + copy buttons.
  */
 (function () {
-  const BASE = 'https://paychek.online';
+  const BASE = 'https://paycheckbd.com';
 
   const frameworks = [
     {

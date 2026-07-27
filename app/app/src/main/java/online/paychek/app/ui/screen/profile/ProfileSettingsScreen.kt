@@ -1109,23 +1109,77 @@ private fun ResetPinDialog(
                 }
 
                 val scrollState = rememberScrollState()
+                val contactOptions = remember(
+                    state.primaryPhone,
+                    state.primaryEmail,
+                    state.credentials
+                ) {
+                    viewModel.resetPinContactOptions()
+                }
+
                 Column(
                     modifier = Modifier
                         .padding(20.dp)
                         .verticalScroll(scrollState),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    PsTextField(
-                        value         = state.resetPinContact,
-                        onValueChange = { viewModel.onResetPinContactChange(it) },
-                        label         = "মোবাইল নম্বর বা Gmail",
-                        icon          = Icons.Default.ContactPhone,
-                        enabled       = !state.resetPinOtpSent,
-                        accent        = PsGreen,
-                        contentType   = ContentType.PhoneNumber + ContentType.EmailAddress
-                    )
+                    if (!state.resetPinOtpSent) {
+                        Text(
+                            text = "আপনার অ্যাকাউন্টের মোবাইল নম্বর বা জিমেইলে OTP পাঠান",
+                            color = TextM,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
+                        )
 
-                    AnimatedVisibility(visible = state.resetPinOtpSent) {
+                        if (state.isLoadingCredentials && contactOptions.isEmpty()) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(28.dp),
+                                    color = PsGreen,
+                                    strokeWidth = 2.dp
+                                )
+                            }
+                        } else if (contactOptions.isEmpty()) {
+                            Text(
+                                text = "এই অ্যাকাউন্টে কোনো মোবাইল নম্বর বা জিমেইল পাওয়া যায়নি।",
+                                color = Color(0xFFEF4444),
+                                fontSize = 13.sp
+                            )
+                        } else {
+                            contactOptions.forEach { option ->
+                                ResetPinContactRow(
+                                    option = option,
+                                    enabled = !state.isLoading,
+                                    onSendOtp = { viewModel.sendResetPinOtp(option.value) }
+                                )
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("OTP পাঠানো হয়েছে", color = TextM, fontSize = 11.sp)
+                                Text(
+                                    text = state.resetPinContact,
+                                    color = TextW,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                            TextButton(
+                                onClick = { viewModel.backToResetPinContactPicker() },
+                                enabled = !state.isLoading
+                            ) {
+                                Text("বদলান", color = PsGreen, fontSize = 12.sp)
+                            }
+                        }
+
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             // Hidden BasicTextField state (declared outside / above the Box modifier so it is in scope)
                             var resetPinOtpState by remember {
@@ -1169,7 +1223,7 @@ private fun ResetPinDialog(
                             ) {
                                 // Visual OTP Boxes
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
@@ -1179,7 +1233,7 @@ private fun ResetPinDialog(
 
                                         Box(
                                             modifier = Modifier
-                                                .size(width = 40.dp, height = 48.dp)
+                                                .size(width = 38.dp, height = 46.dp)
                                                 .background(
                                                     color = if (char.isNotBlank()) Color.White.copy(0.05f) else PsCardAlt,
                                                     shape = RoundedCornerShape(10.dp)
@@ -1342,20 +1396,28 @@ private fun ResetPinDialog(
                         ) {
                             Text("বাতিল")
                         }
-                        Button(
-                            onClick = {
-                                if (!state.resetPinOtpSent) viewModel.sendResetPinOtp()
-                                else viewModel.submitResetPin()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = PsGreen),
-                            shape  = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f).fillMaxWidth().height(adaptivePadding(48.dp, 56.dp)),
-                            contentPadding = PaddingValues(vertical = 12.dp)
-                        ) {
-                            Text(
-                                if (!state.resetPinOtpSent) "OTP পাঠান" else "PIN রিসেট করুন",
-                                color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp
-                            )
+                        if (state.resetPinOtpSent) {
+                            Button(
+                                onClick = { viewModel.submitResetPin() },
+                                enabled = !state.isLoading,
+                                colors = ButtonDefaults.buttonColors(containerColor = PsGreen),
+                                shape  = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).fillMaxWidth().height(adaptivePadding(48.dp, 56.dp)),
+                                contentPadding = PaddingValues(vertical = 12.dp)
+                            ) {
+                                if (state.isLoading) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        color = Color.White,
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Text(
+                                        "PIN রিসেট করুন",
+                                        color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1375,6 +1437,67 @@ private fun ResetPinDialog(
                         FloatingErrorBanner(message = error)
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResetPinContactRow(
+    option: ResetPinContactOption,
+    enabled: Boolean,
+    onSendOtp: () -> Unit
+) {
+    val isEmail = option.type == "email"
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(PsCardAlt, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(
+                imageVector = if (isEmail) Icons.Default.Email else Icons.Default.Phone,
+                contentDescription = null,
+                tint = PsGreen,
+                modifier = Modifier.size(18.dp)
+            )
+            Column {
+                Text(
+                    text = option.value,
+                    color = TextW,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = buildString {
+                        append(if (isEmail) "জিমেইল" else "মোবাইল")
+                        if (option.isPrimary) append(" • প্রাইমারি")
+                    },
+                    color = TextM,
+                    fontSize = 11.sp
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            Button(
+                onClick = onSendOtp,
+                enabled = enabled,
+                colors = ButtonDefaults.buttonColors(containerColor = PsGreen),
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                modifier = Modifier.height(32.dp)
+            ) {
+                Text("OTP পাঠান", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1433,7 +1556,10 @@ private fun PinField(
     var showPin by remember { mutableStateOf(false) }
     OutlinedTextField(
         value         = value,
-        onValueChange = { if (it.length <= 6 && it.all(Char::isDigit)) onValueChange(it) },
+        onValueChange = {
+            val clean = it.filter(Char::isDigit)
+            if (clean.length <= 6) onValueChange(clean)
+        },
         label         = { Text(label, color = TextM, fontSize = 12.sp) },
         leadingIcon   = { Icon(Icons.Default.Pin, null, tint = PsAmber, modifier = Modifier.size(18.dp)) },
         trailingIcon  = {

@@ -266,6 +266,8 @@ fun AdminDashboardScreen(
                     5 -> OfficialWebsiteAdminTab(
                         uiState = uiState,
                         onSave = { viewModel.saveOfficialWebsiteCms(it) },
+                        onRefreshDemoPayments = { viewModel.loadDemoPayments() },
+                        onMarkRefund = { id, status -> viewModel.updateDemoPaymentRefund(id, status) },
                         modifier = Modifier.fillMaxSize()
                     )
                 }

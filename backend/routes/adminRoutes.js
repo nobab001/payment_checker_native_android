@@ -75,6 +75,10 @@ router.post('/upload-image', admin.uploadCheckoutImage);
 router.get('/official-website', admin.getOfficialWebsiteCms);
 router.put('/official-website', admin.saveOfficialWebsiteCms);
 
+// 5g. Official Test sandbox payments (refund history)
+router.get('/demo-payments', admin.listDemoPayments);
+router.patch('/demo-payments/:id/refund', admin.updateDemoPaymentRefund);
+
 // 6. User and Device management list and toggle endpoints
 router.get('/users', admin.listUsers);
 router.post('/users/:id/block', admin.toggleUserBlock);
