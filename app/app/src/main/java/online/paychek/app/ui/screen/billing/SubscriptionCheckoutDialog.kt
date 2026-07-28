@@ -1,5 +1,7 @@
 package online.paychek.app.ui.screen.billing
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -10,11 +12,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.dto.SubscriptionQuoteDto
@@ -37,11 +43,14 @@ fun SubscriptionCheckoutDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val repository = remember { PaymentRepository() }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     var isLoadingQuote by remember { mutableStateOf(true) }
     var isPurchasing by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var quote by remember { mutableStateOf<SubscriptionQuoteDto?>(null) }
+    var pendingOrderId by remember { mutableStateOf<String?>(null) }
+    var awaitingPayment by remember { mutableStateOf(false) }
 
     fun loadQuote() {
         scope.launch {
@@ -66,7 +75,41 @@ fun SubscriptionCheckoutDialog(
         }
     }
 
+    fun pollOrder(orderId: String) {
+        scope.launch {
+            val token = SecurePreferences.decrypt(context, AppConfig.KEY_AUTH_TOKEN)
+            if (token.isEmpty()) return@launch
+            repeat(12) {
+                repository.getSubscriptionCheckoutStatus(token, orderId).fold(
+                    onSuccess = { st ->
+                        if (st.activated || st.status == "activated") {
+                            online.paychek.app.utils.AccountEntitlementsStore.refresh(context)
+                            awaitingPayment = false
+                            pendingOrderId = null
+                            onPurchased(st.message ?: "${planTitle} সক্রিয় হয়েছে।")
+                            onDismiss()
+                            return@launch
+                        }
+                    },
+                    onFailure = { }
+                )
+                delay(2500)
+            }
+        }
+    }
+
     LaunchedEffect(planName) { loadQuote() }
+
+    DisposableEffect(lifecycleOwner, pendingOrderId) {
+        val orderId = pendingOrderId
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && !orderId.isNullOrBlank()) {
+                pollOrder(orderId)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Dialog(
         onDismissRequest = { if (!isPurchasing) onDismiss() },
@@ -95,7 +138,7 @@ fun SubscriptionCheckoutDialog(
                             CircularProgressIndicator()
                         }
                     }
-                    errorMessage != null -> {
+                    errorMessage != null && quote == null -> {
                         Text(errorMessage!!, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { loadQuote() }) { Text("আবার চেষ্টা") }
@@ -140,11 +183,19 @@ fun SubscriptionCheckoutDialog(
                         QuoteRow("মেয়াদ", "${q.durationDays} দিন")
 
                         Text(
-                            "পেমেন্ট গেটওয়ে সংযুক্ত হলে এখানে ৳${"%.0f".format(q.payableAmount)} কাটা হবে। আপাতত অ্যাডমিন/টেস্ট মোডে সক্রিয় হবে।",
+                            if (awaitingPayment) {
+                                "পেমেন্ট সম্পন্ন হলে অ্যাপে ফিরে আসুন — প্যাকেজ স্বয়ংক্রিয়ভাবে সক্রিয় হবে।"
+                            } else {
+                                "বাই ক্লিক করলে PayChek চেকআউট খুলবে (Payment মোড)। পেমেন্ট ভেরিফাই হলে সাবস্ক্রিপশন সক্রিয় হবে।"
+                            },
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 16.sp
                         )
+
+                        if (errorMessage != null) {
+                            Text(errorMessage!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                        }
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -159,13 +210,33 @@ fun SubscriptionCheckoutDialog(
                                 onClick = {
                                     scope.launch {
                                         isPurchasing = true
+                                        errorMessage = null
                                         val token = SecurePreferences.decrypt(context, AppConfig.KEY_AUTH_TOKEN)
-                                        repository.purchaseSubscription(token, planName).fold(
-                                            onSuccess = {
-                                                online.paychek.app.utils.AccountEntitlementsStore.refresh(context)
+                                        repository.initSubscriptionCheckout(token, planName).fold(
+                                            onSuccess = { res ->
                                                 isPurchasing = false
-                                                onPurchased(it.message ?: "${planTitle} সক্রিয় হয়েছে।")
-                                                onDismiss()
+                                                if (res.activated) {
+                                                    online.paychek.app.utils.AccountEntitlementsStore.refresh(context)
+                                                    onPurchased(res.message ?: "${planTitle} সক্রিয় হয়েছে।")
+                                                    onDismiss()
+                                                } else {
+                                                    val url = res.checkoutUrl
+                                                    if (url.isNullOrBlank()) {
+                                                        errorMessage = "চেকআউট URL পাওয়া যায়নি।"
+                                                    } else {
+                                                        pendingOrderId = res.orderId
+                                                        awaitingPayment = true
+                                                        try {
+                                                            context.startActivity(
+                                                                Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                                            )
+                                                        } catch (e: Exception) {
+                                                            errorMessage = "ব্রাউজার খোলা যায়নি: ${e.message}"
+                                                            awaitingPayment = false
+                                                        }
+                                                        res.orderId?.let { pollOrder(it) }
+                                                    }
+                                                }
                                             },
                                             onFailure = { err ->
                                                 isPurchasing = false
@@ -184,7 +255,7 @@ fun SubscriptionCheckoutDialog(
                                         color = MaterialTheme.colorScheme.onPrimary
                                     )
                                 } else {
-                                    Text("নিশ্চিত করুন")
+                                    Text(if (awaitingPayment) "আবার খুলুন" else "Buy / পেমেন্ট")
                                 }
                             }
                         }

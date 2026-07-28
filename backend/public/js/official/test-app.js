@@ -35,11 +35,25 @@ function setLoginStatus(text, isErr = false) {
 }
 
 async function api(path, options = {}) {
-  const res = await fetch(`${API}${path}`, {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-    ...options,
-  });
+  const headers = { ...(options.headers || {}) };
+  // Only set JSON content-type when sending a body (avoids odd GET preflights)
+  if (options.body != null && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+  let res;
+  try {
+    res = await fetch(`${API}${path}`, {
+      credentials: 'include',
+      ...options,
+      headers,
+    });
+  } catch (networkErr) {
+    const err = new Error(
+      'সার্ভারে সংযোগ হয়নি। পেজ রিফ্রেশ করে আবার চেষ্টা করুন। (Brave Shield থাকলে Site shields → Allow all)'
+    );
+    err.cause = networkErr;
+    throw err;
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.success === false) {
     const err = new Error(data.message || data.error || `HTTP ${res.status}`);
@@ -376,8 +390,13 @@ async function startAction(purpose) {
 
   const payBtn = $('#payNowBtn');
   const balBtn = $('#addBalanceBtn');
+  const activeBtn = purpose === 'add_balance' ? balBtn : payBtn;
   if (payBtn) payBtn.disabled = true;
   if (balBtn) balBtn.disabled = true;
+  if (activeBtn) {
+    activeBtn.dataset.prevLabel = activeBtn.textContent || '';
+    activeBtn.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span> লোড হচ্ছে…';
+  }
   setPill(purpose === 'add_balance' ? 'এড ব্যালেন্স শুরু…' : 'পেমেন্ট শুরু…');
 
   try {
@@ -388,15 +407,17 @@ async function startAction(purpose) {
     });
     setPill(`${purpose === 'add_balance' ? 'এড ব্যালেন্স' : 'পেমেন্ট'} · ৳${amount}`);
     if (data.checkoutUrl) {
-      window.location.href = data.checkoutUrl;
+      window.location.replace(data.checkoutUrl);
       return;
     }
     throw new Error('Checkout URL missing');
   } catch (e) {
     setPill(e.message || 'Payment init failed', true);
-  } finally {
     if (payBtn) payBtn.disabled = false;
     if (balBtn) balBtn.disabled = false;
+    if (activeBtn && activeBtn.dataset.prevLabel != null) {
+      activeBtn.textContent = activeBtn.dataset.prevLabel;
+    }
   }
 }
 

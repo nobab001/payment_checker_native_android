@@ -9,6 +9,7 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const websiteController = require('../controllers/websiteController');
+const manualAccountController = require('../controllers/checkoutManualAccountController');
 const { logoUpload } = require('../middleware/websiteUploadMiddleware');
 
 const authenticateToken = auth.authenticateToken || auth;
@@ -55,5 +56,17 @@ router.post('/:id/merchant-accounts/:accountId/toggle', websiteController.toggle
 router.post('/:id/merchant-accounts/:accountId/default', websiteController.setDefaultMerchantAccount);
 router.post('/:id/merchant-accounts/:accountId/duplicate', websiteController.duplicateMerchantAccount);
 router.post('/:id/merchant-accounts/:accountId/logo', logoUpload.single('logo'), websiteController.uploadMerchantAccountLogo);
+
+// Manual bank/card display accounts (copy number — no SMS template)
+router.get('/:id/manual-accounts', manualAccountController.listManualAccounts);
+router.post('/:id/manual-accounts', manualAccountController.createManualAccount);
+router.patch('/:id/manual-accounts/:accountId', manualAccountController.updateManualAccount);
+router.delete('/:id/manual-accounts/:accountId', manualAccountController.deleteManualAccount);
+router.post('/:id/manual-accounts/:accountId/toggle', manualAccountController.toggleManualAccount);
+router.put('/:id/manual-accounts/reorder', manualAccountController.reorderManualAccounts);
+
+// Checkout customer helpline (WhatsApp / Telegram / etc.)
+router.get('/:id/checkout-helpline', manualAccountController.getCheckoutHelpline);
+router.put('/:id/checkout-helpline', manualAccountController.saveCheckoutHelpline);
 
 module.exports = router;

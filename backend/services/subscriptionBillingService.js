@@ -1,4 +1,5 @@
 const prisma = require('../db/prisma');
+const { isTrialPlanName } = require('./trialPlanService');
 
 let purchasesTableReady = false;
 
@@ -58,7 +59,7 @@ async function ensureSubscriptionPurchasesTable() {
 function isRenewablePlanName(name) {
   if (!name) return false;
   const n = String(name).trim();
-  return n !== 'FREE_LEVEL' && n !== 'Trial Package';
+  return n !== 'FREE_LEVEL' && !isTrialPlanName(n);
 }
 
 async function getUserBillingRow(userId) {
@@ -132,6 +133,7 @@ async function getActiveSubscriptionContext(userId) {
       planId: null,
       purchaseId: null,
       listPrice: 0,
+      // No purchase row → no upgrade credit (admin grace / unpaid assign).
       paidBasis: 0,
       durationDays: remainingDays,
       startedAt: formatDateYmd(addDays(expiry, -remainingDays)),
@@ -142,15 +144,16 @@ async function getActiveSubscriptionContext(userId) {
   }
 
   const durationDays = Number(catalog.duration_days) || 365;
-  const paidBasis = Number(catalog.price) || 0;
+  const listPrice = Number(catalog.price) || 0;
   const startedAt = addDays(expiry, -durationDays);
 
   return {
     planName: user.active_plan_name,
     planId: catalog.id ? Number(catalog.id) : null,
     purchaseId: null,
-    listPrice: paidBasis,
-    paidBasis,
+    listPrice,
+    // Catalog fallback must NOT invent paid credit — only subscription_purchases rows do.
+    paidBasis: 0,
     durationDays,
     startedAt: formatDateYmd(startedAt),
     expiry,
@@ -192,7 +195,10 @@ async function computeSubscriptionQuote(userId, planName) {
 
   const listPrice = Number(targetPlan.price) || 0;
   const durationDays = Number(targetPlan.duration_days) || 365;
-  const activeCtx = await getActiveSubscriptionContext(userId);
+  const billingRow = await getUserBillingRow(userId);
+  // Welcome trial → always full price (no unused-day credit).
+  const onWelcomeTrial = billingRow && isTrialPlanName(billingRow.active_plan_name);
+  const activeCtx = onWelcomeTrial ? null : await getActiveSubscriptionContext(userId);
   const purchaseType = resolvePurchaseType(activeCtx, targetPlan.plan_name);
 
   let creditApplied = 0;
@@ -201,11 +207,13 @@ async function computeSubscriptionQuote(userId, planName) {
   const today = todayDateOnly();
 
   if (purchaseType === 'renew') {
+    // Same paid plan: stack days at full list price (no credit).
     creditApplied = 0;
     payableAmount = listPrice;
     newExpiryDate = addDays(activeCtx.expiry, durationDays);
   } else if (purchaseType === 'upgrade') {
-    creditApplied = computeUnusedCredit(activeCtx);
+    // Credit only from a real paid purchase record (not admin grace / trial).
+    creditApplied = activeCtx?.fromPurchaseRecord ? computeUnusedCredit(activeCtx) : 0;
     payableAmount = roundMoney(Math.max(0, listPrice - creditApplied));
     newExpiryDate = addDays(today, durationDays);
   } else {

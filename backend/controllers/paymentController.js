@@ -349,23 +349,19 @@ async function getDashboardStats(req, res) {
       where: { user_id: userId, status: 'active' }
     });
 
-    const userRow = await prisma.users.findUnique({
-      where: { id: userId },
-      select: {
-        is_paid: true,
-        active_plan_name: true,
-        expiry_date: true,
-        secretKey: true,
-        secretKeyVersion: true,
-        created_at: true
-      }
-    });
-    const isPaid = userRow ? userRow.is_paid : 0;
-    const activePlanName = userRow ? userRow.active_plan_name : 'FREE_LEVEL';
-    const expiryDate = userRow ? userRow.expiry_date : null;
-    const createdAt = userRow?.created_at
-      ? new Date(userRow.created_at).toISOString()
+    const userRow = await prisma.$queryRaw`
+      SELECT is_paid, active_plan_name, expiry_date, secretKey, secretKeyVersion, created_at,
+             COALESCE(is_trial, 0) AS is_trial
+      FROM users WHERE id = ${userId} LIMIT 1
+    `;
+    const userData = userRow[0] || null;
+    const isPaid = userData ? userData.is_paid : 0;
+    const activePlanName = userData ? userData.active_plan_name : 'FREE_LEVEL';
+    const expiryDate = userData ? userData.expiry_date : null;
+    const createdAt = userData?.created_at
+      ? new Date(userData.created_at).toISOString()
       : null;
+    const isTrial = userData ? Number(userData.is_trial) === 1 : false;
 
     const welcomeKeys = [
       'trial_welcome_enabled',
@@ -374,7 +370,8 @@ async function getDashboardStats(req, res) {
       'trial_welcome_features',
       'trial_welcome_show_once',
       'trial_welcome_button',
-      'trial_days'
+      'trial_days',
+      'trial_plan_name'
     ];
     const welcomeRows = await prisma.global_config.findMany({
       where: { config_key: { in: welcomeKeys } }
@@ -383,11 +380,12 @@ async function getDashboardStats(req, res) {
     welcomeRows.forEach((r) => {
       welcomeMap[r.config_key] = r.config_value;
     });
+    const trialPlanDisplay = (welcomeMap.trial_plan_name || 'Trial Package').trim() || 'Trial Package';
     const trialWelcome = {
       enabled: (welcomeMap.trial_welcome_enabled ?? '1') !== '0',
       title: welcomeMap.trial_welcome_title || 'অভিনন্দন!',
       message: welcomeMap.trial_welcome_message
-        || 'আপনার জন্য {trial_days} দিনের Trial Package সক্রিয় করা হয়েছে।\n\nএখন আপনি সম্পূর্ণ ফ্রি-তে PayCheck-এর সকল Premium Feature ব্যবহার করে দেখতে পারবেন।',
+        || `আপনার জন্য {trial_days} দিনের ${trialPlanDisplay} সক্রিয় করা হয়েছে।\n\nএখন আপনি সম্পূর্ণ ফ্রি-তে PayCheck-এর সকল Premium Feature ব্যবহার করে দেখতে পারবেন।`,
       features: (welcomeMap.trial_welcome_features
         || 'Payment Monitoring\nAPI Access\nCheckout System\nMerchant Dashboard\nReal-time Notification')
         .split('\n')
@@ -395,7 +393,8 @@ async function getDashboardStats(req, res) {
         .filter(Boolean),
       show_once: (welcomeMap.trial_welcome_show_once ?? '1') !== '0',
       button_text: welcomeMap.trial_welcome_button || 'এখনই শুরু করুন',
-      trial_days: parseInt(welcomeMap.trial_days || '7', 10) || 7
+      trial_days: parseInt(welcomeMap.trial_days || '7', 10) || 7,
+      trial_plan_name: trialPlanDisplay
     };
 
     const recentRows = await prisma.sms_history.findMany({
@@ -463,12 +462,13 @@ async function getDashboardStats(req, res) {
         soldout_count:       Number(totalRow.soldout_count)       || 0,
         active_devices:      activeDevices || 0,
         is_paid:             !!isPaid,
+        is_trial:            isTrial,
         active_plan_name:    activePlanName,
         expiry_date:         expiryDate,
         created_at:          createdAt,
         trial_welcome:       trialWelcome,
-        secretKey:           userRow ? userRow.secretKey : null,
-        secretKeyVersion:    userRow ? userRow.secretKeyVersion : 1,
+        secretKey:           userData ? userData.secretKey : null,
+        secretKeyVersion:    userData ? userData.secretKeyVersion : 1,
         recent_transactions: mappedRecentRows,
         global_templates:    globalTemplates,
         gateway_methods:     gatewayMethods,

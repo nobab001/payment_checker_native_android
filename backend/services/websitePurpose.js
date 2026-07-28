@@ -32,16 +32,17 @@ function normalizeSessionPurpose(value) {
 
 /**
  * Round money for customer-facing payable (Payment mode).
- * Rule: fractional paisa < 0.50 → floor Taka; >= 0.50 → ceil Taka.
+ * 0–50 paisa → lower whole Taka; 51–99 paisa → next whole Taka.
+ * Examples: 401.05 → 401, 401.50 → 401, 401.91 → 402.
  * Same rule for every provider (global policy).
  */
 function roundPayableTaka(amount) {
   const n = Number(amount);
   if (!Number.isFinite(n) || n <= 0) return 0;
-  const floor = Math.floor(n);
-  const frac = n - floor;
-  if (frac < 0.5) return floor;
-  return Math.ceil(n);
+  const floor = Math.floor(n + 1e-9);
+  const frac = Math.round((n - floor) * 100) / 100;
+  if (frac <= 0.5) return floor;
+  return floor + 1;
 }
 
 /** Standard 2-decimal money (wallet credit / accounting). */

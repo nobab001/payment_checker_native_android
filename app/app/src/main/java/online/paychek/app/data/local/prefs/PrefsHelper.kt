@@ -31,6 +31,14 @@ object PrefsHelper {
         prefs(context).edit().putBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, active).apply()
     }
 
+    /** User tapped Monitor ON but Accessibility/Battery not ready — auto-start when ready. */
+    fun isPendingMonitorStart(context: Context): Boolean =
+        prefs(context).getBoolean("pcu_pending_monitor_start", false)
+
+    fun setPendingMonitorStart(context: Context, pending: Boolean) {
+        prefs(context).edit().putBoolean("pcu_pending_monitor_start", pending).apply()
+    }
+
     // -------------------------------------------------------------------------
     // SIM slot enablement
     // -------------------------------------------------------------------------

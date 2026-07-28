@@ -123,6 +123,17 @@ object SecurePreferences {
             "pcu_contact" -> {
                 SessionFlags.setContact(context, value ?: "")
             }
+            "pcu_device_role" -> {
+                SessionFlags.setDeviceRole(context, value ?: "pending")
+            }
+            AppConfig.KEY_IS_OWNER_DEVICE -> {
+                if (value == "true" || value == "false") {
+                    SessionFlags.setDeviceRole(
+                        context,
+                        if (value == "true") "owner" else "restricted"
+                    )
+                }
+            }
         }
     }
 }

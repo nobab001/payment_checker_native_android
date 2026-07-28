@@ -18,11 +18,12 @@ class KeepAliveAlarmReceiver : BroadcastReceiver() {
             ServiceKeepAliveScheduler.cancel(app)
             return
         }
-        if (!SmsServiceGuard.isServiceAlive()) {
+        if (!SmsServiceGuard.isServiceHealthy(app)) {
             Log.w(TAG, "Keep-alive: service dead — restarting")
-            SmsServiceGuard.startService(app)
+            SmsServiceGuard.healIfNeeded(app)
+        } else {
+            SmsServiceGuard.scheduleWatchdog(app)
         }
-        SmsServiceGuard.scheduleWatchdog(app)
         ServiceKeepAliveScheduler.schedule(app)
 
         // Doze-resilient heartbeat: the NumberHeartbeatEngine coroutine `delay` loop

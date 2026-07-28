@@ -27,7 +27,6 @@ import online.paychek.app.services.foreground.ServiceKeepAliveScheduler
 import online.paychek.app.services.foreground.SmsServiceGuard
 import online.paychek.app.services.smartpopup.SmartPopupScanHelper
 import online.paychek.app.services.smartpopup.SmartPopupService
-import online.paychek.app.utils.BatteryOptimizationHelper
 
 /**
  * Accessibility anchor — SMS সার্ভিস জীবিত রাখে + Smart Pop-up স্ক্যান।
@@ -88,10 +87,8 @@ class PaychekAccessibilityService : AccessibilityService() {
             SmsServiceGuard.scheduleWatchdog(ctx)
             ServiceKeepAliveScheduler.schedule(ctx)
         }
-
-        if (!BatteryOptimizationHelper.isIgnoringBatteryOptimizations(ctx)) {
-            BatteryOptimizationHelper.requestExemptionIfNeeded(ctx)
-        }
+        // Never open Battery/Settings from here — that kicked the user out of the app
+        // ~1–2s after Accessibility was enabled. Battery setup stays user-driven (Home card).
 
         handler.removeCallbacks(keepAliveRunnable)
         handler.postDelayed(keepAliveRunnable, 5_000L)
@@ -295,11 +292,13 @@ class PaychekAccessibilityService : AccessibilityService() {
         val ctx = applicationContext
         if (!PrefsHelper.isSmsServiceActive(ctx)) return
 
-        if (!SmsServiceGuard.isServiceAlive()) {
+        if (!SmsServiceGuard.isServiceHealthy(ctx)) {
             Log.w(TAG, "Watchdog: SMS service dead — restarting via accessibility anchor")
-            SmsServiceGuard.startService(ctx)
+            SmsServiceGuard.healIfNeeded(ctx)
+        } else {
             SmsServiceGuard.scheduleWatchdog(ctx)
         }
+        ServiceKeepAliveScheduler.schedule(ctx)
         ServiceKeepAliveScheduler.schedule(ctx)
     }
 

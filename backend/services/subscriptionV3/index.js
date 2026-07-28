@@ -1,0 +1,16 @@
+module.exports = {
+  ...require('./configService'),
+  ...require('./catalogService'),
+  ...require('./sharedExpiryService'),
+  ...require('./quoteService'),
+  ...require('./fulfillmentService'),
+  ...require('./refundService'),
+  ...require('./auditService'),
+  ...require('./invoiceService'),
+  ...require('./extendSubscriptionService'),
+  ...require('./extensionHistoryService'),
+  ...require('./trialFlagService'),
+  listExtensionHistory: require('./extensionHistoryService').listForUser,
+  ...require('./schema'),
+  constants: require('./constants'),
+};

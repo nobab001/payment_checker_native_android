@@ -238,6 +238,7 @@ fun AdminDashboardScreen(
                         onEditGateway = { showGatewayDialog = it },
                         onEditCheckout = { showCheckoutDialog = it },
                         onDeleteTemplate = { viewModel.deleteSmsTemplate(it) },
+                        onDeleteCheckout = { viewModel.deleteCheckoutTemplate(it) },
                         onDeleteEmail = { viewModel.deleteEmailAccount(it) },
                         onUpdateOtpFormat = { viewModel.updateOtpFormat(it) },
                         onReorderTemplates = { viewModel.reorderSmsTemplates(it) }
@@ -331,6 +332,7 @@ private fun GatewaysAndTemplatesTab(
     onEditGateway: (SmsSettingsDto) -> Unit,
     onEditCheckout: (CheckoutTemplateDto) -> Unit,
     onDeleteTemplate: (Int) -> Unit,
+    onDeleteCheckout: (Int) -> Unit,
     onDeleteEmail: (Int) -> Unit,
     onUpdateOtpFormat: (String) -> Unit,
     onReorderTemplates: (List<SmsTemplateDto>) -> Unit
@@ -675,16 +677,37 @@ private fun GatewaysAndTemplatesTab(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 8.dp)
-                                .clickable { onEditCheckout(check) },
+                                .padding(vertical = 4.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(check.templateName ?: "Template #${check.smsTemplateId}", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text("Instruction: ${check.singleInstruction}", fontSize = 12.sp, color = TextSecondary, maxLines = 1)
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onEditCheckout(check) }
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Text(
+                                    check.templateName ?: "Template #${check.smsTemplateId}",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    "Instruction: ${check.singleInstruction}",
+                                    fontSize = 12.sp,
+                                    color = TextSecondary,
+                                    maxLines = 1
+                                )
                             }
-                            Icon(Icons.Default.Edit, "Edit", tint = RoyalIndigo)
+                            IconButton(onClick = { onEditCheckout(check) }) {
+                                Icon(Icons.Default.Edit, "Edit", tint = RoyalIndigo)
+                            }
+                            IconButton(
+                                onClick = { check.id?.let { onDeleteCheckout(it) } },
+                                enabled = check.id != null
+                            ) {
+                                Icon(Icons.Default.Delete, "Delete", tint = StatusRed)
+                            }
                         }
                     }
                 }

@@ -164,6 +164,9 @@ data class DashboardStats(
     @SerializedName("is_paid")
     val isPaid: Boolean,
 
+    @SerializedName("is_trial")
+    val isTrial: Boolean = false,
+
     @SerializedName("active_plan_name")
     val activePlanName: String,
 
@@ -214,6 +217,34 @@ data class FcmTokenResponse(
 
 data class PurchaseSubscriptionRequest(
     @SerializedName("planName") val planName: String
+)
+
+data class SubscriptionCheckoutInitRequest(
+    @SerializedName("planName") val planName: String
+)
+
+data class AddonCheckoutInitRequest(
+    @SerializedName("planId") val planId: Int
+)
+
+data class SubscriptionCheckoutInitResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("activated") val activated: Boolean = false,
+    @SerializedName("orderId") val orderId: String? = null,
+    @SerializedName("checkoutUrl") val checkoutUrl: String? = null,
+    @SerializedName("amount") val amount: Double? = null,
+    @SerializedName("message") val message: String? = null
+)
+
+data class SubscriptionCheckoutStatusResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("orderId") val orderId: String? = null,
+    @SerializedName("status") val status: String? = null,
+    @SerializedName("activated") val activated: Boolean = false,
+    @SerializedName("planName") val planName: String? = null,
+    @SerializedName("amount") val amount: Double? = null,
+    @SerializedName("trxId") val trxId: String? = null,
+    @SerializedName("message") val message: String? = null
 )
 
 data class SubscriptionQuoteDto(

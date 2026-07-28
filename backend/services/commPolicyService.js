@@ -9,6 +9,7 @@
  */
 
 const prisma = require('../db/prisma');
+const { isUserOnTrial } = require('./subscriptionV3/trialFlagService');
 
 /** @typedef {'welcome'|'personal'|'personal_business'|'gateway'} CommProfileId */
 
@@ -115,7 +116,7 @@ async function resolveCommProfile(userId) {
     return { ...PROFILES.gateway };
   }
 
-  if (user.active_plan_name === 'Trial Package') {
+  if (await isUserOnTrial(uid)) {
     return { ...PROFILES.welcome };
   }
 

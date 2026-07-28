@@ -31,7 +31,8 @@ const { encryptOtp, decryptOtp } = require('../utils/otpCrypto');
 const numberHealth = require('../services/numberHealthService');
 const presenceV25 = require('../services/presenceV25');
 const { fetchGatewayMethodsForUser } = require('./gatewayController');
-const { getUserEntitlements } = require('../services/accountEntitlementsService');
+const { getUserEntitlements, syncUserEntitlements } = require('../services/accountEntitlementsService');
+const { getTrialPlanName, isTrialPlanNameAsync } = require('../services/trialPlanService');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -1177,34 +1178,48 @@ async function completeProfile(req, res) {
     const trialDaysConfig = await query("SELECT config_value FROM global_config WHERE config_key = 'trial_days' LIMIT 1");
     const trialDays = trialDaysConfig.length > 0 ? parseInt(trialDaysConfig[0].config_value, 10) : 7;
     const trialAllowCustomSender = await isTrialCustomSenderEnabled();
+    const trialPlanName = await getTrialPlanName();
+
+    try {
+      const { ensureSubscriptionV3Schema } = require('../services/subscriptionV3/schema');
+      await ensureSubscriptionV3Schema();
+    } catch (schemaErr) {
+      console.warn('[Auth] subscription schema ensure:', schemaErr.message);
+    }
 
     // Hash the 6-digit PIN
     const hashedPin = await bcrypt.hash(pin, 10);
 
-    // Update user record and auto-activate Trial Package
+    // Update user record and auto-activate welcome trial plan
     if (trialDays === 0) {
       await query(
         `UPDATE users SET name = ?, pin = ?, phone = ?, email = ?, profile_complete = 1, 
-         is_paid = 0, active_plan_name = 'Trial Package', expiry_date = NOW(),
+         is_paid = 0, is_trial = 0, active_plan_name = ?, expiry_date = NOW(),
          has_custom_sender_addon = 0, custom_sender_ends_at = NULL WHERE id = ?`,
-        [name.trim(), hashedPin, finalPhone, finalEmail, userId]
+        [name.trim(), hashedPin, finalPhone, finalEmail, trialPlanName, userId]
       );
     } else if (trialAllowCustomSender) {
       await query(
         `UPDATE users SET name = ?, pin = ?, phone = ?, email = ?, profile_complete = 1, 
-         is_paid = 1, active_plan_name = 'Trial Package',
+         is_paid = 1, is_trial = 1, active_plan_name = ?,
          expiry_date = DATE_ADD(NOW(), INTERVAL ? DAY),
          has_custom_sender_addon = 1,
          custom_sender_ends_at = DATE_ADD(CURDATE(), INTERVAL ? DAY) WHERE id = ?`,
-        [name.trim(), hashedPin, finalPhone, finalEmail, trialDays, trialDays, userId]
+        [name.trim(), hashedPin, finalPhone, finalEmail, trialPlanName, trialDays, trialDays, userId]
       );
     } else {
       await query(
         `UPDATE users SET name = ?, pin = ?, phone = ?, email = ?, profile_complete = 1, 
-         is_paid = 1, active_plan_name = 'Trial Package', expiry_date = DATE_ADD(NOW(), INTERVAL ? DAY),
+         is_paid = 1, is_trial = 1, active_plan_name = ?, expiry_date = DATE_ADD(NOW(), INTERVAL ? DAY),
          has_custom_sender_addon = 0, custom_sender_ends_at = NULL WHERE id = ?`,
-        [name.trim(), hashedPin, finalPhone, finalEmail, trialDays, userId]
+        [name.trim(), hashedPin, finalPhone, finalEmail, trialPlanName, trialDays, userId]
       );
+    }
+
+    try {
+      await syncUserEntitlements(userId);
+    } catch (syncErr) {
+      console.error('[Auth] trial entitlements sync failed:', syncErr.message);
     }
 
     // Sync verified phone/email to user_credentials table so the user can log in with either
@@ -2292,7 +2307,7 @@ async function getProfile(req, res) {
     if (dbUser.active_plan_name && dbUser.has_custom_sender_addon === 0) {
       let shouldGrant = false;
 
-      if (dbUser.active_plan_name === 'Trial Package') {
+      if (await isTrialPlanNameAsync(dbUser.active_plan_name)) {
         shouldGrant = await isTrialCustomSenderEnabled();
       } else {
         const plans = await query(
@@ -2303,12 +2318,12 @@ async function getProfile(req, res) {
       }
 
       if (shouldGrant) {
-        if (dbUser.active_plan_name === 'Trial Package' && dbUser.expiry_date) {
+        if ((await isTrialPlanNameAsync(dbUser.active_plan_name)) && dbUser.expiry_date) {
           await query(
             'UPDATE users SET has_custom_sender_addon = 1, custom_sender_ends_at = DATE(expiry_date) WHERE id = ?',
             [userId]
           );
-        } else if (dbUser.active_plan_name === 'Trial Package') {
+        } else if (await isTrialPlanNameAsync(dbUser.active_plan_name)) {
           const trialDaysConfig = await query(
             "SELECT config_value FROM global_config WHERE config_key = 'trial_days' LIMIT 1"
           );

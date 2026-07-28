@@ -20,6 +20,9 @@ const WEBSITE_SELECT = {
   webhook_url: true,
   success_url: true,
   redirect_url: true,
+  receive_commission: true,
+  allow_commission_callback: true,
+  commission_enabled: true,
 };
 
 async function loadSession(token) {
@@ -87,6 +90,22 @@ async function notifySessionPaid(sessionToken, { history, trxId } = {}) {
     };
   }
 
+  let commission = 0;
+  try {
+    if (website.allow_commission_callback && website.receive_commission) {
+      const merchantCallback = require('./merchantCallback');
+      const incentives = await merchantCallback.computeIncentives(
+        website.id,
+        merchantCallback.normalizePaymentType(history?.provider_tag || '', history?.template_name || ''),
+        Number(session.amount),
+        history?.provider_tag || '',
+      );
+      commission = Number(incentives.commission) || 0;
+    }
+  } catch (e) {
+    console.warn('[CHECKOUT BRIDGE] commission compute failed:', e.message);
+  }
+
   const payload = buildMerchantCallbackV1({
     paymentId: session.sessionToken,
     merchantId: String(website.merchant_id || website.id),
@@ -96,6 +115,7 @@ async function notifySessionPaid(sessionToken, { history, trxId } = {}) {
     merchantTransactionId: session.orderId,
     amount: Number(session.amount),
     status: PAYMENT_STATUS.SUCCESS,
+    commission,
     traceId: session.traceId || session.sessionToken,
     orderId: session.orderId,
     sessionId: session.sessionToken,

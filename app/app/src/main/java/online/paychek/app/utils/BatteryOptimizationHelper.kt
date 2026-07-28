@@ -23,30 +23,34 @@ object BatteryOptimizationHelper {
     }
 
     /**
-     * সিস্টেম সেটিংসে battery optimization বন্ধ করার ডায়ালগ খোলে।
+     * Battery optimization বন্ধ করার সেরা পথ:
+     * 1) সিস্টেম Allow dialog (`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) — এক ট্যাপে exemption
+     * 2) না হলে App Info / OEM battery পেজ (Samsung-এ Sleeping apps নয়)
      * @return true যদি ইতিমধ্যে exempt থাকে বা API < 23
      */
     fun requestExemptionIfNeeded(context: Context): Boolean {
         if (isIgnoringBatteryOptimizations(context)) return true
-        // Samsung/Vivo সহ সব ফোনে আগে OEM battery পেজ খোলার চেষ্টা, না হলে স্ট্যান্ডার্ড
-        if (OemBackgroundHelper.openBatteryUnrestrictedSettings(context)) return false
-        return try {
+        online.paychek.app.MainActivity.markSystemSettingsHandoff(context)
+        // স্ট্যান্ডার্ড সিস্টেম ডায়ালগ আগে — এটাই isIgnoringBatteryOptimizations সেট করে
+        try {
             val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                 data = Uri.parse("package:${context.packageName}")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
-            false
+            return false
         } catch (e: Exception) {
-            Log.w(TAG, "Battery exemption intent failed: ${e.message}")
-            try {
-                val fallback = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(fallback)
-            } catch (e2: Exception) {
-                Log.e(TAG, "Battery settings fallback failed: ${e2.message}")
+            Log.w(TAG, "Battery exemption dialog failed: ${e.message}")
+        }
+        if (OemBackgroundHelper.openBatteryUnrestrictedSettings(context)) return false
+        return try {
+            val fallback = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+            context.startActivity(fallback)
+            false
+        } catch (e2: Exception) {
+            Log.e(TAG, "Battery settings fallback failed: ${e2.message}")
             false
         }
     }

@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.entryProvider
@@ -18,6 +20,7 @@ import online.paychek.app.ui.screen.admin.AdminUserSettingsScreen
 import online.paychek.app.ui.screen.admin.BillingConfigScreen
 import online.paychek.app.ui.screen.profile.ProfileSettingsScreen
 import online.paychek.app.ui.screen.sync.SyncSettingsScreen
+import online.paychek.app.utils.AccountEntitlementsStore
 import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.utils.SessionFlags
 
@@ -41,6 +44,30 @@ fun MainNavigation() {
     }
     
     val backStack = rememberNavBackStack(startDestination)
+
+    val billingSuccess by MainActivity.pendingBillingSuccess
+    LaunchedEffect(billingSuccess) {
+        if (!billingSuccess) return@LaunchedEffect
+        MainActivity.pendingBillingSuccess.value = false
+        MainActivity.pendingBillingOrderId = null
+        if (SessionFlags.hasAuth(context)) {
+            AccountEntitlementsStore.refresh(context)
+            // Pop back to Home (or land on Home)
+            while (backStack.size > 1) {
+                val last = backStack.lastOrNull()
+                if (last is NavKey.Home) break
+                backStack.removeLastOrNull()
+            }
+            if (backStack.lastOrNull() !is NavKey.Home) {
+                backStack.add(NavKey.Home)
+            }
+            android.widget.Toast.makeText(
+                context,
+                "পেমেন্ট সফল — সাবস্ক্রিপশন আপডেট হয়েছে।",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+    }
 
     NavDisplay(
         backStack = backStack,

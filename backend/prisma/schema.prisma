@@ -537,6 +537,7 @@ model users {
   blocked            Int       @default(0) @db.TinyInt
   role               String               @default("user") @db.VarChar(20)
   is_paid            Int?      @default(0) @db.TinyInt
+  is_trial           Int       @default(0) @db.TinyInt
   active_plan_name   String?              @default("FREE_LEVEL") @db.VarChar(50)
   expiry_date        DateTime?            @db.Date
   profile_complete   Int       @default(0) @db.TinyInt

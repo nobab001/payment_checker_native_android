@@ -327,6 +327,30 @@ fun WebsiteSettingsScreen(
                 }
             }
 
+            // Bank / card manual accounts
+            ManualBankAccountsSection(
+                card = card,
+                isDark = isDark,
+                accounts = state.manualAccounts,
+                onCreate = { req -> viewModel.createManualAccount(site.id, req) },
+                onUpdate = { acctId, req -> viewModel.updateManualAccount(site.id, acctId, req) },
+                onToggle = { acctId, active -> viewModel.toggleManualAccount(site.id, acctId, active) },
+                onDelete = { acctId -> viewModel.deleteManualAccount(site.id, acctId) }
+            )
+
+            // Live merchant accounts (API credentials — multi-account)
+            MerchantAccountsSection(
+                card = card,
+                isDark = isDark,
+                accounts = state.merchantAccounts,
+                onCreate = { req -> viewModel.createMerchantAccount(site.id, req) },
+                onUpdate = { acctId, req -> viewModel.updateMerchantAccount(site.id, acctId, req) },
+                onToggle = { acctId, active -> viewModel.toggleMerchantAccount(site.id, acctId, active) },
+                onSetDefault = { acctId -> viewModel.setDefaultMerchantAccount(site.id, acctId) },
+                onDuplicate = { acctId -> viewModel.duplicateMerchantAccount(site.id, acctId) },
+                onDelete = { acctId -> viewModel.deleteMerchantAccount(site.id, acctId) }
+            )
+
             // Branding
             SettingsCard(card, isDark, "ব্র্যান্ডিং", Icons.Default.Palette) {
                 EditField("Company Name", companyName) { companyName = it }
@@ -366,19 +390,6 @@ fun WebsiteSettingsScreen(
                 EditField("Callback URL", callbackUrl) { callbackUrl = it }
                 EditField("Webhook URL", webhookUrl) { webhookUrl = it }
             }
-
-            // Live merchant accounts (API credentials — multi-account)
-            MerchantAccountsSection(
-                card = card,
-                isDark = isDark,
-                accounts = state.merchantAccounts,
-                onCreate = { req -> viewModel.createMerchantAccount(site.id, req) },
-                onUpdate = { acctId, req -> viewModel.updateMerchantAccount(site.id, acctId, req) },
-                onToggle = { acctId, active -> viewModel.toggleMerchantAccount(site.id, acctId, active) },
-                onSetDefault = { acctId -> viewModel.setDefaultMerchantAccount(site.id, acctId) },
-                onDuplicate = { acctId -> viewModel.duplicateMerchantAccount(site.id, acctId) },
-                onDelete = { acctId -> viewModel.deleteMerchantAccount(site.id, acctId) }
-            )
 
             // Callback preferences (gated by admin permission — locked by default)
             SettingsCard(card, isDark, "কলব্যাক অপশন", Icons.Default.CallReceived) {
@@ -484,6 +495,16 @@ fun WebsiteSettingsScreen(
     val secret = state.revealedSecret
     if (secret != null && state.createdWebsite == null) {
         SecretRevealDialog(secret) { viewModel.dismissSecretReveal() }
+    }
+
+    if (site != null) {
+        CheckoutHelplineFabOverlay(
+            config = state.checkoutHelpline,
+            isSaving = state.isSaving,
+            onSave = { cfg -> viewModel.saveCheckoutHelpline(site.id, cfg) },
+            onDelete = { viewModel.deleteCheckoutHelpline(site.id) },
+            modifier = Modifier.align(Alignment.BottomEnd),
+        )
     }
     } // Box
 }

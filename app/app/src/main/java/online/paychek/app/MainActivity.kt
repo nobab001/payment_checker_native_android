@@ -57,6 +57,8 @@ class MainActivity : FragmentActivity() {
             isAppLocked = true
         }
 
+        consumeBillingSuccessIntent(intent)
+
         enableEdgeToEdge()
         setContent {
             AppTheme {
@@ -105,12 +107,54 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeBillingSuccessIntent(intent)
+    }
+
+    private fun consumeBillingSuccessIntent(intent: android.content.Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme == "paychek" && data.host == "billing" && (data.path ?: "").startsWith("/success")) {
+            pendingBillingOrderId = data.getQueryParameter("orderId")
+            pendingBillingSuccess.value = true
+        }
+    }
+
     companion object {
         var isRequestingPermission = false
+        /** User left for Accessibility / Battery settings — skip PIN lock on quick return. */
+        private const val KEY_SETTINGS_HANDOFF_AT = "pcu_settings_handoff_at_ms"
+        private const val SETTINGS_HANDOFF_GRACE_MS = 180_000L // 3 minutes
+
+        val pendingBillingSuccess = mutableStateOf(false)
+        var pendingBillingOrderId: String? = null
+
+        fun markSystemSettingsHandoff(context: Context) {
+            isRequestingPermission = true
+            context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putLong(KEY_SETTINGS_HANDOFF_AT, System.currentTimeMillis())
+                .apply()
+        }
+
+        fun clearSystemSettingsHandoff(context: Context) {
+            context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .remove(KEY_SETTINGS_HANDOFF_AT)
+                .apply()
+        }
+
+        fun isWithinSystemSettingsHandoff(context: Context): Boolean {
+            val at = context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+                .getLong(KEY_SETTINGS_HANDOFF_AT, 0L)
+            if (at <= 0L) return false
+            return System.currentTimeMillis() - at <= SETTINGS_HANDOFF_GRACE_MS
+        }
     }
 
     override fun onStart() {
-        val wasRequesting = isRequestingPermission
+        val wasRequesting = isRequestingPermission || isWithinSystemSettingsHandoff(this)
         super.onStart()
 
         val sharedPrefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
@@ -127,11 +171,13 @@ class MainActivity : FragmentActivity() {
     override fun onResume() {
         super.onResume()
         isRequestingPermission = false
+        if (isWithinSystemSettingsHandoff(this)) {
+            // Came back from system Settings — stay inside the app (no PIN wall).
+            clearSystemSettingsHandoff(this)
+            isAppLocked = false
+        }
         if (SessionFlags.hasAuth(this) && SessionFlags.isProfileComplete(this)) {
-            online.paychek.app.services.foreground.SmsServiceGuard.startIfEnabled(this)
-            if (online.paychek.app.utils.AccessibilityHelper.isAccessibilityServiceEnabled(this)) {
-                online.paychek.app.services.foreground.SmsServiceGuard.scheduleWatchdog(this)
-            }
+            online.paychek.app.services.foreground.SmsServiceGuard.healIfNeeded(this)
             healDeviceConfigCache()
         }
     }

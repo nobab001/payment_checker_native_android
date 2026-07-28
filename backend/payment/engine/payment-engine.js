@@ -126,7 +126,7 @@ const PaymentEngine = {
         meta: ctx.metadata || {},
       };
 
-      // Validate credentials only — actual create happens on /pay/:token with callbackURL + invoice.
+      // Validate credentials only — createPayment may run below for direct bkashURL.
       logPayment(traceId, 'Provider', 'initialize', { providerId: registryEntry.id });
       await adapter.initialize(paymentCtx);
     }
@@ -145,9 +145,39 @@ const PaymentEngine = {
       meta: sessionMeta,
     });
 
-    const redirectUrl = RedirectService.buildPayTokenUrl(ctx.http?.baseUrl, session.sessionToken);
+    const payTokenUrl = RedirectService.buildPayTokenUrl(ctx.http?.baseUrl, session.sessionToken);
+
+    // Fast path: create bKash (or template redirect) now and return gateway URL
+    // so the client can location.replace() without /pay HTML intermediate.
+    const providerId = registryEntry?.id || '';
+    const isBkash = providerId === 'bkash_live' || dbProviderKey === 'bkash_live';
+    if (isBkash && registryEntry) {
+      try {
+        const direct = await this._createOfficialRedirectNow({
+          ctx, merchant, gateway, session, providerId: 'bkash_live',
+        });
+        if (direct?.redirectUrl) {
+          emitPaymentEvent(PAYMENT_EVENTS.PAYMENT_CREATED, {
+            traceId,
+            sessionToken: session.sessionToken,
+            websiteId: merchant.id,
+            userId: merchant.user_id,
+            providerId: 'bkash_live',
+            amount,
+            status: 'CREATED',
+          });
+          return RedirectService.liveInitJson(direct.redirectUrl, {
+            bkashURL: direct.bkashURL || direct.redirectUrl,
+            sessionToken: session.sessionToken,
+          });
+        }
+      } catch (err) {
+        console.warn('[live-init] direct bkash create failed, falling back to /pay token:', err.message);
+      }
+    }
+
     const redirectStarted = Date.now();
-    logPayment(traceId, 'Redirect', 'liveInit.response', { redirectUrl });
+    logPayment(traceId, 'Redirect', 'liveInit.response', { redirectUrl: payTokenUrl });
     recordLatency('redirect', Date.now() - redirectStarted, { traceId });
 
     emitPaymentEvent(PAYMENT_EVENTS.PAYMENT_CREATED, {
@@ -160,7 +190,65 @@ const PaymentEngine = {
       status: 'CREATED',
     });
 
-    return RedirectService.liveInitJson(redirectUrl);
+    return RedirectService.liveInitJson(payTokenUrl, { sessionToken: session.sessionToken });
+  },
+
+  /**
+   * Create provider payment during live-init and return the external redirect URL.
+   */
+  async _createOfficialRedirectNow({ ctx, merchant, gateway, session, providerId }) {
+    const adapter = getProvider(providerId);
+    const publicBase = ctx.http?.publicBaseUrl || null;
+    if (providerId === 'bkash_live' && !publicBase) {
+      throw new ProviderError(
+        PROVIDER_ERROR_CODES.NOT_CONFIGURED,
+        'PUBLIC_BASE_URL required for bKash callback',
+      );
+    }
+    const callbackUrl = publicBase
+      ? `${publicBase}/api/payment/bkash/callback?token=${encodeURIComponent(session.sessionToken)}`
+      : null;
+
+    const paymentCtx = {
+      traceId: ctx.traceId,
+      sessionToken: session.sessionToken,
+      websiteId: merchant.id,
+      userId: merchant.user_id,
+      amount: session.amount,
+      currency: session.currency || 'BDT',
+      orderId: session.orderId,
+      successUrl: session.successUrl,
+      cancelUrl: session.cancelUrl,
+      merchantConfig: gateway,
+      callbackUrl,
+      meta: {
+        customerNumber: session.customerNumber || gateway.username || '',
+        payerReference: gateway.username || session.customerNumber || '',
+      },
+    };
+
+    await adapter.initialize(paymentCtx);
+    const payment = await adapter.createPayment(paymentCtx);
+    const redirectUrl = await adapter.getRedirectUrl(paymentCtx, payment);
+
+    await PaymentSessionEngine.updateMeta(session.sessionToken, {
+      providerReference: payment.providerReference,
+      providerId,
+      paymentID: payment.providerMeta?.paymentID || null,
+      bkashURL: payment.providerMeta?.bkashURL || redirectUrl || null,
+    });
+    await PaymentSessionEngine.markRedirected(session.sessionToken);
+
+    emitPaymentEvent(PAYMENT_EVENTS.PAYMENT_REDIRECTED, {
+      traceId: ctx.traceId,
+      sessionToken: session.sessionToken,
+      providerId,
+    });
+
+    return {
+      redirectUrl,
+      bkashURL: payment.providerMeta?.bkashURL || redirectUrl,
+    };
   },
 
   // ── Phase-3B flow methods (delegate to PaymentFlowEngine) ──

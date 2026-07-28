@@ -29,6 +29,27 @@ object SessionFlags {
     fun contact(context: Context): String =
         prefs(context).getString(KEY_CONTACT, "") ?: ""
 
+    private const val KEY_DEVICE_IS_OWNER = "pcu_fast_device_is_owner"
+    private const val KEY_DEVICE_ROLE = "pcu_fast_device_role"
+
+    /** Instant owner/staff hint for lock screen — no Keystore decrypt. */
+    fun hasDeviceRoleCached(context: Context): Boolean =
+        prefs(context).contains(KEY_DEVICE_ROLE)
+
+    fun isOwnerDeviceFast(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_DEVICE_IS_OWNER, false)
+
+    fun deviceRoleFast(context: Context): String =
+        prefs(context).getString(KEY_DEVICE_ROLE, "pending") ?: "pending"
+
+    fun setDeviceRole(context: Context, role: String) {
+        val normalized = role.trim().ifEmpty { "pending" }
+        prefs(context).edit()
+            .putString(KEY_DEVICE_ROLE, normalized)
+            .putBoolean(KEY_DEVICE_IS_OWNER, normalized == "owner")
+            .apply()
+    }
+
     fun setHasAuth(context: Context, value: Boolean) {
         prefs(context).edit().putBoolean(KEY_HAS_AUTH, value).apply()
     }
@@ -51,6 +72,8 @@ object SessionFlags {
             .putBoolean(KEY_PROFILE_COMPLETE, true)
             .putString(KEY_USER_ROLE, "")
             .putString(KEY_CONTACT, "")
+            .remove(KEY_DEVICE_ROLE)
+            .remove(KEY_DEVICE_IS_OWNER)
             .apply()
     }
 
@@ -63,11 +86,14 @@ object SessionFlags {
             val profile = SecurePreferences.decrypt(context, "pcu_profile_complete")
             val role = SecurePreferences.decrypt(context, "pcu_user_role")
             val contact = SecurePreferences.decrypt(context, "pcu_contact")
+            val deviceRole = SecurePreferences.decrypt(context, "pcu_device_role")
             prefs(context).edit()
                 .putBoolean(KEY_HAS_AUTH, token.isNotEmpty())
                 .putBoolean(KEY_PROFILE_COMPLETE, profile != "false")
                 .putString(KEY_USER_ROLE, role)
                 .putString(KEY_CONTACT, contact)
+                .putString(KEY_DEVICE_ROLE, deviceRole.ifEmpty { "pending" })
+                .putBoolean(KEY_DEVICE_IS_OWNER, deviceRole == "owner")
                 .apply()
         } catch (_: Exception) {
             // Ignore — flags stay as-is

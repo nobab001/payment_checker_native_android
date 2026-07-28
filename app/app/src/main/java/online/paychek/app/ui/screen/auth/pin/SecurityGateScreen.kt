@@ -49,13 +49,15 @@ fun SecurityGateScreen(
     var isOwnerDevice by remember {
         mutableStateOf(online.paychek.app.utils.DeviceSecurityCache.isOwnerDevice(context))
     }
-    var roleReady by remember { mutableStateOf(false) }
     var biometricPrompted by remember { mutableStateOf(false) }
 
-    // রোল চেঞ্জের পর স্টেল ক্যাশ এড়াতে লক স্ক্রিনে সার্ভার থেকে রোল/পিন সিঙ্ক।
+    // সার্ভার সিঙ্ক ব্যাকগ্রাউন্ডে — লক স্ক্রিন/বায়োমেট্রিক ব্লক করবে না।
     LaunchedEffect(Unit) {
-        isOwnerDevice = online.paychek.app.utils.DeviceSecurityCache.refreshFromServer(context)
-        roleReady = true
+        val refreshed = online.paychek.app.utils.DeviceSecurityCache.refreshFromServer(context)
+        if (refreshed != isOwnerDevice) {
+            isOwnerDevice = refreshed
+            biometricPrompted = false
+        }
     }
 
     DisposableEffect(context) {
@@ -73,9 +75,9 @@ fun SecurityGateScreen(
         onDispose { sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
 
-    // Owner হলে (সিঙ্কের পর) একবার biometric prompt — স্টাফে কখনো নয়।
-    LaunchedEffect(roleReady, isOwnerDevice) {
-        if (!roleReady || !isOwnerDevice || biometricPrompted) return@LaunchedEffect
+    // Owner হলে ক্যাশ থেকে সাথে সাথে biometric — স্টাফে কখনো নয়।
+    LaunchedEffect(isOwnerDevice) {
+        if (!isOwnerDevice || biometricPrompted) return@LaunchedEffect
         if (activity != null && isBiometricEnrolled(activity)) {
             biometricPrompted = true
             showBiometricPrompt(

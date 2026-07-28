@@ -10,6 +10,8 @@ const authLimiter = rateLimit({
   max: 40,
   standardHeaders: true,
   legacyHeaders: false,
+  // trust proxy is set in app.js; keep validation off as extra safety behind Nginx
+  validate: { xForwardedForHeader: false },
   message: { success: false, error: 'RATE_LIMIT', message: 'Too many requests' },
 });
 
@@ -18,6 +20,7 @@ const payLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: { success: false, error: 'RATE_LIMIT', message: 'Too many payment attempts' },
 });
 

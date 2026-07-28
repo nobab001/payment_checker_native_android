@@ -5,6 +5,9 @@ const layoutHelper = require('../services/checkoutLayoutHelper');
 const checkoutData = require('../services/checkoutDataService');
 const vibeMatchService = require('../services/vibeMatchService');
 const checkoutPaymentBridge = require('../services/checkoutPaymentBridge');
+const manualAccounts = require('../services/checkoutManualAccountService');
+const helplineService = require('../services/checkoutHelplineService');
+const manualAccountCtrl = require('./checkoutManualAccountController');
 const { normalizeWebsitePurpose, normalizeSessionPurpose, computePurposeAmounts, roundMoney2 } = require('../services/websitePurpose');
 const settlementService = require('../services/checkoutSettlementService');
 
@@ -103,6 +106,22 @@ async function getCheckoutLayout(req, res) {
       accounts,
     }));
 
+    // Manual bank/card accounts (merchant-managed, copy-to-pay — no SMS template)
+    await manualAccounts.ensureTable();
+    const manualAccountRows = await manualAccounts.listForCheckout(layout.id);
+    const manualAccountsByTab = { bank: [], card: [] };
+    for (const acct of manualAccountRows) {
+      const tab = acct.tab === 'card' ? 'card' : 'bank';
+      manualAccountsByTab[tab].push(acct);
+    }
+
+    let checkoutHelpline = [];
+    try {
+      const cfg = typeof layout.layout_config === 'string'
+        ? JSON.parse(layout.layout_config) : (layout.layout_config || {});
+      checkoutHelpline = helplineService.parseHelplineForCheckout(cfg.checkout_helpline);
+    } catch (_) { /* */ }
+
     // Enrich synced SIM rows with tab + group metadata for the 3 checkout designs
     formattedGateways = formattedGateways.map((g) => layoutHelper.enrichGatewayRow(g));
 
@@ -177,6 +196,8 @@ async function getCheckoutLayout(req, res) {
       activeGateways: formattedGateways,
       gatewaysByCategory,
       merchantAccountsGroups,
+      manualAccountsByTab,
+      checkoutHelpline,
       incentives,
       redirectUrl: layout.redirect_url,
       successUrl: layout.success_url || layout.redirect_url,
@@ -424,6 +445,10 @@ async function verifyCheckoutPayment(req, res) {
     if (session && history) {
       const bridge = await checkoutPaymentBridge.notifySessionPaid(session, { history, trxId: cleanTrx });
       redirectUrl = bridge.redirectUrl;
+      // Commission / charge enriched callback (website webhook_url) — bridge already
+      // fires session callbackUrl; this covers merchant webhook preferences.
+      merchantCallback.sendMerchantCallback(merchant, history, 'SUCCESS', extras)
+        .catch((e) => console.error('[VERIFICATION] callback error:', e.message));
     } else if (history) {
       merchantCallback.sendMerchantCallback(merchant, history, 'SUCCESS', extras)
         .catch((e) => console.error('[VERIFICATION] callback error:', e.message));

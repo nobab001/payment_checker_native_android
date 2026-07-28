@@ -12,14 +12,19 @@ import online.paychek.app.data.remote.api.RetrofitClient
  */
 object DeviceSecurityCache {
 
-    fun readDeviceRole(context: Context): String =
-        SecurePreferences.decrypt(context, "pcu_device_role").ifEmpty { "pending" }
+    fun readDeviceRole(context: Context): String {
+        if (SessionFlags.hasDeviceRoleCached(context)) {
+            return SessionFlags.deviceRoleFast(context)
+        }
+        return SecurePreferences.decrypt(context, "pcu_device_role").ifEmpty { "pending" }
+    }
 
     fun isOwnerDevice(context: Context): Boolean =
         readDeviceRole(context) == "owner"
 
     fun applyRoleAndPin(context: Context, role: String?, deviceSpecificPin: String?) {
         val normalizedRole = role?.trim().orEmpty().ifEmpty { "pending" }
+        SessionFlags.setDeviceRole(context, normalizedRole)
         SecurePreferences.encrypt(context, "pcu_device_role", normalizedRole)
         SecurePreferences.encrypt(
             context,

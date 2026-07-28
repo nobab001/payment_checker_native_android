@@ -1,5 +1,12 @@
 import { safeImgSrc, safeText } from '../sanitize.js';
 
+/** Whole-taka display — never show paisa on checkout header. */
+function formatHeaderAmount(amount) {
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n <= 0) return '0';
+  return String(Math.round(n));
+}
+
 /** Merchant branding + amount header (DOM mount, no innerHTML on full page). */
 export const HeaderComponent = {
   mount(merchant, amount) {
@@ -9,16 +16,15 @@ export const HeaderComponent = {
     const amtEl = document.getElementById('payment-amount');
 
     if (nameEl) nameEl.textContent = safeText(merchant.companyName || 'Paychek', 120);
-    if (amtEl) amtEl.textContent = Number(amount || 0).toFixed(2);
+    if (amtEl) amtEl.textContent = formatHeaderAmount(amount);
 
     if (subEl) {
       if (merchant.siteUrl) {
         subEl.textContent = safeText(merchant.siteUrl.replace(/^https?:\/\//, ''), 200);
-        subEl.style.display = 'block';
       } else {
-        subEl.textContent = '';
-        subEl.style.display = 'none';
+        subEl.textContent = 'Secure Payment Gateway';
       }
+      subEl.style.display = 'block';
     }
 
     if (logoEl) {

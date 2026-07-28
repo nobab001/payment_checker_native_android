@@ -271,7 +271,7 @@ async function processBkashCallback(req, opts = {}) {
       traceId,
       redirectUrl: normalized.status === PAYMENT_STATUS.SUCCESS
         ? buildSuccessRedirect(updated, normalized.providerTransactionId)
-        : (updated.cancelUrl || '/'),
+        : buildCancelRedirect(updated, parsed.raw?.status || 'cancelled'),
     };
   });
 }
@@ -280,6 +280,19 @@ function buildSuccessRedirect(session, trxId) {
   if (!session.successUrl) return '/';
   const sep = session.successUrl.includes('?') ? '&' : '?';
   return `${session.successUrl}${sep}trxId=${encodeURIComponent(trxId || '')}&amount=${encodeURIComponent(session.amount)}&status=success`;
+}
+
+function buildCancelRedirect(session, reason = 'cancelled') {
+  const base = session.cancelUrl || session.successUrl || '/';
+  const sep = base.includes('?') ? '&' : '?';
+  const q = new URLSearchParams({
+    status: 'cancel',
+    paymentStatus: 'cancelled',
+    amount: String(session.amount ?? ''),
+  });
+  if (reason) q.set('reason', String(reason).slice(0, 180));
+  if (session.sessionToken) q.set('session', session.sessionToken);
+  return `${base}${sep}${q.toString()}`;
 }
 
 module.exports = {

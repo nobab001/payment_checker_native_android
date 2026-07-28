@@ -30,13 +30,50 @@ object SmsServiceGuard {
 
     private fun watchdogIntervalMinutes(): Long = 15L // WorkManager periodic minimum
 
-    fun isServiceAlive(): Boolean = SmsMonitorService.isAlive
+    fun isServiceAlive(): Boolean {
+        // Kept for hot paths; callers that heal should use [isServiceHealthy].
+        return SmsMonitorService.isAlive
+    }
+
+    fun isServiceHealthy(context: Context): Boolean {
+        SmsServiceHealth.syncAliveFlag(context.applicationContext)
+        return SmsServiceHealth.isHealthy(context.applicationContext)
+    }
+
+    /**
+     * When user left SMS ON but OEM killed the foreground service, restart it.
+     * @return true if prefs say ON (heal attempted when unhealthy).
+     */
+    fun healIfNeeded(context: Context): Boolean {
+        val app = context.applicationContext
+        if (!PrefsHelper.isSmsServiceActive(app)) return false
+        if (isServiceHealthy(app)) {
+            scheduleWatchdog(app)
+            return true
+        }
+        Log.w(TAG, "SMS service unhealthy while prefs ON — forcing restart")
+        forceRestart(app)
+        scheduleWatchdog(app)
+        enqueueImmediateRecovery(app)
+        return true
+    }
+
+    /** Stop a zombie instance then start fresh — never clears the user ON pref. */
+    private fun forceRestart(context: Context) {
+        try {
+            SmsMonitorService.userInitiatedStop = false
+            context.stopService(android.content.Intent(context, SmsMonitorService::class.java))
+        } catch (e: Exception) {
+            Log.w(TAG, "stopService during forceRestart: ${e.message}")
+        }
+        SmsMonitorService.isAlive = false
+        startService(context, online.paychek.app.services.sync.NumberHeartbeatEngine.TRIGGER_BOOT_COMPLETED)
+    }
 
     fun startIfEnabled(context: Context): Boolean {
         val app = context.applicationContext
         if (!PrefsHelper.isSmsServiceActive(app)) return false
-        if (isServiceAlive()) return true
-        return startService(app)
+        return healIfNeeded(app)
     }
 
     fun startService(context: Context, presenceTrigger: String? = null): Boolean {
@@ -113,10 +150,7 @@ object SmsServiceGuard {
         val app = context.applicationContext
         val prefOn = PrefsHelper.isSmsServiceActive(app)
         if (!prefOn) return false
-        if (!isServiceAlive()) {
-            startService(app)
-            scheduleWatchdog(app)
-        }
-        return isServiceAlive()
+        healIfNeeded(app)
+        return prefOn
     }
 }

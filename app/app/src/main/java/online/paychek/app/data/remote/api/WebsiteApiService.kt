@@ -182,4 +182,56 @@ interface WebsiteApiService {
         @Path("accountId") accountId: Int,
         @Part logo: okhttp3.MultipartBody.Part
     ): Response<MerchantAccountResponse>
+
+    // ── Manual bank/card display accounts ───────────────────────────────────────
+    @GET("v1/websites/{id}/manual-accounts")
+    suspend fun listManualAccounts(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Query("tab") tab: String? = null
+    ): Response<ManualAccountListResponse>
+
+    @POST("v1/websites/{id}/manual-accounts")
+    suspend fun createManualAccount(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Body request: CreateManualAccountRequest
+    ): Response<ManualAccountResponse>
+
+    @PATCH("v1/websites/{id}/manual-accounts/{accountId}")
+    suspend fun updateManualAccount(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Path("accountId") accountId: Int,
+        @Body request: UpdateManualAccountRequest
+    ): Response<ManualAccountResponse>
+
+    @POST("v1/websites/{id}/manual-accounts/{accountId}/toggle")
+    suspend fun toggleManualAccount(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Path("accountId") accountId: Int,
+        @Body request: Map<String, Boolean>? = null
+    ): Response<ManualAccountResponse>
+
+    @DELETE("v1/websites/{id}/manual-accounts/{accountId}")
+    suspend fun deleteManualAccount(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Path("accountId") accountId: Int
+    ): Response<SimpleWebsiteActionResponse>
+
+    // ── Checkout customer helpline ────────────────────────────────────────────
+    @GET("v1/websites/{id}/checkout-helpline")
+    suspend fun getCheckoutHelpline(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int
+    ): Response<CheckoutHelplineResponse>
+
+    @PUT("v1/websites/{id}/checkout-helpline")
+    suspend fun saveCheckoutHelpline(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Body request: SaveCheckoutHelplineRequest
+    ): Response<CheckoutHelplineResponse>
 }

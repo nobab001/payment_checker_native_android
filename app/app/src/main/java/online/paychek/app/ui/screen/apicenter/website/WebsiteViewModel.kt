@@ -15,10 +15,15 @@ import online.paychek.app.data.remote.dto.CampaignDto
 import online.paychek.app.data.remote.dto.CheckoutTabDto
 import online.paychek.app.data.remote.dto.CommissionDto
 import online.paychek.app.data.remote.dto.IncentiveTemplateDto
+import online.paychek.app.data.remote.dto.CheckoutHelplineConfigDto
+import online.paychek.app.data.remote.dto.SaveCheckoutHelplineRequest
+import online.paychek.app.data.remote.dto.CreateManualAccountRequest
 import online.paychek.app.data.remote.dto.CreateMerchantAccountRequest
+import online.paychek.app.data.remote.dto.ManualAccountDto
 import online.paychek.app.data.remote.dto.MerchantAccountDto
 import online.paychek.app.data.remote.dto.NumberOrderItem
 import online.paychek.app.data.remote.dto.ProviderBrandingDto
+import online.paychek.app.data.remote.dto.UpdateManualAccountRequest
 import online.paychek.app.data.remote.dto.UpdateMerchantAccountRequest
 import online.paychek.app.data.remote.dto.UpdateWebsiteRequest
 import online.paychek.app.data.remote.dto.UpsertCampaignRequest
@@ -54,6 +59,9 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
         val checkoutNumbers: List<ActiveNumberDto> = emptyList(),
         // Live merchant accounts (API credentials — multi-account per provider)
         val merchantAccounts: List<MerchantAccountDto> = emptyList(),
+        // Manual bank/card copy-display accounts
+        val manualAccounts: List<ManualAccountDto> = emptyList(),
+        val checkoutHelpline: CheckoutHelplineConfigDto = CheckoutHelplineConfigDto(),
         val checkoutTabs: Map<String, CheckoutTabDto> = emptyMap(),
         val providerBranding: Map<String, ProviderBrandingDto> = emptyMap(),
         val isSaving: Boolean = false,
@@ -136,6 +144,12 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     repo.listMerchantAccounts(id).onSuccess { accts ->
                         _state.update { it.copy(merchantAccounts = accts) }
+                    }
+                    repo.listManualAccounts(id).onSuccess { manual ->
+                        _state.update { it.copy(manualAccounts = manual) }
+                    }
+                    repo.getCheckoutHelpline(id).onSuccess { helpline ->
+                        _state.update { it.copy(checkoutHelpline = helpline) }
                     }
                     repo.listCampaigns(id).onSuccess { camps ->
                         _state.update { it.copy(campaigns = camps) }
@@ -484,5 +498,81 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 .onFailure { e -> _state.update { it.copy(error = e.message) } }
         }
+    }
+
+    // ── Manual bank/card accounts ─────────────────────────────────────────────
+    private fun refreshManualAccounts(websiteId: Int) {
+        viewModelScope.launch {
+            repo.listManualAccounts(websiteId).onSuccess { list ->
+                _state.update { it.copy(manualAccounts = list) }
+            }
+        }
+    }
+
+    fun createManualAccount(websiteId: Int, request: CreateManualAccountRequest) {
+        if (request.bankName.isBlank() || request.accountNumber.isBlank()) {
+            _state.update { it.copy(error = "ব্যাংকের নাম ও একাউন্ট নম্বর লিখুন।") }
+            return
+        }
+        _state.update { it.copy(isSaving = true, error = null) }
+        viewModelScope.launch {
+            repo.createManualAccount(websiteId, request)
+                .onSuccess {
+                    _state.update { it.copy(isSaving = false, infoMessage = "ব্যাংক অ্যাকাউন্ট যোগ হয়েছে।") }
+                    refreshManualAccounts(websiteId)
+                }
+                .onFailure { e -> _state.update { it.copy(isSaving = false, error = e.message) } }
+        }
+    }
+
+    fun updateManualAccount(websiteId: Int, accountId: Int, request: UpdateManualAccountRequest) {
+        _state.update { it.copy(isSaving = true, error = null) }
+        viewModelScope.launch {
+            repo.updateManualAccount(websiteId, accountId, request)
+                .onSuccess {
+                    _state.update { it.copy(isSaving = false, infoMessage = "ব্যাংক অ্যাকাউন্ট আপডেট হয়েছে।") }
+                    refreshManualAccounts(websiteId)
+                }
+                .onFailure { e -> _state.update { it.copy(isSaving = false, error = e.message) } }
+        }
+    }
+
+    fun toggleManualAccount(websiteId: Int, accountId: Int, active: Boolean) {
+        viewModelScope.launch {
+            repo.toggleManualAccount(websiteId, accountId, active)
+                .onSuccess { refreshManualAccounts(websiteId) }
+                .onFailure { e -> _state.update { it.copy(error = e.message) } }
+        }
+    }
+
+    fun deleteManualAccount(websiteId: Int, accountId: Int) {
+        viewModelScope.launch {
+            repo.deleteManualAccount(websiteId, accountId)
+                .onSuccess {
+                    _state.update { it.copy(infoMessage = "ব্যাংক অ্যাকাউন্ট মুছে ফেলা হয়েছে।") }
+                    refreshManualAccounts(websiteId)
+                }
+                .onFailure { e -> _state.update { it.copy(error = e.message) } }
+        }
+    }
+
+    fun saveCheckoutHelpline(websiteId: Int, config: SaveCheckoutHelplineRequest) {
+        _state.update { it.copy(isSaving = true, error = null) }
+        viewModelScope.launch {
+            repo.saveCheckoutHelpline(websiteId, config)
+                .onSuccess { saved ->
+                    _state.update {
+                        it.copy(isSaving = false, checkoutHelpline = saved, infoMessage = "চেকআউট হেল্পলাইন সংরক্ষণ হয়েছে।")
+                    }
+                }
+                .onFailure { e -> _state.update { it.copy(isSaving = false, error = e.message) } }
+        }
+    }
+
+    fun deleteCheckoutHelpline(websiteId: Int) {
+        saveCheckoutHelpline(
+            websiteId,
+            SaveCheckoutHelplineRequest(enabled = false, icon = "whatsapp", label = "", value = "")
+        )
     }
 }

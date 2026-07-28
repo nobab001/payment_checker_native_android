@@ -16,11 +16,17 @@ const RedirectService = {
   },
 
   /**
-   * JSON payload for checkout live-init (unchanged API contract).
+   * JSON payload for checkout live-init.
+   * Prefer direct gateway URL (bkashURL) so the client can location.replace()
+   * without visiting /pay/:token HTML intermediate.
    * @param {string} redirectUrl
+   * @param {{ bkashURL?: string|null, sessionToken?: string|null }} [extra]
    */
-  liveInitJson(redirectUrl) {
-    return { success: true, redirectUrl };
+  liveInitJson(redirectUrl, extra = {}) {
+    const payload = { success: true, redirectUrl };
+    if (extra.bkashURL) payload.bkashURL = extra.bkashURL;
+    if (extra.sessionToken) payload.sessionToken = extra.sessionToken;
+    return payload;
   },
 
   /**
@@ -36,9 +42,9 @@ const RedirectService = {
   },
 
   /**
-   * Escape iframe + optional ngrok free-tier warm-up before leaving to bKash.
-   * After PIN, bKash sends the browser to PUBLIC_BASE_URL — free ngrok shows a
-   * interstitial unless the user already clicked "Visit Site" once in this browser.
+   * Leave to gateway URL without leaving a sticky HTML page in history.
+   * Prefer HTTP 302 (browser typically does not keep the intermediate URL).
+   * Ngrok free-tier still needs a one-time warm-up UI.
    */
   redirectBreakout(res, url, opts = {}) {
     if (!url || typeof url !== 'string') {
@@ -48,21 +54,15 @@ const RedirectService = {
     const needsNgrokWarmup = /ngrok(-free)?\.(app|dev|io)$/i.test(publicBase)
       || /ngrok-free\.dev/i.test(publicBase);
 
+    if (!needsNgrokWarmup) {
+      // Direct 302 — no "Redirecting to bKash…" HTML for Back to stick on.
+      res.set('Cache-Control', 'no-store');
+      return res.redirect(302, url);
+    }
+
     const safe = String(url).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
     const jsUrl = JSON.stringify(url);
     const jsWarm = JSON.stringify(publicBase || '');
-
-    if (!needsNgrokWarmup) {
-      res.status(200).type('html').send(
-        `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
-        + `<title>Redirecting…</title></head><body style="font-family:system-ui,sans-serif;padding:24px;text-align:center;max-width:480px;margin:40px auto">`
-        + `<p>পেমেন্ট পেজে নিয়ে যাওয়া হচ্ছে…</p>`
-        + `<p><a href="${safe}">এখানে ক্লিক করুন</a></p>`
-        + `<script>(function(){var u=${jsUrl};try{(window.top||window).location.replace(u);}catch(e){window.location.replace(u);}})();</script>`
-        + `</body></html>`,
-      );
-      return;
-    }
 
     res.status(200).type('html').send(
       `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
@@ -84,14 +84,17 @@ const RedirectService = {
       + `<li>ট্যাব বন্ধ করে নিচে <b>bKash এ যান</b> চাপুন</li>`
       + `</ol>`
       + `<button type="button" class="btn primary" id="goBkash">bKash এ যান</button>`
-      + `<p class="hint" style="margin-top:16px">অথবা সরাসরি: <a href="${safe}">পেমেন্ট লিংক</a></p>`
+      + `<p class="hint" style="margin-top:16px">অথবা সরাসরি: <a id="bkashLink" href="${safe}">পেমেন্ট লিংক</a></p>`
       + `</div><script>
         (function(){
           var u=${jsUrl};
           var warm=${jsWarm};
-          document.getElementById('goBkash').addEventListener('click', function(){
-            try { (window.top||window).location.href = u; } catch(e) { window.location.href = u; }
-          });
+          function go(){
+            try { (window.top||window).location.replace(u); } catch(e) { window.location.replace(u); }
+          }
+          document.getElementById('goBkash').addEventListener('click', go);
+          var link = document.getElementById('bkashLink');
+          if (link) link.addEventListener('click', function(ev){ ev.preventDefault(); go(); });
           try {
             if (warm && !sessionStorage.getItem('pc_ngrok_warm')) {
               sessionStorage.setItem('pc_ngrok_warm','1');

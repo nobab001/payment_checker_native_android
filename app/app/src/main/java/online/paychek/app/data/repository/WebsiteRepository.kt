@@ -195,6 +195,54 @@ class WebsiteRepository(private val context: Context) {
         else Result.failure(Exception(resp?.message ?: resp?.error ?: parseError(r)))
     }
 
+    // ── Manual bank/card accounts ───────────────────────────────────────────────
+    suspend fun listManualAccounts(id: Int, tab: String? = null): Result<List<ManualAccountDto>> = safeCall {
+        val r = api.listManualAccounts(bearer(), id, tab)
+        if (r.isSuccessful && r.body()?.success == true) Result.success(r.body()?.manualAccounts ?: emptyList())
+        else Result.failure(Exception(parseError(r)))
+    }
+
+    suspend fun createManualAccount(id: Int, request: CreateManualAccountRequest): Result<ManualAccountDto> = safeCall {
+        val r = api.createManualAccount(bearer(), id, request)
+        val body = r.body()
+        if (r.isSuccessful && body?.success == true && body.manualAccount != null) Result.success(body.manualAccount)
+        else Result.failure(Exception(body?.error ?: parseError(r)))
+    }
+
+    suspend fun updateManualAccount(id: Int, accountId: Int, request: UpdateManualAccountRequest): Result<ManualAccountDto> = safeCall {
+        val r = api.updateManualAccount(bearer(), id, accountId, request)
+        val body = r.body()
+        if (r.isSuccessful && body?.success == true && body.manualAccount != null) Result.success(body.manualAccount)
+        else Result.failure(Exception(body?.error ?: parseError(r)))
+    }
+
+    suspend fun toggleManualAccount(id: Int, accountId: Int, active: Boolean): Result<ManualAccountDto> = safeCall {
+        val r = api.toggleManualAccount(bearer(), id, accountId, mapOf("isActive" to active))
+        val body = r.body()
+        if (r.isSuccessful && body?.success == true && body.manualAccount != null) Result.success(body.manualAccount)
+        else Result.failure(Exception(body?.error ?: parseError(r)))
+    }
+
+    suspend fun deleteManualAccount(id: Int, accountId: Int): Result<Unit> = safeCall {
+        val r = api.deleteManualAccount(bearer(), id, accountId)
+        if (r.isSuccessful && r.body()?.success == true) Result.success(Unit)
+        else Result.failure(Exception(parseError(r)))
+    }
+
+    suspend fun getCheckoutHelpline(id: Int): Result<CheckoutHelplineConfigDto> = safeCall {
+        val r = api.getCheckoutHelpline(bearer(), id)
+        if (r.isSuccessful && r.body()?.success == true) {
+            Result.success(r.body()?.helpline ?: CheckoutHelplineConfigDto())
+        } else Result.failure(Exception(parseError(r)))
+    }
+
+    suspend fun saveCheckoutHelpline(id: Int, config: SaveCheckoutHelplineRequest): Result<CheckoutHelplineConfigDto> = safeCall {
+        val r = api.saveCheckoutHelpline(bearer(), id, config)
+        val body = r.body()
+        if (r.isSuccessful && body?.success == true && body.helpline != null) Result.success(body.helpline)
+        else Result.failure(Exception(body?.error ?: parseError(r)))
+    }
+
     private inline fun <T> safeCall(block: () -> Result<T>): Result<T> =
         try { block() } catch (e: Exception) { Result.failure(e) }
 

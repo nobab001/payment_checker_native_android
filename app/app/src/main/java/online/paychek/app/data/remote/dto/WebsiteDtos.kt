@@ -349,3 +349,75 @@ data class SimpleWebsiteActionResponse(
     @SerializedName("error") val error: String? = null
 )
 
+/** Manual bank/card display account — checkout copy-to-pay (no SMS template). */
+data class ManualAccountDto(
+    @SerializedName("id") val id: Int = 0,
+    @SerializedName("websiteId") val websiteId: Int = 0,
+    @SerializedName("tab") val tab: String = "bank",
+    @SerializedName("bankName") val bankName: String = "",
+    @SerializedName("accountHolder") val accountHolder: String = "",
+    @SerializedName("accountNumber") val accountNumber: String = "",
+    @SerializedName("branchName") val branchName: String = "",
+    @SerializedName("routingNumber") val routingNumber: String = "",
+    @SerializedName("logoUrl") val logoUrl: String = "",
+    @SerializedName("instruction") val instruction: String = "",
+    @SerializedName("isActive") val isActive: Boolean = true,
+    @SerializedName("sortOrder") val sortOrder: Int = 0
+)
+
+data class CreateManualAccountRequest(
+    @SerializedName("tab") val tab: String = "bank",
+    @SerializedName("bankName") val bankName: String,
+    @SerializedName("accountHolder") val accountHolder: String? = null,
+    @SerializedName("accountNumber") val accountNumber: String,
+    @SerializedName("branchName") val branchName: String? = null,
+    @SerializedName("routingNumber") val routingNumber: String? = null,
+    @SerializedName("logoUrl") val logoUrl: String? = null,
+    @SerializedName("instruction") val instruction: String? = null,
+    @SerializedName("sortOrder") val sortOrder: Int = 0
+)
+
+data class UpdateManualAccountRequest(
+    @SerializedName("tab") val tab: String? = null,
+    @SerializedName("bankName") val bankName: String? = null,
+    @SerializedName("accountHolder") val accountHolder: String? = null,
+    @SerializedName("accountNumber") val accountNumber: String? = null,
+    @SerializedName("branchName") val branchName: String? = null,
+    @SerializedName("routingNumber") val routingNumber: String? = null,
+    @SerializedName("logoUrl") val logoUrl: String? = null,
+    @SerializedName("instruction") val instruction: String? = null,
+    @SerializedName("sortOrder") val sortOrder: Int? = null
+)
+
+data class ManualAccountListResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("manualAccounts") val manualAccounts: List<ManualAccountDto> = emptyList()
+)
+
+data class ManualAccountResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("manualAccount") val manualAccount: ManualAccountDto? = null,
+    @SerializedName("error") val error: String? = null
+)
+
+data class CheckoutHelplineConfigDto(
+    @SerializedName("enabled") val enabled: Boolean = false,
+    @SerializedName("icon") val icon: String = "whatsapp",
+    @SerializedName("label") val label: String = "",
+    @SerializedName("value") val value: String = "",
+    @SerializedName("url") val url: String = "",
+)
+
+data class SaveCheckoutHelplineRequest(
+    @SerializedName("enabled") val enabled: Boolean = false,
+    @SerializedName("icon") val icon: String = "whatsapp",
+    @SerializedName("label") val label: String = "",
+    @SerializedName("value") val value: String = "",
+)
+
+data class CheckoutHelplineResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("helpline") val helpline: CheckoutHelplineConfigDto? = null,
+    @SerializedName("error") val error: String? = null
+)
+

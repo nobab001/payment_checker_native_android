@@ -169,7 +169,22 @@ data class UpdateBillingSettingsRequest(
 )
 
 data class ManualGraceRequest(
-    @SerializedName("credits") val credits: Int
+    @SerializedName("credits") val credits: Int,
+    @SerializedName("planName") val planName: String? = null,
+    @SerializedName("planId") val planId: Int? = null
+)
+
+data class ExtendSubscriptionRequest(
+    @SerializedName("days") val days: Int,
+    @SerializedName("reason") val reason: String? = "Manual Adjustment"
+)
+
+data class ExtendSubscriptionResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("extended_days") val extendedDays: Int? = null,
+    @SerializedName("new_expiry") val newExpiry: String? = null,
+    @SerializedName("mode") val mode: String? = null
 )
 
 data class AdminWebsiteDto(

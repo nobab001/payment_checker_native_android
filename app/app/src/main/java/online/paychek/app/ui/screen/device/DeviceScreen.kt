@@ -273,9 +273,7 @@ fun DeviceScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
                     .clickable {
-                        online.paychek.app.MainActivity.isRequestingPermission = true
-                        val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                        context.startActivity(intent)
+                        online.paychek.app.utils.AccessibilityHelper.openAccessibilitySettings(context)
                     }
             ) {
                 Row(

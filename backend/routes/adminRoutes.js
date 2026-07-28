@@ -12,9 +12,16 @@ router.use(admin.verifyAdmin);
 
 // Admin Billing configurations
 router.post('/users/:id/manual-grace', admin.manualGrace);
+router.post('/users/:id/extend-subscription', admin.extendSubscription);
 router.post('/plans', billingController.createPlan);
 router.get('/plans', billingController.listPlans);
 router.get('/subscription-plans', billingController.listPlans);
+router.post('/plans/:id/archive', require('../controllers/subscriptionV3Controller').adminArchivePackage);
+router.get('/subscription/refunds/pending', require('../controllers/subscriptionV3Controller').adminListPendingRefunds);
+router.post('/subscription/refunds/:id/resolve', require('../controllers/subscriptionV3Controller').adminResolveRefund);
+router.get('/subscription/v3/settings', require('../controllers/subscriptionV3Controller').adminGetSettings);
+router.post('/subscription/v3/settings', require('../controllers/subscriptionV3Controller').adminUpdateSettings);
+
 router.delete('/plans/:id', billingController.deletePlan);
 router.post('/plans/reorder', billingController.reorderSubscriptionPlans);
 
@@ -23,7 +30,6 @@ router.post('/addon-plans', billingController.saveAddonPlan);
 router.delete('/addon-plans/:id', billingController.deleteAddonPlan);
 router.post('/addon-plans/reorder', billingController.reorderAddonPlans);
 router.post('/billing-tab-order', billingController.saveBillingTabOrder);
-
 // 1. App Configs (global_config)
 router.get('/config', admin.getConfigs);
 router.post('/config', admin.updateConfig);
@@ -37,6 +43,7 @@ router.delete('/sms-templates/:id', admin.deleteSmsTemplate);
 // 3. Checkout View Templates
 router.get('/checkout-templates', admin.getCheckoutTemplates);
 router.post('/checkout-templates', admin.saveCheckoutTemplate);
+router.delete('/checkout-templates/:id', admin.deleteCheckoutTemplate);
 
 // 4. SMTP (Email Round-Robin) Profiles
 router.get('/email-accounts', admin.getEmailAccounts);

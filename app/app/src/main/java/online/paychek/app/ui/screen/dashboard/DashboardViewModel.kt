@@ -371,6 +371,36 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
      *  ২. SharedPrefs-এ KEY_SMS_SERVICE_ACTIVE = false
      *  ৩. UI state আপডেট → isServiceActive = false
      */
+    /**
+     * Reinstall / fresh login: rebuild gateway + SMS template caches from server,
+     * then start the monitor — stay in-app (no auto Settings jump).
+     */
+    fun startMonitorWithCacheRefresh(onResult: (ok: Boolean, message: String?) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            val context = getApplication<Application>().applicationContext
+            refreshMonitoringCachesFromServer()
+            val gate = online.paychek.app.utils.DeviceMonitoringGate.check(context)
+            if (!gate.ready) {
+                onResult(false, gate.message)
+                return@launch
+            }
+            toggleSmsService(true)
+            onResult(true, null)
+        }
+    }
+
+    /** Force-pull dashboard payload so PrefsHelper caches are rebuilt locally. */
+    private suspend fun refreshMonitoringCachesFromServer() {
+        val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
+        if (token.isEmpty()) return
+        val connection = connectionEngine.probe()
+        if (!connection.hasInternet || !connection.hasServer) return
+        // lastSync=0 → ask server for full gateway/templates payload when available
+        repository.fetchDashboardStats(token, 0L).onSuccess { stats ->
+            applyDashboardStats(stats)
+        }
+    }
+
     fun toggleSmsService(enable: Boolean) {
         val context = getApplication<Application>().applicationContext
 
@@ -388,6 +418,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 SmsServiceGuard.startService(context)
                 SmsServiceGuard.scheduleWatchdog(context)
             } else {
+                online.paychek.app.data.local.prefs.PrefsHelper.setPendingMonitorStart(context, false)
                 prefs.edit()
                     .putBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, false)
                     .commit()
@@ -395,8 +426,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 SmsServiceGuard.cancelWatchdog(context)
             }
 
+            // Optimistic UI — isAlive may lag until onStartCommand runs.
             _state.update {
-                it.copy(isServiceActive = enable && SmsServiceGuard.isServiceAlive())
+                it.copy(isServiceActive = enable)
             }
 
         } catch (e: Exception) {

@@ -40,6 +40,41 @@ fun SubscriptionPackagesScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    var useV3 by remember { mutableStateOf<Boolean?>(null) }
+
+    LaunchedEffect(Unit) {
+        val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
+        if (token.isEmpty()) {
+            useV3 = false
+            return@LaunchedEffect
+        }
+        val repo = PaymentRepository()
+        useV3 = repo.getV3BillingCatalog(token).isSuccess
+    }
+
+    when (useV3) {
+        null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = Color(0xFF22D3EE))
+        }
+        true -> SubscriptionV3PackagesScreen(modifier = modifier)
+        false -> LegacySubscriptionPackagesScreen(
+            onNavigateToPaymentMock = onNavigateToPaymentMock,
+            onNavigateBack = onNavigateBack,
+            initialTab = initialTab,
+            modifier = modifier
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LegacySubscriptionPackagesScreen(
+    onNavigateToPaymentMock: () -> Unit,
+    onNavigateBack: () -> Unit,
+    initialTab: Int = 0,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val repository = remember { PaymentRepository() }
 

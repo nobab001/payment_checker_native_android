@@ -50,7 +50,7 @@ fun BackgroundPersistenceCard(
     }
     // শুধু incomplete → complete ট্রানজিশনে একবার celebration
     var showReadyCelebration by remember { mutableStateOf(false) }
-    val serviceAlive = SmsServiceGuard.isServiceAlive()
+    val serviceAlive = SmsServiceGuard.isServiceHealthy(context)
 
     fun refreshChecks() {
         val wasIncomplete = !accessibilityOk || !batteryOk
@@ -131,8 +131,15 @@ fun BackgroundPersistenceCard(
                 SetupRow(
                     done = batteryOk,
                     title = "২. Battery Unrestricted",
-                    subtitle = "অপ্টিমাইজ করবেন না / Unrestricted",
-                    onSetup = { OemBackgroundHelper.openBatteryUnrestrictedSettings(context) }
+                    subtitle = when (OemBackgroundHelper.detectVendor()) {
+                        online.paychek.app.utils.OemVendor.SAMSUNG ->
+                            "Apps Info → Battery → Unrestricted / অপ্টিমাইজ করবেন না"
+                        else -> "অপ্টিমাইজ করবেন না / Unrestricted"
+                    },
+                    onSetup = {
+                        // সিস্টেম Allow dialog আগে; ব্যর্থ হলে App Info (Samsung Sleeping apps নয়)
+                        BatteryOptimizationHelper.requestExemptionIfNeeded(context)
+                    }
                 )
             }
 

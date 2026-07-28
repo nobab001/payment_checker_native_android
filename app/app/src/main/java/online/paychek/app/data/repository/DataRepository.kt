@@ -188,6 +188,66 @@ class PaymentRepository {
         }
     }
 
+    suspend fun initSubscriptionCheckout(token: String, planName: String): Result<SubscriptionCheckoutInitResponse> {
+        return try {
+            val response = api.initSubscriptionCheckout(
+                "Bearer $token",
+                SubscriptionCheckoutInitRequest(planName)
+            )
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body?.success == true) {
+                    Result.success(body)
+                } else {
+                    Result.failure(Exception(body?.message ?: "চেকআউট শুরু ব্যর্থ"))
+                }
+            } else {
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "চেকআউট শুরু ব্যর্থ")))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "চেকআউট শুরু ব্যর্থ")))
+        }
+    }
+
+    suspend fun initAddonCheckout(token: String, planId: Int): Result<SubscriptionCheckoutInitResponse> {
+        return try {
+            val response = api.initAddonCheckout(
+                "Bearer $token",
+                AddonCheckoutInitRequest(planId)
+            )
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body?.success == true) {
+                    Result.success(body)
+                } else {
+                    Result.failure(Exception(body?.message ?: "চেকআউট শুরু ব্যর্থ"))
+                }
+            } else {
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "চেকআউট শুরু ব্যর্থ")))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "চেকআউট শুরু ব্যর্থ")))
+        }
+    }
+
+    suspend fun getSubscriptionCheckoutStatus(token: String, orderId: String): Result<SubscriptionCheckoutStatusResponse> {
+        return try {
+            val response = api.getSubscriptionCheckoutStatus("Bearer $token", orderId)
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body?.success == true) {
+                    Result.success(body)
+                } else {
+                    Result.failure(Exception(body?.message ?: "স্ট্যাটাস লোড ব্যর্থ"))
+                }
+            } else {
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "স্ট্যাটাস লোড ব্যর্থ")))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "স্ট্যাটাস লোড ব্যর্থ")))
+        }
+    }
+
     suspend fun purchaseSubscription(token: String, planName: String): Result<PurchaseSubscriptionResponse> {
         return try {
             val response = api.purchaseSubscription("Bearer $token", PurchaseSubscriptionRequest(planName))
@@ -294,6 +354,78 @@ class PaymentRepository {
             }
         } catch (e: Exception) {
             Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "Transaction লোড ব্যর্থ")))
+        }
+    }
+
+    suspend fun getV3BillingCatalog(token: String): Result<SubscriptionV3CatalogResponse> {
+        return try {
+            val response = api.getV3BillingCatalog("Bearer $token")
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body?.success == true && body.v3) {
+                    Result.success(body)
+                } else {
+                    Result.failure(Exception("v3 ক্যাটালগ পাওয়া যায়নি"))
+                }
+            } else {
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "ক্যাটালগ লোড ব্যর্থ")))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "ক্যাটালগ লোড ব্যর্থ")))
+        }
+    }
+
+    suspend fun postV3Quote(token: String, request: V3QuoteRequest): Result<V3QuoteResponse> {
+        return try {
+            val response = api.postV3Quote("Bearer $token", request)
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body?.success == true && body.quote != null && !body.quoteToken.isNullOrBlank()) {
+                    Result.success(body)
+                } else {
+                    Result.failure(Exception(body?.message ?: "কোট ব্যর্থ"))
+                }
+            } else {
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "কোট ব্যর্থ")))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "কোট ব্যর্থ")))
+        }
+    }
+
+    suspend fun postV3CheckoutInit(token: String, quoteToken: String): Result<V3CheckoutInitResponse> {
+        return try {
+            val response = api.postV3CheckoutInit("Bearer $token", V3CheckoutInitRequest(quoteToken))
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body?.success == true) {
+                    Result.success(body)
+                } else {
+                    Result.failure(Exception(body?.message ?: "চেকআউট ব্যর্থ"))
+                }
+            } else {
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "চেকআউট ব্যর্থ")))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "চেকআউট ব্যর্থ")))
+        }
+    }
+
+    suspend fun postV3RefundRequest(token: String, purchaseId: Int, reason: String?): Result<V3RefundRequestResponse> {
+        return try {
+            val response = api.postV3RefundRequest("Bearer $token", V3RefundRequest(purchaseId, reason))
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body?.success == true) {
+                    Result.success(body)
+                } else {
+                    Result.failure(Exception(body?.message ?: "রিফান্ড রিকোয়েস্ট ব্যর্থ"))
+                }
+            } else {
+                Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "রিফান্ড রিকোয়েস্ট ব্যর্থ")))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "রিফান্ড রিকোয়েস্ট ব্যর্থ")))
         }
     }
 }

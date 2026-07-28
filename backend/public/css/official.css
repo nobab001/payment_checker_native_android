@@ -602,14 +602,33 @@ footer {
 
 @media (min-width: 721px) {
   .app-download-dock {
-    /* Extra clearance under wide desktop nav / Test CTA */
-    top: calc(var(--nav-h) + 12px);
+    /* Extra clearance under wide desktop nav / Test CTA; nudge up ~3 sutas (3/8in) */
+    top: calc(var(--nav-h) + 12px - 0.375in);
     right: 20px;
   }
   .app-download-hero {
-    /* Keep clear of bottom-right helpline on wide screens */
-    bottom: max(132px, calc(18vh + env(safe-area-inset-bottom, 0px)));
+    /* Shift ~0.5in right, ~1in lower than prior desktop position */
+    bottom: max(calc(132px - 1in), calc(18vh - 1in + env(safe-area-inset-bottom, 0px)));
+    transform: translateX(calc(-50% + 0.5in));
+  }
+  .helpline {
+    bottom: max(8px, calc(36px - 1in + env(safe-area-inset-bottom, 0px)));
   }
 }
 
 .section-is-hidden { display: none !important; }
+
+.btn-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: pc-btn-spin 0.7s linear infinite;
+  vertical-align: -2px;
+  margin-right: 6px;
+}
+@keyframes pc-btn-spin {
+  to { transform: rotate(360deg); }
+}

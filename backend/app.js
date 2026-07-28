@@ -38,6 +38,9 @@ const billingRoutes     = require('./routes/billingRoutes');
 const numberHealth      = require('./services/numberHealthService');
 
 const app = express();
+// Behind Nginx — needed so express-rate-limit / req.ip read X-Forwarded-For correctly.
+// Without this, rate-limit throws ValidationError and browsers show "Failed to fetch".
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: corsOrigin }
@@ -140,6 +143,22 @@ app.use(cors({ origin: corsOrigin || undefined }));
 // Official Test Experience webhook (raw body for PayCheck HMAC) — before express.json
 const officialWebsite = require('./official-website');
 officialWebsite.mountEarly(app);
+
+// App subscription billing webhook (HMAC on raw body) — before express.json
+app.use(
+  '/api/v1/subscription/payment-webhook',
+  express.raw({ type: 'application/json' }),
+  (req, _res, next) => {
+    req.rawBody = req.body;
+    try {
+      req.body = JSON.parse(req.body.toString('utf8'));
+    } catch {
+      req.body = {};
+    }
+    next();
+  },
+  require('./controllers/billingController').subscriptionPaymentWebhook,
+);
 
 // Serve static webpage assets (like public/checkout.html).
 // Uploaded logos/icons use content-hashed filenames, so they can be cached

@@ -5,6 +5,12 @@ const {
   applySubscriptionPurchase,
   formatDateYmd,
 } = require('../services/subscriptionBillingService');
+const {
+  createSubscriptionCheckout,
+  createAddonCheckout,
+  handleBillingWebhook,
+  getCheckoutOrderStatus,
+} = require('../services/subscriptionCheckoutService');
 
 let addonPlansTableReady = false;
 
@@ -303,6 +309,14 @@ async function stackCustomSenderExpiry(userId, durationDays) {
 
 async function getSubscriptionQuote(req, res) {
   try {
+    const { isV3Enabled } = require('../services/subscriptionV3/configService');
+    if (await isV3Enabled()) {
+      return res.status(400).json({
+        success: false,
+        error: 'USE_V3_ENDPOINT',
+        message: 'v3 সাবস্ক্রিপশনের জন্য POST /subscription/v3/quote ব্যবহার করুন।',
+      });
+    }
     const userId = req.user.userId;
     const planName = req.query.planName || req.query.plan_name;
     if (!planName) {
@@ -334,9 +348,158 @@ async function getSubscriptionQuote(req, res) {
 }
 
 /**
+ * POST /api/v1/subscription/checkout-init
+ * Opens PayChek customer checkout (purpose=payment). Activates only after webhook.
+ */
+async function initSubscriptionCheckout(req, res) {
+  try {
+    const { isV3Enabled } = require('../services/subscriptionV3/configService');
+    if (await isV3Enabled()) {
+      return res.status(400).json({
+        success: false,
+        error: 'USE_V3_ENDPOINT',
+        message: 'v3 সাবস্ক্রিপশনের জন্য POST /subscription/v3/checkout-init ব্যবহার করুন।',
+      });
+    }
+    const userId = req.user.userId;
+    const planName = req.body.planName || req.body.plan_name;
+    if (!planName) {
+      return res.status(400).json({ success: false, error: 'Missing planName field.' });
+    }
+
+    const plan = await prisma.subscription_plans.findFirst({ where: { plan_name: planName } });
+    if (!plan) {
+      return res.status(404).json({ success: false, error: 'PLAN_NOT_FOUND', message: 'প্ল্যানটি খুঁজে পাওয়া যায়নি।' });
+    }
+    if (isLegacyCustomSenderPlanName(plan.plan_name)) {
+      return res.status(400).json({
+        success: false,
+        error: 'USE_ADDON_ENDPOINT',
+        message: 'কাস্টম সেন্ডার প্যাকেজ কিনতে অ্যাড-অন ট্যাব ব্যবহার করুন।',
+      });
+    }
+
+    const result = await createSubscriptionCheckout(req, { userId, planName });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        error: result.error,
+        message: result.message,
+      });
+    }
+
+    return res.json({
+      success: true,
+      activated: Boolean(result.activated),
+      orderId: result.orderId,
+      checkoutUrl: result.checkoutUrl,
+      amount: result.amount,
+      quote: result.quote || null,
+      message: result.message,
+    });
+  } catch (error) {
+    console.error('[Billing Controller] initSubscriptionCheckout error:', error);
+    const status = error.code === 'CONFIG_ERROR' ? 503 : 500;
+    return res.status(status).json({
+      success: false,
+      error: error.code || 'Internal Server Error',
+      message: error.message || 'চেকআউট শুরু করা যায়নি।',
+      details: error.details || undefined,
+    });
+  }
+}
+
+/**
+ * POST /api/v1/subscription/addon-checkout-init
+ */
+async function initAddonCheckout(req, res) {
+  try {
+    const userId = req.user.userId;
+    const planId = parseInt(req.body.planId || req.body.plan_id || req.body.addon_plan_id, 10);
+    if (!planId) {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_PLAN_ID',
+        message: 'অ্যাড-অন প্যাকেজ নির্বাচন করুন।',
+      });
+    }
+
+    await ensureAddonPlansTable();
+    const result = await createAddonCheckout(req, { userId, planId });
+    if (result.error) {
+      return res.status(result.status || 400).json({
+        success: false,
+        error: result.error,
+        message: result.message,
+      });
+    }
+
+    return res.json({
+      success: true,
+      activated: Boolean(result.activated),
+      orderId: result.orderId,
+      checkoutUrl: result.checkoutUrl,
+      amount: result.amount,
+      message: result.message,
+    });
+  } catch (error) {
+    console.error('[Billing Controller] initAddonCheckout error:', error);
+    const status = error.code === 'CONFIG_ERROR' ? 503 : 500;
+    return res.status(status).json({
+      success: false,
+      error: error.code || 'Internal Server Error',
+      message: error.message || 'চেকআউট শুরু করা যায়নি।',
+      details: error.details || undefined,
+    });
+  }
+}
+
+/**
+ * GET /api/v1/subscription/checkout-status?orderId=
+ */
+async function getSubscriptionCheckoutStatus(req, res) {
+  try {
+    const userId = req.user.userId;
+    const orderId = req.query.orderId || req.query.order_id;
+    if (!orderId) {
+      return res.status(400).json({ success: false, error: 'Missing orderId.' });
+    }
+    const status = await getCheckoutOrderStatus(userId, orderId);
+    if (status.error) {
+      return res.status(404).json({ success: false, error: status.error, message: status.message });
+    }
+    return res.json({ success: true, ...status });
+  } catch (error) {
+    console.error('[Billing Controller] getSubscriptionCheckoutStatus error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/**
+ * POST /api/v1/subscription/payment-webhook — PayChek merchant callback (HMAC).
+ */
+async function subscriptionPaymentWebhook(req, res) {
+  try {
+    const signature = req.headers['x-paychek-signature'] || req.headers['x-signature'];
+    const rawBody = req.rawBody != null
+      ? req.rawBody
+      : (typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {}));
+    const result = await handleBillingWebhook(rawBody, signature);
+    return res.json(result);
+  } catch (error) {
+    if (error.code === 'INVALID_SIGNATURE') {
+      return res.status(401).json({ success: false, error: 'INVALID_SIGNATURE' });
+    }
+    console.error('[Billing Controller] subscriptionPaymentWebhook error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/**
  * POST /api/v1/subscription/purchase
  * Renew: same plan → stack expiry, full price
  * Upgrade: different active plan → prorated credit, new expiry from today
+ * (Admin / legacy free activate — app Buy uses checkout-init instead.)
  */
 async function purchaseSubscription(req, res) {
   try {
@@ -685,6 +848,18 @@ async function deletePlan(req, res) {
     if (!id) {
       return res.status(400).json({ success: false, error: 'Missing plan ID.' });
     }
+    const { isV3Enabled } = require('../services/subscriptionV3/configService');
+    if (await isV3Enabled()) {
+      const v3 = require('../services/subscriptionV3');
+      await v3.archivePackage(id, req.user.userId);
+      await v3.logAudit({
+        adminId: req.user.userId,
+        action: 'package_archive',
+        oldPackage: String(id),
+        ipAddress: req.ip,
+      });
+      return res.json({ success: true, message: 'প্যাকেজ আর্কাইভ করা হয়েছে।' });
+    }
     await prisma.subscription_plans.delete({
       where: { id: parseInt(id) }
     });
@@ -757,7 +932,14 @@ async function purchaseCustomSenderAddon(req, res) {
 async function getAccountEntitlements(req, res) {
   try {
     const userId = req.user.userId;
-    const ent = await syncUserEntitlements(userId);
+    const { isV3Enabled } = require('../services/subscriptionV3/configService');
+    const { getEntitlements, ensureSubscriptionFresh } = require('../services/permissionEngineService');
+    const ent = (await isV3Enabled())
+      ? await getEntitlements(userId, { refresh: true })
+      : await syncUserEntitlements(userId);
+    if (await isV3Enabled()) {
+      await ensureSubscriptionFresh(userId);
+    }
     const profile = await require('../services/commPolicyService').resolveCommProfile(userId);
     const policy = require('../services/commPolicyService').toClientPolicy(profile);
     return res.json({
@@ -841,6 +1023,10 @@ module.exports = {
   updateFcmToken,
   getSubscriptionQuote,
   purchaseSubscription,
+  initSubscriptionCheckout,
+  initAddonCheckout,
+  getSubscriptionCheckoutStatus,
+  subscriptionPaymentWebhook,
   listPlans,
   listAddonPlans,
   listAddonPlansAdmin,

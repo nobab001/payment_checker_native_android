@@ -82,6 +82,7 @@ fun BillingConfigScreen(
     var pinVerificationLoading by remember { mutableStateOf(false) }
 
     // Global welcome trial package states
+    var trialPlanName by remember { mutableStateOf("Trial Package") }
     var trialDays by remember { mutableStateOf("7") }
     var trialMaxDevices by remember { mutableStateOf("1") }
     var trialMaxSites by remember { mutableStateOf("1") }
@@ -117,6 +118,21 @@ fun BillingConfigScreen(
     var adminPlanTab by remember { mutableStateOf(0) }
     var previewSubscriptionPlan by remember { mutableStateOf<SubscriptionPlanDto?>(null) }
     var previewAddonPlan by remember { mutableStateOf<AddonPlanDto?>(null) }
+
+    var v3TrialDays by remember { mutableStateOf("7") }
+    var v3QuoteValidity by remember { mutableStateOf("15") }
+    var v3GracePeriod by remember { mutableStateOf("5") }
+    var v3Maintenance by remember { mutableStateOf(false) }
+
+    LaunchedEffect(uiState.v3Settings) {
+        uiState.v3Settings?.let { s ->
+            v3TrialDays = s.trialDays.toString()
+            v3QuoteValidity = s.quoteValidityMin.toString()
+            v3GracePeriod = s.gracePeriodMin.toString()
+            v3Maintenance = s.subscriptionMaintenance
+        }
+    }
+
     val tabOrder = uiState.billingTabOrder
     LaunchedEffect(tabOrder) {
         if (adminPlanTab !in tabOrder.indices) adminPlanTab = 0
@@ -135,6 +151,7 @@ fun BillingConfigScreen(
     }
 
     LaunchedEffect(uiState.configs) {
+        trialPlanName = uiState.configs["trial_plan_name"] ?: "Trial Package"
         trialDays = uiState.configs["trial_days"] ?: "7"
         trialMaxDevices = uiState.configs["trial_max_devices"] ?: "1"
         trialMaxSites = uiState.configs["trial_max_sites"] ?: "1"
@@ -147,6 +164,7 @@ fun BillingConfigScreen(
             ?: "Payment Monitoring\nAPI Access\nCheckout System\nMerchant Dashboard\nReal-time Notification"
         trialWelcomeShowOnce = (uiState.configs["trial_welcome_show_once"] ?: "1") != "0"
         trialWelcomeButton = uiState.configs["trial_welcome_button"] ?: "এখনই শুরু করুন"
+
     }
 
     // Edit/Create Plan Dialog
@@ -737,6 +755,94 @@ fun BillingConfigScreen(
             .verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (uiState.v3Settings != null) {
+            Text(
+                text = "⚙️ Subscription v3 সেটিংস",
+                color = TextPrimary,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Card(
+                colors = CardDefaults.cardColors(containerColor = CardBackground),
+                shape = RoundedCornerShape(12.dp),
+                border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = v3TrialDays,
+                        onValueChange = { v3TrialDays = it },
+                        label = { Text("Trial Days") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = v3QuoteValidity,
+                        onValueChange = { v3QuoteValidity = it },
+                        label = { Text("Quote Validity (min)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = v3GracePeriod,
+                        onValueChange = { v3GracePeriod = it },
+                        label = { Text("Grace Period (min: 0/5/10/30)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Maintenance Lock", modifier = Modifier.weight(1f))
+                        Switch(checked = v3Maintenance, onCheckedChange = { v3Maintenance = it })
+                    }
+                    Button(
+                        onClick = {
+                            viewModel.saveV3SubscriptionSettings(
+                                trialDays = v3TrialDays.toIntOrNull() ?: 7,
+                                quoteValidityMin = v3QuoteValidity.toIntOrNull() ?: 15,
+                                gracePeriodMin = v3GracePeriod.toIntOrNull() ?: 5,
+                                maintenance = v3Maintenance
+                            ) { ok ->
+                                if (ok) Toast.makeText(context, "v3 সেটিংস সেভ হয়েছে", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("v3 সেটিংস সেভ") }
+                }
+            }
+
+            if (uiState.pendingRefunds.isNotEmpty()) {
+                Text(
+                    text = "💸 Pending Refunds (${uiState.pendingRefunds.size})",
+                    color = TextPrimary,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                uiState.pendingRefunds.forEach { refund ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = CardBackground),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(refund.packageFullName ?: "—", fontWeight = FontWeight.SemiBold)
+                            Text("Invoice: ${refund.invoiceNo} • User #${refund.userId}", fontSize = 12.sp, color = TextSecondary)
+                            Text(refund.reason ?: "", fontSize = 12.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = { viewModel.resolvePendingRefund(refund.id, false) }) {
+                                    Text("Reject")
+                                }
+                                Button(
+                                    onClick = { viewModel.resolvePendingRefund(refund.id, true) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo)
+                                ) { Text("Approve") }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Text(
             text = "🎁 ওয়েলকাম ট্রায়াল প্যাকেজ সেটিংস",
             color = TextPrimary,
@@ -755,6 +861,24 @@ fun BillingConfigScreen(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // 0. Trial plan display name
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(text = "ট্রায়াল প্যাকেজের নাম (trial_plan_name)", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(text = "নতুন অ্যাকাউন্টে যে নাম দেখাবে — এডিট করলে সব ইউজারের ওয়েলকাম ট্রায়াল নাম আপডেট হবে।", color = TextSecondary, fontSize = 11.sp)
+                    OutlinedTextField(
+                        value = trialPlanName,
+                        onValueChange = { trialPlanName = it },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
                 // 1. Trial Days
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(text = "মেয়াদ দিনসংখ্যা (trial_days)", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -929,6 +1053,7 @@ fun BillingConfigScreen(
             onClick = {
                 viewModel.updateConfigs(
                     mapOf(
+                        "trial_plan_name" to trialPlanName.trim().ifEmpty { "Trial Package" },
                         "trial_days" to trialDays,
                         "trial_max_devices" to trialMaxDevices,
                         "trial_max_sites" to trialMaxSites,

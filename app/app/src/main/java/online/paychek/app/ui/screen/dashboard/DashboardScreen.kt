@@ -119,28 +119,47 @@ fun DashboardScreen(
     val hasInternet by viewModel.hasInternet.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    fun ensureBackgroundSmsReady() {
+    /** Guards incomplete → toast only; never auto-open Settings (that kicked users out of the app). */
+    fun ensureBackgroundSmsReady(): Boolean {
         if (!AccessibilityHelper.isAccessibilityServiceEnabled(context)) {
-            AccessibilityHelper.openAccessibilitySettings(context)
             android.widget.Toast.makeText(
                 context,
-                "Accessibility চালু করুন — Paychek Background Guard",
+                "নিচে Background Guard থেকে Accessibility চালু করুন",
                 android.widget.Toast.LENGTH_LONG
             ).show()
-            return
+            return false
         }
         if (!BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)) {
-            BatteryOptimizationHelper.requestExemptionIfNeeded(context)
             android.widget.Toast.makeText(
                 context,
-                "Battery → Unrestricted / অপ্টিমাইজ করবেন না সিলেক্ট করুন",
+                "নিচে Background Guard থেকে Battery → Unrestricted সেট করুন",
                 android.widget.Toast.LENGTH_LONG
             ).show()
+            return false
+        }
+        return true
+    }
+
+    fun tryStartMonitorAfterGuards() {
+        if (!AccessibilityHelper.isBackgroundReady(context)) {
+            online.paychek.app.data.local.prefs.PrefsHelper.setPendingMonitorStart(context, true)
+            ensureBackgroundSmsReady()
+            return
+        }
+        online.paychek.app.data.local.prefs.PrefsHelper.setPendingMonitorStart(context, false)
+        viewModel.startMonitorWithCacheRefresh { ok, message ->
+            if (!ok && !message.isNullOrBlank()) {
+                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+            }
         }
     }
 
-    var isAccessibilityEnabled by remember { mutableStateOf(true) }
-    var isBatteryUnrestricted by remember { mutableStateOf(true) }
+    var isAccessibilityEnabled by remember {
+        mutableStateOf(AccessibilityHelper.isAccessibilityServiceEnabled(context))
+    }
+    var isBatteryUnrestricted by remember {
+        mutableStateOf(BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context))
+    }
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val backgroundSetupPending = !isAccessibilityEnabled || !isBatteryUnrestricted
     val pendingSetupCount =
@@ -166,6 +185,31 @@ fun DashboardScreen(
                 isAccessibilityEnabled = AccessibilityHelper.isAccessibilityServiceEnabled(context)
                 isBatteryUnrestricted = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
                 viewModel.ensureSmsServiceRunning()
+
+                // Monitor was requested earlier but guards were incomplete — start now.
+                if (online.paychek.app.data.local.prefs.PrefsHelper.isPendingMonitorStart(context) &&
+                    AccessibilityHelper.isBackgroundReady(context)
+                ) {
+                    val gate = online.paychek.app.utils.DeviceMonitoringGate.check(context)
+                    val hasReceiveSms = androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, Manifest.permission.RECEIVE_SMS
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    val hasReadSms = androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, Manifest.permission.READ_SMS
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    if (gate.ready && hasReceiveSms && hasReadSms) {
+                        online.paychek.app.data.local.prefs.PrefsHelper.setPendingMonitorStart(context, false)
+                        viewModel.startMonitorWithCacheRefresh { ok, message ->
+                            if (!ok && !message.isNullOrBlank()) {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    message,
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                    }
+                }
 
                 // First time everything is ready → remember it locally + on the server
                 // so a future reinstall only needs a single accessibility tap.
@@ -197,9 +241,7 @@ fun DashboardScreen(
     LaunchedEffect(screenState.isServiceActive, lifecycleOwner) {
         lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
             if (state == androidx.lifecycle.Lifecycle.State.RESUMED && screenState.isServiceActive) {
-                if (AccessibilityHelper.isBackgroundReady(context)) {
-                    viewModel.ensureSmsServiceRunning()
-                }
+                viewModel.ensureSmsServiceRunning()
             }
         }
     }
@@ -217,8 +259,8 @@ fun DashboardScreen(
             if (!gate.ready) {
                 android.widget.Toast.makeText(context, gate.message, android.widget.Toast.LENGTH_LONG).show()
             } else {
-                viewModel.toggleSmsService(true)
-                ensureBackgroundSmsReady()
+                // Do NOT open Settings after starting service — that looked like "app kicked me out".
+                tryStartMonitorAfterGuards()
             }
         } else {
             showSmsPermissionRationaleDialog = true
@@ -235,6 +277,7 @@ fun DashboardScreen(
 
     val successStats = (screenState.uiState as? DashboardUiState.Success)?.stats
     val isPaid = successStats?.isPaid ?: false
+    val isTrial = successStats?.isTrial ?: false
     val daysRemaining = remember(successStats?.expiryDate) {
         calculateDaysRemaining(successStats?.expiryDate)
     }
@@ -436,11 +479,10 @@ fun DashboardScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
                     .clickable {
-                        online.paychek.app.MainActivity.isRequestingPermission = true
                         if (!isAccessibilityEnabled) {
                             AccessibilityHelper.openAccessibilitySettings(context)
                         } else {
-                            OemBackgroundHelper.openBatteryUnrestrictedSettings(context)
+                            BatteryOptimizationHelper.requestExemptionIfNeeded(context)
                         }
                     }
             ) {
@@ -507,6 +549,7 @@ fun DashboardScreen(
                 DashboardHeaderBlock(
                     userName = screenState.userName,
                     isPaid = isPaid,
+                    isTrial = isTrial,
                     activePlanName = successStats?.activePlanName ?: "FREE_LEVEL",
                     expiryDate = successStats?.expiryDate,
                     onBuyPlanClick = onNavigateToSubscription,
@@ -528,16 +571,13 @@ fun DashboardScreen(
                                         android.widget.Toast.LENGTH_LONG
                                     ).show()
                                 } else if (!isAccessibilityEnabled || !isBatteryUnrestricted) {
+                                    online.paychek.app.data.local.prefs.PrefsHelper
+                                        .setPendingMonitorStart(context, true)
                                     android.widget.Toast.makeText(
                                         context,
-                                        "প্রথমে Background Guard সেটিংস সম্পূর্ণ করুন",
+                                        "অ্যাপে থাকুন — নিচে Background Guard কার্ড থেকে সেটিংস সম্পূর্ণ করুন",
                                         android.widget.Toast.LENGTH_LONG
                                     ).show()
-                                    if (!isAccessibilityEnabled) {
-                                        AccessibilityHelper.openAccessibilitySettings(context)
-                                    } else {
-                                        OemBackgroundHelper.openBatteryUnrestrictedSettings(context)
-                                    }
                                 } else {
                                     val hasReceiveSms = androidx.core.content.ContextCompat.checkSelfPermission(
                                         context,
@@ -549,11 +589,7 @@ fun DashboardScreen(
                                     ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
                                     if (hasReceiveSms && hasReadSms) {
-                                        if (!AccessibilityHelper.isBackgroundReady(context)) {
-                                            ensureBackgroundSmsReady()
-                                        } else {
-                                            viewModel.toggleSmsService(true)
-                                        }
+                                        tryStartMonitorAfterGuards()
                                     } else {
                                         online.paychek.app.MainActivity.isRequestingPermission = true
                                         smsPermissionsLauncher.launch(
@@ -1108,6 +1144,7 @@ fun DashboardScreen(
 private fun DashboardHeaderBlock(
     userName: String,
     isPaid: Boolean,
+    isTrial: Boolean,
     activePlanName: String,
     expiryDate: String?,
     onBuyPlanClick: () -> Unit,
@@ -1177,10 +1214,16 @@ private fun DashboardHeaderBlock(
 
             // Row 2: Compact glass bar — 2 lines (package name + expiry/days) + small renew button
             val expiryLine = when {
+                isTrial -> "মেয়াদ শেষ: $formattedDate • $daysRemaining দিন বাকি"
                 !isPaid -> "গেটওয়ে সচল করতে প্যাকেজ কিনুন"
                 expiryDate.isNullOrEmpty() -> "মেয়াদের তথ্য নেই"
                 daysRemaining >= 0 -> "মেয়াদ শেষ: $formattedDate • $daysRemaining দিন বাকি"
                 else -> "মেয়াদ শেষ: $formattedDate"
+            }
+            val subscribeButtonLabel = when {
+                isTrial -> "Subscribe Now"
+                isPaid -> "রিনিউ"
+                else -> "কিনুন"
             }
             Row(
                 modifier = Modifier
@@ -1207,8 +1250,8 @@ private fun DashboardHeaderBlock(
                             tint = AccentAmber,
                             modifier = Modifier.size(16.dp)
                         )
-                        Text(
-                            text = if (isPaid) activePlanName else "ফ্রি প্ল্যান",
+                    Text(
+                        text = if (isPaid || isTrial) activePlanName else "ফ্রি প্ল্যান",
                             color = Color.White,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
@@ -1246,7 +1289,7 @@ private fun DashboardHeaderBlock(
                         modifier = Modifier.size(17.dp)
                     )
                     Text(
-                        text = if (isPaid) "রিনিউ" else "কিনুন",
+                        text = subscribeButtonLabel,
                         color = Color.White,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
@@ -1301,7 +1344,11 @@ private fun DashboardHeaderBlock(
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                     ) {
                         Text(
-                            text = if (isPaid) "রিনিউ করুন" else "প্যাকেজ কিনুন",
+                            text = when {
+                                isTrial -> "Subscribe Now"
+                                isPaid -> "রিনিউ করুন"
+                                else -> "প্যাকেজ কিনুন"
+                            },
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.sp

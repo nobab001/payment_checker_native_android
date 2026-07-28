@@ -1,9 +1,10 @@
 const prisma = require('../db/prisma');
 const { getUserEntitlements } = require('../services/accountEntitlementsService');
+const { isUserOnTrial } = require('../services/subscriptionV3/trialFlagService');
 
 function isActiveSubscription(user) {
   if (!user.is_paid || user.active_plan_name === 'FREE_LEVEL') return false;
-  if (user.active_plan_name === 'Trial Package') return true;
+  if (Number(user.is_trial) === 1) return true;
   if (!user.expiry_date) return false;
   const expiry = new Date(user.expiry_date);
   expiry.setHours(0, 0, 0, 0);
@@ -37,6 +38,7 @@ async function checkBillingStatus(req, res, next) {
       where: { id: userId },
       select: {
         is_paid: true,
+        is_trial: true,
         active_plan_name: true,
         role: true,
         expiry_date: true,

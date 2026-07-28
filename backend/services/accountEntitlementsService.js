@@ -1,4 +1,5 @@
 const prisma = require('../db/prisma');
+const { isUserOnTrial } = require('./subscriptionV3/trialFlagService');
 
 const USER_PERM_COLUMNS = [
   'perm_custom_sender',
@@ -79,6 +80,7 @@ async function ensureEntitlementSchema() {
   await ensureColumn('addon_plans', 'perm_device', '`perm_device` TINYINT NOT NULL DEFAULT 1');
   await ensureColumn('addon_plans', 'perm_smart_popup', '`perm_smart_popup` TINYINT NOT NULL DEFAULT 0');
 
+
   schemaReady = true;
 }
 
@@ -88,11 +90,46 @@ function todayDateOnly() {
   return d;
 }
 
-function isActiveDate(dateVal) {
-  if (!dateVal) return false;
+/** Compare DATE/DATETIME as YYYY-MM-DD (UTC parts) so MySQL DATE midnight does not shift a day. */
+function toYmdUtc(dateVal) {
+  if (!dateVal) return null;
+  if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateVal)) {
+    return dateVal.slice(0, 10);
+  }
   const d = new Date(dateVal);
-  d.setHours(0, 0, 0, 0);
-  return d >= todayDateOnly();
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function isActiveDate(dateVal) {
+  const ymd = toYmdUtc(dateVal);
+  if (!ymd) return false;
+  return ymd >= toYmdUtc(new Date());
+}
+
+/**
+ * Map a subscription_plans row → entitlement snapshot.
+ * Limits drive feature flags: max_sites > 0 ⇒ website ON (replaces prior user caps on sync).
+ */
+function entitlementsFromSubscriptionPlan(plan) {
+  if (!plan) return null;
+  const maxDevices = Math.max(0, Number(plan.max_devices) || 0);
+  const maxSites = Math.max(0, Number(plan.max_sites) || 0);
+  const flagWebsite = Number(plan.perm_website ?? 0) === 1;
+  const flagDevice = Number(plan.perm_device ?? 0) === 1;
+  const flagTemplate = Number(plan.perm_template ?? 1) === 1;
+  return {
+    perm_custom_sender: Number(plan.is_custom_sender_allowed || 0) ? 1 : 0,
+    perm_template: flagTemplate || maxDevices > 0 || maxSites > 0 ? 1 : 0,
+    perm_website: flagWebsite || maxSites > 0 ? 1 : 0,
+    perm_device: flagDevice || maxDevices > 0 ? 1 : 0,
+    perm_smart_popup: Number(plan.perm_smart_popup ?? 0) ? 1 : 0,
+    eff_max_devices: maxDevices > 0 ? maxDevices : 1,
+    eff_max_sites: maxSites,
+  };
 }
 
 async function getTrialEntitlements() {
@@ -171,7 +208,7 @@ async function computeEntitlementsForUser(userId) {
 
   const snapshots = [];
 
-  if (user.active_plan_name === 'Trial Package') {
+  if (await isUserOnTrial(userId)) {
     snapshots.push(await getTrialEntitlements());
   } else if (user.is_paid && isActiveDate(user.expiry_date)) {
     // Raw SQL — Prisma schema may lag behind ALTER-added columns (e.g. perm_smart_popup)
@@ -182,17 +219,14 @@ async function computeEntitlementsForUser(userId) {
       WHERE plan_name = ${user.active_plan_name || ''}
       LIMIT 1
     `;
-    const plan = planRows[0];
-    if (plan) {
-      snapshots.push({
-        perm_custom_sender: Number(plan.is_custom_sender_allowed || 0),
-        perm_template: Number(plan.perm_template ?? 1),
-        perm_website: Number(plan.perm_website ?? 1),
-        perm_device: Number(plan.perm_device ?? 1),
-        perm_smart_popup: Number(plan.perm_smart_popup ?? 0),
-        eff_max_devices: Number(plan.max_devices || 1),
-        eff_max_sites: Number(plan.max_sites || 1),
-      });
+    const fromPlan = entitlementsFromSubscriptionPlan(planRows[0]);
+    if (fromPlan) {
+      snapshots.push(fromPlan);
+    } else if (user.active_plan_name && user.active_plan_name !== 'FREE_LEVEL') {
+      // Plan row missing — still keep paid access minimal (device) so account is not zeroed.
+      console.warn(
+        `[Entitlements] No subscription_plans row for "${user.active_plan_name}" (user ${userId})`
+      );
     }
   }
 
@@ -279,7 +313,10 @@ async function getUserEntitlements(userId, { refresh = false } = {}) {
   `;
   if (!rows.length) return null;
   const row = rows[0];
-  const stale = row.eff_max_devices === 0 && row.perm_device === 0;
+  // Re-sync when caps look empty OR website flag is off while site quota says otherwise.
+  const stale =
+    (Number(row.eff_max_devices || 0) === 0 && Number(row.perm_device || 0) === 0) ||
+    (Number(row.eff_max_sites || 0) > 0 && Number(row.perm_website || 0) !== 1);
   if (stale) {
     return syncUserEntitlements(userId);
   }

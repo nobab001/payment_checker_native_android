@@ -41,7 +41,9 @@ data class AdminUiState(
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
-    val successMessage: String? = null
+    val successMessage: String? = null,
+    val v3Settings: SubscriptionV3SettingsDto? = null,
+    val pendingRefunds: List<V3PendingRefundDto> = emptyList()
 )
 
 class AdminDashboardViewModel(application: Application) : AndroidViewModel(application) {
@@ -187,6 +189,28 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 }
             }
 
+            val jobV3Settings = launch {
+                try {
+                    val res = api.getV3SubscriptionSettings(token)
+                    if (res.isSuccessful) {
+                        _state.update { it.copy(v3Settings = res.body()?.settings) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            val jobPendingRefunds = launch {
+                try {
+                    val res = api.getPendingRefunds(token)
+                    if (res.isSuccessful) {
+                        _state.update { it.copy(pendingRefunds = res.body()?.refunds.orEmpty()) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
             val jobCheckoutDesign = launch {
                 try {
                     val res = api.getCheckoutDesignConfig(token)
@@ -240,7 +264,7 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
 
             kotlinx.coroutines.joinAll(
                 jobConfigs, jobTemplates, jobCheckouts, jobEmails, jobSmsSettings,
-                jobUsers, jobOtpFormat, jobPlans, jobAddonPlans, jobCheckoutDesign,
+                jobUsers, jobOtpFormat, jobPlans, jobAddonPlans, jobV3Settings, jobPendingRefunds, jobCheckoutDesign,
                 jobOfficialWebsite, jobDemoPayments
             )
             _state.update { it.copy(isLoading = false) }
@@ -518,6 +542,24 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
+    fun deleteCheckoutTemplate(id: Int) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val response = api.deleteCheckoutTemplate(token, id)
+                if (response.isSuccessful && response.body()?.success == true) {
+                    _state.update { it.copy(successMessage = "নির্দেশিকা ম্যাপিং মুছে ফেলা হয়েছে।") }
+                    refreshCheckoutTemplates()
+                } else {
+                    _state.update { it.copy(isSaving = false, errorMessage = "মুছে ফেলা ব্যর্থ হয়েছে।") }
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }
+            }
+        }
+    }
+
     private suspend fun refreshCheckoutTemplates() {
         try {
             val token = "Bearer ${getToken()}"
@@ -672,17 +714,25 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    fun giveManualGrace(userId: Int, credits: Int) {
+    fun giveManualGrace(userId: Int, credits: Int, planName: String, planId: Int? = null) {
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true) }
             try {
                 val token = "Bearer ${getToken()}"
-                val response = api.updateUserManualGrace(token, userId, ManualGraceRequest(credits))
+                val response = api.updateUserManualGrace(
+                    token,
+                    userId,
+                    ManualGraceRequest(credits = credits, planName = planName, planId = planId)
+                )
                 if (response.isSuccessful && response.body()?.success == true) {
-                    _state.update { it.copy(successMessage = "ব্যবহারকারীকে সফলভাবে ${credits} দিনের ট্রায়াল প্রদান করা হয়েছে।") }
+                    _state.update {
+                        it.copy(successMessage = "$planName — ব্যবহারকারীকে সফলভাবে ${credits} দিনের ট্রায়াল প্রদান করা হয়েছে।")
+                    }
                     refreshUsers()
                 } else {
-                    _state.update { it.copy(isSaving = false, errorMessage = "ম্যানুয়াল ট্রায়াল প্রদান ব্যর্থ হয়েছে।") }
+                    val msg = parseApiErrorMessage(response.errorBody()?.string())
+                        ?: "ম্যানুয়াল ট্রায়াল প্রদান ব্যর্থ হয়েছে।"
+                    _state.update { it.copy(isSaving = false, errorMessage = msg) }
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }
@@ -1078,6 +1128,70 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 _state.update {
                     it.copy(isSaving = false, errorMessage = "নেটওয়ার্ক এরর: ${e.localizedMessage}")
                 }
+            }
+        }
+    }
+
+    fun saveV3SubscriptionSettings(
+        trialDays: Int,
+        quoteValidityMin: Int,
+        gracePeriodMin: Int,
+        maintenance: Boolean,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val res = api.updateV3SubscriptionSettings(
+                    token,
+                    V3SettingsUpdateRequest(
+                        trialDays = trialDays,
+                        quoteValidityMin = quoteValidityMin,
+                        gracePeriodMin = gracePeriodMin,
+                        subscriptionMaintenance = maintenance
+                    )
+                )
+                if (res.isSuccessful && res.body()?.success == true) {
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            v3Settings = res.body()?.settings,
+                            successMessage = "v3 সেটিংস সেভ হয়েছে।"
+                        )
+                    }
+                    onComplete?.invoke(true)
+                } else {
+                    _state.update { it.copy(isSaving = false, errorMessage = "v3 সেটিংস সেভ ব্যর্থ।") }
+                    onComplete?.invoke(false)
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }
+                onComplete?.invoke(false)
+            }
+        }
+    }
+
+    fun resolvePendingRefund(refundId: Int, approve: Boolean, adminNote: String? = null) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val res = api.resolveRefund(token, refundId, V3ResolveRefundRequest(approve, adminNote))
+                if (res.isSuccessful && res.body()?.success == true) {
+                    val pending = api.getPendingRefunds(token)
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            pendingRefunds = pending.body()?.refunds.orEmpty(),
+                            successMessage = if (approve) "রিফান্ড অনুমোদিত।" else "রিফান্ড প্রত্যাখ্যান।"
+                        )
+                    }
+                } else {
+                    _state.update { it.copy(isSaving = false, errorMessage = "রিফান্ড প্রসেস ব্যর্থ।") }
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }
             }
         }
     }

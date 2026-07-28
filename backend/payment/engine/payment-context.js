@@ -29,10 +29,11 @@ const { PAYMENT_CONTEXT_VERSION } = require('../core/payment-context-v1');
  */
 
 function buildContextFromLiveInitRequest(req) {
-  const { browserBaseUrlFromRequest } = require('../shared/session-utils');
+  const { browserBaseUrlFromRequest, resolvePublicBaseUrl } = require('../shared/session-utils');
   // Browser must stay on the same origin as checkout (LAN / current host).
   // PUBLIC_BASE_URL is only for gateway callbacks — ngrok free interstitial breaks /pay.
   const browserBase = browserBaseUrlFromRequest(req);
+  const publicBase = resolvePublicBaseUrl(req, {});
 
   const successUrl = req.body?.successUrl || req.body?.success_url || null;
   const cancelUrl = req.body?.cancelUrl || req.body?.cancel_url || null;
@@ -53,6 +54,7 @@ function buildContextFromLiveInitRequest(req) {
     ip: req.ip,
     http: {
       baseUrl: browserBase,
+      publicBaseUrl: publicBase,
       protocol: req.protocol,
       host: req.get('host'),
     },

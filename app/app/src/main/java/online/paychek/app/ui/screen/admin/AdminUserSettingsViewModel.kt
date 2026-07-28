@@ -19,6 +19,7 @@ import online.paychek.app.utils.SecurePreferences
 data class AdminUserSettingsState(
     val user: AdminUserDto? = null,
     val websites: List<AdminWebsiteDto> = emptyList(),
+    val plans: List<SubscriptionPlanDto> = emptyList(),
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
@@ -51,9 +52,16 @@ class AdminUserSettingsViewModel(
             try {
                 val usersRes = api.getUsers(token)
                 val websitesRes = api.getWebsites(token)
+                val plansRes = api.getPlans(token)
                 val user = usersRes.body()?.users?.find { it.id == userId }
                 val websites = websitesRes.body()?.websites
                     ?.filter { it.userId == userId }
+                    ?: emptyList()
+                val plans = plansRes.body()?.plans
+                    ?.filter {
+                        it.planName != "FREE_LEVEL" &&
+                            !it.planName.equals("Trial Package", ignoreCase = true)
+                    }
                     ?: emptyList()
                 if (user == null) {
                     _state.update {
@@ -64,7 +72,13 @@ class AdminUserSettingsViewModel(
                     }
                 } else {
                     _state.update {
-                        it.copy(user = user, websites = websites, isLoading = false, isSaving = false)
+                        it.copy(
+                            user = user,
+                            websites = websites,
+                            plans = plans,
+                            isLoading = false,
+                            isSaving = false
+                        )
                     }
                 }
             } catch (e: Exception) {
@@ -93,19 +107,39 @@ class AdminUserSettingsViewModel(
         }
     }
 
-    fun giveManualGrace(credits: Int) {
+    fun extendSubscription(days: Int, reason: String = "Manual Adjustment") {
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true) }
             try {
                 val token = "Bearer ${getToken()}"
-                val response = api.updateUserManualGrace(token, userId, ManualGraceRequest(credits))
+                val response = api.extendSubscription(
+                    token,
+                    userId,
+                    ExtendSubscriptionRequest(days, reason)
+                )
                 if (response.isSuccessful && response.body()?.success == true) {
+                    val body = response.body()!!
                     _state.update {
-                        it.copy(successMessage = "$credits দিনের ট্রায়াল প্রদান করা হয়েছে।")
+                        it.copy(
+                            successMessage = body.message
+                                ?: "সাবস্ক্রিপশন $days দিন বাড়ানো হয়েছে।"
+                        )
                     }
                     load()
                 } else {
-                    _state.update { it.copy(isSaving = false, errorMessage = "ট্রায়াল প্রদান ব্যর্থ।") }
+                    val errBody = response.errorBody()?.string()
+                    val msg = try {
+                        val map = online.paychek.app.utils.GsonUtils.gson.fromJson(errBody, Map::class.java)
+                        (map["message"] as? String) ?: (map["error"] as? String)
+                    } catch (_: Exception) {
+                        null
+                    }
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            errorMessage = msg ?: "এক্সটেন্ড ব্যর্থ।"
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }

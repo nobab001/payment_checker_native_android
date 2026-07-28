@@ -88,7 +88,11 @@ object OemBackgroundHelper {
         return steps
     }
 
-    /** সব ফোনে battery unrestricted পেজ খোলার চেষ্টা — Samsung/Vivo সহ */
+    /**
+     * Battery Unrestricted সেটিংস খোলে।
+     * Samsung-এ Sleeping apps দিয়ে শুরু করা হয় না — ওটা আলাদা Device Care ফিচার;
+     * অ্যাপ যেটা চেক করে (`isIgnoringBatteryOptimizations`) সেটা App Info → Battery থেকেই সেট হয়।
+     */
     fun openBatteryUnrestrictedSettings(context: Context): Boolean {
         val pkg = context.packageName
         val intents = when (detectVendor()) {
@@ -102,6 +106,21 @@ object OemBackgroundHelper {
             if (launchIntent(context, intent)) return true
         }
         return launchIntent(context, appDetailsIntent(pkg))
+    }
+
+    /** Samsung Device Care → Sleeping apps (ঐচ্ছিক extra; primary battery path নয়)। */
+    fun openSamsungSleepingApps(context: Context): Boolean {
+        if (detectVendor() != OemVendor.SAMSUNG) return false
+        return launchIntent(
+            context,
+            Intent().apply {
+                component = ComponentName(
+                    "com.samsung.android.lool",
+                    "com.samsung.android.sm.battery.ui.usage.CheckableAppListActivity"
+                )
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        )
     }
 
     fun openStep(context: Context, stepId: String): Boolean {
@@ -123,22 +142,20 @@ object OemBackgroundHelper {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
+    /**
+     * Samsung primary path = App Info (Battery → Unrestricted)।
+     * Sleeping apps ইচ্ছাকৃতভাবে এখানে নেই — সেটা Battery exemption নয়,
+     * আর অনেক One UI ভার্সনে CheckableAppListActivity সরাসরি Sleeping apps খোলে।
+     */
     private fun samsungIntents(pkg: String): List<Intent> = listOf(
-        Intent().apply {
-            component = ComponentName(
-                "com.samsung.android.lool",
-                "com.samsung.android.sm.battery.ui.usage.CheckableAppListActivity"
-            )
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        },
+        appDetailsIntent(pkg),
         Intent().apply {
             component = ComponentName(
                 "com.samsung.android.lool",
                 "com.samsung.android.sm.ui.battery.BatteryActivity"
             )
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        },
-        appDetailsIntent(pkg)
+        }
     )
 
     private fun vivoIntents(pkg: String): List<Intent> = listOf(
@@ -199,6 +216,7 @@ object OemBackgroundHelper {
 
     private fun launchIntent(context: Context, intent: Intent): Boolean {
         return try {
+            online.paychek.app.MainActivity.markSystemSettingsHandoff(context)
             context.startActivity(intent)
             true
         } catch (e: Exception) {

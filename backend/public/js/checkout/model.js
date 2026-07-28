@@ -104,6 +104,40 @@ function createSimProvider(g, tabId) {
   });
 }
 
+function createManualBankProvider(acct, tabId) {
+  const bankName = acct.bankName || 'Bank';
+  const stableId = `manual_${tabId}_${acct.id}`;
+  const prov = buildProviderFields({
+    tabId,
+    provider: bankName,
+    variant: PROVIDER_VARIANT.PAYMENT,
+    type: tabId === 'card' ? PROVIDER_TYPE.CARD : PROVIDER_TYPE.BANK,
+    displayName: bankName,
+    instruction: acct.instruction || `${bankName} একাউন্টে টাকা পাঠান এবং নিচের নম্বর কপি করুন।`,
+    sortOrder: Number.isFinite(Number(acct.sortOrder)) ? Number(acct.sortOrder) : Number.MAX_SAFE_INTEGER - 5,
+    logoUrl: acct.logoUrl || null,
+    stableId,
+    merchantAccountId: acct.id,
+  });
+  prov.numbers.push({
+    methodId: `manual_${acct.id}`,
+    number: acct.accountNumber,
+    displayName: acct.accountHolder || bankName,
+    provider: bankName,
+    templateId: null,
+    simSlot: 0,
+    sortOrder: prov.sortOrder,
+    enabled: true,
+    branchName: acct.branchName || '',
+    routingNumber: acct.routingNumber || '',
+    accountHolder: acct.accountHolder || '',
+  });
+  prov.metadata.manualAccount = true;
+  prov.metadata.branchName = acct.branchName || '';
+  prov.metadata.routingNumber = acct.routingNumber || '';
+  return prov;
+}
+
 /** One live card per active merchant account (multi-account / multi-provider). */
 function createMerchantAccountProvider(acct, providerSlug) {
   const tabId = 'payment';
@@ -232,6 +266,20 @@ export function buildCheckoutModel(apiData, amountStr) {
     }
   }
 
+  // Manual bank/card accounts — merchant copy-display (no SIM / template)
+  const manualByTab = apiData.manualAccountsByTab || {};
+  for (const tabId of ['bank', 'card']) {
+    if (!tabsById[tabId]) continue;
+    for (const acct of manualByTab[tabId] || []) {
+      if (!acct || !acct.accountNumber) continue;
+      const prov = createManualBankProvider(acct, tabId);
+      const key = bucketKey(tabId, prov.id);
+      if (providerIndex.has(key)) continue;
+      providerIndex.set(key, prov);
+      ensureTabBucket(tabTree, tabId, tabsById).providers.push(prov);
+    }
+  }
+
   for (const bucket of Object.values(tabTree)) {
     bucket.providers = sortProviders(bucket.providers.map(finalizeProvider));
     bucket.providers = filterRenderableProviders(bucket.providers);
@@ -275,6 +323,8 @@ export function buildCheckoutModel(apiData, amountStr) {
     purpose: sessionPurpose,
     incentives: apiData.incentives || { enabled: false, commissions: [], campaigns: [] },
     merchantAccountsGroups,
+    manualAccountsByTab: apiData.manualAccountsByTab || { bank: [], card: [] },
+    checkoutHelpline: apiData.checkoutHelpline || [],
     providerBranding: apiData.providerBranding || {},
     tabs,
     tabTree,
@@ -290,16 +340,17 @@ export function getActiveTabBucket(model, tabId) {
 }
 
 /**
- * Round payable for Payment mode: <0.50 paisa → floor Taka; >=0.50 → ceil.
+ * Round payable for Payment mode:
+ * 0–50 paisa → lower Taka; 51–99 → next Taka (401.50 → 401, 401.91 → 402).
  * Global rule — same for every provider.
  */
 export function roundPayableTaka(amount) {
   const n = Number(amount);
   if (!Number.isFinite(n) || n <= 0) return 0;
-  const floor = Math.floor(n);
-  const frac = n - floor;
-  if (frac < 0.5) return floor;
-  return Math.ceil(n);
+  const floor = Math.floor(n + 1e-9);
+  const frac = Math.round((n - floor) * 100) / 100;
+  if (frac <= 0.5) return floor;
+  return floor + 1;
 }
 
 /**

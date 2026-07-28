@@ -25,6 +25,17 @@ const OFFICIAL_PROVIDERS = new Set([
   'bkash_merchant', 'nagad_merchant', 'rocket_merchant', 'sslcommerz', 'card', 'bank',
 ]);
 
+function appendCancelQuery(url, reason) {
+  const base = url && typeof url === 'string' ? url : '/';
+  const sep = base.includes('?') ? '&' : '?';
+  const q = new URLSearchParams({
+    status: 'cancel',
+    paymentStatus: 'cancelled',
+  });
+  if (reason) q.set('reason', String(reason).slice(0, 180));
+  return `${base}${sep}${q.toString()}`;
+}
+
 function timingSafeEqual(a, b) {
   const ba = Buffer.from(String(a || ''));
   const bb = Buffer.from(String(b || ''));
@@ -257,10 +268,17 @@ const PaymentFlowEngine = {
 
   async _redirectBkash(req, res, session, traceId) {
     try {
+      // Already created during live-init — jump straight to bKash (no HTML page).
+      const existingUrl = session.meta?.bkashURL;
+      if (existingUrl && typeof existingUrl === 'string') {
+        await PaymentSessionEngine.markRedirected(session.sessionToken).catch(() => {});
+        return RedirectService.redirect(res, existingUrl);
+      }
+
       const merchantAccountId = session.meta?.merchantAccountId ?? null;
       const gateway = await loadOfficialGateway(session.websiteId, 'bkash_live', merchantAccountId);
       if (!gateway) {
-        return RedirectService.redirect(res, session.cancelUrl || '/');
+        return RedirectService.redirect(res, appendCancelQuery(session.cancelUrl || '/', 'gateway_missing'));
       }
 
       const adapter = getProvider('bkash_live');
@@ -307,6 +325,7 @@ const PaymentFlowEngine = {
         providerReference: payment.providerReference,
         providerId: 'bkash_live',
         paymentID: payment.providerMeta?.paymentID || null,
+        bkashURL: payment.providerMeta?.bkashURL || null,
       });
 
       const redirectUrl = await adapter.getRedirectUrl(paymentCtx, payment);
@@ -321,11 +340,9 @@ const PaymentFlowEngine = {
     } catch (err) {
       console.error('[BKASH REDIRECT]', err.message || err);
       if (res.headersSent) return undefined;
-      const cancel = session.cancelUrl || '/';
-      const sep = cancel.includes('?') ? '&' : '?';
       return RedirectService.redirect(
         res,
-        `${cancel}${sep}error=${encodeURIComponent(err.message || 'BKASH_REDIRECT_FAILED')}`,
+        appendCancelQuery(session.cancelUrl || '/', err.message || 'BKASH_REDIRECT_FAILED'),
       );
     }
   },
@@ -436,7 +453,7 @@ const PaymentFlowEngine = {
         websiteId: session.websiteId, userId: session.userId, ip: req.ip, status: 'failed',
         detail: { provider: session.officialProvider, trxId },
       });
-      return RedirectService.redirect(res, session.cancelUrl || '/');
+      return RedirectService.redirect(res, appendCancelQuery(session.cancelUrl || '/', 'failed'));
     }
 
     await PaymentSessionEngine.completeSession(token, { trx_id: trxId });

@@ -85,6 +85,24 @@ interface PaymentApiService {
         @Query("planName") planName: String
     ): Response<SubscriptionQuoteResponse>
 
+    @POST("v1/subscription/checkout-init")
+    suspend fun initSubscriptionCheckout(
+        @Header("Authorization") token: String,
+        @Body request: SubscriptionCheckoutInitRequest
+    ): Response<SubscriptionCheckoutInitResponse>
+
+    @POST("v1/subscription/addon-checkout-init")
+    suspend fun initAddonCheckout(
+        @Header("Authorization") token: String,
+        @Body request: AddonCheckoutInitRequest
+    ): Response<SubscriptionCheckoutInitResponse>
+
+    @GET("v1/subscription/checkout-status")
+    suspend fun getSubscriptionCheckoutStatus(
+        @Header("Authorization") token: String,
+        @Query("orderId") orderId: String
+    ): Response<SubscriptionCheckoutStatusResponse>
+
     @POST("v1/subscription/purchase")
     suspend fun purchaseSubscription(
         @Header("Authorization") token: String,
@@ -106,6 +124,34 @@ interface PaymentApiService {
     suspend fun getAccountEntitlements(
         @Header("Authorization") token: String
     ): Response<AccountEntitlementsResponse>
+
+    @GET("v1/billing/catalog")
+    suspend fun getV3BillingCatalog(
+        @Header("Authorization") token: String
+    ): Response<SubscriptionV3CatalogResponse>
+
+    @POST("v1/subscription/v3/quote")
+    suspend fun postV3Quote(
+        @Header("Authorization") token: String,
+        @Body request: V3QuoteRequest
+    ): Response<V3QuoteResponse>
+
+    @POST("v1/subscription/v3/checkout-init")
+    suspend fun postV3CheckoutInit(
+        @Header("Authorization") token: String,
+        @Body request: V3CheckoutInitRequest
+    ): Response<V3CheckoutInitResponse>
+
+    @GET("v1/subscription/history")
+    suspend fun getV3PurchaseHistory(
+        @Header("Authorization") token: String
+    ): Response<V3PurchaseHistoryResponse>
+
+    @POST("v1/subscription/refund-request")
+    suspend fun postV3RefundRequest(
+        @Header("Authorization") token: String,
+        @Body request: V3RefundRequest
+    ): Response<V3RefundRequestResponse>
 
     @GET("custom-archives")
     suspend fun getCustomArchives(

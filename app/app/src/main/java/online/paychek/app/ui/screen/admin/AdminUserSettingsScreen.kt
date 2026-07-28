@@ -26,6 +26,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import online.paychek.app.data.remote.dto.AdminDeviceDto
 import online.paychek.app.data.remote.dto.AdminUserDto
 import online.paychek.app.data.remote.dto.AdminWebsiteDto
+import online.paychek.app.data.remote.dto.SubscriptionPlanDto
 import online.paychek.app.ui.theme.RoyalIndigo
 import online.paychek.app.ui.theme.StatusGreen
 import online.paychek.app.ui.theme.StatusRed
@@ -49,6 +50,18 @@ fun AdminUserSettingsScreen(
     )
     val uiState by viewModel.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    var pendingExtendDays by remember { mutableStateOf<Int?>(null) }
+    var extendReason by remember { mutableStateOf("Manual Adjustment") }
+
+    val extendReasons = remember {
+        listOf(
+            "Customer Support",
+            "Bug Compensation",
+            "Promotion",
+            "Manual Adjustment",
+            "Other"
+        )
+    }
 
     LaunchedEffect(uiState.successMessage, uiState.errorMessage) {
         uiState.successMessage?.let {
@@ -116,7 +129,10 @@ fun AdminUserSettingsScreen(
                     websites = uiState.websites,
                     isSaving = uiState.isSaving,
                     onToggleBlock = { viewModel.toggleUserBlock(it) },
-                    onGiveTrial = { viewModel.giveManualGrace(it) },
+                    onExtendSubscription = { days ->
+                        extendReason = "Manual Adjustment"
+                        pendingExtendDays = days
+                    },
                     onUpdateDeviceTrial = { id, exp, locked, reason ->
                         viewModel.updateDeviceTrial(id, exp, locked, reason)
                     },
@@ -130,6 +146,48 @@ fun AdminUserSettingsScreen(
             }
         }
     }
+
+    pendingExtendDays?.let { days ->
+        AlertDialog(
+            onDismissRequest = { pendingExtendDays = null },
+            title = { Text("Extend +$days Days") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "কারণ (ঐচ্ছিক)",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    extendReasons.forEach { reason ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = extendReason == reason,
+                                onClick = { extendReason = reason }
+                            )
+                            Text(reason, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.extendSubscription(days, extendReason)
+                        pendingExtendDays = null
+                    },
+                    enabled = !uiState.isSaving
+                ) { Text("Extend") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingExtendDays = null }) { Text("Cancel") }
+            }
+        )
+    }
 }
 
 @Composable
@@ -138,7 +196,7 @@ private fun AdminUserSettingsContent(
     websites: List<AdminWebsiteDto>,
     isSaving: Boolean,
     onToggleBlock: (Boolean) -> Unit,
-    onGiveTrial: (Int) -> Unit,
+    onExtendSubscription: (Int) -> Unit,
     onUpdateDeviceTrial: (Int, String?, Boolean, String?) -> Unit,
     onPermissionChange: (Int, Boolean?, Boolean?, Boolean?) -> Unit,
     modifier: Modifier = Modifier
@@ -150,7 +208,12 @@ private fun AdminUserSettingsContent(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         UserSummaryCard(user)
-        QuickActionsRow(user, isSaving, onToggleBlock, onGiveTrial)
+        ExtendSubscriptionSection(isSaving = isSaving, onExtend = onExtendSubscription)
+        QuickActionsRow(
+            user = user,
+            isSaving = isSaving,
+            onToggleBlock = onToggleBlock
+        )
         DevicesSection(user.devices, onUpdateDeviceTrial)
         MerchantApiPermissionsSection(websites, isSaving, onPermissionChange)
         Spacer(modifier = Modifier.height(24.dp))
@@ -230,26 +293,63 @@ private fun InfoPill(label: String, value: String) {
 }
 
 @Composable
+private fun ExtendSubscriptionSection(
+    isSaving: Boolean,
+    onExtend: (Int) -> Unit
+) {
+    val options = listOf(1, 3, 7, 15, 30)
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                "Extend Subscription",
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = RoyalIndigo
+            )
+            Text(
+                "বর্তমান সক্রিয় সাবস্ক্রিপশন/ট্রায়ালের মেয়াদ বাড়াবে। একাধিক ক্যাটাগরি থাকলে Shared Expiry অনুযায়ী সবগুলো একসাথে বাড়বে।",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 15.sp
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                options.forEach { days ->
+                    FilledTonalButton(
+                        onClick = { onExtend(days) },
+                        enabled = !isSaving,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                    ) {
+                        Text("+$days", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun QuickActionsRow(
     user: AdminUserDto,
     isSaving: Boolean,
-    onToggleBlock: (Boolean) -> Unit,
-    onGiveTrial: (Int) -> Unit
+    onToggleBlock: (Boolean) -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        FilledTonalButton(
-            onClick = { onGiveTrial(7) },
-            enabled = !isSaving,
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.weight(1f)
-        ) {
-            Icon(Icons.Default.Star, null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("৭ দিন ট্রায়াল", fontSize = 12.sp)
-        }
         Button(
             onClick = { onToggleBlock(!user.blocked) },
             enabled = !isSaving,
@@ -257,14 +357,14 @@ private fun QuickActionsRow(
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (user.blocked) StatusGreen else StatusRed
             ),
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.fillMaxWidth()
         ) {
             Icon(
                 if (user.blocked) Icons.Default.LockOpen else Icons.Default.Block,
                 null,
                 modifier = Modifier.size(16.dp)
             )
-            Spacer(Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(6.dp))
             Text(if (user.blocked) "আনব্লক" else "ব্লক", fontSize = 12.sp)
         }
     }

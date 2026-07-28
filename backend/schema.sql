@@ -334,6 +334,7 @@ INSERT INTO `global_config` (`config_key`, `config_value`) VALUES
   ('sms_tracking_enabled',  'true'),
   ('gmail_tracking_enabled','false'),
   ('trial_days',            '7'),
+  ('trial_plan_name',       'Trial Package'),
   ('telegram_support_link', ''),
   ('whatsapp_support_link', ''),
   ('facebook_support_link', ''),

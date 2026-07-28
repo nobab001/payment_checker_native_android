@@ -60,6 +60,12 @@ interface AdminApiService {
         @Body request: CheckoutTemplateDto
     ): Response<AdminGenericResponse>
 
+    @DELETE("admin/checkout-templates/{id}")
+    suspend fun deleteCheckoutTemplate(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int
+    ): Response<AdminGenericResponse>
+
     // 4. SMTP Accounts
     @GET("admin/email-accounts")
     suspend fun getEmailAccounts(
@@ -121,6 +127,13 @@ interface AdminApiService {
         @Body request: UpdateOtpFormatRequest
     ): Response<AdminGenericResponse>
 
+    @POST("admin/users/{id}/extend-subscription")
+    suspend fun extendSubscription(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Body request: ExtendSubscriptionRequest
+    ): Response<ExtendSubscriptionResponse>
+
     @POST("admin/users/{id}/manual-grace")
     suspend fun updateUserManualGrace(
         @Header("Authorization") token: String,
@@ -166,6 +179,35 @@ interface AdminApiService {
     suspend fun reorderPlans(
         @Header("Authorization") token: String,
         @Body request: PlanReorderRequest
+    ): Response<AdminGenericResponse>
+
+    @POST("admin/plans/{id}/archive")
+    suspend fun archivePlan(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int
+    ): Response<AdminGenericResponse>
+
+    @GET("admin/subscription/v3/settings")
+    suspend fun getV3SubscriptionSettings(
+        @Header("Authorization") token: String
+    ): Response<V3SettingsResponse>
+
+    @POST("admin/subscription/v3/settings")
+    suspend fun updateV3SubscriptionSettings(
+        @Header("Authorization") token: String,
+        @Body request: V3SettingsUpdateRequest
+    ): Response<V3SettingsResponse>
+
+    @GET("admin/subscription/refunds/pending")
+    suspend fun getPendingRefunds(
+        @Header("Authorization") token: String
+    ): Response<V3PendingRefundsResponse>
+
+    @POST("admin/subscription/refunds/{id}/resolve")
+    suspend fun resolveRefund(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Body request: V3ResolveRefundRequest
     ): Response<AdminGenericResponse>
 
     @POST("admin/addon-plans/reorder")
@@ -234,4 +276,5 @@ interface AdminApiService {
         @Path("id") id: Int,
         @Body request: UpdateDemoPaymentRefundRequest
     ): Response<DemoPaymentRefundResponse>
+
 }

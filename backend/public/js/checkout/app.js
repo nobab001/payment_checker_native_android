@@ -2,7 +2,7 @@
  * Checkout app bootstrap — fetch API, build model, mount layout + interaction layers.
  */
 
-import { buildCheckoutModel } from './model.js';
+import { buildCheckoutModel, roundPayableTaka } from './model.js';
 import { CheckoutRenderer } from './checkout-renderer.js';
 import { HeaderComponent } from './components/header.js';
 import { InteractionController } from './interaction/interaction-controller.js';
@@ -58,14 +58,21 @@ function resolveCheckoutPayAmount(providerId = activePayProviderId) {
   }
   const p = findProviderById(id);
   const pay = p?.incentive?.payAmount;
-  return (Number.isFinite(Number(pay)) && Number(pay) > 0) ? Number(pay) : base;
+  const raw = (Number.isFinite(Number(pay)) && Number(pay) > 0) ? Number(pay) : base;
+  // Payment purpose always settles on whole Taka; add_balance keeps exact base when no incentive.
+  if (checkoutModel?.purpose === 'payment') {
+    return roundPayableTaka(raw);
+  }
+  return raw;
 }
 
-/** Header display amount — payment purpose locks to order base; add_balance follows pay amount. */
+/** Header display amount — always whole Taka (no paisa). */
 function resolveHeaderAmount(providerId = activePayProviderId) {
   const base = parseFloat(amount) || 0;
-  if (checkoutModel?.purpose === 'payment') return base;
-  return resolveCheckoutPayAmount(providerId);
+  if (checkoutModel?.purpose === 'payment') {
+    return roundPayableTaka(base);
+  }
+  return roundPayableTaka(resolveCheckoutPayAmount(providerId));
 }
 
 function syncPayableHeader(providerId) {
@@ -362,7 +369,7 @@ function renderProviderSelection(groups, contentEl) {
       if (group.accounts.length === 1) {
         // Only one merchant → auto-redirect
         btn.disabled = true;
-        startLivePay(provider, group.accounts[0].id);
+        startLivePay(provider, group.accounts[0].id, btn);
       } else {
         // Multiple merchants → show merchant selection
         renderMerchantSelection(provider, group.accounts, contentEl);
@@ -404,7 +411,7 @@ function renderMerchantSelection(provider, accounts, contentEl) {
     btn.addEventListener('click', () => {
       btn.disabled = true;
       const merchantAccountId = parseInt(btn.getAttribute('data-merchant-id'), 10);
-      startLivePay(provider, merchantAccountId);
+      startLivePay(provider, merchantAccountId, btn);
     });
   });
 }
@@ -415,14 +422,54 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-async function startLivePay(provider, merchantAccountId) {
+async function startLivePay(provider, merchantAccountId, triggerEl = null) {
+  const busyTargets = [];
+  const markBusy = (el) => {
+    if (!el || el.dataset.liveBusy === '1') return;
+    el.dataset.liveBusy = '1';
+    el.disabled = true;
+    el.classList.add('is-loading');
+    const prev = el.innerHTML;
+    el.dataset.livePrevHtml = prev;
+    el.innerHTML = `<span class="live-pay-spinner" aria-hidden="true"></span><span>রিডাইরেক্ট হচ্ছে…</span>`;
+    busyTargets.push(el);
+  };
+  const clearBusy = () => {
+    busyTargets.forEach((el) => {
+      el.disabled = false;
+      el.classList.remove('is-loading');
+      el.dataset.liveBusy = '0';
+      if (el.dataset.livePrevHtml != null) {
+        el.innerHTML = el.dataset.livePrevHtml;
+        delete el.dataset.livePrevHtml;
+      }
+    });
+  };
+
+  if (triggerEl) markBusy(triggerEl);
+  document.querySelectorAll('[data-live]').forEach((el) => {
+    if (el.getAttribute('data-live') === String(provider || '')) markBusy(el);
+  });
+
+  const loadingHost = document.getElementById('pay-content');
+  if (loadingHost && !loadingHost.querySelector('.live-pay-loading')) {
+    const overlay = document.createElement('div');
+    overlay.className = 'live-pay-loading-overlay';
+    overlay.innerHTML = `<div class="live-pay-loading" style="text-align:center;padding:24px 16px;">
+      <div class="live-pay-spinner lg" aria-hidden="true"></div>
+      <p style="margin-top:12px;color:#475569;">পেমেন্ট গেটওয়ে খোলা হচ্ছে…</p>
+    </div>`;
+    loadingHost.prepend(overlay);
+  }
+
   try {
     const body = { provider, amount: resolveCheckoutPayAmount() };
     if (merchantAccountId != null && Number.isFinite(Number(merchantAccountId))) {
       body.merchantAccountId = Number(merchantAccountId);
     }
     if (successUrl) body.successUrl = successUrl;
-    if (cancelUrl) body.cancelUrl = cancelUrl;
+    // Default cancel back to this checkout page so bKash cancel/back lands here with messaging.
+    body.cancelUrl = cancelUrl || window.location.href.split('#')[0];
     if (demoSessionId) body.demoSessionId = demoSessionId;
 
     const r = await fetch(`/api/checkout/${apiKey}/live-init`, {
@@ -430,18 +477,23 @@ async function startLivePay(provider, merchantAccountId) {
       body: JSON.stringify(body),
     });
     const res = await r.json();
-    if (res.success && res.redirectUrl) {
-      // bKash blocks iframe embedding — always navigate the top window
+    const gatewayUrl = res.bkashURL || res.redirectUrl;
+    if (res.success && gatewayUrl) {
+      // Replace checkout entry so Back from bKash never lands on a sticky intermediate page.
       const topWin = window.top || window;
-      topWin.location.href = res.redirectUrl;
+      topWin.location.replace(gatewayUrl);
       return;
     }
     const errMsg = res.message || res.error || 'লাইভ পেমেন্ট শুরু করা যায়নি।';
     showStatus(errMsg, 'err');
     console.warn('[live-init]', errMsg, res);
+    clearBusy();
+    loadingHost?.querySelector('.live-pay-loading-overlay')?.remove();
   } catch (e) {
     showStatus('সংযোগ ত্রুটি।', 'err');
     console.warn('[live-init]', e);
+    clearBusy();
+    loadingHost?.querySelector('.live-pay-loading-overlay')?.remove();
   }
 }
 
@@ -568,6 +620,21 @@ document.addEventListener('checkout:tab-change', (e) => onTabChange(e.detail.tab
 
 window.addEventListener('load', () => {
   bindVerifyButtons();
+  // Returning from bKash cancel/failure — show message, stay on checkout (no hang).
+  const payStatus = (urlParams.get('status') || urlParams.get('paymentStatus') || '').toLowerCase();
+  const reason = urlParams.get('reason') || urlParams.get('error') || '';
+  if (payStatus === 'cancel' || payStatus === 'cancelled' || payStatus === 'failed') {
+    const msg = reason
+      ? `পেমেন্ট সম্পন্ন হয়নি: ${reason}`
+      : 'পেমেন্ট বাতিল হয়েছে অথবা সম্পন্ন হয়নি। আবার চেষ্টা করুন।';
+    // Clean sticky query so refresh doesn't re-toast forever
+    try {
+      const u = new URL(window.location.href);
+      ['status', 'paymentStatus', 'reason', 'error'].forEach((k) => u.searchParams.delete(k));
+      window.history.replaceState({}, '', u.pathname + u.search + u.hash);
+    } catch (_) { /* ignore */ }
+    setTimeout(() => showStatus(msg, 'err'), 400);
+  }
   fetchLayout();
 });
 

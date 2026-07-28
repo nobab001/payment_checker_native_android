@@ -3,6 +3,12 @@ const dataSyncCache = require('../services/dataSyncCache');
 const layoutHelper = require('../services/checkoutLayoutHelper');
 const imageUpload = require('../services/imageUploadService');
 const jwt = require('jsonwebtoken');
+const { syncUserEntitlements } = require('../services/accountEntitlementsService');
+const {
+  isTrialPlanNameAsync,
+  setTrialPlanName,
+  CONFIG_KEY: TRIAL_PLAN_NAME_KEY,
+} = require('../services/trialPlanService');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -64,7 +70,11 @@ async function updateConfig(req, res) {
     const { key, value, configs } = req.body;
 
     if (configs && typeof configs === 'object') {
-      const updates = Object.entries(configs).map(([k, v]) => {
+      const entries = Object.entries(configs);
+      const trialRename = entries.find(([k]) => k === TRIAL_PLAN_NAME_KEY);
+      const otherEntries = entries.filter(([k]) => k !== TRIAL_PLAN_NAME_KEY);
+
+      const updates = otherEntries.map(([k, v]) => {
         return prisma.global_config.upsert({
           where: { config_key: k },
           update: { config_value: String(v) },
@@ -72,10 +82,20 @@ async function updateConfig(req, res) {
         });
       });
       await Promise.all(updates);
+
+      if (trialRename) {
+        await setTrialPlanName(String(trialRename[1]));
+      }
+
       return res.json({ success: true, message: 'Configurations updated successfully.' });
     }
 
     if (!key) return res.status(400).json({ error: 'config_key is required' });
+
+    if (key === TRIAL_PLAN_NAME_KEY) {
+      await setTrialPlanName(String(value));
+      return res.json({ success: true, message: 'Configuration updated successfully.' });
+    }
     
     await prisma.global_config.upsert({
       where: { config_key: key },
@@ -85,7 +105,7 @@ async function updateConfig(req, res) {
     return res.json({ success: true, message: 'Configuration updated successfully.' });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 }
 
@@ -315,6 +335,23 @@ async function saveCheckoutTemplate(req, res) {
     });
     return res.json({ success: true, message: 'Checkout instructions saved successfully.' });
   } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+async function deleteCheckoutTemplate(req, res) {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'Missing template id' });
+    }
+    await prisma.checkout_view_templates.delete({ where: { id } });
+    return res.json({ success: true, message: 'Checkout instruction mapping deleted.' });
+  } catch (err) {
+    if (err?.code === 'P2025') {
+      return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'ম্যাপিং পাওয়া যায়নি।' });
+    }
     console.error(err);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
@@ -623,7 +660,7 @@ async function addSite(req, res) {
     }
 
     let maxSites = 1;
-    if (user.active_plan_name === 'Trial Package') {
+    if (await isTrialPlanNameAsync(user.active_plan_name)) {
       const configVal = await prisma.global_config.findUnique({
         where: { config_key: 'trial_max_sites' }
       });
@@ -685,50 +722,43 @@ async function addSite(req, res) {
 
 
 async function manualGrace(req, res) {
+  return res.status(410).json({
+    success: false,
+    error: 'DEPRECATED',
+    message: 'পুরনো manual-grace বাতিল। Extend Subscription (+1/+3/+7/+15/+30) ব্যবহার করুন।',
+  });
+}
+
+async function extendSubscription(req, res) {
   try {
     const { id } = req.params;
-    let { credits } = req.body;
-
-    let daysValue = parseInt(credits, 10);
-    if (isNaN(daysValue) || daysValue < 0) {
-      daysValue = 7;
+    const days = parseInt(req.body?.days ?? req.body?.credits, 10);
+    if (!id || Number.isNaN(days)) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_REQUEST',
+        message: 'days (1/3/7/15/30) প্রয়োজন।',
+      });
     }
-
-    const user = await prisma.users.findUnique({
-      where: { id: parseInt(id) },
-      select: { expiry_date: true, is_paid: true }
+    const { extendSubscription: extendSub } = require('../services/subscriptionV3/extendSubscriptionService');
+    const result = await extendSub(id, days, {
+      adminId: req.user.userId,
+      ipAddress: req.ip,
+      reason: req.body?.reason,
     });
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+    if (result.error) {
+      return res.status(400).json({ success: false, error: result.error, message: result.message });
     }
-
-    let baseDate = new Date();
-    if (user.is_paid && user.expiry_date && new Date(user.expiry_date) > new Date()) {
-      baseDate = new Date(user.expiry_date);
-    }
-
-    baseDate.setDate(baseDate.getDate() + daysValue);
-    const formattedExpiry = new Date(baseDate);
-
-    await prisma.users.update({
-      where: { id: parseInt(id) },
-      data: {
-        is_paid: 1,
-        active_plan_name: 'Basic',
-        expiry_date: formattedExpiry
-      }
-    });
-
     return res.json({
       success: true,
-      message: `ব্যবহারকারীকে সফলভাবে ${daysValue} দিনের সাবস্ক্রিপশন মেয়াদ প্রদান করা হয়েছে।`,
-      is_paid: 1,
-      active_plan_name: 'Basic',
-      expiry_date: formattedExpiry
+      message: result.message,
+      extended_days: result.extended_days,
+      new_expiry: result.new_expiry,
+      mode: result.mode,
     });
   } catch (err) {
-    console.error('[Admin Billing] manualGrace error:', err);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    console.error('[Admin] extendSubscription error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 }
 
@@ -1083,6 +1113,7 @@ module.exports = {
   deleteSmsTemplate,
   getCheckoutTemplates,
   saveCheckoutTemplate,
+  deleteCheckoutTemplate,
   getEmailAccounts,
   saveEmailAccount,
   deleteEmailAccount,
@@ -1098,5 +1129,6 @@ module.exports = {
   updateOtpFormat,
   addSite,
   manualGrace,
+  extendSubscription,
   generateCustomRegex
 };
