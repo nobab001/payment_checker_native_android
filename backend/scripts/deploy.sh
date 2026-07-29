@@ -4,13 +4,13 @@
 # ------------------------------------------------------------------
 # Source of truth: GitHub main. This script NEVER edits production files
 # directly; it builds in /tmp, gates on lint + unit tests, cuts a release,
-# switches the `current` symlink, and reloads ONLY this project's PM2 app.
+# switches the `current` symlink, and restarts (delete+start) ONLY this project's PM2 app.
 #
 # Flow:
 #   backup DB -> clone <ref> to /tmp/deploy/payment-checker -> npm ci
 #   -> prisma generate -> lint (syntax) -> unit tests -> cut release
 #   -> link shared (.env/uploads/downloads/logs) -> switch current
-#   -> pm2 reload -> POST health (auto-rollback on failure)
+#   -> pm2 delete+start -> POST health (auto-rollback on failure)
 #   -> retention (10 releases / 10 backups) -> cleanup temp
 #
 # Any gate failure BEFORE the symlink switch => STOP, production untouched.
@@ -139,14 +139,32 @@ log "==> switch current -> ${RELEASE_DIR}"
 ln -sfn "${RELEASE_DIR}" "${APP_ROOT}/current"
 log "current -> $(readlink -f "${APP_ROOT}/current")"
 
-# ---- 8. reload ONLY this project's PM2 apps -----------------------
-log "==> pm2 reload ${PM2_API}"
+# ---- 8. restart ONLY this project's PM2 apps ----------------------
+# IMPORTANT: `pm2 reload`/`restart` reuse the process's frozen, realpath-resolved
+# exec cwd/script and NEVER re-read the `current` symlink. After a symlink switch
+# they therefore keep serving the OLD release — this is the bug that left the
+# 2026-07-29 checkout redesign un-served while the post-health check passed
+# against the stale-but-healthy server. The only way to pick up the new release
+# is `pm2 delete` + `pm2 start` against `current`, which re-resolves the symlink
+# at start time. Fork-mode reload was never zero-downtime anyway, so the brief
+# delete/start gap is acceptable.
+log "==> pm2 delete+start ${PM2_API} (re-resolve current)"
 cd "${APP_ROOT}/current"
-pm2 reload "${PM2_API}" --update-env || pm2 reload "${PM2_API}" || {
-  log "reload failed — rolling back"
-  "${SCRIPTS_DIR}/rollback.sh" "${PREV_RELEASE}"; die "pm2 reload failed";
+pm2 delete "${PM2_API}" || true
+pm2 start app.js --name "${PM2_API}" --cwd "${APP_ROOT}/current" || {
+  log "pm2 start failed — rolling back to ${PREV_RELEASE}"
+  # rollback.sh also uses delete+start, so it re-creates the process on the
+  # previous release even though we just deleted it here.
+  "${SCRIPTS_DIR}/rollback.sh" "${PREV_RELEASE}"; die "pm2 start failed";
 }
 # optional companion services (only if they already exist)
+# NOTE: these share the same frozen-cwd limitation as the API above — `reload`
+# will NOT re-resolve `current`. They are intentionally left on reload here
+# because (a) their start args/entrypoints are not codified in this script, and
+# (b) they are not deployed on the current VPS, so this loop is a guarded no-op
+# in production today. If/when a companion is enabled, migrate it to the same
+# delete+start pattern using a committed pm2 ecosystem config that records each
+# service's script + args, so its cwd can be re-resolved safely.
 for svc in "${PM2_WORKER}" "${PM2_SOCKET}"; do
   if pm2 describe "${svc}" >/dev/null 2>&1; then
     log "==> pm2 reload ${svc}"

@@ -36,7 +36,14 @@ log "to:   ${TARGET}"
 ln -sfn "${TARGET}" "${APP_ROOT}/current"
 log "current -> $(readlink -f "${APP_ROOT}/current")"
 
-pm2 reload "${PM2_API}" --update-env || pm2 reload "${PM2_API}" || { log "FATAL: pm2 reload failed"; exit 1; }
+# delete+start (NOT reload): reload reuses the frozen exec cwd and would keep
+# serving whatever release the process was last started from, so a rollback
+# would silently keep running the wrong release. delete+start re-resolves
+# `current`. This is also safe when the process is currently absent (e.g. when
+# deploy.sh invokes us after a failed `pm2 start`), because delete is guarded.
+cd "${APP_ROOT}/current"
+pm2 delete "${PM2_API}" || true
+pm2 start app.js --name "${PM2_API}" --cwd "${APP_ROOT}/current" || { log "FATAL: pm2 start failed"; exit 1; }
 pm2 save >/dev/null 2>&1 || true
 
 sleep 3
