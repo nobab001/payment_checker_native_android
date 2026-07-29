@@ -1,10 +1,9 @@
 const prisma = require('../db/prisma');
 const { getUserEntitlements } = require('../services/accountEntitlementsService');
-const { isUserOnTrial } = require('../services/subscriptionV3/trialFlagService');
 
 function isActiveSubscription(user) {
   if (!user.is_paid || user.active_plan_name === 'FREE_LEVEL') return false;
-  if (Number(user.is_trial) === 1) return true;
+  // Trial and paid both use expiry_date — no Prisma is_trial select (client may lag).
   if (!user.expiry_date) return false;
   const expiry = new Date(user.expiry_date);
   expiry.setHours(0, 0, 0, 0);
@@ -25,7 +24,7 @@ function isActiveCustomSenderAddon(user) {
 
 /**
  * Middleware: checkBillingStatus
- * Allows access when user has an active subscription OR an active entitlement (e.g. payment-checker addon).
+ * Allows access when user has an active subscription OR an active entitlement.
  */
 async function checkBillingStatus(req, res, next) {
   try {
@@ -38,7 +37,6 @@ async function checkBillingStatus(req, res, next) {
       where: { id: userId },
       select: {
         is_paid: true,
-        is_trial: true,
         active_plan_name: true,
         role: true,
         expiry_date: true,
@@ -62,7 +60,9 @@ async function checkBillingStatus(req, res, next) {
       ent.perm_custom_sender === 1 ||
       ent.perm_template === 1 ||
       ent.perm_website === 1 ||
-      ent.perm_device === 1
+      ent.perm_device === 1 ||
+      Number(ent.perm_smart_popup || 0) === 1 ||
+      Number(ent.perm_manual_transaction || 0) === 1
     );
 
     if (hasSub || hasAddon || hasAnyPermission) {

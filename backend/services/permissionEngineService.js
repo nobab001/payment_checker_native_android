@@ -5,7 +5,7 @@
 
 const prisma = require('../db/prisma');
 const { ensureSubscriptionV3Schema } = require('./subscriptionV3/schema');
-const { isV3Enabled, getGracePeriodMinutes } = require('./subscriptionV3/configService');
+const { isV3Enabled } = require('./subscriptionV3/configService');
 const { getEffectiveExpiry, getUserSubscriptions, formatYmd, dateOnly } = require('./subscriptionV3/sharedExpiryService');
 const { isUserOnTrial } = require('./subscriptionV3/trialFlagService');
 const { getUserEntitlements: legacyGetEntitlements, syncUserEntitlements: legacySync } = require('./accountEntitlementsService');
@@ -35,6 +35,7 @@ async function getTrialEntitlements() {
     perm_website: 1,
     perm_device: 1,
     perm_smart_popup: 1,
+    perm_manual_transaction: 0,
     perm_gateway: 1,
     perm_personal: 1,
     perm_personal_business: 1,
@@ -51,6 +52,7 @@ function zeroEntitlements() {
     perm_website: 0,
     perm_device: 0,
     perm_smart_popup: 0,
+    perm_manual_transaction: 0,
     perm_gateway: 0,
     perm_personal: 0,
     perm_personal_business: 0,
@@ -75,6 +77,7 @@ async function computeV3Entitlements(userId) {
       perm_website: 1,
       perm_device: 1,
       perm_smart_popup: 1,
+      perm_manual_transaction: 1,
       perm_gateway: 1,
       perm_personal: 1,
       perm_personal_business: 1,
@@ -85,10 +88,9 @@ async function computeV3Entitlements(userId) {
   }
 
   if (await isUserOnTrial(userId)) {
-    const trialExp = user.expiry_date ? new Date(user.expiry_date) : null;
-    const graceMin = await getGracePeriodMinutes();
-    const effective = trialExp ? new Date(trialExp.getTime() + graceMin * 60000) : null;
-    if (!trialExp || new Date() <= effective) {
+    const trialExp = user.expiry_date ? dateOnly(user.expiry_date) : null;
+    const today = dateOnly();
+    if (!trialExp || today <= trialExp) {
       return getTrialEntitlements();
     }
     return zeroEntitlements();
@@ -115,6 +117,7 @@ async function computeV3Entitlements(userId) {
     perm_website: 0,
     perm_device: 0,
     perm_smart_popup: 0,
+    perm_manual_transaction: 0,
     perm_gateway: 0,
     perm_personal: 0,
     perm_personal_business: 0,
@@ -126,9 +129,8 @@ async function computeV3Entitlements(userId) {
 
   for (const s of subs) {
     const exp = dateOnly(s.expires_at);
-    const graceMin = await getGracePeriodMinutes();
-    const effective = new Date(exp.getTime() + graceMin * 60000);
-    if (new Date() > effective) continue;
+    const today = dateOnly();
+    if (today > exp) continue;
 
     ent.eff_max_devices = Math.max(ent.eff_max_devices, Number(s.device_limit_internal || 50));
     ent.eff_max_sites = Math.max(ent.eff_max_sites, Number(s.website_limit_internal || 0));
@@ -147,10 +149,27 @@ async function computeV3Entitlements(userId) {
       ent.perm_personal = 1;
       ent.perm_custom_sender = 1;
     }
+
+    // Package-level optional perms (Manual Transaction, Smart Popup overrides)
+    const sku = String(s.package_sku || '').trim();
+    if (sku) {
+      const planRows = await prisma.$queryRaw`
+        SELECT perm_manual_transaction, perm_smart_popup
+        FROM subscription_plans
+        WHERE sku_key = ${sku} OR plan_name = ${sku}
+        LIMIT 1
+      `;
+      const plan = planRows[0];
+      if (plan) {
+        if (Number(plan.perm_manual_transaction) === 1) ent.perm_manual_transaction = 1;
+        if (Number(plan.perm_smart_popup) === 1) ent.perm_smart_popup = 1;
+      }
+    }
   }
 
   if (addonSet.has('smart_popup')) ent.perm_smart_popup = 1;
   if (addonSet.has('custom_sender')) ent.perm_custom_sender = 1;
+  if (addonSet.has('manual_transaction')) ent.perm_manual_transaction = 1;
   if (addonSet.has('gateway_permission')) {
     ent.perm_gateway = 1;
     ent.perm_website = 1;
@@ -173,6 +192,7 @@ async function ensureSubscriptionFresh(userId) {
       perm_website = ${ent.perm_website},
       perm_device = ${ent.perm_device},
       perm_smart_popup = ${ent.perm_smart_popup},
+      perm_manual_transaction = ${ent.perm_manual_transaction || 0},
       eff_max_devices = ${ent.eff_max_devices},
       eff_max_sites = ${ent.eff_max_sites}
     WHERE id = ${Number(userId)}

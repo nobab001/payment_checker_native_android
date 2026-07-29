@@ -8,6 +8,7 @@ data class AccountEntitlementsDto(
     @SerializedName("perm_website") val permWebsite: Int = 0,
     @SerializedName("perm_device") val permDevice: Int = 0,
     @SerializedName("perm_smart_popup") val permSmartPopup: Int = 0,
+    @SerializedName("perm_manual_transaction") val permManualTransaction: Int = 0,
     @SerializedName("eff_max_devices") val effMaxDevices: Int = 0,
     @SerializedName("eff_max_sites") val effMaxSites: Int = 0,
     /** Comm Policy v1.0 — welcome|personal|personal_business|gateway */
@@ -20,6 +21,7 @@ data class AccountEntitlementsDto(
     val hasWebsite: Boolean get() = permWebsite == 1
     val hasDevice: Boolean get() = permDevice == 1
     val hasSmartPopup: Boolean get() = permSmartPopup == 1
+    val hasManualTransaction: Boolean get() = permManualTransaction == 1
 }
 
 data class AccountEntitlementsResponse(

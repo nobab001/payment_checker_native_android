@@ -87,6 +87,13 @@ async function updateConfig(req, res) {
         await setTrialPlanName(String(trialRename[1]));
       }
 
+      if (entries.some(([k]) => k === 'maintenance_mode')) {
+        try {
+          const { bustMaintenanceCache } = require('../services/maintenanceService');
+          bustMaintenanceCache();
+        } catch (_) { /* ignore */ }
+      }
+
       return res.json({ success: true, message: 'Configurations updated successfully.' });
     }
 
@@ -102,6 +109,13 @@ async function updateConfig(req, res) {
       update: { config_value: String(value) },
       create: { config_key: key, config_value: String(value) }
     });
+
+    if (key === 'maintenance_mode') {
+      try {
+        const { bustMaintenanceCache } = require('../services/maintenanceService');
+        bustMaintenanceCache();
+      } catch (_) { /* ignore */ }
+    }
     return res.json({ success: true, message: 'Configuration updated successfully.' });
   } catch (err) {
     console.error(err);

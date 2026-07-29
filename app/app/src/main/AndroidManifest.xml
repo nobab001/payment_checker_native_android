@@ -74,6 +74,15 @@
             </intent-filter>
         </activity>
 
+        <!-- In-app checkout WebView — subscription & hosted checkout URLs -->
+        <activity
+            android:name=".ui.checkout.CheckoutActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:hardwareAccelerated="true"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- SMS BroadcastReceiver — receives incoming SMS intents -->
         <receiver
             android:name=".services.sms.SmsReceiver"

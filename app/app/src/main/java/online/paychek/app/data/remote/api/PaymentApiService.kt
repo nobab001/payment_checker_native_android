@@ -67,6 +67,12 @@ interface PaymentApiService {
         @Path("id") transactionId: Int
     ): Response<CredentialActionResponse>
 
+    @POST("sms-history/manual")
+    suspend fun createManualTransaction(
+        @Header("Authorization") token: String,
+        @Body request: ManualTransactionRequest
+    ): Response<ManualTransactionResponse>
+
 
     @POST("v1/subscription/fcm-token")
     suspend fun updateFcmToken(

@@ -50,6 +50,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import online.paychek.app.ui.screen.maintenance.MaintenanceScreen
 import online.paychek.app.ui.theme.*
 import online.paychek.app.utils.adaptivePadding
 import online.paychek.app.utils.adaptiveTextSize
@@ -116,6 +117,11 @@ fun LoginScreen(
 
     val isBypass = uiState.contact == uiState.adminSecretUsername
     var adminBypassOpenedAt by remember { mutableStateOf<Long?>(null) }
+
+    if (uiState.isMaintenanceMode && !isBypass) {
+        MaintenanceScreen(modifier = modifier.fillMaxSize())
+        return
+    }
 
     // Subtle enter animations only (screenshot reference)
     var logoVisible by remember { mutableStateOf(false) }

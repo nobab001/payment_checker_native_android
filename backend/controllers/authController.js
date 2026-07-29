@@ -494,6 +494,15 @@ async function sendOtp(req, res) {
       return res.json({ success: true, message: 'এডমিন ওটিপি বাইপাস সক্রিয়। অনুগ্রহ করে পাসওয়ার্ড দিন।' });
     }
 
+    const { isMaintenanceModeOn } = require('../services/maintenanceService');
+    if (await isMaintenanceModeOn()) {
+      return res.status(503).json({
+        success: false,
+        error: 'MAINTENANCE_MODE',
+        message: 'সিস্টেম রক্ষণাবেক্ষণ চলছে। কিছুক্ষণ পর আবার চেষ্টা করুন।',
+      });
+    }
+
     let targetUserId = null;
     if (cleanedContact) {
       const userRecord = await findUserByContact(cleanedContact);

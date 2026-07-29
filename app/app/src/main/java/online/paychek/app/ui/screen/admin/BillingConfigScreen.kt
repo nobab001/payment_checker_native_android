@@ -72,6 +72,7 @@ fun BillingConfigScreen(
     var planPermWebsite by remember { mutableStateOf(true) }
     var planPermDevice by remember { mutableStateOf(true) }
     var planPermSmartPopup by remember { mutableStateOf(false) }
+    var planPermManualTransaction by remember { mutableStateOf(false) }
 
     // PIN Verification Dialog states
     var showPinDialog by remember { mutableStateOf(false) }
@@ -119,21 +120,7 @@ fun BillingConfigScreen(
     var previewSubscriptionPlan by remember { mutableStateOf<SubscriptionPlanDto?>(null) }
     var previewAddonPlan by remember { mutableStateOf<AddonPlanDto?>(null) }
 
-    var v3TrialDays by remember { mutableStateOf("7") }
-    var v3QuoteValidity by remember { mutableStateOf("15") }
-    var v3GracePeriod by remember { mutableStateOf("5") }
-    var v3Maintenance by remember { mutableStateOf(false) }
-
-    LaunchedEffect(uiState.v3Settings) {
-        uiState.v3Settings?.let { s ->
-            v3TrialDays = s.trialDays.toString()
-            v3QuoteValidity = s.quoteValidityMin.toString()
-            v3GracePeriod = s.gracePeriodMin.toString()
-            v3Maintenance = s.subscriptionMaintenance
-        }
-    }
-
-    val tabOrder = uiState.billingTabOrder
+    val tabOrder = uiState.billingTabOrder.filter { it != "personal_custom_center" }
     LaunchedEffect(tabOrder) {
         if (adminPlanTab !in tabOrder.indices) adminPlanTab = 0
     }
@@ -347,6 +334,14 @@ fun BillingConfigScreen(
                         Text("স্মার্ট পপ-আপ", color = TextPrimary, fontSize = 13.sp)
                         Switch(checked = planPermSmartPopup, onCheckedChange = { planPermSmartPopup = it })
                     }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Manual Transaction", color = TextPrimary, fontSize = 13.sp)
+                        Switch(checked = planPermManualTransaction, onCheckedChange = { planPermManualTransaction = it })
+                    }
                 }
             },
             confirmButton = {
@@ -375,6 +370,7 @@ fun BillingConfigScreen(
                                     permWebsite = if (planPermWebsite) 1 else 0,
                                     permDevice = if (planPermDevice) 1 else 0,
                                     permSmartPopup = if (planPermSmartPopup) 1 else 0,
+                                    permManualTransaction = if (planPermManualTransaction) 1 else 0,
                                     features = featuresToSave
                                 )
                             ) { success ->
@@ -755,96 +751,8 @@ fun BillingConfigScreen(
             .verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        if (uiState.v3Settings != null) {
-            Text(
-                text = "⚙️ Subscription v3 সেটিংস",
-                color = TextPrimary,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Card(
-                colors = CardDefaults.cardColors(containerColor = CardBackground),
-                shape = RoundedCornerShape(12.dp),
-                border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = v3TrialDays,
-                        onValueChange = { v3TrialDays = it },
-                        label = { Text("Trial Days") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = v3QuoteValidity,
-                        onValueChange = { v3QuoteValidity = it },
-                        label = { Text("Quote Validity (min)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = v3GracePeriod,
-                        onValueChange = { v3GracePeriod = it },
-                        label = { Text("Grace Period (min: 0/5/10/30)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Maintenance Lock", modifier = Modifier.weight(1f))
-                        Switch(checked = v3Maintenance, onCheckedChange = { v3Maintenance = it })
-                    }
-                    Button(
-                        onClick = {
-                            viewModel.saveV3SubscriptionSettings(
-                                trialDays = v3TrialDays.toIntOrNull() ?: 7,
-                                quoteValidityMin = v3QuoteValidity.toIntOrNull() ?: 15,
-                                gracePeriodMin = v3GracePeriod.toIntOrNull() ?: 5,
-                                maintenance = v3Maintenance
-                            ) { ok ->
-                                if (ok) Toast.makeText(context, "v3 সেটিংস সেভ হয়েছে", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("v3 সেটিংস সেভ") }
-                }
-            }
-
-            if (uiState.pendingRefunds.isNotEmpty()) {
-                Text(
-                    text = "💸 Pending Refunds (${uiState.pendingRefunds.size})",
-                    color = TextPrimary,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                uiState.pendingRefunds.forEach { refund ->
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = CardBackground),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(refund.packageFullName ?: "—", fontWeight = FontWeight.SemiBold)
-                            Text("Invoice: ${refund.invoiceNo} • User #${refund.userId}", fontSize = 12.sp, color = TextSecondary)
-                            Text(refund.reason ?: "", fontSize = 12.sp)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = { viewModel.resolvePendingRefund(refund.id, false) }) {
-                                    Text("Reject")
-                                }
-                                Button(
-                                    onClick = { viewModel.resolvePendingRefund(refund.id, true) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo)
-                                ) { Text("Approve") }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         Text(
-            text = "🎁 ওয়েলকাম ট্রায়াল প্যাকেজ সেটিংস",
+            text = "🎁 Welcome Trial Package",
             color = TextPrimary,
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold
@@ -1089,7 +997,7 @@ fun BillingConfigScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "📋 বিলিং প্যাকেজ",
+                text = "📋 Subscription Packages",
                 color = TextPrimary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
@@ -1113,36 +1021,25 @@ fun BillingConfigScreen(
                 }
                 IconButton(
                     onClick = {
-                        if (selectedTabKey == "personal_custom_center") {
-                            editingAddon = null
-                            addonName = ""
-                            addonPrice = ""
-                            addonDurationDays = "30"
-                            addonDescription = ""
-                            addonIsActive = true
-                            addonMaxDevices = "2"
-                            addonFeatures = emptyList()
-                            showCreateAddonDialog = true
+                        editingPlan = null
+                        planName = ""
+                        planPrice = ""
+                        planMaxSites = ""
+                        planMaxDevices = ""
+                        planDurationDays = "365"
+                        planIsCustomSenderAllowed = false
+                        planCategory = if (selectedTabKey == "personal_business") {
+                            "personal_business"
                         } else {
-                            editingPlan = null
-                            planName = ""
-                            planPrice = ""
-                            planMaxSites = ""
-                            planMaxDevices = ""
-                            planDurationDays = "365"
-                            planIsCustomSenderAllowed = false
-                            planCategory = if (selectedTabKey == "personal_business") {
-                                "personal_business"
-                            } else {
-                                "payment_gateway"
-                            }
-                            planPermTemplate = true
-                            planPermWebsite = true
-                            planPermDevice = true
-                            planPermSmartPopup = false
-                            planFeatures = emptyList()
-                            showCreatePlanDialog = true
+                            "payment_gateway"
                         }
+                        planPermTemplate = true
+                        planPermWebsite = true
+                        planPermDevice = true
+                        planPermSmartPopup = false
+                        planPermManualTransaction = false
+                        planFeatures = emptyList()
+                        showCreatePlanDialog = true
                     },
                     colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
@@ -1213,89 +1110,8 @@ fun BillingConfigScreen(
             }
         }
 
-        if (selectedTabKey == "personal_custom_center") {
-            Text(
-                text = "ইউজার অ্যাপের এই ট্যাবে অ্যাড-অন প্যাকেজ দেখাবে। ক্রয় করলে কাস্টম সেন্ডার পারমিশন সক্রিয় হয়।",
-                color = TextSecondary,
-                fontSize = 11.sp
-            )
-            if (uiState.addonPlans.isEmpty()) {
-                Text("কোনো প্যাকেজ নেই। + দিয়ে তৈরি করুন।", color = TextSecondary, fontSize = 12.sp)
-            } else {
-                uiState.addonPlans.forEachIndexed { index, addon ->
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = CardBackground),
-                        shape = RoundedCornerShape(12.dp),
-                        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                editingAddon = addon
-                                addonName = addon.planName
-                                addonPrice = addon.price.toString()
-                                addonDurationDays = addon.durationDays.toString()
-                                addonDescription = addon.description.orEmpty()
-                                addonIsActive = addon.isActive == 1
-                                addonMaxDevices = addon.maxDevices.toString()
-                                addonFeatures = addon.features.orEmpty()
-                                showCreateAddonDialog = true
-                            }
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(addon.planName, fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(
-                                        onClick = { addon.id?.let { viewModel.moveAddonPlan(it, -1) } },
-                                        enabled = index > 0,
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = "উপরে", modifier = Modifier.size(20.dp))
-                                    }
-                                    IconButton(
-                                        onClick = { addon.id?.let { viewModel.moveAddonPlan(it, 1) } },
-                                        enabled = index < uiState.addonPlans.lastIndex,
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "নিচে", modifier = Modifier.size(20.dp))
-                                    }
-                                    TextButton(
-                                        onClick = { previewAddonPlan = addon },
-                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                                    ) { Text("বিস্তারিত", fontSize = 11.sp) }
-                                    Text("৳${addon.price}", fontWeight = FontWeight.Bold, color = Color(0xFF22D3EE), fontSize = 15.sp)
-                                    IconButton(
-                                        onClick = {
-                                            addonToDelete = addon
-                                            planToDelete = null
-                                            showPinDialog = true
-                                        },
-                                        modifier = Modifier.size(36.dp)
-                                    ) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = StatusRed, modifier = Modifier.size(20.dp))
-                                    }
-                                }
-                            }
-                            Text("মেয়াদ: ${addon.durationDays} দিন", color = Color(0xFF10B981), fontSize = 12.sp)
-                            addon.description?.takeIf { it.isNotBlank() }?.let {
-                                Text(it, color = TextSecondary, fontSize = 12.sp)
-                            }
-                            Text(
-                                if (addon.isActive == 1) "স্ট্যাটাস: সক্রিয়" else "স্ট্যাটাস: নিষ্ক্রিয়",
-                                color = if (addon.isActive == 1) Color(0xFF10B981) else StatusRed,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                }
-            }
-        } else {
-            val categoryPreviewPlan = filteredAdminPlans.firstOrNull()
-            if (categoryPreviewPlan != null) {
+        val categoryPreviewPlan = filteredAdminPlans.firstOrNull()
+        if (categoryPreviewPlan != null) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = { previewSubscriptionPlan = categoryPreviewPlan }) {
                         Text("বিস্তারিত — ${categoryPreviewPlan.planName}")
@@ -1326,6 +1142,7 @@ fun BillingConfigScreen(
                                 planPermWebsite = plan.permWebsite == 1
                                 planPermDevice = plan.permDevice == 1
                                 planPermSmartPopup = plan.permSmartPopup == 1
+                                planPermManualTransaction = plan.permManualTransaction == 1
                                 planFeatures = plan.features.orEmpty()
                                 showCreatePlanDialog = true
                             }
@@ -1383,7 +1200,6 @@ fun BillingConfigScreen(
                     }
                 }
             }
-        }
     }
 
     previewSubscriptionPlan?.let { plan ->
@@ -1419,6 +1235,7 @@ fun BillingConfigScreen(
                 planPermWebsite = plan.permWebsite == 1
                 planPermDevice = plan.permDevice == 1
                 planPermSmartPopup = plan.permSmartPopup == 1
+                planPermManualTransaction = plan.permManualTransaction == 1
                 planFeatures = plan.features.orEmpty()
                 showCreatePlanDialog = true
             }

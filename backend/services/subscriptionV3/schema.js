@@ -210,12 +210,12 @@ async function ensureSubscriptionV3Schema() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  try {
-    const { backfillIsTrialFlags } = require('./trialFlagService');
-    await backfillIsTrialFlags();
-  } catch (_) {}
-
   ready = true;
+
+  // Backfill off the critical path — never block auth/billing requests.
+  setImmediate(() => {
+    require('./trialFlagService').backfillIsTrialFlags().catch(() => {});
+  });
 }
 
 module.exports = { ensureSubscriptionV3Schema, columnExists, ensureColumn };

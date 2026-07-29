@@ -229,6 +229,7 @@ data class SubscriptionPlanDto(
     @SerializedName("perm_website") val permWebsite: Int = 1,
     @SerializedName("perm_device") val permDevice: Int = 1,
     @SerializedName("perm_smart_popup") val permSmartPopup: Int = 0,
+    @SerializedName("perm_manual_transaction") val permManualTransaction: Int = 0,
     @SerializedName("sort_order") val sortOrder: Int = 0,
     @SerializedName("features") val features: List<PlanFeatureDto>? = null
 )
@@ -252,6 +253,7 @@ data class AddonPlanDto(
     @SerializedName("perm_website") val permWebsite: Int = 0,
     @SerializedName("perm_device") val permDevice: Int = 1,
     @SerializedName("perm_smart_popup") val permSmartPopup: Int = 0,
+    @SerializedName("perm_manual_transaction") val permManualTransaction: Int = 0,
     @SerializedName("sort_order") val sortOrder: Int = 0,
     @SerializedName("features") val features: List<PlanFeatureDto>? = null
 )

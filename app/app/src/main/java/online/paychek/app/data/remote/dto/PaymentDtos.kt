@@ -84,8 +84,16 @@ data class TransactionItem(
     val fullSms: String?,
 
     @SerializedName("device_name")
-    val deviceName: String?
-)
+    val deviceName: String?,
+
+    @SerializedName("is_manual")
+    val isManual: Int? = 0
+) {
+    val isManualTxn: Boolean
+        get() = isManual == 1 ||
+            deviceId.equals("ADMIN", ignoreCase = true) ||
+            deviceName.equals("Admin", ignoreCase = true)
+}
 
 /**
  * পেজিনেটেড ট্রানজেকশন লিস্ট রেসপন্স
@@ -114,6 +122,19 @@ data class TransactionHistoryResult(
     val cacheHit: Boolean = false,
     val historyVersion: Long? = null,
     val hasMore: Boolean = true
+)
+
+data class ManualTransactionRequest(
+    @SerializedName("amount") val amount: Double,
+    @SerializedName("provider_tag") val providerTag: String,
+    @SerializedName("trx_id") val trxId: String? = null
+)
+
+data class ManualTransactionResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("data") val data: TransactionItem? = null,
+    @SerializedName("error") val error: String? = null
 )
 
 // =============================================================================

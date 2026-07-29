@@ -902,6 +902,7 @@ fun HomeScreen(
                         onNavigateToSubscription = { onNavigate(AppNavKey.SubscriptionPackages()) },
                         onPullRefresh = triggerPendingRefresh,
                         hasSmartPopup = entitlements.hasSmartPopup,
+                        hasManualTransaction = entitlements.hasManualTransaction,
                         modifier = Modifier.fillMaxSize()
                     )
                     HomeTab.DEVICE -> DeviceScreen(

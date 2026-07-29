@@ -1,6 +1,5 @@
 const prisma = require('../../db/prisma');
 const { ensureSubscriptionV3Schema } = require('./schema');
-const { getGracePeriodMinutes } = require('./configService');
 const { CATEGORIES } = require('./constants');
 
 function dateOnly(d = new Date()) {
@@ -57,12 +56,7 @@ async function getSharedExpiry(userId) {
 }
 
 async function getEffectiveExpiry(userId) {
-  const shared = await getSharedExpiry(userId);
-  if (!shared) return null;
-  const graceMin = await getGracePeriodMinutes();
-  const effective = new Date(shared);
-  effective.setMinutes(effective.getMinutes() + graceMin);
-  return effective;
+  return getSharedExpiry(userId);
 }
 
 function remainingDays(fromDate, toDate) {
@@ -76,13 +70,7 @@ async function getSharedRemainingDays(userId) {
   const shared = await getSharedExpiry(userId);
   if (!shared) return 0;
   const today = dateOnly();
-  if (shared < today) {
-    const effective = await getEffectiveExpiry(userId);
-    if (effective && new Date() <= effective) {
-      return 0; // in grace, treat as 0 remaining for pricing new full duration
-    }
-    return 0;
-  }
+  if (shared < today) return 0;
   return remainingDays(today, shared);
 }
 

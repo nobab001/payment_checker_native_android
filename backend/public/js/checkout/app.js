@@ -163,6 +163,14 @@ async function loadCheckoutData({ silent = false } = {}) {
     ? `${sessionQ ? '&' : '?'}demoSession=${encodeURIComponent(demoSessionId)}`
     : '';
   const r = await fetch(`/api/checkout/${apiKey}${sessionQ}${demoQ}`);
+  if (r.status === 410) {
+    let msg = 'Checkout session expired. Please reopen checkout and try again.';
+    try {
+      const err = await r.json();
+      if (err?.message) msg = err.message;
+    } catch (_) { /* ignore */ }
+    throw new Error(msg);
+  }
   if (!r.ok) throw new Error('load failed');
   const data = await r.json();
   const prevSnap = checkoutModel ? snapshotTab(checkoutModel, activeTabId) : null;

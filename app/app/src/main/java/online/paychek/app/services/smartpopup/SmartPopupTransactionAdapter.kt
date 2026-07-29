@@ -87,6 +87,7 @@ class SmartPopupTransactionAdapter(
         }
 
         private fun buildDeviceLine(item: TransactionItem): String {
+            if (item.isManualTxn) return "Device: Admin"
             val name = item.deviceName?.takeIf {
                 it.isNotBlank() &&
                     it.lowercase(Locale.US) != "unknown" &&

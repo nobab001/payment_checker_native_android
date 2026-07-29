@@ -114,6 +114,13 @@ class LoginViewModel : ViewModel() {
             return
         }
 
+        if (_uiState.value.isMaintenanceMode && !isAdminBypass) {
+            _uiState.update {
+                it.copy(errorMessage = "সিস্টেম রক্ষণাবেক্ষণ চলছে। কিছুক্ষণ পর আবার চেষ্টা করুন।")
+            }
+            return
+        }
+
         val deviceId          = DeviceIdHelper.getHashedAndroidId(context)
         val fingerprint       = DeviceIdHelper.getHashedFingerprint()
         val androidId         = DeviceIdHelper.getAndroidId(context)

@@ -21,9 +21,7 @@ data class SubscriptionV3SettingsDto(
     @SerializedName("subscription_version") val subscriptionVersion: String? = null,
     @SerializedName("subscription_v3_enabled") val subscriptionV3Enabled: Boolean = false,
     @SerializedName("trial_days") val trialDays: Int = 7,
-    @SerializedName("quote_validity_min") val quoteValidityMin: Int = 15,
-    @SerializedName("grace_period_min") val gracePeriodMin: Int = 5,
-    @SerializedName("subscription_maintenance") val subscriptionMaintenance: Boolean = false,
+    @SerializedName("checkout_session_min") val checkoutSessionMin: Int = 30,
     @SerializedName("billing_tab_order") val billingTabOrder: List<String>? = null
 )
 
@@ -51,6 +49,7 @@ data class V3PackageDto(
     @SerializedName("perm_website") val permWebsite: Int = 1,
     @SerializedName("perm_device") val permDevice: Int = 1,
     @SerializedName("perm_smart_popup") val permSmartPopup: Int = 0,
+    @SerializedName("perm_manual_transaction") val permManualTransaction: Int = 0,
     @SerializedName("is_custom_sender_allowed") val isCustomSenderAllowed: Int = 0
 )
 
@@ -195,9 +194,6 @@ data class V3ResolveRefundRequest(
 
 data class V3SettingsUpdateRequest(
     @SerializedName("trial_days") val trialDays: Int? = null,
-    @SerializedName("quote_validity_min") val quoteValidityMin: Int? = null,
-    @SerializedName("grace_period_min") val gracePeriodMin: Int? = null,
-    @SerializedName("subscription_maintenance") val subscriptionMaintenance: Boolean? = null,
     @SerializedName("subscription_v3_enabled") val subscriptionV3Enabled: Boolean? = null
 )
 

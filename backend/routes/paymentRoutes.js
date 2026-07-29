@@ -12,6 +12,7 @@ router.get('/ping', (req, res) => res.status(200).send('OK'));
 router.post('/payment-sms-ingest', authenticateToken, checkBillingStatus, apiRateLimiter, paymentController.paymentSmsIngest);
 router.post('/payment-sms-ingest/bulk', authenticateToken, checkBillingStatus, apiRateLimiter, paymentController.paymentSmsIngestBulk);
 router.get('/sms-history', authenticateToken, checkBillingStatus, paymentController.getSmsHistory);
+router.post('/sms-history/manual', authenticateToken, checkBillingStatus, apiRateLimiter, paymentController.createManualTransaction);
 router.get('/dashboard/stats', authenticateToken, checkBillingStatus, paymentController.getDashboardStats);
 router.post('/sms-history/:id/soldout', authenticateToken, checkBillingStatus, paymentController.markTransactionSoldOut);
 router.get('/custom-archives', authenticateToken, checkBillingStatus, paymentController.getCustomArchives);

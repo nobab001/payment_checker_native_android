@@ -17,6 +17,21 @@ backend/.env
 backend/.paychek_scan_test.txt
 app/.kotlin/
 
+# Runtime logs (never commit)
+backend/server-err.log
+backend/server-out.log
+backend/logs/
+*.log
+
+# Local scratch / design exports / recovered transcripts
+node_modules/
+scratch/
+checkout-ui-chatgpt-export/
+customer-checkout-design1-export/
+customer-checkout-web-export/
+login_ui_review_bundle/
+recovered_transcript.md
+
 # OS files
 Thumbs.db
 .DS_Store

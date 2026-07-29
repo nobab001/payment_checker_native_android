@@ -13,6 +13,48 @@ const numberHealth = require('../services/numberHealthService');
 
 const { smsQueue } = require('../services/smsQueue');
 const { getRedisClient } = require('../services/redisClient');
+const { requirePermission, ensureEntitlementSchema } = require('../services/accountEntitlementsService');
+
+const MANUAL_DEVICE_ID = 'ADMIN';
+
+async function ensureManualTxnSchema() {
+  await ensureEntitlementSchema();
+  const cols = await prisma.$queryRaw`SHOW COLUMNS FROM sms_history LIKE 'is_manual'`;
+  if (!cols.length) {
+    await prisma.$executeRawUnsafe(
+      'ALTER TABLE sms_history ADD COLUMN `is_manual` TINYINT NOT NULL DEFAULT 0'
+    );
+  }
+}
+
+function mapSmsHistoryRow(row, deviceMap) {
+  const isManual = Number(row.is_manual) === 1 || row.device_id === MANUAL_DEVICE_ID;
+  return {
+    id: Number(row.id),
+    user_id: row.user_id != null ? Number(row.user_id) : undefined,
+    provider_tag: row.provider_tag || '',
+    amount: Number(row.amount) || 0,
+    trx_id: row.trx_id || '',
+    sender_number: row.sender_number || null,
+    receiver_number: row.receiver_number || null,
+    device_id: row.device_id || '',
+    sms_timestamp: row.sms_timestamp,
+    created_at: row.created_at,
+    is_used: Number(row.is_used) || 0,
+    status: Number(row.is_used) ? 'SOLD_OUT' : 'READY',
+    is_manual: isManual ? 1 : 0,
+    device_name: isManual ? 'Admin' : (deviceMap[row.device_id] || row.device_id || 'Unknown Device'),
+    sim_slot: isManual ? null : (row.sim_slot != null ? Number(row.sim_slot) : null),
+    sim_number: isManual ? null : (row.sim_number || null),
+    full_sms: isManual ? null : row.full_sms,
+  };
+}
+
+function generateManualTrxId() {
+  const stamp = Date.now().toString(36).toUpperCase();
+  const rand = crypto.randomBytes(3).toString('hex').toUpperCase();
+  return `MNL${stamp}${rand}`.slice(0, 32);
+}
 
 /** Fail fast if Redis is down — client must keep SMS in offline queue and retry. */
 async function assertSmsQueueReady() {
@@ -284,14 +326,7 @@ async function getSmsHistory(req, res) {
       deviceMap[d.device_id] = d.custom_device_name || d.device_model || 'Unknown Device';
     });
 
-    const mappedRows = rows.map(row => ({
-      ...row,
-      status: row.is_used ? 'SOLD_OUT' : 'READY',
-      amount: Number(row.amount),
-      // Source device that uploaded this SMS — never the viewer's phone
-      device_name: deviceMap[row.device_id] || row.device_id || 'Unknown Device',
-      sim_number: row.sim_number || null
-    }));
+    const mappedRows = rows.map(row => mapSmsHistoryRow(row, deviceMap));
 
     console.log(`[HISTORY] User ${userId} | cache MISS | client=${lastSync} server=${historyVersion} | Page ${page} | Provider: ${provider} | Found: ${rows.length}`);
 
@@ -426,13 +461,7 @@ async function getDashboardStats(req, res) {
       deviceMap[d.device_id] = d.custom_device_name || d.device_model || 'Unknown Device';
     });
 
-    const mappedRecentRows = recentRows.map(row => ({
-      ...row,
-      status: row.is_used ? 'SOLD_OUT' : 'READY',
-      amount: Number(row.amount),
-      device_name: deviceMap[row.device_id] || row.device_id || 'Unknown Device',
-      sim_number: row.sim_number || null
-    }));
+    const mappedRecentRows = recentRows.map(row => mapSmsHistoryRow(row, deviceMap));
 
     console.log(`[STATS] Dashboard loaded for user: ${userId} | Today: ${todayDate} | Paid: ${isPaid} | Plan: ${activePlanName}`);
 
@@ -468,7 +497,7 @@ async function getDashboardStats(req, res) {
         created_at:          createdAt,
         trial_welcome:       trialWelcome,
         secretKey:           userData ? userData.secretKey : null,
-        secretKeyVersion:    userData ? userData.secretKeyVersion : 1,
+        secretKeyVersion:    userData ? Number(userData.secretKeyVersion) || 1 : 1,
         recent_transactions: mappedRecentRows,
         global_templates:    globalTemplates,
         gateway_methods:     gatewayMethods,
@@ -625,6 +654,135 @@ async function getCustomArchives(req, res) {
 }
 
 // =============================================================================
+// POST /api/sms-history/manual
+// Create a manual transaction (same table as SMS history)
+// =============================================================================
+async function createManualTransaction(req, res) {
+  try {
+    await ensureManualTxnSchema();
+    const userId = req.user.userId;
+    const perm = await requirePermission(userId, 'perm_manual_transaction');
+    if (!perm.ok) {
+      // Also accept live entitlements from permission engine (v3)
+      try {
+        const { getEntitlements } = require('../services/permissionEngineService');
+        const ent = await getEntitlements(userId, { refresh: true });
+        if (!ent || Number(ent.perm_manual_transaction) !== 1) {
+          return res.status(403).json({
+            success: false,
+            error: 'PERMISSION_DENIED',
+            message: perm.message || 'Manual Transaction permission নেই।',
+          });
+        }
+      } catch (_) {
+        return res.status(403).json({
+          success: false,
+          error: 'PERMISSION_DENIED',
+          message: perm.message || 'Manual Transaction permission নেই।',
+        });
+      }
+    }
+
+    const amount = Number(req.body?.amount);
+    const providerTag = String(req.body?.provider_tag || req.body?.template_name || '').trim();
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ success: false, message: 'সঠিক Amount দিন।' });
+    }
+    if (!providerTag) {
+      return res.status(400).json({ success: false, message: 'Template নির্বাচন করুন।' });
+    }
+
+    const template = await prisma.sms_templates.findFirst({
+      where: {
+        template_name: providerTag,
+        is_active: 1,
+        is_parseable: 1,
+      },
+      select: { id: true, template_name: true, sender_id: true },
+    });
+    if (!template) {
+      return res.status(400).json({
+        success: false,
+        message: 'শুধু Active ও Parseable Template দিয়ে Manual Transaction তৈরি করা যাবে।',
+      });
+    }
+
+    let trxId = String(req.body?.trx_id || '').trim();
+    if (!trxId) trxId = generateManualTrxId();
+
+    const now = new Date();
+    const smsDate = new Date(now.toISOString().slice(0, 10));
+    const dedupeKey = `manual|${userId}|${trxId}|${now.getTime()}`;
+    const rawHash = crypto.createHash('sha256').update(dedupeKey).digest('hex');
+
+    let saved;
+    try {
+      saved = await prisma.sms_history.create({
+        data: {
+          user_id: userId,
+          device_id: MANUAL_DEVICE_ID,
+          sim_slot: null,
+          sim_number: null,
+          provider_tag: template.template_name,
+          amount,
+          trx_id: trxId,
+          sender_number: template.sender_id || null,
+          receiver_number: null,
+          sms_timestamp: now,
+          sms_date: smsDate,
+          full_sms: null,
+          dedupe_key: dedupeKey,
+          raw_sms_sha256: rawHash,
+          is_synced: 1,
+          is_used: 0,
+        },
+        select: {
+          id: true,
+          provider_tag: true,
+          amount: true,
+          trx_id: true,
+          sender_number: true,
+          sim_slot: true,
+          sim_number: true,
+          device_id: true,
+          sms_timestamp: true,
+          is_used: true,
+          created_at: true,
+          full_sms: true,
+        },
+      });
+    } catch (dbErr) {
+      if (dbErr.code === 'P2002') {
+        return res.status(409).json({
+          success: false,
+          error: 'DUPLICATE_TRX',
+          message: 'এই Transaction ID ইতিমধ্যে আছে। আবার চেষ্টা করুন।',
+        });
+      }
+      throw dbErr;
+    }
+
+    // Best-effort flag (column may be added by ensureManualTxnSchema)
+    try {
+      await prisma.$executeRaw`
+        UPDATE sms_history SET is_manual = 1 WHERE id = ${saved.id}
+      `;
+    } catch (_) {}
+
+    await dataSyncCache.bumpUserHistoryVersion(userId);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Manual Transaction তৈরি হয়েছে।',
+      data: mapSmsHistoryRow(saved, {}),
+    });
+  } catch (error) {
+    console.error('[MANUAL_TXN] Error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+// =============================================================================
 // Exports
 // =============================================================================
 module.exports = {
@@ -633,5 +791,6 @@ module.exports = {
   getSmsHistory,
   getDashboardStats,
   markTransactionSoldOut,
-  getCustomArchives
+  getCustomArchives,
+  createManualTransaction,
 };

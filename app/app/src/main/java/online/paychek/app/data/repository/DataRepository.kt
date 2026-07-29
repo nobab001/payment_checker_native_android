@@ -303,6 +303,39 @@ class PaymentRepository {
         }
     }
 
+    suspend fun createManualTransaction(
+        token: String,
+        amount: Double,
+        providerTag: String,
+        trxId: String? = null
+    ): Result<TransactionItem> {
+        return try {
+            val response = api.createManualTransaction(
+                "Bearer $token",
+                ManualTransactionRequest(amount = amount, providerTag = providerTag, trxId = trxId)
+            )
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body?.success == true && body.data != null) {
+                    Result.success(body.data)
+                } else {
+                    Result.failure(Exception(body?.message ?: "Manual Transaction তৈরি ব্যর্থ"))
+                }
+            } else {
+                val errBody = response.errorBody()?.string()
+                val msg = try {
+                    val map = online.paychek.app.utils.GsonUtils.gson.fromJson(errBody, Map::class.java)
+                    (map["message"] as? String) ?: (map["error"] as? String)
+                } catch (_: Exception) {
+                    null
+                }
+                Result.failure(Exception(msg ?: ApiErrorMapper.fromHttpCode(response.code(), "Manual Transaction ব্যর্থ")))
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception(ApiErrorMapper.fromThrowable(e, "Manual Transaction ব্যর্থ")))
+        }
+    }
+
     suspend fun fetchCustomArchives(token: String, page: Int = 1, limit: Int = 20): Result<List<CustomArchiveItem>> {
         return try {
             val response = api.getCustomArchives("Bearer $token", page, limit)

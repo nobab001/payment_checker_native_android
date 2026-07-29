@@ -556,4 +556,24 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun clearDateFilter() {
         _state.update { it.copy(dateFilteredTransactions = emptyList()) }
     }
+
+    fun createManualTransaction(
+        amount: Double,
+        providerTag: String,
+        trxId: String? = null,
+        onResult: (Result<TransactionItem>) -> Unit
+    ) {
+        viewModelScope.launch {
+            val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
+            if (token.isEmpty()) {
+                onResult(Result.failure(Exception("লগইন সেশন পাওয়া যায়নি।")))
+                return@launch
+            }
+            val result = repository.createManualTransaction(token, amount, providerTag, trxId)
+            result.onSuccess {
+                loadDashboardStats()
+            }
+            onResult(result)
+        }
+    }
 }

@@ -61,9 +61,11 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import online.paychek.app.data.remote.dto.DashboardStats
+import online.paychek.app.data.remote.dto.SmsTemplateDto
 import online.paychek.app.data.remote.dto.TransactionItem
 import online.paychek.app.ui.components.ConnectionStatusBanner
 import online.paychek.app.ui.components.LastUpdateRow
@@ -111,6 +113,7 @@ fun DashboardScreen(
     onNavigateToSubscription: () -> Unit,
     onPullRefresh: () -> Unit = {},
     hasSmartPopup: Boolean = false,
+    hasManualTransaction: Boolean = false,
     modifier: Modifier = Modifier,
     viewModel: DashboardViewModel = viewModel()
 ) {
@@ -272,6 +275,7 @@ fun DashboardScreen(
     var selectedProviderName by remember { mutableStateOf<String?>(null) }
     var selectedDate by remember { mutableStateOf<String?>(null) }
     var showDateRangePicker by remember { mutableStateOf(false) }
+    var showManualTxnDialog by remember { mutableStateOf(false) }
     var customStartDate by remember { mutableStateOf<Long?>(null) }
     var customEndDate by remember { mutableStateOf<Long?>(null) }
 
@@ -459,6 +463,36 @@ fun DashboardScreen(
                 )
             )
         }
+    }
+
+    if (showManualTxnDialog) {
+        ManualTransactionDialog(
+            templates = screenState.globalTemplates.filter {
+                (it.isActive == 1 || it.isOtherDevice == true) && it.isParseable == 1
+            },
+            onDismiss = { showManualTxnDialog = false },
+            onCreate = { amount, templateName, trxId ->
+                viewModel.createManualTransaction(amount, templateName, trxId) { result ->
+                    result.fold(
+                        onSuccess = {
+                            showManualTxnDialog = false
+                            android.widget.Toast.makeText(
+                                context,
+                                "Transaction তৈরি হয়েছে",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        onFailure = { err ->
+                            android.widget.Toast.makeText(
+                                context,
+                                err.message ?: "ব্যর্থ",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    )
+                }
+            }
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -722,16 +756,15 @@ fun DashboardScreen(
                                             )
                                         }
                                     }
-                                    if (!hasSmartPopup) {
-                                        IconButton(onClick = { showDateRangePicker = true }) {
-                                            Icon(
-                                                imageVector = Icons.Default.DateRange,
-                                                contentDescription = "Date Filter",
-                                                tint = if (selectedDate == "custom") AccentCyan else TextMuted,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-                                    } else {
+                                    IconButton(onClick = { showDateRangePicker = true }) {
+                                        Icon(
+                                            imageVector = Icons.Default.DateRange,
+                                            contentDescription = "Date Filter",
+                                            tint = if (selectedDate == "custom") AccentCyan else TextMuted,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    if (hasSmartPopup) {
                                         IconButton(onClick = {
                                             online.paychek.app.services.smartpopup.SmartPopupManager.open(context)
                                         }) {
@@ -740,6 +773,16 @@ fun DashboardScreen(
                                                 contentDescription = "Smart Pop-up",
                                                 tint = AccentCyan,
                                                 modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                    if (hasManualTransaction) {
+                                        IconButton(onClick = { showManualTxnDialog = true }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Add,
+                                                contentDescription = "Add Transaction",
+                                                tint = AccentCyan,
+                                                modifier = Modifier.size(22.dp)
                                             )
                                         }
                                     }
@@ -1654,12 +1697,17 @@ private fun TransactionRow(
     val isSoldOut = item.isUsed == 1
 
     // Prefer SMS source fields from API — never fall back to this phone's model
-    val displaySimNumber = item.simNumber?.takeIf { it.isNotBlank() }
-    val deviceName = item.deviceName?.takeIf {
-        it.isNotBlank() &&
-            it.lowercase(Locale.US) != "unknown" &&
-            it.lowercase(Locale.US) != "unknown device"
-    } ?: (item.deviceId?.takeIf { it.isNotBlank() } ?: "Unknown Device")
+    val isManual = item.isManualTxn
+    val displaySimNumber = if (isManual) null else item.simNumber?.takeIf { it.isNotBlank() }
+    val deviceName = if (isManual) {
+        "Admin"
+    } else {
+        item.deviceName?.takeIf {
+            it.isNotBlank() &&
+                it.lowercase(Locale.US) != "unknown" &&
+                it.lowercase(Locale.US) != "unknown device"
+        } ?: (item.deviceId?.takeIf { it.isNotBlank() } ?: "Unknown Device")
+    }
 
     Card(
         colors   = CardDefaults.cardColors(containerColor = DashCard),
@@ -1777,7 +1825,7 @@ private fun TransactionRow(
                 }
 
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = expanded,
+                    visible = expanded && !isManual,
                     enter = androidx.compose.animation.expandVertically(animationSpec = tween(300)) + fadeIn(tween(300)),
                     exit = androidx.compose.animation.shrinkVertically(animationSpec = tween(300)) + fadeOut(tween(300))
                 ) {
@@ -2479,6 +2527,103 @@ private fun CustomArchiveRow(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ManualTransactionDialog(
+    templates: List<SmsTemplateDto>,
+    onDismiss: () -> Unit,
+    onCreate: (amount: Double, templateName: String, trxId: String?) -> Unit
+) {
+    var amountText by remember { mutableStateOf("") }
+    var selectedTemplate by remember { mutableStateOf(templates.firstOrNull()?.templateName.orEmpty()) }
+    var trxId by remember {
+        mutableStateOf(
+            "MNL" + System.currentTimeMillis().toString(36).uppercase(Locale.US)
+        )
+    }
+    var templateExpanded by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Create Transaction", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = trxId,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Transaction ID (Auto)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { amountText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                    label = { Text("Amount") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                )
+                ExposedDropdownMenuBox(
+                    expanded = templateExpanded,
+                    onExpandedChange = { templateExpanded = !templateExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = selectedTemplate.ifBlank { "Template নির্বাচন করুন" },
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Template") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = templateExpanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = templateExpanded,
+                        onDismissRequest = { templateExpanded = false }
+                    ) {
+                        if (templates.isEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text("কোনো Active Template নেই") },
+                                onClick = { templateExpanded = false }
+                            )
+                        } else {
+                            templates.forEach { tpl ->
+                                DropdownMenuItem(
+                                    text = { Text(tpl.templateName) },
+                                    onClick = {
+                                        selectedTemplate = tpl.templateName
+                                        templateExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val amount = amountText.toDoubleOrNull()
+                    if (amount == null || amount <= 0.0) return@Button
+                    if (selectedTemplate.isBlank()) return@Button
+                    onCreate(amount, selectedTemplate, trxId.ifBlank { null })
+                },
+                enabled = templates.isNotEmpty(),
+                colors = ButtonDefaults.buttonColors(containerColor = AccentCyan)
+            ) {
+                Text("Create Transaction", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 private fun buildCustomArchiveDeviceLine(item: online.paychek.app.data.remote.dto.CustomArchiveItem): String {

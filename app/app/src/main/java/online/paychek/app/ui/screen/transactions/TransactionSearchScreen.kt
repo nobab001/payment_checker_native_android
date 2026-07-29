@@ -502,11 +502,16 @@ private fun TransactionCard(
     }
     val isSoldOut = item.isUsed == 1
 
-    val displaySimNumber = item.simNumber?.takeIf { it.isNotBlank() }
-    val deviceName = item.deviceName?.takeIf {
-        it.isNotBlank() &&
-            !it.lowercase(java.util.Locale.US).contains("unknown")
-    } ?: (item.deviceId?.takeIf { it.isNotBlank() } ?: "Unknown Device")
+    val isManual = item.isManualTxn
+    val displaySimNumber = if (isManual) null else item.simNumber?.takeIf { it.isNotBlank() }
+    val deviceName = if (isManual) {
+        "Admin"
+    } else {
+        item.deviceName?.takeIf {
+            it.isNotBlank() &&
+                !it.lowercase(java.util.Locale.US).contains("unknown")
+        } ?: (item.deviceId?.takeIf { it.isNotBlank() } ?: "Unknown Device")
+    }
 
     Card(
         colors   = CardDefaults.cardColors(containerColor = HistCard),
@@ -636,7 +641,7 @@ private fun TransactionCard(
                 }
                 
                 AnimatedVisibility(
-                    visible = expanded,
+                    visible = expanded && !isManual,
                     enter = expandVertically(animationSpec = androidx.compose.animation.core.tween(300)) + fadeIn(androidx.compose.animation.core.tween(300)),
                     exit = shrinkVertically(animationSpec = androidx.compose.animation.core.tween(300)) + fadeOut(androidx.compose.animation.core.tween(300))
                 ) {

@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const prisma = require('../db/prisma');
+const { isMaintenanceModeOn } = require('../services/maintenanceService');
 
 // SECURITY: never ship a hardcoded fallback secret. If JWT_SECRET is missing the
 // process must refuse to start rather than sign/verify tokens with a public key.
@@ -17,11 +18,19 @@ function authenticateToken(req, res, next) {
     return res.status(401).json({ error: 'Access token required' });
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, async (err, user) => {
     if (err) {
       return res.status(403).json({ error: 'Invalid or expired access token' });
     }
     req.user = user;
+    try {
+      if (user.role !== 'admin' && await isMaintenanceModeOn()) {
+        return res.status(503).json({
+          error: 'MAINTENANCE_MODE',
+          message: 'সিস্টেম রক্ষণাবেক্ষণ চলছে। কিছুক্ষণ পর আবার চেষ্টা করুন।',
+        });
+      }
+    } catch (_) { /* allow request if maintenance check fails */ }
     next();
   });
 }

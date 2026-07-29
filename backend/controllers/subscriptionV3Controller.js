@@ -213,10 +213,7 @@ async function adminReorderPackages(req, res) {
 async function adminUpdateSettings(req, res) {
   try {
     const body = req.body || {};
-    const keys = [
-      'trial_days', 'quote_validity_min', 'grace_period_min',
-      'subscription_maintenance', 'subscription_v3_enabled',
-    ];
+    const keys = ['trial_days', 'subscription_v3_enabled'];
     for (const k of keys) {
       if (body[k] !== undefined) await setConfig(k, body[k]);
     }

@@ -16,6 +16,7 @@ object AccountEntitlementsStore {
             permWebsite = if (SecurePreferences.decrypt(context, AppConfig.KEY_PERM_WEBSITE) == "1") 1 else 0,
             permDevice = if (SecurePreferences.decrypt(context, AppConfig.KEY_PERM_DEVICE) == "1") 1 else 0,
             permSmartPopup = if (SecurePreferences.decrypt(context, AppConfig.KEY_PERM_SMART_POPUP) == "1") 1 else 0,
+            permManualTransaction = if (SecurePreferences.decrypt(context, AppConfig.KEY_PERM_MANUAL_TXN) == "1") 1 else 0,
             effMaxDevices = SecurePreferences.decrypt(context, AppConfig.KEY_EFF_MAX_DEVICES).toIntOrNull() ?: 0,
             effMaxSites = SecurePreferences.decrypt(context, AppConfig.KEY_EFF_MAX_SITES).toIntOrNull() ?: 0,
             commProfile = online.paychek.app.services.sync.CommPolicyStore.profile(context)
@@ -28,6 +29,7 @@ object AccountEntitlementsStore {
         SecurePreferences.encrypt(context, AppConfig.KEY_PERM_WEBSITE, if (ent.permWebsite == 1) "1" else "0")
         SecurePreferences.encrypt(context, AppConfig.KEY_PERM_DEVICE, if (ent.permDevice == 1) "1" else "0")
         SecurePreferences.encrypt(context, AppConfig.KEY_PERM_SMART_POPUP, if (ent.permSmartPopup == 1) "1" else "0")
+        SecurePreferences.encrypt(context, AppConfig.KEY_PERM_MANUAL_TXN, if (ent.permManualTransaction == 1) "1" else "0")
         SecurePreferences.encrypt(context, AppConfig.KEY_EFF_MAX_DEVICES, ent.effMaxDevices.toString())
         SecurePreferences.encrypt(context, AppConfig.KEY_EFF_MAX_SITES, ent.effMaxSites.toString())
         online.paychek.app.services.sync.CommPolicyStore.applyEntitlements(context, ent)

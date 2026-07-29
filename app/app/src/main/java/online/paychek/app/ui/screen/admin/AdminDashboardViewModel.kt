@@ -1134,9 +1134,6 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
 
     fun saveV3SubscriptionSettings(
         trialDays: Int,
-        quoteValidityMin: Int,
-        gracePeriodMin: Int,
-        maintenance: Boolean,
         onComplete: ((Boolean) -> Unit)? = null
     ) {
         viewModelScope.launch {
@@ -1145,24 +1142,19 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 val token = "Bearer ${getToken()}"
                 val res = api.updateV3SubscriptionSettings(
                     token,
-                    V3SettingsUpdateRequest(
-                        trialDays = trialDays,
-                        quoteValidityMin = quoteValidityMin,
-                        gracePeriodMin = gracePeriodMin,
-                        subscriptionMaintenance = maintenance
-                    )
+                    V3SettingsUpdateRequest(trialDays = trialDays)
                 )
                 if (res.isSuccessful && res.body()?.success == true) {
                     _state.update {
                         it.copy(
                             isSaving = false,
                             v3Settings = res.body()?.settings,
-                            successMessage = "v3 সেটিংস সেভ হয়েছে।"
+                            successMessage = "ট্রায়াল সেটিংস সেভ হয়েছে।"
                         )
                     }
                     onComplete?.invoke(true)
                 } else {
-                    _state.update { it.copy(isSaving = false, errorMessage = "v3 সেটিংস সেভ ব্যর্থ।") }
+                    _state.update { it.copy(isSaving = false, errorMessage = "সেভ ব্যর্থ।") }
                     onComplete?.invoke(false)
                 }
             } catch (e: Exception) {

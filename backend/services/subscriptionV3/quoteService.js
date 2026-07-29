@@ -1,7 +1,8 @@
 const crypto = require('crypto');
 const prisma = require('../../db/prisma');
 const { ensureSubscriptionV3Schema } = require('./schema');
-const { isMaintenanceOn, getQuoteValidityMinutes } = require('./configService');
+const { getCheckoutSessionMinutes } = require('./configService');
+const CHECKOUT_SESSION_EXPIRED_MSG = 'Checkout session expired. Please reopen checkout and try again.';
 const {
   getPackageBySku,
   listAddonCatalog,
@@ -32,10 +33,6 @@ function dailyRate(totalPrice, durationKey) {
 }
 
 async function computeQuote(userId, { category, skuKey, durationKey, addons = [] }) {
-  if (await isMaintenanceOn()) {
-    return { error: 'MAINTENANCE', message: 'সাবস্ক্রিপশন রক্ষণাবেক্ষণ চলছে। কিছুক্ষণ পর আবার চেষ্টা করুন।' };
-  }
-
   const pkg = await getPackageBySku(skuKey);
   if (!pkg || pkg.category !== category) {
     return { error: 'PLAN_NOT_FOUND', message: 'প্যাকেজটি খুঁজে পাওয়া যায়নি।' };
@@ -164,7 +161,7 @@ async function computeQuote(userId, { category, skuKey, durationKey, addons = []
 async function freezeQuote(userId, quote) {
   await ensureSubscriptionV3Schema();
   const token = `qt_${Date.now().toString(36)}_${crypto.randomBytes(8).toString('hex')}`;
-  const mins = await getQuoteValidityMinutes();
+  const mins = getCheckoutSessionMinutes();
   const expiresAt = new Date(Date.now() + mins * 60 * 1000);
   await prisma.$executeRaw`
     INSERT INTO subscription_quote_freeze (quote_token, user_id, quote_json, payable_amount, expires_at)
@@ -184,7 +181,7 @@ async function loadFrozenQuote(quoteToken, userId) {
   const row = rows[0];
   if (!row) return { error: 'QUOTE_NOT_FOUND', message: 'কোটো পাওয়া যায়নি।' };
   if (new Date(row.expires_at) < new Date()) {
-    return { error: 'QUOTE_EXPIRED', message: 'কোটোর মেয়াদ শেষ। আবার চেষ্টা করুন।' };
+    return { error: 'QUOTE_EXPIRED', message: CHECKOUT_SESSION_EXPIRED_MSG };
   }
   let quote;
   try {

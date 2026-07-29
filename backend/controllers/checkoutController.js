@@ -10,6 +10,9 @@ const helplineService = require('../services/checkoutHelplineService');
 const manualAccountCtrl = require('./checkoutManualAccountController');
 const { normalizeWebsitePurpose, normalizeSessionPurpose, computePurposeAmounts, roundMoney2 } = require('../services/websitePurpose');
 const settlementService = require('../services/checkoutSettlementService');
+const { isSessionExpired } = require('../payment/shared/session-utils');
+
+const CHECKOUT_SESSION_EXPIRED_MSG = 'Checkout session expired. Please reopen checkout and try again.';
 
 // Full column set needed to build an enriched, signed merchant callback.
 const MERCHANT_CALLBACK_SELECT = {
@@ -206,6 +209,13 @@ async function getCheckoutLayout(req, res) {
 
     const sessionQ = req.query.session;
     if (sessionQ) {
+      const sessionRow = await checkoutPaymentBridge.loadSession(sessionQ);
+      if (!sessionRow || isSessionExpired(sessionRow)) {
+        return res.status(410).json({
+          error: 'SESSION_EXPIRED',
+          message: CHECKOUT_SESSION_EXPIRED_MSG,
+        });
+      }
       payload = await checkoutPaymentBridge.mergeSessionUrlsIntoLayout(payload, sessionQ);
     }
 
@@ -259,10 +269,15 @@ async function verifyCheckoutPayment(req, res) {
     let sessionRow = null;
     if (session) {
       sessionRow = await checkoutPaymentBridge.loadSession(session);
-      if (sessionRow) {
-        sessionPurpose = normalizeSessionPurpose(sessionRow.meta?.purpose);
-        orderAmount = Number(sessionRow.amount);
+      if (!sessionRow || isSessionExpired(sessionRow)) {
+        return res.status(410).json({
+          success: false,
+          error: 'SESSION_EXPIRED',
+          message: CHECKOUT_SESSION_EXPIRED_MSG,
+        });
       }
+      sessionPurpose = normalizeSessionPurpose(sessionRow.meta?.purpose);
+      orderAmount = Number(sessionRow.amount);
     }
     if (!sessionPurpose) {
       const wp = normalizeWebsitePurpose(merchant.website_purpose);

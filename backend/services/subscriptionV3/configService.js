@@ -1,12 +1,12 @@
 const prisma = require('../../db/prisma');
 
+/** Hardcoded checkout / quote session validity (minutes). */
+const CHECKOUT_SESSION_MINUTES = 30;
+
 const DEFAULTS = Object.freeze({
   subscription_version: 'v3',
   subscription_v3_enabled: 'true',
   trial_days: '7',
-  quote_validity_min: '15',
-  grace_period_min: '5',
-  subscription_maintenance: '0',
   billing_tab_order_v3: JSON.stringify(['gateway', 'personal_business', 'personal']),
 });
 
@@ -33,20 +33,8 @@ async function isV3Enabled() {
   return v === 'true' || v === '1';
 }
 
-async function isMaintenanceOn() {
-  const v = await getConfig('subscription_maintenance', '0');
-  return v === '1' || v === 'true';
-}
-
-async function getGracePeriodMinutes() {
-  const allowed = [0, 5, 10, 30];
-  const n = parseInt(await getConfig('grace_period_min', '5'), 10);
-  return allowed.includes(n) ? n : 5;
-}
-
-async function getQuoteValidityMinutes() {
-  const n = parseInt(await getConfig('quote_validity_min', '15'), 10);
-  return Number.isFinite(n) && n > 0 ? n : 15;
+function getCheckoutSessionMinutes() {
+  return CHECKOUT_SESSION_MINUTES;
 }
 
 async function getTrialDays() {
@@ -59,21 +47,18 @@ async function getBillingSettings() {
     subscription_version: await getConfig('subscription_version', 'v3'),
     subscription_v3_enabled: await isV3Enabled(),
     trial_days: await getTrialDays(),
-    quote_validity_min: await getQuoteValidityMinutes(),
-    grace_period_min: await getGracePeriodMinutes(),
-    subscription_maintenance: await isMaintenanceOn(),
+    checkout_session_min: CHECKOUT_SESSION_MINUTES,
     billing_tab_order: JSON.parse(await getConfig('billing_tab_order_v3', DEFAULTS.billing_tab_order_v3)),
   };
 }
 
 module.exports = {
+  CHECKOUT_SESSION_MINUTES,
   DEFAULTS,
   getConfig,
   setConfig,
   isV3Enabled,
-  isMaintenanceOn,
-  getGracePeriodMinutes,
-  getQuoteValidityMinutes,
+  getCheckoutSessionMinutes,
   getTrialDays,
   getBillingSettings,
 };

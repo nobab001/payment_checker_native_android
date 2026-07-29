@@ -32,6 +32,7 @@ function mapPlanRow(row) {
     perm_website: Number(row.perm_website ?? 1),
     perm_device: Number(row.perm_device ?? 1),
     perm_smart_popup: Number(row.perm_smart_popup ?? 0),
+    perm_manual_transaction: Number(row.perm_manual_transaction ?? 0),
     is_custom_sender_allowed: Number(row.is_custom_sender_allowed ?? 0),
     features_json: row.features_json,
   };
@@ -69,7 +70,7 @@ async function listActiveCatalog({ includeHidden = false } = {}) {
     SELECT id, plan_name, sku_key, display_name, plan_category, max_sites, max_devices,
            price, price_1m, price_6m, price_12m, website_limit_internal, device_limit_internal,
            refund_days, catalog_status, is_visible, sort_order, perm_template, perm_website,
-           perm_device, perm_smart_popup, is_custom_sender_allowed, features_json
+           perm_device, perm_smart_popup, perm_manual_transaction, is_custom_sender_allowed, features_json
     FROM subscription_plans
     WHERE catalog_status = 'active' OR catalog_status IS NULL
     ORDER BY plan_category, sort_order ASC, id ASC
@@ -86,7 +87,7 @@ async function getPackageBySku(skuKey) {
     SELECT id, plan_name, sku_key, display_name, plan_category, max_sites, max_devices,
            price, price_1m, price_6m, price_12m, website_limit_internal, device_limit_internal,
            refund_days, catalog_status, is_visible, sort_order, perm_template, perm_website,
-           perm_device, perm_smart_popup, is_custom_sender_allowed, features_json
+           perm_device, perm_smart_popup, perm_manual_transaction, is_custom_sender_allowed, features_json
     FROM subscription_plans
     WHERE sku_key = ${skuKey} OR plan_name = ${skuKey}
     LIMIT 1

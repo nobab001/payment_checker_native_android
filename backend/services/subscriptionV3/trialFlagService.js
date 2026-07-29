@@ -13,11 +13,15 @@ async function setUserTrialFlag(userId, isTrial) {
 }
 
 async function isUserOnTrial(userId) {
-  await ensureSubscriptionV3Schema();
-  const rows = await prisma.$queryRaw`
-    SELECT COALESCE(is_trial, 0) AS is_trial FROM users WHERE id = ${Number(userId)} LIMIT 1
-  `;
-  return Number(rows[0]?.is_trial || 0) === 1;
+  try {
+    const rows = await prisma.$queryRaw`
+      SELECT COALESCE(is_trial, 0) AS is_trial FROM users WHERE id = ${Number(userId)} LIMIT 1
+    `;
+    return Number(rows[0]?.is_trial || 0) === 1;
+  } catch (_) {
+    // Column may not exist yet — treat as non-trial for hot path safety.
+    return false;
+  }
 }
 
 async function backfillIsTrialFlags() {

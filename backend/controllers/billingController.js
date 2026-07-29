@@ -240,6 +240,7 @@ function mapSubscriptionPlanRow(row) {
     perm_website: Number(row.perm_website ?? 1),
     perm_device: Number(row.perm_device ?? 1),
     perm_smart_popup: Number(row.perm_smart_popup ?? 0),
+    perm_manual_transaction: Number(row.perm_manual_transaction ?? 0),
     sort_order: Number(row.sort_order ?? 0),
   };
   return {
@@ -262,6 +263,7 @@ function mapAddonPlanRow(row) {
     perm_website: Number(row.perm_website ?? 0),
     perm_device: Number(row.perm_device ?? 1),
     perm_smart_popup: Number(row.perm_smart_popup ?? 0),
+    perm_manual_transaction: Number(row.perm_manual_transaction ?? 0),
     sort_order: Number(row.sort_order ?? 0),
   };
   return {
@@ -587,7 +589,7 @@ async function listPlans(req, res) {
     const tabOrder = await getBillingTabOrder();
     const rows = await prisma.$queryRaw`
       SELECT id, plan_name, price, max_sites, max_devices, is_custom_sender_allowed, duration_days, features_json,
-             plan_category, perm_template, perm_website, perm_device, perm_smart_popup, sort_order
+             plan_category, perm_template, perm_website, perm_device, perm_smart_popup, perm_manual_transaction, sort_order
       FROM subscription_plans
       ORDER BY sort_order ASC, id ASC
     `;
@@ -614,7 +616,7 @@ async function listAddonPlans(req, res) {
     await ensureAddonPlansTable();
     const rows = await prisma.$queryRaw`
       SELECT id, plan_name, price, duration_days, description, is_active, features_json,
-             max_devices, perm_custom_sender, perm_template, perm_website, perm_device, perm_smart_popup, sort_order
+             max_devices, perm_custom_sender, perm_template, perm_website, perm_device, perm_smart_popup, perm_manual_transaction, sort_order
       FROM addon_plans
       WHERE is_active = 1
       ORDER BY sort_order ASC, id ASC
@@ -635,7 +637,7 @@ async function listAddonPlansAdmin(req, res) {
     const tabOrder = await getBillingTabOrder();
     const rows = await prisma.$queryRaw`
       SELECT id, plan_name, price, duration_days, description, is_active, features_json, created_at,
-             max_devices, perm_custom_sender, perm_template, perm_website, perm_device, perm_smart_popup, sort_order
+             max_devices, perm_custom_sender, perm_template, perm_website, perm_device, perm_smart_popup, perm_manual_transaction, sort_order
       FROM addon_plans
       ORDER BY sort_order ASC, id ASC
     `;
@@ -666,6 +668,7 @@ async function saveAddonPlan(req, res) {
       perm_website,
       perm_device,
       perm_smart_popup,
+      perm_manual_transaction,
     } = req.body;
 
     const normalizedName = String(plan_name || '').trim();
@@ -684,6 +687,7 @@ async function saveAddonPlan(req, res) {
     const permWeb = perm_website === true || perm_website === 1 ? 1 : 0;
     const permDev = perm_device === false || perm_device === 0 ? 0 : 1;
     const permSmart = perm_smart_popup === true || perm_smart_popup === 1 ? 1 : 0;
+    const permManual = perm_manual_transaction === true || perm_manual_transaction === 1 ? 1 : 0;
 
     if (planId) {
       if (existingId && existingId !== planId) {
@@ -706,7 +710,8 @@ async function saveAddonPlan(req, res) {
             perm_template = ${permTpl},
             perm_website = ${permWeb},
             perm_device = ${permDev},
-            perm_smart_popup = ${permSmart}
+            perm_smart_popup = ${permSmart},
+            perm_manual_transaction = ${permManual}
         WHERE id = ${planId}
       `;
     } else {
@@ -720,9 +725,10 @@ async function saveAddonPlan(req, res) {
       const sortOrder = await nextAddonSortOrder();
       await prisma.$executeRaw`
         INSERT INTO addon_plans (plan_name, price, duration_days, description, is_active, features_json,
-          max_devices, perm_custom_sender, perm_template, perm_website, perm_device, perm_smart_popup, sort_order)
+          max_devices, perm_custom_sender, perm_template, perm_website, perm_device, perm_smart_popup,
+          perm_manual_transaction, sort_order)
         VALUES (${normalizedName}, ${Number(price)}, ${parseInt(duration_days, 10) || 30}, ${description || null}, ${activeVal}, ${featuresJson},
-          ${maxDev}, ${permCustom}, ${permTpl}, ${permWeb}, ${permDev}, ${permSmart}, ${sortOrder})
+          ${maxDev}, ${permCustom}, ${permTpl}, ${permWeb}, ${permDev}, ${permSmart}, ${permManual}, ${sortOrder})
       `;
     }
 
@@ -767,7 +773,7 @@ async function createPlan(req, res) {
     await ensurePlanFeaturesColumns();
     const {
       id, plan_name, price, max_sites, max_devices, duration_days, is_custom_sender_allowed, features,
-      plan_category, perm_template, perm_website, perm_device, perm_smart_popup,
+      plan_category, perm_template, perm_website, perm_device, perm_smart_popup, perm_manual_transaction,
     } = req.body;
 
     if (!plan_name || price === undefined || max_sites === undefined || max_devices === undefined) {
@@ -790,6 +796,7 @@ async function createPlan(req, res) {
     const permWeb = perm_website === false || perm_website === 0 ? 0 : 1;
     const permDev = perm_device === false || perm_device === 0 ? 0 : 1;
     const permSmart = perm_smart_popup === true || perm_smart_popup === 1 ? 1 : 0;
+    const permManual = perm_manual_transaction === true || perm_manual_transaction === 1 ? 1 : 0;
 
     let planId = id ? parseInt(id, 10) : null;
 
@@ -805,7 +812,8 @@ async function createPlan(req, res) {
             perm_template = ${permTpl},
             perm_website = ${permWeb},
             perm_device = ${permDev},
-            perm_smart_popup = ${permSmart}
+            perm_smart_popup = ${permSmart},
+            perm_manual_transaction = ${permManual}
         WHERE id = ${planId}
       `;
     } else {
@@ -826,9 +834,51 @@ async function createPlan(req, res) {
             perm_website = ${permWeb},
             perm_device = ${permDev},
             perm_smart_popup = ${permSmart},
+            perm_manual_transaction = ${permManual},
             sort_order = ${sortOrder}
         WHERE id = ${planId}
       `;
+    }
+
+    // Propagate permission changes to all users currently on this plan
+    const affected = await prisma.users.findMany({
+      where: { active_plan_name: plan_name },
+      select: { id: true },
+    });
+    const { bustEntitlementCache, ensureSubscriptionFresh } = require('../services/permissionEngineService');
+    const synced = new Set();
+    for (const u of affected) {
+      try {
+        await syncUserEntitlements(u.id);
+        await bustEntitlementCache(u.id);
+        synced.add(u.id);
+      } catch (e) {
+        console.warn('[Billing] entitlement resync failed for user', u.id, e.message);
+      }
+    }
+    try {
+      const skuRows = await prisma.$queryRaw`
+        SELECT sku_key FROM subscription_plans WHERE id = ${planId} LIMIT 1
+      `;
+      const sku = skuRows[0]?.sku_key;
+      if (sku) {
+        const v3Users = await prisma.$queryRaw`
+          SELECT DISTINCT user_id FROM user_subscriptions
+          WHERE package_sku = ${sku} AND status = 'active'
+        `;
+        for (const row of v3Users) {
+          const uid = Number(row.user_id);
+          if (synced.has(uid)) continue;
+          try {
+            await ensureSubscriptionFresh(uid);
+            await bustEntitlementCache(uid);
+          } catch (e) {
+            console.warn('[Billing] v3 entitlement resync failed for user', uid, e.message);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Billing] v3 resync skip:', e.message);
     }
 
     return res.json({ success: true, message: 'প্ল্যান সফলভাবে তৈরি/আপডেট করা হয়েছে।' });

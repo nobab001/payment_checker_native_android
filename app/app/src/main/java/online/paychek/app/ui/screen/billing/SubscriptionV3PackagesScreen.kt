@@ -175,17 +175,6 @@ fun SubscriptionV3PackagesScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            if (cat?.settings?.subscriptionMaintenance == true) {
-                Surface(color = Color(0xFFFEF3C7), modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        "সাবস্ক্রিপশন রক্ষণাবেক্ষণ চলছে — নতুন ক্রয়/রিনিউ সাময়িক বন্ধ।",
-                        modifier = Modifier.padding(12.dp),
-                        fontSize = 13.sp,
-                        color = Color(0xFF92400E)
-                    )
-                }
-            }
-
             cat?.sharedExpiry?.let { exp ->
                 Text(
                     "শেয়ার্ড মেয়াদ: $exp",
@@ -329,7 +318,7 @@ fun SubscriptionV3PackagesScreen(
                             }
                         }
 
-                        if (selectedPkg != null && cat?.settings?.subscriptionMaintenance != true) {
+                        if (selectedPkg != null) {
                             item {
                                 Button(
                                     onClick = {
@@ -508,7 +497,7 @@ fun SubscriptionV3PackagesScreen(
                                                     checkoutError = "চেকআউট URL পাওয়া যায়নি"
                                                 } else {
                                                     pendingOrderId = res.orderId
-                                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                                    online.paychek.app.ui.checkout.CheckoutActivity.open(context, url)
                                                     res.orderId?.let { pollOrder(it) }
                                                 }
                                             }

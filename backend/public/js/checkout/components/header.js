@@ -22,7 +22,7 @@ export const HeaderComponent = {
       if (merchant.siteUrl) {
         subEl.textContent = safeText(merchant.siteUrl.replace(/^https?:\/\//, ''), 200);
       } else {
-        subEl.textContent = 'Secure Payment Gateway';
+        subEl.textContent = 'Secure Checkout';
       }
       subEl.style.display = 'block';
     }

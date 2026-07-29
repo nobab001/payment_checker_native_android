@@ -25,6 +25,7 @@ import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.ui.screen.auth.pin.SecurityGateScreen
 import online.paychek.app.ui.screen.device.RemoteLockScreen
+import online.paychek.app.ui.screen.maintenance.MaintenanceScreen
 import online.paychek.app.ui.theme.AppTheme
 import online.paychek.app.utils.SessionFlags
 
@@ -37,6 +38,7 @@ import online.paychek.app.utils.SessionFlags
 class MainActivity : FragmentActivity() {
     private var isAppLocked by mutableStateOf(false)
     private var isAppDeactivated by mutableStateOf(false)
+    private var isMaintenanceBlocked by mutableStateOf(false)
     private var wasStopped = false
 
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
@@ -69,7 +71,9 @@ class MainActivity : FragmentActivity() {
                     Box(modifier = Modifier.fillMaxSize()) {
                         MainNavigation()
 
-                        if (isAppDeactivated) {
+                        if (isMaintenanceBlocked) {
+                            MaintenanceScreen(modifier = Modifier.fillMaxSize())
+                        } else if (isAppDeactivated) {
                             RemoteLockScreen(modifier = Modifier.fillMaxSize())
                         } else if (isAppLocked) {
                             SecurityGateScreen(
@@ -179,6 +183,29 @@ class MainActivity : FragmentActivity() {
         if (SessionFlags.hasAuth(this) && SessionFlags.isProfileComplete(this)) {
             online.paychek.app.services.foreground.SmsServiceGuard.healIfNeeded(this)
             healDeviceConfigCache()
+            refreshMaintenanceGate()
+        }
+    }
+
+    private fun refreshMaintenanceGate() {
+        if (!SessionFlags.hasAuth(this)) {
+            isMaintenanceBlocked = false
+            return
+        }
+        if (SessionFlags.userRole(this) == "admin") {
+            isMaintenanceBlocked = false
+            return
+        }
+        lifecycleScope.launch(Dispatchers.IO) {
+            val blocked = try {
+                val res = RetrofitClient.authApiService.getPublicConfig()
+                res.isSuccessful && res.body()?.configs?.get("maintenance_mode") == "true"
+            } catch (_: Exception) {
+                false
+            }
+            withContext(Dispatchers.Main) {
+                isMaintenanceBlocked = blocked
+            }
         }
     }
 

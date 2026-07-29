@@ -227,11 +227,9 @@ fun SubscriptionCheckoutDialog(
                                                         pendingOrderId = res.orderId
                                                         awaitingPayment = true
                                                         try {
-                                                            context.startActivity(
-                                                                Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                                            )
+                                                            online.paychek.app.ui.checkout.CheckoutActivity.open(context, url)
                                                         } catch (e: Exception) {
-                                                            errorMessage = "ব্রাউজার খোলা যায়নি: ${e.message}"
+                                                            errorMessage = "চেকআউট খোলা যায়নি: ${e.message}"
                                                             awaitingPayment = false
                                                         }
                                                         res.orderId?.let { pollOrder(it) }

@@ -1,6 +1,15 @@
 // Force the process timezone to Bangladesh Standard Time
 process.env.TZ = 'Asia/Dhaka';
 
+// Prisma $queryRaw returns BigInt for COUNT/SUM — Express res.json cannot serialize it.
+if (typeof BigInt !== 'undefined' && !BigInt.prototype.toJSON) {
+  // eslint-disable-next-line no-extend-native
+  BigInt.prototype.toJSON = function toJSON() {
+    const n = Number(this);
+    return Number.isSafeInteger(n) ? n : this.toString();
+  };
+}
+
 const express = require('express');
 const http = require('http');
 const path = require('path');
