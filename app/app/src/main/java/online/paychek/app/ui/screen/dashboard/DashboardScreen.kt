@@ -505,56 +505,6 @@ fun DashboardScreen(
             ConnectionStatusBanner(banner = banner)
         }
 
-        if (backgroundSetupPending) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFF59E0B)),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .clickable {
-                        if (!isAccessibilityEnabled) {
-                            AccessibilityHelper.openAccessibilitySettings(context)
-                        } else {
-                            BatteryOptimizationHelper.requestExemptionIfNeeded(context)
-                        }
-                    }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = if (reinstallReenable) Icons.Default.Lock else Icons.Default.Warning,
-                            contentDescription = "Warning",
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = if (reinstallReenable)
-                                "🔓 Accessibility আবার চালু করুন"
-                            else
-                                "⚠ ${pendingSetupCount}টি সেটিংস সম্পূর্ণ করুন",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Text(
-                        text = if (reinstallReenable) "চালু করুন ➔" else "সেটআপ ➔",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
 
         PullToRefreshBox(
             isRefreshing = screenState.isRefreshing,
@@ -653,6 +603,8 @@ fun DashboardScreen(
                     }
                 )
             }
+
+
 
             // Dual-Tab Toggle Row
             item {

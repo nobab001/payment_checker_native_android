@@ -117,51 +117,54 @@
         }
 
         /* ── Premium Header (Design 1) ── */
+        /* ── Premium Header (Design 1 - Compact High-Density) ── */
         .premium-header {
             background: var(--surface);
-            border-radius: var(--radius-lg);
-            padding: 18px;
-            box-shadow: 0 8px 28px rgba(18, 22, 31, 0.06);
-            margin: 14px 14px 8px;
+            border-radius: 16px;
+            padding: 10px 12px 8px;
+            box-shadow: 0 4px 16px rgba(18, 22, 31, 0.05);
+            margin: 6px 8px 4px;
             border: 1px solid rgba(227, 229, 232, 0.9);
+            text-align: center;
         }
         @media (max-width: 767px) {
             .premium-header {
-                margin: 12px 12px 6px;
-                border-radius: 20px;
+                margin: 6px 8px 4px;
+                padding: 10px 12px 8px;
+                border-radius: 14px;
             }
         }
         .secure-chip {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            margin-top: 10px;
-            padding: 6px 10px;
+            gap: 4px;
+            margin-top: 6px;
+            padding: 2px 8px;
             border-radius: 999px;
             background: var(--brand-soft);
             color: var(--brand);
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 700;
             letter-spacing: 0.01em;
         }
-        .secure-chip svg { flex-shrink: 0; }
+        .secure-chip svg { flex-shrink: 0; width: 12px; height: 12px; }
         .premium-top {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
         }
         .merchant-brand {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             flex: 1;
             min-width: 0;
         }
         .logo-wrapper {
-            width: 54px;
-            height: 54px;
-            border-radius: 16px;
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
             background: #f6f7fb;
             display: flex;
             align-items: center;
@@ -174,9 +177,9 @@
             height: 100%;
             object-fit: contain;
         }
-        .merchant-text { min-width: 0; flex: 1; }
+        .merchant-text { min-width: 0; flex: 1; text-align: left; }
         .merchant-title {
-            font-size: 22px;
+            font-size: 17px;
             font-weight: 700;
             line-height: 1.2;
             white-space: nowrap;
@@ -184,9 +187,9 @@
             text-overflow: ellipsis;
         }
         .merchant-sub {
-            font-size: 13px;
+            font-size: 11px;
             opacity: .7;
-            margin-top: 4px;
+            margin-top: 1px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -194,7 +197,7 @@
         .premium-actions {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             flex-shrink: 0;
         }
         .lang-switch {
@@ -209,10 +212,11 @@
             background: transparent;
             color: var(--text);
             opacity: .75;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 800;
-            padding: 6px 10px;
+            padding: 4px 8px;
             cursor: pointer;
+            min-height: auto;
         }
         .lang-switch button.active {
             background: #fff;
@@ -220,21 +224,22 @@
             box-shadow: 0 1px 4px rgba(0,0,0,.08);
         }
         .help-btn {
-            width: 40px;
-            height: 40px;
-            border-radius: 12px;
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
             border: none;
             background: #f3f4f6;
             color: var(--text);
             cursor: pointer;
             font-weight: 900;
-            font-size: 14px;
+            font-size: 13px;
+            min-height: auto;
         }
         .trx-btn {
-            width: 48px;
-            height: 48px;
+            width: 36px;
+            height: 36px;
             border: none;
-            border-radius: 14px;
+            border-radius: 10px;
             background: #f3f4f6;
             color: var(--text);
             cursor: pointer;
@@ -242,51 +247,59 @@
             align-items: center;
             justify-content: center;
             transition: .2s;
+            min-height: auto;
         }
         .trx-btn:hover {
             background: #e5e7eb;
-            transform: scale(1.05);
+            transform: scale(1.03);
         }
         .amount-card {
-            margin-top: 16px;
-            border-radius: 20px;
-            padding: 22px 18px;
+            margin-top: 8px;
+            border-radius: 12px;
+            padding: 8px 14px;
             background: linear-gradient(145deg, var(--brand) 0%, var(--brand-mid) 100%);
             color: #fff;
             text-align: center;
-            box-shadow: 0 12px 28px rgba(26, 35, 126, 0.28);
+            box-shadow: 0 6px 18px rgba(26, 35, 126, 0.22);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
-        .amount-label { font-size: 13px; opacity: .92; font-weight: 600; }
+        .amount-label { font-size: 11.5px; opacity: .92; font-weight: 600; text-align: left; }
         .amount-value {
-            margin-top: 8px;
+            margin-top: 0;
             font-family: 'Outfit', 'Hind Siliguri', sans-serif;
-            font-size: clamp(34px, 8vw, 42px);
+            font-size: 24px;
             font-weight: 800;
-            letter-spacing: -0.03em;
-            line-height: 1.1;
+            letter-spacing: -0.02em;
+            line-height: 1;
         }
-        /* ── Tab bar ── */
+        /* ── Sticky & Compact Tab bar ── */
         .tab-bar {
-            display: flex; gap: 6px; padding: 10px 12px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex; gap: 4px; padding: 4px 8px;
             border-bottom: 1px solid var(--border); background: #fff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.03);
         }
         .tab-btn {
             flex: 1 1 0; display: flex; flex-direction: column; align-items: center;
-            gap: 4px; padding: 8px 6px; border-radius: 12px; border: none; background: transparent;
-            cursor: pointer; min-width: 0; transition: .2s;
+            gap: 2px; padding: 4px 4px; border-radius: 8px; border: none; background: transparent;
+            cursor: pointer; min-width: 0; transition: .2s; min-height: 36px;
         }
-        .tab-btn .ico { font-size: 20px; line-height: 1; }
-        .tab-btn .ico img { width: 22px; height: 22px; object-fit: contain; border-radius: 4px; }
-        .tab-btn .lbl { font-size: 9px; font-weight: 700; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+        .tab-btn .ico { font-size: 16px; line-height: 1; }
+        .tab-btn .ico img { width: 18px; height: 18px; object-fit: contain; border-radius: 4px; }
+        .tab-btn .lbl { font-size: 9.5px; font-weight: 700; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
         .tab-btn.active { background: var(--purple-light); }
         .tab-btn.active .lbl { color: var(--purple); }
 
         .content {
-            padding: 14px;
+            padding: 6px 8px 16px;
             overflow-y: auto;
             max-height: none;
             -webkit-overflow-scrolling: touch;
-            padding-bottom: calc(88px + var(--safe-bottom));
+            padding-bottom: calc(44px + var(--safe-bottom));
         }
         @media (min-width: 768px) {
             .content { padding-bottom: 24px; }
@@ -298,24 +311,24 @@
             margin-bottom: 8px; background: #fff; cursor: pointer;
         }
         .d3-tab-bar .left { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 13px; }
-        .prov-logo-sm { width: 28px; height: 28px; border-radius: 8px; object-fit: contain; }
-        .prov-avatar { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 13px; }
+        .prov-logo-sm { width: 20px; height: 20px; border-radius: 5px; object-fit: contain; }
+        .prov-avatar { width: 20px; height: 20px; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 11px; }
         .hidden { display: none !important; }
 
-        /* ── Design 1: List ── */
+        /* ── Design 1: List (Compact 34px Height Rows - 50% Height Reduction) ── */
         .group-title {
             font-size: 13px; font-weight: 700; color: var(--purple);
-            margin: 12px 0 8px; padding-left: 4px;
+            margin: 6px 0 3px; padding-left: 2px; display: flex; align-items: center; gap: 6px;
         }
         .list-row {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 12px 14px; background: #fff; border: 1px solid var(--border);
-            border-radius: 12px; margin-bottom: 8px;
+            padding: 5px 10px; background: #fff; border: 1px solid var(--border);
+            border-radius: 8px; margin-bottom: 4px; min-height: 34px;
         }
-        .list-row .num { font-weight: 700; font-size: 15px; letter-spacing: .5px; }
+        .list-row .num { font-weight: 700; font-size: 13.5px; letter-spacing: .3px; font-family: 'Outfit', sans-serif; }
         .btn-copy {
-            background: var(--purple); color: #fff; border: none; border-radius: 8px;
-            padding: 8px 14px; font-size: 12px; font-weight: 700; cursor: pointer;
+            background: var(--purple); color: #fff; border: none; border-radius: 6px;
+            padding: 4px 10px; font-size: 11px; font-weight: 700; cursor: pointer; min-height: 26px;
             transition: transform 120ms ease, background 120ms ease;
         }
         .btn-copy:active { transform: scale(0.96); }
@@ -626,20 +639,21 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* ── Layout engine (Phase-1.5) ── */
-        .provider-block { margin-bottom: 14px; }
-        .provider-detail-block { margin-top: 10px; }
+        /* ── Layout engine (Compact & Sleek) ── */
+        .provider-block { margin-bottom: 8px; }
+        .provider-detail-block { margin-top: 6px; }
         .instruction-area {
-            margin: 8px 0 10px; padding: 10px 12px;
-            background: var(--purple-light); border-radius: 10px;
-            font-size: 12px; color: var(--purple-dark); line-height: 1.45;
+            margin: 2px 0 5px; padding: 4px 8px;
+            background: rgba(26, 35, 126, 0.04); border-left: 3px solid var(--brand);
+            border-radius: 4px; font-size: 11px; color: var(--text); line-height: 1.35;
+            font-weight: 600;
         }
         .group-section-title {
-            font-size: 14px; font-weight: 800; color: var(--purple);
-            margin: 0 0 10px; padding-left: 2px;
+            font-size: 13px; font-weight: 800; color: var(--purple);
+            margin: 0 0 6px; padding-left: 2px;
         }
         .card-detail-panels { display: none; }
-        .num-wrap { min-width: 0; display: flex; align-items: center; gap: 10px; }
+        .num-wrap { min-width: 0; display: flex; align-items: center; gap: 8px; }
 
         /* ── Phase-2 Interaction ── */
         .checkout-skeleton { padding: 14px; }
@@ -697,22 +711,23 @@
             transform: translateY(12px); transition: transform 220ms ease;
             -webkit-overflow-scrolling: touch;
         }
-        /* Footer */
+        /* Footer (Compact 50% Height) */
         .checkout-footer {
             margin-top: auto;
-            padding: 20px 16px calc(28px + var(--safe-bottom));
+            padding: 8px 12px calc(12px + var(--safe-bottom));
             text-align: center;
         }
         .checkout-footer .powered {
             font-family: 'Outfit', sans-serif;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 700;
             color: var(--brand);
             letter-spacing: 0.02em;
+            display: inline-block;
         }
         .checkout-footer .secure-note {
-            margin-top: 4px;
-            font-size: 11px;
+            margin-top: 2px;
+            font-size: 10px;
             color: var(--muted);
             font-weight: 600;
         }

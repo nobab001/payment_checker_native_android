@@ -28,17 +28,16 @@ After finishing a coding task, pick the action by the files touched:
      then launch `adb shell am start -n online.paychek.app/.MainActivity`.
    - If no device: only give the APK path. Do **not** ask for IP/PORT unless the user wants wireless install.
 
-### Backend only (`backend/**`, npm, env, DB, server-served checkout JS)
-1. Restart the local Node server (port 3000) so changes load.
-2. Do **not** build an APK.
+### Backend / Website / Checkout page (`backend/**`, npm, env, DB, server-served checkout JS)
+1. Restart local Node server (port 3000) if testing locally.
+2. **Auto-Deploy Rule (Per User Instruction)**: Always auto-deploy website and checkout page (`backend/public/**`) changes to VPS (`paycheckbd.com`) upon task completion so updates are instantly live.
 
 ### Both app + backend
-- Restart local server **and** build the APK (with the adb device check above).
+- Restart local server, build APK, and deploy website/backend changes to VPS automatically.
 
-## VPS / production deploy — ONLY on explicit request
+## VPS / production deploy
 
-Never deploy to the VPS or production unless the user explicitly asks. The VPS hosts
-**multiple projects** — touch **only** this one.
+> **User Rule**: Website and checkout page (`backend/public/**`) changes are AUTO-DEPLOYED to VPS upon completion. For other backend/DB migrations, deploy to VPS when requested. The VPS hosts multiple projects — touch only this one.
 
 - SSH: `ssh paycheckbd` (alias for `root@37.60.224.231`, Contabo VPS `vmi3182621`,
   CloudPanel on `:8443`). Key auth via `~/.ssh/id_ed25519` — config in `~/.ssh/config`.

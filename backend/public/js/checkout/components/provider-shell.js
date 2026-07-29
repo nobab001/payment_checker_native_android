@@ -17,9 +17,6 @@ function merchantIdAttr(provider) {
 
 /**
  * One-line muted incentive badge (follows --muted / theme).
- *   চার্জ ৳5 › 1000+5=1005 — send more (surcharge)
- *   কমিশন ৳2 › 1000-2=998  — send less (discount)
- * Exact amount (no net) → no badge.
  */
 export function incentiveBadgeHtml(provider, { compact = false } = {}) {
   const inc = provider.incentive;
@@ -66,16 +63,16 @@ function payHintAttr(provider) {
   return hint ? ` data-pay-hint="${esc(hint)}"` : '';
 }
 
-/** Provider header: logo + display name (merchant branding stays in HeaderComponent). */
-export function renderProviderHeader(provider, branding, { logoPx = 40, className = 'group-title provider-header' } = {}) {
-  return `<div class="${className}" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+/** Provider header: compact logo + display name. */
+export function renderProviderHeader(provider, branding, { logoPx = 24, className = 'group-title provider-header' } = {}) {
+  return `<div class="${className}" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
     ${providerLogoHtml(branding, templateId(provider), provider.provider, logoPx)}
     <span>${esc(provider.displayName)}</span>
     ${incentiveBadgeHtml(provider)}
   </div>`;
 }
 
-/** Card grid tile — logo + name only (numbers live in detail section). */
+/** Card grid tile — logo + name only. */
 export function renderProviderCardPreview(provider, branding) {
   const tid = templateId(provider);
   const logoUrl = (provider.metadata?.logoUrl)
@@ -108,21 +105,18 @@ export function renderProviderLiveBody(provider) {
       : 'কার্ড পেমেন্ট — অফিসিয়াল গেটওয়ে';
 
   return `<div class="live-card" data-live="${esc(liveKey(provider))}"${merchantIdAttr(provider)} data-provider-type="${esc(provider.type)}">
-    <div style="flex:1;display:flex;align-items:center;gap:10px">
-      ${provider.metadata?.logoUrl ? `<img src="${esc(safeImgSrc(provider.metadata.logoUrl))}" alt="" style="width:28px;height:28px;border-radius:6px;object-fit:cover" onerror="this.remove()">` : ''}
+    <div style="flex:1;display:flex;align-items:center;gap:8px">
+      ${provider.metadata?.logoUrl ? `<img src="${esc(safeImgSrc(provider.metadata.logoUrl))}" alt="" style="width:24px;height:24px;border-radius:6px;object-fit:cover" onerror="this.remove()">` : ''}
       <div style="flex:1">
-        <div style="font-weight:700">${esc(provider.displayName)} ${incentiveBadgeHtml(provider)}</div>
+        <div style="font-weight:700;font-size:13px">${esc(provider.displayName)} ${incentiveBadgeHtml(provider)}</div>
         <span class="live-badge">${esc(badge)}</span>
       </div>
     </div><span aria-hidden="true">→</span>
   </div>`;
 }
 
-/**
- * Standard provider block: header + instruction + body.
- * Renderers supply bodyHtml only (numbers or live action).
- */
-export function renderProviderShell(provider, branding, bodyHtml, { headerLogoPx = 40 } = {}) {
+/** Standard provider block: header + instruction + body. */
+export function renderProviderShell(provider, branding, bodyHtml, { headerLogoPx = 24 } = {}) {
   const header = renderProviderHeader(provider, branding, { logoPx: headerLogoPx });
   const instruction = renderInstruction(provider.instruction);
   return `<section class="provider-block" data-provider-id="${esc(provider.id)}" data-provider-type="${esc(provider.type)}" data-tab="${esc(provider.tabId)}" data-pay-amount="${esc(String(provider.incentive?.payAmount ?? ''))}"${payHintAttr(provider)}>
@@ -130,13 +124,10 @@ export function renderProviderShell(provider, branding, bodyHtml, { headerLogoPx
   </section>`;
 }
 
-/**
- * Group accordion shell — collapse-ready for Phase-2 (data-acc-toggle / data-acc-panel).
- * Accordion starts open; interaction not wired yet.
- */
+/** Group accordion shell. */
 export function renderProviderAccordion(provider, branding, bodyHtml) {
   const header = renderProviderHeader(provider, branding, {
-    logoPx: 34,
+    logoPx: 24,
     className: 'acc-head-title',
   });
   const instruction = renderInstruction(provider.instruction);

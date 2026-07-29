@@ -11,12 +11,11 @@ function numberRowAttrs(number) {
   };
 }
 
-/** Shared number row fragments — per-number provider logo when template branding exists. */
-
+/** Shared number row fragments — compact provider logo (20px). */
 function numberLogoHtml(number, provider, branding) {
   const tid = number.templateId ?? provider.metadata?.templateId ?? null;
   const prov = number.provider || provider.provider;
-  return providerLogoHtml(branding, tid, prov, 26);
+  return providerLogoHtml(branding, tid, prov, 20);
 }
 
 export function renderNumberRow(number, branding = {}, provider = {}) {

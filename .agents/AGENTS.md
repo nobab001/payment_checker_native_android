@@ -63,15 +63,18 @@ Whenever you make changes to the codebase (add/modify/delete screens, buttons, A
    - If a device shows as `device`: `adb install -r app/app/build/outputs/apk/debug/app-debug.apk` → then launch `adb shell am start -n online.paychek.app/.MainActivity`.
    - If no device connected: only give the APK path. Do **not** ask for IP/PORT unless user wants wireless install.
 
-### B. Backend only (`backend/**`, npm, env, DB, checkout JS)
-1. Restart the local Node server (port 3000).
-2. Do **not** build an APK.
+### B. Backend / Website / Checkout page (`backend/**`, checkout JS, HTML, CSS)
+1. Restart local Node server (port 3000) if testing locally.
+2. **Website & Checkout Auto-Deploy Rule**: As requested by user, whenever website, checkout page (`backend/public/**`), or backend API changes are completed, **ALWAYS automatically deploy to VPS (`paycheckbd.com`)** via git push + `deploy.sh` so changes are immediately live for users without needing a separate ask.
 
 ### C. Both app + backend
-- Restart local server **and** build the APK (with adb device check above).
+- Restart local server, build the APK (with adb device check), and deploy backend/website changes to VPS automatically.
 
-### D. GitHub — NEVER auto push
-- Do **not** stage, commit, or push **unless the user explicitly asks**.
+---
+
+## 4. VPS / Production Deploy — Rules & Pipeline
+
+> **User Exception Rule**: Website and checkout page (`backend/public/**`) changes MUST be auto-deployed to VPS (`paycheckbd.com`) upon completion of the task. For other major structural changes, follow standard safety..
 - This overrides any older rule that said "always push after implementation".
 - Commit messages: short, why-focused (fix/add/update).
 - Never force-push `main`; never amend pushed history; no interactive git (`-i`).
@@ -238,7 +241,8 @@ Read before UI work: `docs/design/design-system.md`, `.cursor/rules/01-ui-ux.mdc
 - **Do not hallucinate APIs** — only use endpoints documented in the blueprint or existing `routes/` files.
 - If an instruction in this file conflicts with a user message in the same session, **follow the user message** and flag the conflict.
 - For ambiguous requirements: ask one focused clarifying question rather than making assumptions.
-- Never auto-run `pm2 restart` or `pm2 reload` on VPS without explicit user instruction.
+- **Never auto-run `pm2 restart` or `pm2 reload` on VPS without explicit user instruction.**
+- **Language of Plans**: Always write and present the Implementation Plan (`implementation_plan.md`) in Bengali (বাংলা).
 
 ---
 

@@ -23,7 +23,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
-import online.paychek.app.services.foreground.SmsServiceGuard
 import online.paychek.app.utils.AccessibilityHelper
 import online.paychek.app.utils.BatteryOptimizationHelper
 import online.paychek.app.utils.OemBackgroundHelper
@@ -50,7 +49,6 @@ fun BackgroundPersistenceCard(
     }
     // শুধু incomplete → complete ট্রানজিশনে একবার celebration
     var showReadyCelebration by remember { mutableStateOf(false) }
-    val serviceAlive = SmsServiceGuard.isServiceHealthy(context)
 
     fun refreshChecks() {
         val wasIncomplete = !accessibilityOk || !batteryOk
@@ -81,10 +79,9 @@ fun BackgroundPersistenceCard(
     }
 
     val allReady = accessibilityOk && batteryOk
-    val needsServiceRestart = isServiceActive && allReady && !serviceAlive
 
-    // সম্পূর্ণ প্রস্তুত → কার্ড লুকাও (celebration চলাকালীন ছাড়া)
-    if (allReady && !showReadyCelebration && !needsServiceRestart) return
+    // সম্পূর্ণ প্রস্তুত হলে ব্যানার লুকিয়ে যাবে (celebration শেষ হওয়ার পর)
+    if (allReady && !showReadyCelebration) return
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -110,38 +107,32 @@ fun BackgroundPersistenceCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("ব্যাকগ্রাউন্ড গার্ড", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Text(
-                        when {
-                            showReadyCelebration -> "সেটিংস সম্পূর্ণ — ডিভাইস প্রস্তুত"
-                            needsServiceRestart -> "সেটিংস ঠিক আছে কিন্তু সার্ভিস বন্ধ — পুনরায় চালু করুন"
-                            else -> "২৪ ঘণ্টা অ্যাপ চালু রাখতে নিচের ২টি সেটিংস করুন"
-                        },
+                        if (showReadyCelebration) "সেটিংস সম্পূর্ণ — ডিভাইস প্রস্তুত"
+                        else "২৪ ঘণ্টা অ্যাপ চালু রাখতে নিচের ২টি সেটিংস করুন",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            if (!allReady || showReadyCelebration) {
-                SetupRow(
-                    done = accessibilityOk,
-                    title = "১. Accessibility চালু",
-                    subtitle = "Paychek Background Guard → ON",
-                    onSetup = { AccessibilityHelper.openAccessibilitySettings(context) }
-                )
-                SetupRow(
-                    done = batteryOk,
-                    title = "২. Battery Unrestricted",
-                    subtitle = when (OemBackgroundHelper.detectVendor()) {
-                        online.paychek.app.utils.OemVendor.SAMSUNG ->
-                            "Apps Info → Battery → Unrestricted / অপ্টিমাইজ করবেন না"
-                        else -> "অপ্টিমাইজ করবেন না / Unrestricted"
-                    },
-                    onSetup = {
-                        // সিস্টেম Allow dialog আগে; ব্যর্থ হলে App Info (Samsung Sleeping apps নয়)
-                        BatteryOptimizationHelper.requestExemptionIfNeeded(context)
-                    }
-                )
-            }
+            SetupRow(
+                done = accessibilityOk,
+                title = "১. Accessibility चालू",
+                subtitle = "Paychek Background Guard → ON",
+                onSetup = { AccessibilityHelper.openAccessibilitySettings(context) }
+            )
+            SetupRow(
+                done = batteryOk,
+                title = "২. Battery Unrestricted",
+                subtitle = when (OemBackgroundHelper.detectVendor()) {
+                    online.paychek.app.utils.OemVendor.SAMSUNG ->
+                        "Apps Info → Battery → Unrestricted / অপ্টিমাইজ করবেন না"
+                    else -> "অপ্টিমাইজ করবেন না / Unrestricted"
+                },
+                onSetup = {
+                    BatteryOptimizationHelper.requestExemptionIfNeeded(context)
+                }
+            )
 
             AnimatedVisibility(
                 visible = showReadyCelebration,
@@ -166,19 +157,6 @@ fun BackgroundPersistenceCard(
                     Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("আবার পরীক্ষা করুন", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                }
-            }
-
-            if (needsServiceRestart) {
-                Button(
-                    onClick = {
-                        refreshChecks()
-                        onRefreshService()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22D3EE)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("সার্ভিস চালু করুন", color = Color(0xFF0B0E14), fontWeight = FontWeight.Bold)
                 }
             }
         }
