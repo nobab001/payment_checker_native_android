@@ -89,6 +89,9 @@ function buildProviderFields({ tabId, provider, variant, type, displayName, inst
 function createSimProvider(g, tabId) {
   const variant = inferVariantFromGateway(g, tabId);
   const pos = Number.isFinite(Number(g.position)) ? Number(g.position) : Number.MAX_SAFE_INTEGER;
+  // Group-level order (merchant provider reorder) drives the provider header order;
+  // per-number order keeps using g.position via gatewayToNumber().
+  const groupPos = Number.isFinite(Number(g.groupOrder)) ? Number(g.groupOrder) : pos;
 
   return buildProviderFields({
     tabId,
@@ -97,7 +100,7 @@ function createSimProvider(g, tabId) {
     type: PROVIDER_TYPE.SIM,
     displayName: g.displayName || g.groupLabel || g.provider,
     instruction: g.instruction || '',
-    sortOrder: pos,
+    sortOrder: groupPos,
     templateId: g.templateId ?? null,
     incentiveToken: g.incentiveToken ?? null,
     incentiveTplKey: g.incentiveTplKey ?? (g.templateId != null ? `tpl_${g.templateId}` : null),

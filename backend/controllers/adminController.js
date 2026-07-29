@@ -960,7 +960,14 @@ async function getCheckoutDesignConfig(req, res) {
     // Merge in providers derived from official SMS templates so newly added
     // templates appear here automatically for logo/name customization.
     const providers = await layoutHelper.resolveProviderBrandingFull(providerBranding);
-    return res.json({ success: true, tabs, providerBranding: providers, designs: ['design-1', 'design-2', 'design-3'] });
+    return res.json({
+      success: true,
+      tabs,
+      providerBranding: providers,
+      designs: ['design-1', 'design-2', 'design-3'],
+      tabOrder: Array.isArray(globalTabs && globalTabs.tab_order) ? globalTabs.tab_order : Object.keys(tabs),
+      providerOrder: Array.isArray(globalTabs && globalTabs.provider_order) ? globalTabs.provider_order : [],
+    });
   } catch (err) {
     console.error('getCheckoutDesignConfig error:', err);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
@@ -985,7 +992,9 @@ async function saveCheckoutDesignConfig(req, res) {
     }
     const providerBranding = b.providerBranding && typeof b.providerBranding === 'object'
       ? b.providerBranding : {};
-    await layoutHelper.saveGlobalCheckoutDefaults(tabs, providerBranding);
+    const tabOrder = Array.isArray(b.tab_order) ? b.tab_order : undefined;
+    const providerOrder = Array.isArray(b.provider_order) ? b.provider_order : undefined;
+    await layoutHelper.saveGlobalCheckoutDefaults(tabs, providerBranding, { tab_order: tabOrder, provider_order: providerOrder });
 
     // Uploaded logos are attached to the templates payload — bump the sync version
     // and broadcast so connected devices refetch templates and show the new logos.

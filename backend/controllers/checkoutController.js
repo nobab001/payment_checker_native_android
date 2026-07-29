@@ -128,6 +128,38 @@ async function getCheckoutLayout(req, res) {
     // Enrich synced SIM rows with tab + group metadata for the 3 checkout designs
     formattedGateways = formattedGateways.map((g) => layoutHelper.enrichGatewayRow(g));
 
+    // ── Per-website provider ordering + enable (additive; checkout VIEW only) ──
+    // The merchant customizer reorders/toggles provider groups; we honour that here
+    // by annotating each gateway with a groupOrder + groupEnabled (keyed by groupKey),
+    // exposing the resolved list to the customizer, then hiding disabled groups from
+    // the customer checkout. This never touches gateway_methods / the SMS reader.
+    let cfgProviderOrder = [];
+    try {
+      const _cfg = typeof layout.layout_config === 'string'
+        ? JSON.parse(layout.layout_config) : (layout.layout_config || {});
+      cfgProviderOrder = Array.isArray(_cfg.provider_order) ? _cfg.provider_order : [];
+    } catch (_) { cfgProviderOrder = []; }
+    const poIdx = new Map();
+    const poEn = new Map();
+    cfgProviderOrder.forEach((p, i) => { poIdx.set(p.key, i); poEn.set(p.key, p.enabled !== false); });
+    const hasPO = cfgProviderOrder.length > 0;
+    formattedGateways = formattedGateways.map((g) => ({
+      ...g,
+      groupOrder: hasPO && poIdx.has(g.groupKey) ? poIdx.get(g.groupKey)
+        : (hasPO ? 1e9 : (Number.isFinite(Number(g.position)) ? Number(g.position) : 1e9)),
+      groupEnabled: hasPO && poEn.has(g.groupKey) ? poEn.get(g.groupKey) : true,
+    }));
+    const checkoutProviders = layoutHelper.buildCheckoutProviderList(formattedGateways);
+    if (hasPO) {
+      formattedGateways = formattedGateways.filter((g) => g.groupEnabled !== false);
+      for (const cat of Object.keys(gatewaysByCategory)) {
+        gatewaysByCategory[cat] = (gatewaysByCategory[cat] || []).filter((g) => {
+          const k = g.groupKey || `${(g.provider || '').trim()}_Personal`;
+          return poEn.has(k) ? poEn.get(k) : true;
+        });
+      }
+    }
+
     // ── Incentive rules (commission + campaign) exposed to the checkout client ──
     // Only when admin unlocked commission for this website. The client applies
     // these per provider using the amount the customer enters; server-side
@@ -194,6 +226,9 @@ async function getCheckoutLayout(req, res) {
       merchantId: layout.merchant_id,
       checkoutTabs: Object.values(checkoutTabs).filter((t) => t.enabled),
       checkoutTabsAll: checkoutTabs,
+      tabOrder: Object.keys(checkoutTabs),
+      providerOrder: cfgProviderOrder,
+      checkoutProviders,
       providerBranding: providers,
       layoutConfig,
       activeGateways: formattedGateways,

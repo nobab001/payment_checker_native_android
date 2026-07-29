@@ -772,6 +772,52 @@
             .skel { animation: none; }
             .acc-panel-outer, .checkout-toast, .checkout-sheet, .prov-card { transition: none !important; }
         }
+        /* ═══════════════════════════════════════════════════════════════════
+           Premium polish pass — additive & layout-safe (colour / shadow /
+           radius / motion / type only; no geometry). Uses design tokens so it
+           stays correct if a dark theme is introduced.
+           ═══════════════════════════════════════════════════════════════════ */
+        .tab-btn { transition: background .22s ease, box-shadow .22s ease, transform .22s ease; }
+        .tab-btn.active {
+            background: linear-gradient(135deg, var(--brand), var(--brand-mid));
+            box-shadow: 0 6px 16px rgba(26, 35, 126, 0.28);
+            transform: translateY(-1px);
+        }
+        .tab-btn.active .lbl { color: #fff; }
+
+        .btn-copy {
+            border-radius: 9px;
+            background: linear-gradient(135deg, var(--brand-mid), var(--brand));
+            box-shadow: 0 2px 8px rgba(26, 35, 126, 0.22);
+        }
+        .btn-copy.copied { background: #10B981; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3); }
+
+        /* Premium tabular figures for account numbers */
+        .num, .pnum, .acc-info .pnum {
+            font-family: 'Outfit', 'Hind Siliguri', sans-serif;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 0.02em;
+        }
+
+        /* Accordion: subtle open-state brand tint + hover affordance */
+        .acc-head { transition: background .2s ease; }
+        .acc-head:not(.open):hover { background: rgba(26, 35, 126, 0.04); }
+        .acc-head.open { background: var(--brand-soft); }
+        .acc-head.open .chev { color: var(--brand); }
+
+        /* Softer, layered cards */
+        .accordion, .provider-block { box-shadow: 0 2px 12px rgba(18, 22, 31, 0.05); }
+        .prov-card { box-shadow: 0 4px 16px rgba(18, 22, 31, 0.06); }
+        .prov-card:hover { box-shadow: 0 8px 22px rgba(18, 22, 31, 0.10); transform: translateY(-2px); }
+        .prov-card:active { transform: scale(.97); }
+
+        /* Stronger type hierarchy */
+        .group-section-title { font-family: 'Outfit', 'Hind Siliguri', sans-serif; letter-spacing: 0.01em; }
+        .amount-value { letter-spacing: -0.01em; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .tab-btn, .acc-head, .btn-copy, .prov-card { transition: none !important; transform: none !important; }
+        }
     </style>
 </head>
 <body>
@@ -925,6 +971,6 @@
     </div>
 </div>
 
-<script type="module" src="/js/checkout/app.js?v=7"></script>
+<script type="module" src="/js/checkout/app.js?v=8"></script>
 </body>
 </html>

@@ -51,9 +51,8 @@ export const CheckoutRenderer = {
       sectionTitle: bucket.tab?.label,
     });
 
-    const switcherHtml = design === 'group'
-      ? renderTabSwitcher(model.tabs, activeTabId)
-      : '';
+    // Top tab bar owns switching for every design now; the bottom switcher is gone.
+    const switcherHtml = '';
 
     return { html: providersHtml + switcherHtml, providersHtml, switcherHtml, design, bucket };
   },
@@ -68,7 +67,7 @@ export const CheckoutRenderer = {
 
     if (!contentOnly) {
       renderTabBar(tabBar, model.tabs, activeTabId, design, onTabChange);
-    } else if (tabBar && design !== 'group') {
+    } else if (tabBar) {
       setActiveTabOnBar(tabBar, activeTabId);
     }
 

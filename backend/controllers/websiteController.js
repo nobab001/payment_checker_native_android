@@ -359,6 +359,29 @@ async function getWebsite(req, res) {
     const incentiveTemplates = await listAccountIncentiveTemplates(row.user_id);
     const { providerBranding: gBranding } = await layoutHelper.loadGlobalCheckoutDefaults();
     const providerBranding = await layoutHelper.resolveProviderBrandingFull(gBranding);
+    const checkoutTabs = await layoutHelper.parseTabsForMerchant(row.layout_config);
+
+    // Ordered, unique provider list (key = groupKey) for the merchant customizer,
+    // reflecting this website's provider_order (incl. disabled, so they can be
+    // re-enabled). Falls back gracefully if the secure-rows query is unavailable.
+    let checkoutProviders = [];
+    try {
+      const checkoutData = require('../services/checkoutDataService');
+      const { gateways: gw } = await checkoutData.buildSecureCheckoutData(row.user_id, row.number_order_json, {});
+      let _cfg = {};
+      try { _cfg = typeof row.layout_config === 'string' ? JSON.parse(row.layout_config) : (row.layout_config || {}); } catch (_) { _cfg = {}; }
+      const po = Array.isArray(_cfg.provider_order) ? _cfg.provider_order : [];
+      const i2 = new Map(); const e2 = new Map();
+      po.forEach((p, i) => { i2.set(p.key, i); e2.set(p.key, p.enabled !== false); });
+      const hp = po.length > 0;
+      const mapped = gw.map((g) => ({
+        ...g,
+        groupOrder: hp && i2.has(g.groupKey) ? i2.get(g.groupKey)
+          : (hp ? 1e9 : (Number.isFinite(Number(g.position)) ? Number(g.position) : 1e9)),
+        groupEnabled: hp && e2.has(g.groupKey) ? e2.get(g.groupKey) : true,
+      }));
+      checkoutProviders = layoutHelper.buildCheckoutProviderList(mapped);
+    } catch (_) { checkoutProviders = []; }
 
     return res.json({
       success: true,
@@ -367,7 +390,9 @@ async function getWebsite(req, res) {
       incentiveTemplates,
       gatewaysByCategory,
       providerBranding,
-      checkoutTabs: await layoutHelper.parseTabsForMerchant(row.layout_config),
+      checkoutTabs,
+      tabOrder: Object.keys(checkoutTabs),
+      checkoutProviders,
       commissions: commissions.map((c) => ({
         id: c.id,
         paymentType: c.payment_type,
@@ -423,11 +448,19 @@ async function updateWebsiteSettings(req, res) {
       data.checkout_theme = theme;
     }
 
-    // Tab customization (Send Money, Cash Out, Payment, Bank, Card)
-    if (b.checkout_tabs && typeof b.checkout_tabs === 'object') {
+    // Tab customization + per-website tab/provider ordering (all additive — an old
+    // app build that omits tab_order/provider_order never wipes a stored order).
+    const hasTabEdit = (b.checkout_tabs && typeof b.checkout_tabs === 'object')
+      || Array.isArray(b.tab_order) || Array.isArray(b.provider_order);
+    if (hasTabEdit) {
       const existing = row.layout_config;
       const { tabs: globalTabs } = await layoutHelper.loadGlobalCheckoutDefaults();
-      data.layout_config = JSON.stringify(layoutHelper.mergeTabsIntoLayout(existing, b.checkout_tabs, globalTabs));
+      let cfg = layoutHelper.mergeTabsIntoLayout(existing, b.checkout_tabs || {}, globalTabs);
+      cfg = layoutHelper.applyOrderToLayoutConfig(cfg, {
+        tab_order: Array.isArray(b.tab_order) ? b.tab_order : undefined,
+        provider_order: Array.isArray(b.provider_order) ? b.provider_order : undefined,
+      });
+      data.layout_config = JSON.stringify(cfg);
     }
 
     if (b.checkout_mode !== undefined) {
@@ -563,6 +596,7 @@ async function updateNumberOrder(req, res) {
       data: { number_order_json: JSON.stringify(sanitized), updated_at: new Date() },
     });
 
+    merchantCache.invalidate(row.api_key);
     return res.json({ success: true, numberOrder: sanitized, website: toWebsiteDto(updated) });
   } catch (error) {
     console.error('[Website] updateNumberOrder error:', error);
@@ -673,7 +707,11 @@ async function saveGlobalCheckout(req, res) {
     const tabsInput = b.checkout_tabs || b.checkoutTabs;
     const { tabs: globalTabs } = await layoutHelper.loadGlobalCheckoutDefaults();
     const layoutObj = layoutHelper.mergeTabsIntoLayout(null, tabsInput || {}, globalTabs);
-    const layoutConfigStr = JSON.stringify(layoutObj);
+    // Propagate a global tab order (additive). Provider order is per-website only.
+    const layoutObjOrdered = layoutHelper.applyOrderToLayoutConfig(layoutObj, {
+      tab_order: Array.isArray(b.tab_order) ? b.tab_order : undefined,
+    });
+    const layoutConfigStr = JSON.stringify(layoutObjOrdered);
     const sanitizedOrder = sanitizeNumberOrder(b.order || b.numberOrder || []);
     const numberOrderJson = JSON.stringify(sanitizedOrder);
 
@@ -681,7 +719,7 @@ async function saveGlobalCheckout(req, res) {
     const globalPayload = JSON.stringify({
       checkout_theme: theme,
       checkout_mode: mode,
-      layout_config: layoutObj,
+      layout_config: layoutObjOrdered,
       numberOrder: sanitizedOrder,
       updatedAt: new Date().toISOString(),
     });

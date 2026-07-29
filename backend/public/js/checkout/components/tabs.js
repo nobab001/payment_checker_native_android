@@ -5,11 +5,8 @@ import { esc, tabIconHtml } from '../utils.js';
  */
 export function renderTabBar(container, tabs, activeTabId, design, onTabChange) {
   if (!container) return;
-  if (design === 'group') {
-    container.classList.add('hidden');
-    container.innerHTML = '';
-    return;
-  }
+  // Design 3 (group) now keeps the top tab bar — switching happens here, and the
+  // active tab's providers render as a single-open accordion below.
   container.classList.remove('hidden');
   container.innerHTML = '';
   container.__onTabChange = onTabChange;

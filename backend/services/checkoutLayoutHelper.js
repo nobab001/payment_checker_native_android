@@ -51,12 +51,23 @@ async function loadGlobalCheckoutDefaults() {
   }
 }
 
-async function saveGlobalCheckoutDefaults(tabs, providerBranding) {
+async function saveGlobalCheckoutDefaults(tabs, providerBranding, extras = {}) {
   if (tabs && typeof tabs === 'object') {
+    // Optional global tab/provider ordering is stored as sibling keys alongside the
+    // per-tab entries — harmless to parseTabs, which only iterates DEFAULT_TABS.
+    const tabsToStore = { ...tabs };
+    if (Array.isArray(extras.tab_order)) {
+      tabsToStore.tab_order = extras.tab_order.filter((id) => typeof id === 'string');
+    }
+    if (Array.isArray(extras.provider_order)) {
+      tabsToStore.provider_order = extras.provider_order
+        .filter((x) => x && typeof x.key === 'string')
+        .map((x) => ({ key: String(x.key), enabled: x.enabled !== false }));
+    }
     await prisma.global_config.upsert({
       where: { config_key: GLOBAL_TABS_KEY },
-      update: { config_value: JSON.stringify(tabs), updated_at: new Date() },
-      create: { config_key: GLOBAL_TABS_KEY, config_value: JSON.stringify(tabs), updated_at: new Date() },
+      update: { config_value: JSON.stringify(tabsToStore), updated_at: new Date() },
+      create: { config_key: GLOBAL_TABS_KEY, config_value: JSON.stringify(tabsToStore), updated_at: new Date() },
     });
   }
   if (providerBranding && typeof providerBranding === 'object') {
@@ -92,6 +103,25 @@ function parseTabs(layoutConfigRaw, globalTabs) {
       enabled: ov.enabled !== undefined ? !!ov.enabled
         : (gv.enabled !== undefined ? !!gv.enabled : def.enabled),
     };
+  }
+
+  // Honour an explicit tab order (per-website cfg.tab_order, else the global
+  // default), falling back to DEFAULT_TABS order. Unknown ids are ignored and any
+  // missing tabs are appended at the end so nothing ever disappears. JS object
+  // insertion order then carries through to the API array (checkoutTabs).
+  const explicitOrder = Array.isArray(cfg.tab_order) && cfg.tab_order.length
+    ? cfg.tab_order
+    : (Array.isArray(global.tab_order) ? global.tab_order : null);
+  if (explicitOrder) {
+    const reordered = {};
+    const seen = new Set();
+    for (const id of explicitOrder) {
+      if (tabs[id] && !seen.has(id)) { reordered[id] = tabs[id]; seen.add(id); }
+    }
+    for (const id of Object.keys(tabs)) {
+      if (!seen.has(id)) reordered[id] = tabs[id];
+    }
+    return reordered;
   }
   return tabs;
 }
@@ -131,6 +161,52 @@ function mergeTabsIntoLayout(layoutConfigRaw, tabsInput, globalTabs) {
     }
   }
   return { ...cfg, tabs };
+}
+
+/**
+ * Imprint optional tab_order / provider_order onto a layout_config object without
+ * wiping existing values when the caller omits them. Purely additive so reordering
+ * stays backward compatible (old app builds that send only toggles never lose order).
+ */
+function applyOrderToLayoutConfig(cfg, input = {}) {
+  const out = { ...(cfg && typeof cfg === 'object' ? cfg : {}) };
+  if (Array.isArray(input.tab_order)) {
+    out.tab_order = input.tab_order.filter((id) => typeof id === 'string');
+  }
+  if (Array.isArray(input.provider_order)) {
+    out.provider_order = input.provider_order
+      .filter((x) => x && typeof x.key === 'string')
+      .map((x) => ({ key: String(x.key), enabled: x.enabled !== false }));
+  }
+  return out;
+}
+
+/**
+ * Collapse enriched gateways into an ordered, unique provider list for the merchant
+ * customizer. key = groupKey (the same key provider_order uses), so the server both
+ * emits and consumes the keys and the client/app can never diverge. Includes disabled
+ * providers (groupEnabled=false) so the merchant can toggle them back on.
+ */
+function buildCheckoutProviderList(gateways) {
+  const seen = new Map();
+  for (const g of (gateways || [])) {
+    const key = g.groupKey || `${(g.provider || '').trim()}_Personal`;
+    if (!seen.has(key)) {
+      seen.set(key, {
+        key,
+        label: g.groupLabel || g.displayName || g.provider || key,
+        provider: g.provider || '',
+        tab: g.tab || 'send_money',
+        logoUrl: g.logoUrl || '',
+        enabled: g.groupEnabled !== false,
+        _pos: Number.isFinite(Number(g.groupOrder)) ? Number(g.groupOrder)
+          : (Number.isFinite(Number(g.position)) ? Number(g.position) : Number.MAX_SAFE_INTEGER),
+      });
+    }
+  }
+  return [...seen.values()]
+    .sort((a, b) => a._pos - b._pos)
+    .map(({ _pos, ...rest }) => rest);
 }
 
 function resolveProviderBranding(globalBranding) {
@@ -267,4 +343,6 @@ module.exports = {
   providerKeyForTemplate,
   officialProviderTab,
   enrichGatewayRow,
+  applyOrderToLayoutConfig,
+  buildCheckoutProviderList,
 };
