@@ -155,11 +155,12 @@ fun WebsiteSettingsScreen(
         val fromServer = state.tabOrder.filter { it in known }
         tabOrder = (fromServer + known).distinct()
     }
-    LaunchedEffect(state.checkoutProviders, tabOrder) {
-        // Group by tab (following tab order) so per-tab ↑/↓ map cleanly to globals.
-        val byTab = state.checkoutProviders.groupBy { it.tab }
-        providerOrder = tabOrder.flatMap { tk -> byTab[tk].orEmpty() } +
-            state.checkoutProviders.filter { it.tab !in tabOrder }
+    // Resync providerOrder ONLY from the server snapshot (load / refetch). A local
+    // tab reorder must NOT rebuild this list, otherwise unsaved provider edits — and
+    // even saved-but-not-refetched ones — would be silently discarded. The section
+    // groups by tab for display itself, so the raw server order is fine here.
+    LaunchedEffect(state.checkoutProviders) {
+        providerOrder = state.checkoutProviders
     }
 
     var bitmapToCrop by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
