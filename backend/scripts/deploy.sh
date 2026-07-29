@@ -121,8 +121,19 @@ rm -rf "${RELEASE_DIR}/public/downloads"
 ln -sfn "${APP_ROOT}/shared/downloads"  "${RELEASE_DIR}/public/downloads"
 log "release ready: ${RELEASE_DIR}"
 
-# keep the runner scripts on the VPS in sync with the deployed code
-cp -f "${RELEASE_DIR}/scripts/"*.sh "${SCRIPTS_DIR}/" 2>/dev/null || true
+# keep the runner scripts on the VPS in sync with the deployed code.
+# NOTE: deploy.sh is EXCLUDED here and synced at the very end via a deferred
+# background copy. Copying the *running* deploy.sh over itself mid-run corrupts
+# the executing shell whenever a deploy changes deploy.sh (bash reads the live
+# file by byte offset and misparses the new layout — a pre-switch syntax error).
+# Every other script (rollback.sh included) is safe to sync mid-run: rollback.sh
+# is only ever read by a fresh subprocess, never by this running shell.
+for _pc_s in "${RELEASE_DIR}/scripts/"*.sh; do
+  case "$(basename "${_pc_s}")" in
+    deploy.sh) continue ;;
+  esac
+  cp -f "${_pc_s}" "${SCRIPTS_DIR}/" 2>/dev/null || true
+done
 chmod +x "${SCRIPTS_DIR}/"*.sh 2>/dev/null || true
 
 if [ "${DRY_RUN:-0}" = "1" ]; then
@@ -197,3 +208,9 @@ log "releases kept: $(ls -1d "${APP_ROOT}"/releases/*/ 2>/dev/null | wc -l)"
 # ---- 11. cleanup temp build ---------------------------------------
 rm -rf "${TMP_BUILD}"
 log "==================== DEPLOY OK release=${RELEASE} sha=${GIT_SHA} log=${LOG_FILE} ===================="
+
+# Defer syncing deploy.sh itself until this shell has stopped reading the file,
+# so a deploy that changes deploy.sh can never corrupt its own execution. The
+# parent process exits within milliseconds; the copy runs a few seconds later.
+{ sleep 3; cp -f "${RELEASE_DIR}/scripts/deploy.sh" "${SCRIPTS_DIR}/deploy.sh" 2>/dev/null && chmod +x "${SCRIPTS_DIR}/deploy.sh" 2>/dev/null; } >/dev/null 2>&1 &
+disown 2>/dev/null || true
