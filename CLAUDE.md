@@ -93,7 +93,6 @@ every deploy/rollback/backup writes a timestamped log under `/var/www/payment-ch
 ## Git — NEVER auto push
 
 - Do **not** stage / commit / push unless the user **explicitly asks**.
-- (This overrides the older `.agents/AGENTS.md` "always push" line — the user's rule is push-only-on-request.)
 - Never force-push `main`; never amend pushed history; no interactive git (`-i`).
 - Never commit secrets (`.env`, keystores, private keys, uploaded PII).
 - Commit messages: short why-focused (fix/add/update).
