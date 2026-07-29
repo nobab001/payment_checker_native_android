@@ -236,7 +236,13 @@ export function buildCheckoutModel(apiData, amountStr) {
     existing.numbers.push(gatewayToNumber(g));
     if (g.instruction) existing.instruction = g.instruction;
     const pos = Number.isFinite(Number(g.position)) ? Number(g.position) : Number.MAX_SAFE_INTEGER;
-    existing.sortOrder = Math.min(existing.sortOrder, pos);
+    // Explicit merchant provider order (groupOrder) wins; otherwise keep the
+    // legacy "topmost number position" behaviour for the provider header.
+    if (Number.isFinite(Number(g.groupOrder))) {
+      existing.sortOrder = Number(g.groupOrder);
+    } else {
+      existing.sortOrder = Math.min(existing.sortOrder, pos);
+    }
     if (g.templateId != null && existing.metadata.templateId == null) {
       existing.metadata.templateId = g.templateId;
     }

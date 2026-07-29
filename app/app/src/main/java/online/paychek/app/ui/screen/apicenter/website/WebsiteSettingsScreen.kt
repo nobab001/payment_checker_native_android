@@ -42,7 +42,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.window.DialogProperties
+import online.paychek.app.data.remote.dto.CheckoutProviderItemDto
 import online.paychek.app.data.remote.dto.CheckoutTabToggle
+import online.paychek.app.data.remote.dto.ProviderOrderItemDto
 import online.paychek.app.data.remote.dto.UpdateWebsiteRequest
 import online.paychek.app.ui.common.CropFrameShape
 import online.paychek.app.ui.common.ImageCropperDialog
@@ -143,6 +145,21 @@ fun WebsiteSettingsScreen(
         CHECKOUT_TAB_KEYS.forEach { (key, _) ->
             state.checkoutTabs[key]?.let { tabStates[key]?.value = it.enabled }
         }
+    }
+
+    // Working copies for tab + provider ordering (folded into the save request).
+    var tabOrder by remember(site?.id) { mutableStateOf<List<String>>(emptyList()) }
+    var providerOrder by remember(site?.id) { mutableStateOf<List<CheckoutProviderItemDto>>(emptyList()) }
+    LaunchedEffect(state.tabOrder, state.checkoutTabs) {
+        val known = CHECKOUT_TAB_KEYS.map { it.first }
+        val fromServer = state.tabOrder.filter { it in known }
+        tabOrder = (fromServer + known).distinct()
+    }
+    LaunchedEffect(state.checkoutProviders, tabOrder) {
+        // Group by tab (following tab order) so per-tab ↑/↓ map cleanly to globals.
+        val byTab = state.checkoutProviders.groupBy { it.tab }
+        providerOrder = tabOrder.flatMap { tk -> byTab[tk].orEmpty() } +
+            state.checkoutProviders.filter { it.tab !in tabOrder }
     }
 
     var bitmapToCrop by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
@@ -279,6 +296,32 @@ fun WebsiteSettingsScreen(
                         providerBranding = state.providerBranding,
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    CheckoutOrderSection(
+                        card = card,
+                        isDark = isDark,
+                        tabOrder = tabOrder,
+                        tabEnabled = tabMap,
+                        onMoveTab = { from, to ->
+                            val m = tabOrder.toMutableList()
+                            if (from in m.indices && to in m.indices) {
+                                val item = m.removeAt(from); m.add(to, item)
+                            }
+                            tabOrder = m
+                        },
+                        providers = providerOrder,
+                        onMoveProvider = { from, to ->
+                            val m = providerOrder.toMutableList()
+                            if (from in m.indices && to in m.indices) {
+                                val item = m.removeAt(from); m.add(to, item)
+                            }
+                            providerOrder = m
+                        },
+                        onToggleProvider = { key, enabled ->
+                            providerOrder = providerOrder.map { if (it.key == key) it.copy(enabled = enabled) else it }
+                        }
+                    )
+
                     Button(
                         onClick = {
                             viewModel.updateSettings(
@@ -289,7 +332,9 @@ fun WebsiteSettingsScreen(
                                     checkoutMode = checkoutMode,
                                     checkoutTabs = CHECKOUT_TAB_KEYS.associate { (key, _) ->
                                         key to CheckoutTabToggle(enabled = tabStates[key]?.value ?: true)
-                                    }
+                                    },
+                                    tabOrder = tabOrder,
+                                    providerOrder = providerOrder.map { ProviderOrderItemDto(key = it.key, enabled = it.enabled) }
                                 )
                             )
                             viewModel.saveCheckoutNumbers(site.id)

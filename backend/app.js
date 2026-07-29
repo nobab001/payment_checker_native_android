@@ -180,6 +180,10 @@ app.use(express.static('public', {
     } else if (filePath.endsWith('sw.js')) {
       // The service worker itself must always be revalidated so updates ship.
       res.setHeader('Cache-Control', 'no-cache');
+    } else if (rel.includes('/js/checkout/') || rel.endsWith('/checkout.html')) {
+      // Checkout shell + ES modules must revalidate so a deploy ships even to
+      // clients without a service worker (e.g. in-app WebView heuristic cache).
+      res.setHeader('Cache-Control', 'no-cache');
     }
   },
 }));

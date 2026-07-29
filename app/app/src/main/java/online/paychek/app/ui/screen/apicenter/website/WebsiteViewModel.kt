@@ -22,6 +22,7 @@ import online.paychek.app.data.remote.dto.CreateMerchantAccountRequest
 import online.paychek.app.data.remote.dto.ManualAccountDto
 import online.paychek.app.data.remote.dto.MerchantAccountDto
 import online.paychek.app.data.remote.dto.NumberOrderItem
+import online.paychek.app.data.remote.dto.CheckoutProviderItemDto
 import online.paychek.app.data.remote.dto.ProviderBrandingDto
 import online.paychek.app.data.remote.dto.UpdateManualAccountRequest
 import online.paychek.app.data.remote.dto.UpdateMerchantAccountRequest
@@ -64,6 +65,8 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
         val checkoutHelpline: CheckoutHelplineConfigDto = CheckoutHelplineConfigDto(),
         val checkoutTabs: Map<String, CheckoutTabDto> = emptyMap(),
         val providerBranding: Map<String, ProviderBrandingDto> = emptyMap(),
+        val tabOrder: List<String> = emptyList(),
+        val checkoutProviders: List<CheckoutProviderItemDto> = emptyList(),
         val isSaving: Boolean = false,
         val logoUploading: Boolean = false,
         val logoUploadError: String? = null,
@@ -129,7 +132,9 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
                             checkoutNumbers = detail.activeNumbers,
                             incentiveTemplates = detail.incentiveTemplates,
                             checkoutTabs = detail.checkoutTabs ?: emptyMap(),
-                            providerBranding = detail.providerBranding ?: emptyMap()
+                            providerBranding = detail.providerBranding ?: emptyMap(),
+                            tabOrder = detail.tabOrder ?: emptyList(),
+                            checkoutProviders = detail.checkoutProviders ?: emptyList()
                         )
                     }
                     // Commission menu lock state comes from the commissions endpoint too

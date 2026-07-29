@@ -55,6 +55,23 @@ data class NumberOrderItem(
     @SerializedName("position") val position: Int = 0
 )
 
+/** Per-website checkout provider (SIM group) for the reorder/enable customizer.
+ *  key = groupKey — the same key provider_order uses on server + client. */
+data class CheckoutProviderItemDto(
+    @SerializedName("key") val key: String,
+    @SerializedName("label") val label: String = "",
+    @SerializedName("provider") val provider: String = "",
+    @SerializedName("tab") val tab: String = "send_money",
+    @SerializedName("enabled") val enabled: Boolean = true,
+    @SerializedName("logoUrl") val logoUrl: String? = null
+)
+
+/** Provider order/enable entry sent in PATCH /websites/:id (provider_order). */
+data class ProviderOrderItemDto(
+    @SerializedName("key") val key: String,
+    @SerializedName("enabled") val enabled: Boolean = true
+)
+
 /** Auto-synced active SIM number available for checkout (read from gateway_methods). */
 data class ActiveNumberDto(
     @SerializedName("methodId") val methodId: Int,
@@ -170,7 +187,9 @@ data class UpdateWebsiteRequest(
     @SerializedName("receive_commission") val receiveCommission: Boolean? = null,
     @SerializedName("website_purpose") val websitePurpose: String? = null,
     @SerializedName("is_active") val isActive: Boolean? = null,
-    @SerializedName("checkout_tabs") val checkoutTabs: Map<String, CheckoutTabToggle>? = null
+    @SerializedName("checkout_tabs") val checkoutTabs: Map<String, CheckoutTabToggle>? = null,
+    @SerializedName("tab_order") val tabOrder: List<String>? = null,
+    @SerializedName("provider_order") val providerOrder: List<ProviderOrderItemDto>? = null
 )
 
 /** Tab enable/disable payload for PATCH /websites/:id */
@@ -256,7 +275,9 @@ data class WebsiteDetailResponse(
     @SerializedName("incentiveTemplates") val incentiveTemplates: List<IncentiveTemplateDto> = emptyList(),
     @SerializedName("gatewaysByCategory") val gatewaysByCategory: Map<String, List<ActiveNumberDto>>? = null,
     @SerializedName("checkoutTabs") val checkoutTabs: Map<String, CheckoutTabDto>? = null,
-    @SerializedName("providerBranding") val providerBranding: Map<String, ProviderBrandingDto>? = null
+    @SerializedName("providerBranding") val providerBranding: Map<String, ProviderBrandingDto>? = null,
+    @SerializedName("tabOrder") val tabOrder: List<String>? = null,
+    @SerializedName("checkoutProviders") val checkoutProviders: List<CheckoutProviderItemDto>? = null
 )
 
 /** Account-level active SMS template for Commission / Campaign type pickers. */

@@ -736,7 +736,11 @@ async function saveGlobalCheckout(req, res) {
         data: {
           checkout_theme: theme,
           checkout_mode: mode,
-          layout_config: layoutConfigStr,
+          // Merge global tabs into THIS site's existing layout_config so per-website
+          // provider_order / tab_order / helpline / custom tab overrides survive a
+          // global save (a null base would wipe them). Per-website order stays
+          // authoritative — the global order is not pushed here.
+          layout_config: JSON.stringify(layoutHelper.mergeTabsIntoLayout(w.layout_config, tabsInput || {}, globalTabs)),
           number_order_json: numberOrderJson,
           updated_at: new Date(),
         },
