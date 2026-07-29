@@ -44,7 +44,8 @@ echo "current -> $(readlink -f "${APP_ROOT}/current" 2>/dev/null || echo '<none>
 pm2_field() { # name -> "status restarts"
   pm2 jlist 2>/dev/null | PM2_N="$1" node -e '
     let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{
-      let a=[];try{a=JSON.parse(d)}catch(e){a=[]}
+      let a=[];const i=d.indexOf("[");if(i>=0)d=d.slice(i);
+      try{a=JSON.parse(d)}catch(e){a=[]}
       const p=a.find(x=>x.name===process.env.PM2_N);
       if(!p){console.log("ABSENT 0");return;}
       const st=(p.pm2_env&&p.pm2_env.status)||"unknown";
@@ -95,7 +96,7 @@ fi
 
 # --- migration / schema errors at boot -----------------------------
 if [ -f "${OUT_LOG}" ]; then
-  MIG_ERR="$(tail -120 "${OUT_LOG}" | grep -ciE 'migration .*(fail|error)|ensure.*(fail|error)|prisma.*(fail|error)' || true)"
+  MIG_ERR="$(tail -120 "${OUT_LOG}" | grep -ciE 'PrismaClient[A-Za-z]*Error|ER_DUP_FIELDNAME|ER_DB_CREATE_ERROR|Migration (failed|halted)|[1-9][0-9]* failed' || true)"
   [ "${MIG_ERR:-0}" -eq 0 ] && report "logs:no-mig-err" 0 "no migration/schema errors" || report "logs:no-mig-err" 1 "${MIG_ERR} migration/schema error(s)"
 else
   report "logs:no-mig-err" 0 "no out log present"
