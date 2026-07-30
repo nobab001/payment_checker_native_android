@@ -264,15 +264,24 @@ function onNumberCopied() {
   }
 }
 
-const HELPLINE_EMOJI = {
-  whatsapp: '💬',
-  telegram: '✈️',
-  facebook: '👤',
-  messenger: '💭',
-  phone: '📞',
-  mail: '✉️',
-  instagram: '📷',
-  support: '🆘',
+// Brand-colored SVG icons — help sheet link এবং FAB button উভয়ের জন্য
+const HELPLINE_BRAND_SVG = {
+  whatsapp:
+    '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#25D366"/><path fill="#fff" d="M17.5 14.4c-.3-.1-1.6-.8-1.8-.9-.2-.1-.4-.1-.6.1-.2.2-.7.9-.8 1-.2.1-.3.2-.6.1-.3-.1-1.2-.4-2.3-1.5-1-.9-1.5-1.9-1.7-2.2-.2-.3 0-.4.1-.6.1-.1.3-.3.4-.5.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5 0-.1-.6-1.5-.8-2-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.2.3-.9.9-.9 2.1s.9 2.4 1 2.6c.1.2 1.8 2.8 4.4 3.9 1.5.7 2.1.7 2.8.6.4-.1 1.6-.6 1.8-1.3.2-.6.2-1.2.1-1.3-.1-.1-.3-.2-.6-.3z"/><path fill="#fff" d="M12 4a8 8 0 0 0-6.9 12l-.9 3.3 3.4-.9A8 8 0 1 0 12 4zm0 14.6a6.5 6.5 0 0 1-3.3-.9l-.2-.1-2 .5.6-1.9-.2-.2a6.6 6.6 0 1 1 5.1 2.6z"/></svg>',
+  telegram:
+    '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#0088CC"/><path fill="#fff" d="M5 11.6 17.3 7c.6-.2 1.1.1.9.9l-2 9.5c-.1.6-.5.8-1 .5l-2.8-2.1-1.3 1.3c-.2.2-.3.3-.6.3l.2-2.9 5.2-4.7c.2-.2 0-.3-.3-.1l-6.4 4-2.7-.9c-.6-.2-.6-.6.5-1z"/></svg>',
+  facebook:
+    '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#1877F2"/><path fill="#fff" d="M15 8h-2c-.6 0-1 .4-1 1v2h3l-.4 3H12v7H9v-7H7v-3h2V9a4 4 0 0 1 4-4h2v3z"/></svg>',
+  messenger:
+    '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="msg-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0099FF"/><stop offset="100%" stop-color="#A033FF"/></linearGradient></defs><circle cx="12" cy="12" r="12" fill="url(#msg-g)"/><path fill="#fff" d="M12 4C7.6 4 4 7.3 4 11.4c0 2.3 1.1 4.3 2.9 5.7v2.9l2.7-1.5c.7.2 1.5.3 2.4.3 4.4 0 8-3.3 8-7.4S16.4 4 12 4zm.8 10-2-2.1-3.9 2.1 4.3-4.6 2 2.1 3.8-2.1-4.2 4.6z"/></svg>',
+  instagram:
+    '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><defs><radialGradient id="ig-g" cx="30%" cy="107%" r="150%"><stop offset="0%" stop-color="#fdf497"/><stop offset="10%" stop-color="#fdf497"/><stop offset="50%" stop-color="#fd5949"/><stop offset="68%" stop-color="#d6249f"/><stop offset="100%" stop-color="#285AEB"/></radialGradient></defs><rect width="24" height="24" rx="6" fill="url(#ig-g)"/><rect x="7" y="7" width="10" height="10" rx="3" fill="none" stroke="#fff" stroke-width="1.5"/><circle cx="12" cy="12" r="2.5" fill="none" stroke="#fff" stroke-width="1.5"/><circle cx="16.2" cy="7.8" r="0.9" fill="#fff"/></svg>',
+  phone:
+    '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#34A853"/><path fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" d="M8.5 4.5c.3.8 1 2.5 1.5 3.2-.5.5-1.2 1-1.1 1.6.3 1.4 3.4 4.5 4.8 4.8.6.1 1.1-.6 1.6-1.1.7.5 2.4 1.2 3.2 1.5-.1 1-.5 2.8-1.8 3a9.5 9.5 0 0 1-9.3-9.3c.2-1.3 2-1.7 3.1-1.7z"/></svg>',
+  mail:
+    '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#EA4335"/><rect x="5" y="7.5" width="14" height="10" rx="1.5" fill="none" stroke="#fff" stroke-width="1.5"/><polyline points="5,8 12,14 19,8" fill="none" stroke="#fff" stroke-width="1.5"/></svg>',
+  support:
+    '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#607D8B"/><path fill="none" stroke="#fff" stroke-width="1.6" d="M6 11a6 6 0 0 1 12 0"/><path fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" d="M18 11v2a1.5 1.5 0 0 1-1.5 1.5H16m-8 0H7.5A1.5 1.5 0 0 1 6 13v-2"/><path fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" d="M10 18h4M12 15.5V18"/></svg>',
 };
 
 const HELPLINE_SVG = {
@@ -382,13 +391,13 @@ function mountHelpline(links) {
       helpRoot.style.display = 'none';
     } else {
       helpRoot.style.display = 'grid';
-      const icon = HELPLINE_EMOJI[item.icon] || '🔗';
+      const iconSvg = HELPLINE_BRAND_SVG[item.icon] || HELPLINE_BRAND_SVG.support;
       const a = document.createElement('a');
       // href এ raw URL রাখা হয়েছে কিন্তু click intercept করা হয়েছে
       a.href = item.url;
       a.rel = 'noopener noreferrer';
-      a.style.cssText = 'display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;border:1px solid var(--border);text-decoration:none;color:inherit;font-weight:700;font-size:14px;background:#fff';
-      a.innerHTML = `<span style="font-size:20px">${icon}</span><span>${item.label || ''}</span>`;
+      a.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;border:1px solid var(--border);text-decoration:none;color:inherit;font-weight:700;font-size:14px;background:#fff';
+      a.innerHTML = `<span style="display:flex;align-items:center;flex-shrink:0">${iconSvg}</span><span>${item.label || ''}</span>`;
       a.addEventListener('click', (e) => {
         e.preventDefault();
         openHelplineUrl(item.url);
@@ -405,7 +414,7 @@ function mountHelpline(links) {
 
   const icon = item.icon || 'whatsapp';
   root.dataset.icon = icon;
-  btn.innerHTML = HELPLINE_SVG[icon] || HELPLINE_SVG.support;
+  btn.innerHTML = HELPLINE_BRAND_SVG[icon] || HELPLINE_BRAND_SVG.support;
   btn.setAttribute('aria-label', item.label || icon);
   root.classList.remove('hidden');
   btn.onclick = () => {
