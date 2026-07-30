@@ -29,6 +29,37 @@ const HISTORY_CALLBACK_SELECT = {
 
 const normalizeBdNumber = (n) => (n || '').replace(/\D/g, '').replace(/^880/, '').slice(-11);
 
+function getTrxVariants(trxId) {
+  const clean = String(trxId || '').trim().toUpperCase();
+  if (!clean) return [];
+  
+  const map = {
+    '1': ['I', 'L'],
+    'I': ['1', 'L'],
+    'L': ['1', 'I'],
+    '0': ['O', 'D'],
+    'O': ['0', 'D'],
+    '8': ['B'],
+    'B': ['8'],
+    '5': ['S'],
+    'S': ['5'],
+    '2': ['Z'],
+    'Z': ['2']
+  };
+  
+  const results = new Set([clean]);
+  for (let i = 0; i < clean.length; i++) {
+    const char = clean[i];
+    if (map[char]) {
+      for (const replacement of map[char]) {
+        const variant = clean.substring(0, i) + replacement + clean.substring(i + 1);
+        results.add(variant);
+      }
+    }
+  }
+  return Array.from(results);
+}
+
 /**
  * GET /api/checkout/:apiKey
  * Retrieves active merchant gateway layout options.
@@ -325,10 +356,11 @@ async function verifyCheckoutPayment(req, res) {
     if (!(orderAmount > 0) && clientAmount > 0) orderAmount = clientAmount;
 
     // Find SMS by TrxID (amount taken from SMS — source of truth).
+    const trxVariants = getTrxVariants(cleanTrx);
     const payment = await prisma.sms_history.findFirst({
       where: {
         user_id: merchant.user_id,
-        trx_id: cleanTrx,
+        trx_id: { in: trxVariants },
       },
       select: { id: true, is_used: true, used_by_merchant_id: true, amount: true, provider_tag: true },
     });
@@ -561,9 +593,10 @@ async function claimCheckTransaction(req, res) {
 
     // 2. Query sms_history for this user/merchant matching trxId where is_used = 0 (READY)
     let payment;
+    const trxVariants = getTrxVariants(cleanTrx);
     const whereClause = {
       user_id: merchant.user_id,
-      trx_id: cleanTrx,
+      trx_id: { in: trxVariants },
       is_used: 0
     };
 

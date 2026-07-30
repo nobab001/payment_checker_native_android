@@ -17,6 +17,37 @@ const { requirePermission, ensureEntitlementSchema } = require('../services/acco
 
 const MANUAL_DEVICE_ID = 'ADMIN';
 
+function getTrxVariants(trxId) {
+  const clean = String(trxId || '').trim().toUpperCase();
+  if (!clean) return [];
+  
+  const map = {
+    '1': ['I', 'L'],
+    'I': ['1', 'L'],
+    'L': ['1', 'I'],
+    '0': ['O', 'D'],
+    'O': ['0', 'D'],
+    '8': ['B'],
+    'B': ['8'],
+    '5': ['S'],
+    'S': ['5'],
+    '2': ['Z'],
+    'Z': ['2']
+  };
+  
+  const results = new Set([clean]);
+  for (let i = 0; i < clean.length; i++) {
+    const char = clean[i];
+    if (map[char]) {
+      for (const replacement of map[char]) {
+        const variant = clean.substring(0, i) + replacement + clean.substring(i + 1);
+        results.add(variant);
+      }
+    }
+  }
+  return Array.from(results);
+}
+
 async function ensureManualTxnSchema() {
   await ensureEntitlementSchema();
   const cols = await prisma.$queryRaw`SHOW COLUMNS FROM sms_history LIKE 'is_manual'`;
@@ -269,12 +300,10 @@ async function getSmsHistory(req, res) {
     }
 
     // Exact TrxID lookup (Smart Pop-up: local miss → server fetch)
-    // Try exact + upper/lower so OCR case variants still match.
+    // Support common OCR homoglyph variants for robustness.
     if (trxIdQuery) {
-      const upper = trxIdQuery.toUpperCase();
-      const lower = trxIdQuery.toLowerCase();
-      const variants = Array.from(new Set([trxIdQuery, upper, lower]));
-      whereClause.OR = variants.map((v) => ({ trx_id: v }));
+      const variants = getTrxVariants(trxIdQuery);
+      whereClause.trx_id = { in: variants };
     }
 
     const hasDateFilter = !trxIdQuery && req.query.startDate && req.query.endDate;
