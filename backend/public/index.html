@@ -331,8 +331,11 @@
   <footer>
     <div class="container footer-inner">
       <div class="brand"><span class="brand-mark"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="24" height="24"><defs><linearGradient id="logo-grad-footer" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#00B4FF" /><stop offset="100%" stop-color="#004BFF" /></linearGradient></defs><g fill="none" stroke="url(#logo-grad-footer)" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"><path d="M 256, 75 C 340, 75 390, 110 425, 140 C 425, 270 380, 390 256, 445 C 132, 390 87, 270 87, 140 C 122, 110 172, 75 256, 75 Z" /><path d="M 165, 255 L 225, 315 L 350, 190" /></g></svg></span> PayCheck</div>
-      <div>
-        <a href="/status" style="margin-right:16px;color:var(--muted)">System Status</a>
+      <div style="display:flex; align-items:center; gap:16px;">
+        <a href="/api/official/status" target="_blank" id="systemStatusIndicator" style="display:inline-flex; align-items:center; gap:6px; color:var(--muted); text-decoration:none;">
+          <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;" id="systemStatusDot"></span>
+          <span id="systemStatusText">All Systems Operational</span>
+        </a>
         <span style="color:var(--muted)">© <span id="y"></span> PayCheck. All rights reserved.</span>
       </div>
     </div>

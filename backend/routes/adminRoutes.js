@@ -82,6 +82,8 @@ router.post('/upload-image', admin.uploadCheckoutImage);
 // 5f. Official marketing website CMS (tabs + helpline)
 router.get('/official-website', admin.getOfficialWebsiteCms);
 router.put('/official-website', admin.saveOfficialWebsiteCms);
+router.post('/official-website/publish', admin.publishOfficialWebsiteCms);
+router.post('/official-website/rollback', admin.rollbackOfficialWebsiteCms);
 
 // 5g. Official Test sandbox payments (refund history)
 router.get('/demo-payments', admin.listDemoPayments);
@@ -145,12 +147,13 @@ router.get('/official/reviews', async (req, res) => {
 
 router.put('/official/reviews/:id', express.json(), async (req, res) => {
   try {
-    const { status, admin_reply, rating, comment } = req.body;
+    const { status, admin_reply, rating, comment, helpful_count } = req.body;
     const updateData = { updated_at: new Date() };
     if (status) updateData.status = status;
     if (admin_reply !== undefined) updateData.admin_reply = admin_reply;
     if (rating !== undefined) updateData.rating = parseInt(rating, 10);
     if (comment !== undefined) updateData.comment = comment;
+    if (helpful_count !== undefined) updateData.helpful_count = parseInt(helpful_count, 10);
 
     const review = await prisma.official_reviews.update({
       where: { id: parseInt(req.params.id, 10) },

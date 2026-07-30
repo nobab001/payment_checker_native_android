@@ -1026,9 +1026,15 @@ async function uploadCheckoutImage(req, res) {
     if (!imageData) {
       return res.status(400).json({ success: false, error: 'imageData is required' });
     }
-    const isTab = kind === 'tab_icon';
-    const folder = isTab ? 'tabs' : 'branding';
-    const maxSize = isTab ? 160 : 512;
+    let folder = 'branding';
+    let maxSize = 512;
+    if (kind === 'tab_icon') {
+      folder = 'tabs';
+      maxSize = 160;
+    } else if (kind === 'company_logo') {
+      folder = 'companies';
+      maxSize = 320;
+    }
     const path = await imageUpload.saveOptimizedImage(imageData, {
       folder,
       key: key || kind || folder,
@@ -1041,14 +1047,18 @@ async function uploadCheckoutImage(req, res) {
   }
 }
 
-/** GET /api/admin/official-website — marketing site CMS (tabs + helpline) */
+/** GET /api/admin/official-website — marketing site CMS (live + draft + history) */
 async function getOfficialWebsiteCms(req, res) {
   try {
     const cms = require('../services/officialWebsiteCms');
-    const content = await cms.loadOfficialWebsiteCms();
+    const live = await cms.loadOfficialWebsiteCms(false);
+    const draft = await cms.loadOfficialWebsiteCms(true);
+    const history = await cms.getOfficialWebsiteCmsHistory();
     return res.json({
       success: true,
-      content,
+      live,
+      draft,
+      history,
       icons: cms.HELPLINE_ICON_IDS,
     });
   } catch (err) {
@@ -1057,16 +1067,44 @@ async function getOfficialWebsiteCms(req, res) {
   }
 }
 
-/** PUT /api/admin/official-website — save marketing site CMS */
+/** PUT /api/admin/official-website — save marketing site CMS DRAFT */
 async function saveOfficialWebsiteCms(req, res) {
   try {
     const cms = require('../services/officialWebsiteCms');
     const incoming = req.body?.content || req.body || {};
-    const content = await cms.saveOfficialWebsiteCms(incoming);
+    const content = await cms.saveOfficialWebsiteCmsDraft(incoming);
     return res.json({ success: true, content, icons: cms.HELPLINE_ICON_IDS });
   } catch (err) {
     console.error('saveOfficialWebsiteCms error:', err);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/** POST /api/admin/official-website/publish — publish CMS draft to live */
+async function publishOfficialWebsiteCms(req, res) {
+  try {
+    const cms = require('../services/officialWebsiteCms');
+    const content = await cms.publishOfficialWebsiteCms();
+    return res.json({ success: true, content });
+  } catch (err) {
+    console.error('publishOfficialWebsiteCms error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+/** POST /api/admin/official-website/rollback — rollback CMS live to a specific version */
+async function rollbackOfficialWebsiteCms(req, res) {
+  try {
+    const cms = require('../services/officialWebsiteCms');
+    const { versionId } = req.body;
+    if (!versionId) {
+      return res.status(400).json({ success: false, error: 'versionId is required' });
+    }
+    const content = await cms.rollbackOfficialWebsiteCms(versionId);
+    return res.json({ success: true, content });
+  } catch (err) {
+    console.error('rollbackOfficialWebsiteCms error:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Internal Server Error' });
   }
 }
 
@@ -1126,6 +1164,8 @@ module.exports = {
   uploadCheckoutImage,
   getOfficialWebsiteCms,
   saveOfficialWebsiteCms,
+  publishOfficialWebsiteCms,
+  rollbackOfficialWebsiteCms,
   listDemoPayments,
   updateDemoPaymentRefund,
   getConfigs,

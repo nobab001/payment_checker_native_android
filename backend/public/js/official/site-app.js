@@ -405,6 +405,29 @@
     return escapeHtml(s).replace(/'/g, '&#39;');
   }
 
+  function initSystemStatus() {
+    const statusText = document.getElementById('systemStatusText');
+    const statusDot = document.getElementById('systemStatusDot');
+    if (!statusText || !statusDot) return;
+    
+    fetch('/api/official/status')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.success && data.status === 'operational') {
+          statusDot.style.background = '#10b981'; // Green
+          statusText.textContent = 'All Systems Operational';
+        } else {
+          statusDot.style.background = '#ef4444'; // Red
+          statusText.textContent = 'System Outage';
+        }
+      })
+      .catch(err => {
+        console.warn('[StatusIndicator] status fetch failed:', err);
+        statusDot.style.background = '#ef4444'; // Red
+        statusText.textContent = 'System Outage';
+      });
+  }
+
   window.PaychekSite = {
     async init() {
       initTheme();
@@ -414,6 +437,7 @@
       initVerificationWidget();
       initHeroParallax();
       initFaqAccordion();
+      initSystemStatus();
       
       const isHome = document.body?.dataset?.page === 'home';
       fetch('/api/official/site', { credentials: 'same-origin' })

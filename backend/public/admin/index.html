@@ -363,9 +363,29 @@
           </div>
           
           <div style="display:flex; gap:12px;">
-            <button class="btn" type="submit" style="background:var(--accent);">Save CMS configuration</button>
+            <button class="btn" type="submit" style="background:var(--slate-600); width:auto;">Save Draft Config</button>
+            <button class="btn" type="button" id="publishCmsBtn" style="background:var(--accent); width:auto;">Publish Live</button>
           </div>
         </form>
+
+        <div style="margin-top: 30px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:20px;">
+          <h3>CMS Version History Rollback</h3>
+          <div class="table-container">
+            <table style="width: 100%; border-collapse: collapse;">
+              <thead>
+                <tr style="text-align: left; border-bottom: 1px solid var(--border);">
+                  <th style="padding: 10px;">Date & Time</th>
+                  <th style="padding: 10px;">Version ID</th>
+                  <th style="padding: 10px;">Hero Title Preview</th>
+                  <th style="padding: 10px;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="cmsHistoryTableBody">
+                <!-- Injected by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
     </main>
   </div>
@@ -386,6 +406,10 @@
         <div class="form-group">
           <label>Logo image URL</label>
           <input type="text" id="compLogoUrl" required />
+          <div style="margin-top: 6px; font-size: 13px; color: var(--muted);">
+            Or select file to upload & optimize:
+            <input type="file" id="compLogoFile" accept="image/*" style="margin-top:4px; display:block;" />
+          </div>
         </div>
         <div class="form-group">
           <label>Website URL</label>
@@ -526,24 +550,37 @@
         const data = await res.json();
         if (!data.success) return;
         const tbody = document.querySelector('#reviewsTable tbody');
-        tbody.innerHTML = data.reviews.map(r => `
-          <tr>
-            <td>${'★'.repeat(r.rating)}</td>
-            <td><strong>${r.author_name}</strong></td>
-            <td>${r.company || '-'}</td>
-            <td><span class="badge ${r.status}">${r.status}</span></td>
-            <td><small>${r.comment.slice(0, 80)}...</small></td>
-            <td>
-              <div class="action-row">
-                <button class="action-btn" onclick="approveReview(${r.id})">Approve</button>
-                <button class="action-btn" onclick="spamReview(${r.id})">Spam</button>
-                <button class="action-btn" onclick="openReplyModal(${r.id}, '${escapeQuote(r.admin_reply || '')}')">Reply</button>
-                <button class="action-btn" onclick="deleteReview(${r.id})" style="color:var(--danger);">Delete</button>
-              </div>
-            </td>
-          </tr>
-        `).join('');
+        tbody.innerHTML = data.reviews.map(r => {
+          const isPinned = r.helpful_count === 9999;
+          return `
+            <tr>
+              <td>${'★'.repeat(r.rating)}</td>
+              <td><strong>${r.author_name}</strong> ${isPinned ? '📌' : ''}</td>
+              <td>${r.company || '-'}</td>
+              <td><span class="badge ${r.status}">${r.status}</span></td>
+              <td><small>${r.comment.slice(0, 80)}...</small></td>
+              <td>
+                <div class="action-row">
+                  <button class="action-btn" onclick="approveReview(${r.id})">Approve</button>
+                  <button class="action-btn" onclick="spamReview(${r.id})">Spam</button>
+                  <button class="action-btn" onclick="togglePinReview(${r.id}, ${isPinned})">${isPinned ? 'Unpin' : 'Pin'}</button>
+                  <button class="action-btn" onclick="openReplyModal(${r.id}, '${escapeQuote(r.admin_reply || '')}')">Reply</button>
+                  <button class="action-btn" onclick="deleteReview(${r.id})" style="color:var(--danger);">Delete</button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('');
       } catch (_) {}
+    }
+
+    async function togglePinReview(id, isPinned) {
+      await fetch('/api/admin/official/reviews/' + id, {
+        method: 'PUT',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ helpful_count: isPinned ? 0 : 9999 })
+      });
+      fetchReviews();
     }
 
     async function approveReview(id) {
@@ -605,10 +642,45 @@
     document.getElementById('addCompanyBtn').addEventListener('click', () => {
       document.getElementById('companyForm').reset();
       document.getElementById('companyId').value = '';
+      document.getElementById('compLogoFile').value = ''; // Reset file input
       document.getElementById('companyModalTitle').textContent = 'Add Company Partner';
       compModal.style.display = 'flex';
     });
     document.getElementById('closeCompanyModalBtn').addEventListener('click', () => compModal.style.display = 'none');
+
+    document.getElementById('compLogoFile').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64 = reader.result;
+          const compName = document.getElementById('compName').value || 'company';
+          const res = await fetch('/api/admin/upload-image', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + token,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              imageData: base64,
+              kind: 'company_logo',
+              key: compName
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            document.getElementById('compLogoUrl').value = '/' + data.path;
+            alert('Image uploaded and optimized successfully.');
+          } else {
+            alert('Failed to optimize & upload image: ' + (data.error || 'unknown'));
+          }
+        } catch (err) {
+          alert('Upload error: ' + err.message);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
 
     document.getElementById('companyForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -642,6 +714,7 @@
       document.getElementById('companyId').value = c.id;
       document.getElementById('compName').value = c.name;
       document.getElementById('compLogoUrl').value = c.logo_url;
+      document.getElementById('compLogoFile').value = ''; // Reset file input
       document.getElementById('compWebsiteUrl').value = c.website_url || '';
       document.getElementById('compIndustry').value = c.industry || '';
       document.getElementById('compCountry').value = c.country || '';
@@ -667,13 +740,42 @@
         });
         const data = await res.json();
         if (!data.success) return;
-        const hero = data.content?.hero || {};
+        
+        // Load draft into the form
+        const hero = data.draft?.hero || {};
         document.getElementById('cmsHeroKicker').value = hero.kicker || '';
         document.getElementById('cmsHeroTitle').value = hero.title || '';
         document.getElementById('cmsHeroLead').value = hero.lead || '';
         document.getElementById('cmsHeroCtaPrimary').value = hero.ctaPrimary || '';
         document.getElementById('cmsHeroCtaSecondary').value = hero.ctaSecondary || '';
-      } catch (_) {}
+
+        // Populate history
+        const tbody = document.getElementById('cmsHistoryTableBody');
+        tbody.innerHTML = '';
+        if (!data.history || data.history.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:15px; color:var(--muted);">No previous versions found in rollback history.</td></tr>';
+        } else {
+          data.history.forEach(v => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid var(--border)';
+            
+            const dateStr = new Date(v.timestamp).toLocaleString();
+            const titlePreview = v.content?.hero?.title || 'Untitled';
+            
+            tr.innerHTML = `
+              <td style="padding:10px;">${dateStr}</td>
+              <td style="padding:10px;"><code style="background:var(--bg); padding:2px 6px; border-radius:4px;">${v.versionId}</code></td>
+              <td style="padding:10px;">${titlePreview}</td>
+              <td style="padding:10px;">
+                <button class="btn" style="padding:4px 8px; width:auto; font-size:12px; background:var(--danger);" onclick="rollbackCms('${v.versionId}')">Rollback</button>
+              </td>
+            `;
+            tbody.appendChild(tr);
+          });
+        }
+      } catch (err) {
+        console.error('fetchCms error:', err);
+      }
     }
 
     document.getElementById('cmsForm').addEventListener('submit', async (e) => {
@@ -694,11 +796,52 @@
         body: JSON.stringify({ content: payload })
       });
       if (res.ok) {
-        alert('Configuration saved successfully.');
+        alert('Draft configuration saved successfully.');
+        fetchCms();
       } else {
-        alert('Failed to save Configuration.');
+        alert('Failed to save draft Configuration.');
       }
     });
+
+    document.getElementById('publishCmsBtn').addEventListener('click', async () => {
+      if (!confirm('Are you sure you want to publish the current draft to the live website? This will backup the previous live version.')) return;
+      try {
+        const res = await fetch('/api/admin/official-website/publish', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (res.ok) {
+          alert('Draft configuration published to live website successfully.');
+          fetchCms();
+        } else {
+          alert('Failed to publish configuration.');
+        }
+      } catch (_) {
+        alert('Failed to publish configuration.');
+      }
+    });
+
+    window.rollbackCms = async (versionId) => {
+      if (!confirm(`Are you sure you want to rollback the website to version ${versionId}? Current live version will be backed up on publish.`)) return;
+      try {
+        const res = await fetch('/api/admin/official-website/rollback', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ versionId })
+        });
+        if (res.ok) {
+          alert('Website rolled back to selected version successfully.');
+          fetchCms();
+        } else {
+          alert('Failed to rollback website.');
+        }
+      } catch (_) {
+        alert('Failed to rollback website.');
+      }
+    };
 
     // 5. REPLY MODAL HANDLERS
     const replyModal = document.getElementById('replyModal');

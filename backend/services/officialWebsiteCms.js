@@ -300,9 +300,13 @@ function normalizeCms(raw) {
   return base;
 }
 
-async function loadOfficialWebsiteCms() {
+const DRAFT_KEY = 'official_website_cms_draft';
+const HISTORY_KEY = 'official_website_cms_history';
+
+async function loadOfficialWebsiteCms(isDraft = false) {
   try {
-    const row = await prisma.global_config.findUnique({ where: { config_key: CONFIG_KEY } });
+    const key = isDraft ? DRAFT_KEY : CONFIG_KEY;
+    const row = await prisma.global_config.findUnique({ where: { config_key: key } });
     if (row?.config_value) {
       try {
         return normalizeCms(JSON.parse(row.config_value));
@@ -310,27 +314,112 @@ async function loadOfficialWebsiteCms() {
         /* fall through */
       }
     }
+    if (isDraft) {
+      return loadOfficialWebsiteCms(false);
+    }
   } catch (err) {
     console.warn('[OfficialWebsiteCms] load failed:', err.message);
   }
   return deepClone(DEFAULT_CMS);
 }
 
-async function saveOfficialWebsiteCms(incoming) {
+async function saveOfficialWebsiteCmsDraft(incoming) {
   const cms = normalizeCms(incoming);
   await prisma.global_config.upsert({
-    where: { config_key: CONFIG_KEY },
-    create: { config_key: CONFIG_KEY, config_value: JSON.stringify(cms) },
+    where: { config_key: DRAFT_KEY },
+    create: { config_key: DRAFT_KEY, config_value: JSON.stringify(cms) },
     update: { config_value: JSON.stringify(cms) },
   });
   return cms;
 }
 
+async function publishOfficialWebsiteCms() {
+  const draftCms = await loadOfficialWebsiteCms(true);
+  const currentLive = await loadOfficialWebsiteCms(false);
+
+  let historyList = [];
+  try {
+    const hRow = await prisma.global_config.findUnique({ where: { config_key: HISTORY_KEY } });
+    if (hRow?.config_value) {
+      historyList = JSON.parse(hRow.config_value);
+    }
+  } catch (e) {
+    console.error('[OfficialWebsiteCms] history parse error:', e);
+  }
+  if (!Array.isArray(historyList)) {
+    historyList = [];
+  }
+
+  const historyEntry = {
+    versionId: 'v_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9),
+    timestamp: new Date().toISOString(),
+    content: currentLive,
+  };
+
+  historyList.unshift(historyEntry);
+  if (historyList.length > 10) {
+    historyList = historyList.slice(0, 10);
+  }
+
+  await prisma.global_config.upsert({
+    where: { config_key: HISTORY_KEY },
+    create: { config_key: HISTORY_KEY, config_value: JSON.stringify(historyList) },
+    update: { config_value: JSON.stringify(historyList) },
+  });
+
+  await prisma.global_config.upsert({
+    where: { config_key: CONFIG_KEY },
+    create: { config_key: CONFIG_KEY, config_value: JSON.stringify(draftCms) },
+    update: { config_value: JSON.stringify(draftCms) },
+  });
+
+  return draftCms;
+}
+
+async function getOfficialWebsiteCmsHistory() {
+  try {
+    const row = await prisma.global_config.findUnique({ where: { config_key: HISTORY_KEY } });
+    if (row?.config_value) {
+      return JSON.parse(row.config_value);
+    }
+  } catch (err) {
+    console.warn('[OfficialWebsiteCms] history get error:', err.message);
+  }
+  return [];
+}
+
+async function rollbackOfficialWebsiteCms(versionId) {
+  const history = await getOfficialWebsiteCmsHistory();
+  const target = history.find(h => h.versionId === versionId);
+  if (!target) {
+    throw new Error('Version not found in history.');
+  }
+
+  await prisma.global_config.upsert({
+    where: { config_key: CONFIG_KEY },
+    create: { config_key: CONFIG_KEY, config_value: JSON.stringify(target.content) },
+    update: { config_value: JSON.stringify(target.content) },
+  });
+
+  await prisma.global_config.upsert({
+    where: { config_key: DRAFT_KEY },
+    create: { config_key: DRAFT_KEY, config_value: JSON.stringify(target.content) },
+    update: { config_value: JSON.stringify(target.content) },
+  });
+
+  return target.content;
+}
+
 module.exports = {
   CONFIG_KEY,
+  DRAFT_KEY,
+  HISTORY_KEY,
   HELPLINE_ICON_IDS,
   DEFAULT_CMS,
   loadOfficialWebsiteCms,
-  saveOfficialWebsiteCms,
+  saveOfficialWebsiteCmsDraft,
+  publishOfficialWebsiteCms,
+  getOfficialWebsiteCmsHistory,
+  rollbackOfficialWebsiteCms,
   normalizeCms,
 };

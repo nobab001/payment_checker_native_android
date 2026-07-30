@@ -15,6 +15,28 @@ router.get('/site', async (_req, res) => {
   }
 });
 
+/** Public Status / Health Endpoint */
+router.get('/status', async (_req, res) => {
+  try {
+    // Check database connection
+    await prisma.$queryRaw`SELECT 1`;
+    return res.json({
+      success: true,
+      status: 'operational',
+      message: 'All Systems Operational',
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('[OfficialWebsite] Status check failed:', err);
+    return res.json({
+      success: false,
+      status: 'outage',
+      message: 'Partial System Outage',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 /** Public reviews list */
 router.get('/reviews', async (_req, res) => {
   try {
