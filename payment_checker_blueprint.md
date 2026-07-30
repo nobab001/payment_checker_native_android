@@ -1268,4 +1268,16 @@ Clients connect and pass a JWT token and hardware device ID during the connectio
 - একই sender (যেমন bKash) gateway + custom archive উভয়ে configured থাকলে:
   Body regex match → `sms_history`; Regex fail + archive → `custom_sms_archives`; Neither → DROP
 
+---
+
+### ✅ Session: 2026-07-30 — Enterprise CMS Versioning, Reviews Moderation, Status Page & API Sandbox
+
+**কী করা হয়েছে:**
+- **CMS Draft, Publish & Rollback Backend**: `global_config` টেবিলে `official_website_cms_draft` এবং `official_website_cms_history` প্রোপার্টি ব্যবহার করে ড্রাফট সেভ, ১-ক্লিকে লাইভ পাবলিশ এবং ১০টি সংস্করণের রোলব্যাক ব্যাকএন্ড ইমপ্লিমেন্টেশন সম্পূর্ণ করা হয়েছে (`services/officialWebsiteCms.js`, `controllers/adminController.js`, এবং `routes/adminRoutes.js` আপডেট)।
+- **Company Logo Manager**: এডমিন ড্যাশবোর্ডে কোম্পানি পার্টনার লোগো আপলোডের জন্য ফাইল আপলোড লিসেনার (`#compLogoFile`) যুক্ত করা হয়েছে। ফাইল সিলেক্ট হলে `FileReader` দিয়ে base64 ফরম্যাটে রিড করে `/api/admin/upload-image` এ পোস্ট করা হয়। ব্যাকএন্ডে `sharp` লাইব্রেরি দিয়ে সর্বোচ্চ `320px` রেজোলিউশনে অপ্টিমাইজ ও কম্প্রেস করে সেভ করা হয়।
+- **Reviews Moderation & Pinned Reviews**: এডমিন মডারেশন প্যানেলে রিভিউ এপ্রুভ, স্প্যাম এবং এডমিন রিপ্লাইয়ের পাশাপাশি **"Pin/Unpin"** ফিচার যুক্ত করা হয়েছে। এটি `helpful_count` কলামের মান `9999` এবং `0` এর মধ্যে টগল করে রিভিউসমূহকে হোমপেজের রিভিউ সেকশনের শীর্ষে প্রদর্শন করে।
+- **Live Status Indicator Page**: `GET /api/official/status` এপিআই রাউট তৈরি করা হয়েছে যা ডাটাবেস কানেক্টিভিটি চেক করে operational বা outage স্ট্যাটাস প্রদান করে। ল্যান্ডিং পেজের ফুটারে লাইভ স্ট্যাটাস ইন্ডিকেটর এবং একটি ডেডিকেটেড পাবলিক সিস্টেম স্ট্যাটাস পেইজ (`public/status/index.html`) তৈরি করা হয়েছে যা ৯০ দিনের আপটাইম গ্রিড প্রদর্শন করে।
+- **API Playground Sandbox Widget**: ডেভেলপার ডকুমেন্টেশন পেইজে (`public/docs/index.html`) একটি ইন্টারেক্টিভ Sandbox Playground যুক্ত করা হয়েছে। এটি ডেভেলপারদের API Key/Secret দিয়ে Web Crypto API এর সাহায্যে ব্রাউজারেই HMAC-SHA256 সিগনেচার হিসেব করে cURL রিকোয়েস্ট তৈরি করতে দেয় এবং ৬০০ মিলিমেকেন্ডের লেটেন্সি সিমুলেশন সহ মক রেসপন্স প্রদর্শন করে।
+- **VPS Deployment**: সমস্ত পরিবর্তন গিটহাবে পুশ করে স্বয়ংক্রিয়ভাবে লাইভ ভিপিএস-এ ডেপ্লয় করা হয়েছে এবং ৯/৯টি হেলথ চেক সফলভাবে পাস হয়েছে।
+
 
