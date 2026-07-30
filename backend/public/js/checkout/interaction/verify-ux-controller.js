@@ -294,6 +294,59 @@ const HELPLINE_SVG = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 11a9 9 0 0 1 18 0"/><path d="M21 11v2a2 2 0 0 1-2 2h-1"/><path d="M3 11v2a2 2 0 0 0 2 2h1"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>',
 };
 
+/**
+ * WebView-এ custom URL scheme (whatsapp://, tel:, etc.) open করার helper.
+ *
+ * সমস্যা: window.open(url, '_blank') WebView-এ ERR_UNKNOWN_URL_SCHEME দেয় কারণ
+ * WebView নতুন window খুলতে পারে না এবং custom scheme redirect করতে পারে না।
+ *
+ * Fix:
+ *  - whatsapp:// → https://wa.me/ (universal link, সব browser/WebView-এ কাজ করে)
+ *  - tel:         → window.location.href (same window, Android native dialer trigger)
+ *  - অন্য scheme  → window.location.href (native app intent trigger করার জন্য)
+ */
+function openHelplineUrl(url) {
+  if (!url) return;
+
+  try {
+    // whatsapp://send/?phone=880... → https://wa.me/880...
+    if (url.startsWith('whatsapp://')) {
+      const waMatch = url.match(/[?&]phone=([0-9+]+)/);
+      const textMatch = url.match(/[?&]text=([^&]*)/);
+      const phone = waMatch ? waMatch[1] : '';
+      const text = textMatch ? decodeURIComponent(textMatch[1]) : '';
+      const waUrl = phone
+        ? 'https://wa.me/' + phone + (text ? '?text=' + encodeURIComponent(text) : '')
+        : 'https://wa.me/';
+      window.open(waUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    // tel:, mailto:, sms: — same window দিয়ে navigate করলে Android native app trigger হয়
+    if (
+      url.startsWith('tel:') ||
+      url.startsWith('mailto:') ||
+      url.startsWith('sms:')
+    ) {
+      window.location.href = url;
+      return;
+    }
+
+    // https:// এবং http:// — normal link
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    // অন্য যেকোনো custom scheme (telegram://, fb-messenger://, etc.)
+    // window.location.href দিলে Android Intent system native app খুলে দেয়
+    window.location.href = url;
+  } catch (_) {
+    // Fallback: last resort
+    window.location.href = url;
+  }
+}
+
 function mountHelpline(links) {
   const root = $('checkout-helpline-fab');
   const btn = $('checkout-helpline-btn');
@@ -309,11 +362,15 @@ function mountHelpline(links) {
       helpRoot.style.display = 'grid';
       const icon = HELPLINE_EMOJI[item.icon] || '🔗';
       const a = document.createElement('a');
+      // href এ raw URL রাখা হয়েছে কিন্তু click intercept করা হয়েছে
       a.href = item.url;
-      a.target = '_blank';
       a.rel = 'noopener noreferrer';
       a.style.cssText = 'display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;border:1px solid var(--border);text-decoration:none;color:inherit;font-weight:700;font-size:14px;background:#fff';
       a.innerHTML = `<span style="font-size:20px">${icon}</span><span>${item.label || ''}</span>`;
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        openHelplineUrl(item.url);
+      });
       helpRoot.appendChild(a);
     }
   }
@@ -330,7 +387,7 @@ function mountHelpline(links) {
   btn.setAttribute('aria-label', item.label || icon);
   root.classList.remove('hidden');
   btn.onclick = () => {
-    window.open(item.url, '_blank', 'noopener,noreferrer');
+    openHelplineUrl(item.url);
   };
 }
 
