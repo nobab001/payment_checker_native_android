@@ -230,6 +230,95 @@ await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);`
     });
   }
 
+  async function hmacSha256(secret, message) {
+    const enc = new TextEncoder();
+    const key = await window.crypto.subtle.importKey(
+      "raw",
+      enc.encode(secret),
+      { name: "HMAC", hash: { name: "SHA-256" } },
+      false,
+      ["sign"]
+    );
+    const signature = await window.crypto.subtle.sign(
+      "HMAC",
+      key,
+      enc.encode(message)
+    );
+    return Array.from(new Uint8Array(signature))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  async function updatePlayground() {
+    const apiKey = document.getElementById('playApiKey').value;
+    const apiSecret = document.getElementById('playApiSecret').value;
+    const amount = parseFloat(document.getElementById('playAmount').value) || 500;
+    const orderId = document.getElementById('playOrderId').value;
+    const purpose = document.getElementById('playPurpose').value;
+    
+    const payloadObj = {
+      amount,
+      orderId,
+      purpose,
+      successUrl: 'https://yoursite.com/success',
+      cancelUrl: 'https://yoursite.com/cancel',
+      callbackUrl: 'https://yoursite.com/webhook'
+    };
+    
+    const raw = JSON.stringify(payloadObj);
+    let signature = 'api-secret-missing';
+    if (apiSecret) {
+      try {
+        signature = await hmacSha256(apiSecret, raw);
+      } catch(e) {
+        signature = 'signature-error';
+      }
+    }
+    
+    const curl = `curl -X POST https://paycheckbd.com/api/v1/pay/init \\
+  -H "Content-Type: application/json" \\
+  -H "X-Api-Key: ${apiKey}" \\
+  -H "X-Signature: ${signature}" \\
+  -d '${raw}'`;
+    
+    document.getElementById('playCurlSnippet').textContent = curl;
+  }
+
+  function initPlayground() {
+    const btnGen = document.getElementById('btnPlayGenerate');
+    const btnSim = document.getElementById('btnPlaySimulate');
+    if (!btnGen || !btnSim) return;
+
+    btnGen.addEventListener('click', updatePlayground);
+    
+    btnSim.addEventListener('click', () => {
+      const overlay = document.getElementById('playLoadingOverlay');
+      const responseBox = document.getElementById('playResponseBox');
+      overlay.style.display = 'flex';
+      
+      setTimeout(() => {
+        overlay.style.display = 'none';
+        const amount = parseFloat(document.getElementById('playAmount').value) || 500;
+        const purpose = document.getElementById('playPurpose').value;
+        
+        const mockResponse = {
+          success: true,
+          sessionToken: 'ps_test_' + Math.random().toString(36).substring(2, 15),
+          checkoutUrl: 'https://paycheckbd.com/pay/ps_test_' + Math.random().toString(36).substring(2, 8),
+          channel: 'paycheck',
+          amount: amount,
+          purpose: purpose,
+          expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString()
+        };
+        
+        responseBox.textContent = JSON.stringify(mockResponse, null, 2);
+      }, 600);
+    });
+
+    // Run once on load
+    updatePlayground();
+  }
+
   function wireNav() {
     document.querySelectorAll('.docs-nav-group a').forEach((a) => {
       a.addEventListener('click', (e) => {
@@ -250,6 +339,7 @@ await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);`
       renderFrameworks();
       wireCopy();
       wireNav();
+      initPlayground();
     }
   };
 })();

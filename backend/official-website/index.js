@@ -42,6 +42,10 @@ function mount(app) {
     res.redirect(302, '/docs');
   });
 
+  app.get('/status', (_req, res) => {
+    res.sendFile(path.join(publicDir, 'status', 'index.html'));
+  });
+
   app.get(['/features', '/solutions', '/pricing', '/documentation', '/resources', '/contact'], (req, res) => {
     // Marketing sections live on the homepage as anchors — docs is a full page.
     const map = {
