@@ -15,6 +15,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.ProgressBar
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -133,7 +134,9 @@ class CheckoutActivity : FragmentActivity() {
     }
 
     private fun handleSpecialUri(uri: Uri): Boolean {
-        if (uri.scheme == "paychek") {
+        val scheme = uri.scheme?.lowercase() ?: return false
+
+        if (scheme == "paychek") {
             // Deliver deep link to MainActivity (billing success), then close WebView.
             val deep = Intent(Intent.ACTION_VIEW, uri).apply {
                 setClass(this@CheckoutActivity, MainActivity::class.java)
@@ -143,12 +146,20 @@ class CheckoutActivity : FragmentActivity() {
             finish()
             return true
         }
-        // Keep http(s) inside WebView; open tel/mailto externally.
-        val scheme = uri.scheme?.lowercase()
-        if (scheme == "tel" || scheme == "mailto" || scheme == "sms") {
+
+        // Keep http(s) inside WebView; open all other schemes externally (tel, mailto, sms, whatsapp, telegram, market, etc.)
+        if (scheme != "http" && scheme != "https") {
             try {
-                startActivity(Intent(Intent.ACTION_VIEW, uri))
-            } catch (_: Exception) { /* no handler */ }
+                val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                    addCategory(Intent.CATEGORY_BROWSABLE)
+                }
+                startActivity(intent)
+            } catch (e: android.content.ActivityNotFoundException) {
+                android.util.Log.w("CheckoutActivity", "No activity found to handle uri: $uri")
+                Toast.makeText(this, "প্রয়োজনীয় অ্যাপটি ইনস্টল করা নেই।", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                android.util.Log.e("CheckoutActivity", "Unexpected error handling uri: $uri", e)
+            }
             return true
         }
         return false
