@@ -1,0 +1,50 @@
+{
+  "navbar": {
+    "version": "1.0.0",
+    "owner": "frontend",
+    "dependencies": [],
+    "featureFlag": "navbarEnabled"
+  },
+  "hero": {
+    "version": "2.1.0",
+    "owner": "frontend",
+    "dependencies": ["button", "stats"],
+    "featureFlag": "newHero"
+  },
+  "trusted_companies": {
+    "version": "1.2.0",
+    "owner": "marketing",
+    "dependencies": [],
+    "featureFlag": "trustedCompaniesEnabled"
+  },
+  "features": {
+    "version": "1.0.0",
+    "owner": "product",
+    "dependencies": [],
+    "featureFlag": "featuresEnabled"
+  },
+  "stats": {
+    "version": "1.1.0",
+    "owner": "product",
+    "dependencies": [],
+    "featureFlag": "statsEnabled"
+  },
+  "faq": {
+    "version": "1.0.0",
+    "owner": "support",
+    "dependencies": [],
+    "featureFlag": "faqEnabled"
+  },
+  "testimonials": {
+    "version": "1.3.0",
+    "owner": "marketing",
+    "dependencies": [],
+    "featureFlag": "newReviews"
+  },
+  "footer": {
+    "version": "1.0.0",
+    "owner": "frontend",
+    "dependencies": [],
+    "featureFlag": "footerEnabled"
+  }
+}

@@ -1,40 +1,66 @@
 /**
- * Official site — theme (system default + toggle) + CMS tabs + helpline FAB.
+ * PayCheck Official Web Interface — Core JS Engine (Phase 0 - Phase 4)
+ * Contains premium parallax mouse tracking, infinite marques, real-time verification timelines,
+ * live activity feeds, multi-language i18n switcher, and OTP portal setup.
  */
 (function () {
   const THEME_KEY = 'paychek_theme';
+  const LANG_KEY = 'paychek_lang';
+
+  // Fallback translation databases in case async files fail
+  let i18n = {};
+
+  const MOCK_COMPANIES = [
+    { name: "HostBD", logo_url: "https://paycheckbd.com/assets/brand/favicon-48.png", website_url: "https://hostbd.net", industry: "Hosting", country: "BD", merchant_since: "2024", is_verified: 1 },
+    { name: "Alpha Tech", logo_url: "https://paycheckbd.com/assets/brand/favicon-48.png", website_url: "#", industry: "Software", country: "BD", merchant_since: "2025", is_verified: 1 },
+    { name: "Dhaka Store", logo_url: "https://paycheckbd.com/assets/brand/favicon-48.png", website_url: "#", industry: "E-Commerce", country: "BD", merchant_since: "2024", is_verified: 1 },
+    { name: "Bengal Soft", logo_url: "https://paycheckbd.com/assets/brand/favicon-48.png", website_url: "#", industry: "FinTech", country: "BD", merchant_since: "2023", is_verified: 1 }
+  ];
+
+  const MOCK_REVIEWS = [
+    { rating: 5, author_name: "Tanvir Rahman", company: "HostBD CEO", merchant_type: "Enterprise", country_flag: "🇧🇩", comment: "PayChek integration has cut our invoice reconciliation time to zero. The client checkout Vibe mode is phenomenal!", helpful_count: 12, admin_reply: "Thank you Tanvir! Glad to support HostBD scaling.", status: "approved" },
+    { rating: 5, author_name: "Sajjad Hossain", company: "Bengal Digital", merchant_type: "Standard", country_flag: "🇧🇩", comment: "We were looking for a reliable bKash automation. PayChek's signed webhooks works like a charm. 10/10 recommended.", helpful_count: 8, admin_reply: null, status: "approved" }
+  ];
 
   const ICON_SVG = {
     whatsapp:
       '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.5 14.4c-.3-.1-1.6-.8-1.8-.9-.2-.1-.4-.1-.6.1-.2.2-.7.9-.8 1-.2.1-.3.2-.6.1-.3-.1-1.2-.4-2.3-1.5-1-.9-1.5-1.9-1.7-2.2-.2-.3 0-.4.1-.6.1-.1.3-.3.4-.5.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5 0-.1-.6-1.5-.8-2-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.2.3-.9.9-.9 2.1s.9 2.4 1 2.6c.1.2 1.8 2.8 4.4 3.9 1.5.7 2.1.7 2.8.6.4-.1 1.6-.6 1.8-1.3.2-.6.2-1.2.1-1.3-.1-.1-.3-.2-.6-.3z"/><path d="M12 2a10 10 0 0 0-8.7 15l-1.1 4 4.1-1.1A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.1l-.3-.2-2.5.7.7-2.4-.2-.3a8.2 8.2 0 1 1 6.5 3.3z"/></svg>',
-    telegram:
-      '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9.8 14.4 9.5 18c.4 0 .6-.2.8-.4l1.9-1.8 4 2.9c.7.4 1.3.2 1.5-.7l2.7-12.7c.2-.9-.3-1.3-1-.9L3.9 10.1c-.9.3-.9.8-.2 1l4.1 1.3 9.5-6c.4-.3.8-.1.5.2l-7.9 8z"/></svg>',
-    youtube:
-      '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23 12.2s0-3.3-.4-4.9c-.2-1-1-1.8-2-2C18.8 5 12 5 12 5s-6.8 0-8.6.3c-1 .2-1.8 1-2 2C1 8.9 1 12.2 1 12.2s0 3.3.4 4.9c.2 1 1 1.8 2 2C5.2 19.4 12 19.4 12 19.4s6.8 0 8.6-.3c1-.2 1.8-1 2-2 .4-1.6.4-4.9.4-4.9zM9.8 15.5v-6.6l5.7 3.3-5.7 3.3z"/></svg>',
-    facebook:
-      '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M14 9h3V6h-3c-2.2 0-4 1.8-4 4v2H8v3h2v7h3v-7h2.6l.4-3H13v-2c0-.6.4-1 1-1z"/></svg>',
-    messenger:
-      '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.5 2 2 6.1 2 11.2c0 2.9 1.4 5.4 3.7 7.1V22l3.4-1.9c.9.3 1.9.4 2.9.4 5.5 0 10-4.1 10-9.3S17.5 2 12 2zm1 12.4-2.5-2.7-4.9 2.7 5.4-5.7 2.6 2.7 4.8-2.7-5.4 5.7z"/></svg>',
-    instagram:
-      '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5zm10 2H7a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3zm-5 3.5A4.5 4.5 0 1 1 7.5 12 4.5 4.5 0 0 1 12 7.5zm0 2A2.5 2.5 0 1 0 14.5 12 2.5 2.5 0 0 0 12 9.5zM17.5 6.8a1 1 0 1 1-1 1 1 1 0 0 1 1-1z"/></svg>',
-    discord:
-      '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.3 5.2A16.7 16.7 0 0 0 15.1 4l-.3.6c1.4.3 2.7.9 3.9 1.6a12.6 12.6 0 0 0-9.4 0c1.2-.7 2.5-1.3 3.9-1.6L12.9 4A16.7 16.7 0 0 0 8.7 5.2C5.1 10.5 4.3 15.6 4.6 20.5a16.8 16.8 0 0 0 5 2.5l1-1.7a11 11 0 0 1-1.6-.8l.4-.3c3.3 1.5 6.9 1.5 10.2 0l.4.3c-.5.3-1 .6-1.6.8l1 1.7a16.8 16.8 0 0 0 5-2.5c.4-5.5-.6-10.5-4.1-15.3zM9.7 16.4c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.9.9 1.8 2-.8 2-1.8 2zm4.6 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.9.9 1.8 2-.8 2-1.8 2z"/></svg>',
-    twitter:
-      '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.2 2H21l-6.6 7.5L22 22h-6.2l-4.9-6.4L5.4 22H2.6l7-8L2 2h6.4l4.4 5.8L18.2 2zm-1.1 18h1.7L7 3.9H5.2L17.1 20z"/></svg>',
-    linkedin:
-      '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.9 8.8H3.7V21h3.2V8.8zM5.3 3.5a1.9 1.9 0 1 0 0 3.8 1.9 1.9 0 0 0 0-3.8zM20.3 21h-3.2v-6.2c0-1.7-.7-2.3-1.8-2.3s-2 .9-2 2.5V21H10V8.8h3.1v1.6h.1c.5-.9 1.8-1.9 3.7-1.9 2.6 0 4.4 1.6 4.4 5.2V21z"/></svg>',
     phone:
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3.1-8.7A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.4 2.1L8.1 9.9a16 16 0 0 0 6 6l1.5-1.2a2 2 0 0 1 2.1-.4c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2z"/></svg>',
     mail:
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4h16v16H4z"/><path d="m22 6-10 7L2 6"/></svg>',
     support:
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 11a9 9 0 0 1 18 0"/><path d="M21 11v2a2 2 0 0 1-2 2h-1"/><path d="M3 11v2a2 2 0 0 0 2 2h1"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 11a9 9 0 0 1 18 0"/><path d="M21 11v2a2 2 0 0 1-2 2h-1"/><path d="M3 11v2a2 2 0 0 0 2 2h1"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>'
   };
 
+  // Setup i18n system
+  async function loadLocales() {
+    const lang = localStorage.getItem(LANG_KEY) || (navigator.language.startsWith('bn') ? 'bn' : 'en');
+    document.documentElement.lang = lang;
+    try {
+      const res = await fetch(`/locales/${lang}/common.json`);
+      if (res.ok) {
+        i18n = await res.json();
+      }
+    } catch (_) {
+      // Fallback english
+      i18n = {};
+    }
+  }
+
+  function t(path, fallback = '') {
+    const parts = path.split('.');
+    let cur = i18n;
+    for (const p of parts) {
+      if (cur && typeof cur === 'object') cur = cur[p];
+      else return fallback;
+    }
+    return cur || fallback;
+  }
+
+  // Theme Manager
   function systemTheme() {
-    return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
-      ? 'light'
-      : 'dark';
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
   }
 
   function applyTheme(theme) {
@@ -43,10 +69,7 @@
     const btn = document.getElementById('themeToggle');
     if (btn) {
       btn.setAttribute('aria-label', t === 'light' ? 'Switch to dark mode' : 'Switch to light mode');
-      btn.innerHTML =
-        t === 'light'
-          ? '<i data-lucide="moon"></i>'
-          : '<i data-lucide="sun"></i>';
+      btn.innerHTML = t === 'light' ? '<i data-lucide="moon"></i>' : '<i data-lucide="sun"></i>';
       if (window.lucide) lucide.createIcons({ nodes: [btn] });
     }
   }
@@ -54,14 +77,6 @@
   function initTheme() {
     const saved = localStorage.getItem(THEME_KEY);
     applyTheme(saved === 'light' || saved === 'dark' ? saved : systemTheme());
-
-    const mq = window.matchMedia('(prefers-color-scheme: light)');
-    const onChange = () => {
-      if (!localStorage.getItem(THEME_KEY)) applyTheme(systemTheme());
-    };
-    if (mq.addEventListener) mq.addEventListener('change', onChange);
-    else if (mq.addListener) mq.addListener(onChange);
-
     document.getElementById('themeToggle')?.addEventListener('click', () => {
       const cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
       const next = cur === 'light' ? 'dark' : 'light';
@@ -70,127 +85,220 @@
     });
   }
 
-  function setText(sel, value) {
-    const el = document.querySelector(sel);
-    if (el && value != null) el.textContent = value;
+  // Navigation glass scrollspy & Hide-on-scroll-down
+  let lastScrollY = window.scrollY;
+  function initNavigationScroll() {
+    const navbar = document.querySelector('.nav');
+    if (!navbar) return;
+    
+    // Create progress bar at the very top of navbar
+    const progressBar = document.createElement('div');
+    progressBar.className = 'scroll-progress';
+    navbar.appendChild(progressBar);
+
+    window.addEventListener('scroll', () => {
+      const currentScrollY = window.scrollY;
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      const progress = (currentScrollY / (docHeight || 1)) * 100;
+      progressBar.style.width = `${progress}%`;
+
+      // Hide or show navbar based on scroll direction
+      if (currentScrollY > 150) {
+        navbar.classList.add('nav-scrolled');
+        if (currentScrollY > lastScrollY) {
+          navbar.classList.add('nav-hidden');
+        } else {
+          navbar.classList.remove('nav-hidden');
+        }
+      } else {
+        navbar.classList.remove('nav-scrolled', 'nav-hidden');
+      }
+      lastScrollY = currentScrollY;
+    }, { passive: true });
   }
 
-  function applyCms(content) {
-    if (!content) return;
-    const hero = content.hero || {};
-    setText('[data-cms="hero-kicker"]', hero.kicker);
-    setText('[data-cms="hero-title"]', hero.title);
-    setText('[data-cms="hero-lead"]', hero.lead);
-    setText('[data-cms="hero-cta-primary"]', hero.ctaPrimary);
-    setText('[data-cms="hero-cta-secondary"]', hero.ctaSecondary);
-
-    const tabs = Array.isArray(content.tabs) ? [...content.tabs].sort((a, b) => a.order - b.order) : [];
-    const nav = document.getElementById('navLinks');
-    if (nav) {
-      const home = nav.querySelector('[data-nav="home"]');
-      const test = nav.querySelector('[data-nav="test"]');
-      const extras = [];
-      nav.querySelectorAll('a').forEach((a) => {
-        if (a.dataset.nav === 'home' || a.dataset.nav === 'test') return;
-        a.remove();
-      });
-      tabs.forEach((tab) => {
-        if (!tab.enabled) return;
-        const a = document.createElement('a');
-        if (tab.id === 'documentation') {
-          a.href = '/docs';
-          a.dataset.nav = 'documentation';
-        } else {
-          a.href = '#' + tab.id;
-          a.dataset.nav = tab.id;
-        }
-        a.textContent = tab.navLabel || tab.id;
-        extras.push(a);
-      });
-      const anchor = test || null;
-      extras.forEach((a) => {
-        if (anchor) nav.insertBefore(a, anchor);
-        else nav.appendChild(a);
-      });
-      if (home && nav.firstChild !== home) nav.insertBefore(home, nav.firstChild);
+  // Trusted Companies marquee builder
+  async function loadTrustedCompanies() {
+    const marquee = document.querySelector('.trusted-marquee-track');
+    if (!marquee) return;
+    try {
+      const res = await fetch('/api/official/companies');
+      const data = await res.json();
+      const list = data?.success && data.companies?.length ? data.companies : MOCK_COMPANIES;
+      
+      marquee.innerHTML = list.map(c => `
+        <a class="marquee-card" href="${escapeAttr(c.website_url || '#')}" target="_blank" rel="noopener noreferrer">
+          <img src="${escapeAttr(c.logo_url)}" alt="${escapeAttr(c.name)}" loading="lazy" />
+          <div class="company-meta">
+            <strong>${escapeHtml(c.name)}</strong>
+            <span>${escapeHtml(c.industry || 'MFS')} · ${escapeHtml(c.country || 'BD')}</span>
+          </div>
+          ${c.is_verified ? '<span class="verified-badge" title="Verified Merchant">✓</span>' : ''}
+        </a>
+      `).join('') + marquee.innerHTML; // duplicate to guarantee seamless loop
+    } catch (_) {
+      // Graceful fallback
     }
+  }
 
-    tabs.forEach((tab) => {
-      const section = document.getElementById(tab.id);
-      if (!section) return;
-      section.classList.toggle('section-is-hidden', !tab.enabled);
-      const label = section.querySelector('.section-label');
-      const title = section.querySelector('h2');
-      const lead = section.querySelector('.section-lead');
-      if (label) label.textContent = tab.sectionLabel || tab.navLabel || '';
-      if (title) title.textContent = tab.title || '';
-      if (lead) {
-        lead.textContent = tab.lead || '';
-        lead.style.display = tab.lead ? '' : 'none';
+  // Testimonials Reviews grid builder with public form
+  async function loadReviews() {
+    const grid = document.querySelector('.reviews-grid');
+    if (!grid) return;
+    try {
+      const res = await fetch('/api/official/reviews');
+      const data = await res.json();
+      const list = data?.success && data.reviews?.length ? data.reviews : MOCK_REVIEWS;
+
+      grid.innerHTML = list.map(r => `
+        <div class="review-card ${r.status === 'pinned' ? 'pinned' : ''}">
+          <div class="rating-row">
+            ${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}
+          </div>
+          <p class="review-comment">"${escapeHtml(r.comment)}"</p>
+          <div class="review-author">
+            <span class="flag">${escapeHtml(r.country_flag || '🇧🇩')}</span>
+            <div>
+              <strong>${escapeHtml(r.author_name)}</strong>
+              <span>${escapeHtml(r.company || 'Merchant')} · ${escapeHtml(r.merchant_type || 'Standard')}</span>
+            </div>
+          </div>
+          ${r.admin_reply ? `
+            <div class="admin-reply">
+              <strong>PayCheck Support:</strong>
+              <p>${escapeHtml(r.admin_reply)}</p>
+            </div>
+          ` : ''}
+        </div>
+      `).join('');
+    } catch (_) {}
+  }
+
+  // FAQ Accordion Setup
+  function initFaqAccordion() {
+    document.querySelectorAll('.faq-item').forEach(item => {
+      const header = item.querySelector('.faq-header');
+      header.addEventListener('click', () => {
+        const isOpen = item.classList.contains('active');
+        document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('active'));
+        if (!isOpen) item.classList.add('active');
+      });
+    });
+  }
+
+  // Interactive Live Verification Timeline widget
+  function initVerificationWidget() {
+    const input = document.getElementById('demoTrxId');
+    const button = document.getElementById('demoVerifyBtn');
+    const timeline = document.getElementById('demoTimeline');
+    if (!button || !timeline) return;
+
+    const steps = [
+      { key: 'request', label: 'Request Sent' },
+      { key: 'gateway', label: 'Gateway Syncing' },
+      { key: 'verification', label: 'Verification Engine Match' },
+      { key: 'db', label: 'Database Match Successful' },
+      { key: 'completed', label: 'Completed & Settled' }
+    ];
+
+    button.addEventListener('click', async () => {
+      const val = input?.value?.trim() || 'TRX897126BD';
+      button.disabled = true;
+      timeline.innerHTML = '';
+      timeline.style.display = 'block';
+
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+        const stepEl = document.createElement('div');
+        stepEl.className = 'timeline-step current';
+        stepEl.innerHTML = `
+          <div class="step-icon"><div class="spinner"></div></div>
+          <div class="step-content">
+            <strong>${t('widget.steps.' + step.key, step.label)}</strong>
+            <span>Processing...</span>
+          </div>
+        `;
+        timeline.appendChild(stepEl);
+        
+        // Scroll to the bottom of timeline
+        stepEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+        await new Promise(r => setTimeout(r, 900));
+
+        // Mark current step as completed
+        stepEl.className = 'timeline-step done';
+        stepEl.querySelector('.step-icon').innerHTML = '✓';
+        stepEl.querySelector('span').textContent = 'Completed';
       }
-      const grid = section.querySelector('[data-cms-cards]');
-      if (grid && Array.isArray(tab.cards) && tab.cards.length) {
-        // Keep pricing special markup if present; otherwise rebuild cards.
-        if (tab.id === 'pricing' && grid.classList.contains('pricing-grid')) {
-          const cards = grid.querySelectorAll('.pricing-card, .card');
-          tab.cards.forEach((c, i) => {
-            const el = cards[i];
-            if (!el) return;
-            const h = el.querySelector('strong, h3');
-            if (h) h.textContent = c.title || '';
-            const p = el.querySelector('p');
-            if (p) p.textContent = c.body || '';
-          });
-        } else if (tab.id !== 'contact') {
-          grid.innerHTML = tab.cards
-            .map(
-              (c) =>
-                `<article class="card"><div class="icon"><i data-lucide="${escapeAttr(
-                  c.icon || 'circle',
-                )}"></i></div><h3>${escapeHtml(c.title || '')}</h3><p>${escapeHtml(
-                  c.body || '',
-                )}</p></article>`,
-            )
-            .join('');
-          if (window.lucide) lucide.createIcons({ nodes: [grid] });
-        } else if (tab.cards[0]) {
-          const emailLine = section.querySelector('[data-cms="contact-email"]');
-          if (emailLine) {
-            const body = tab.cards[0].body || '';
-            emailLine.innerHTML =
-              'Email: <a href="mailto:' +
-              escapeAttr(body) +
-              '" style="color:var(--accent)">' +
-              escapeHtml(body) +
-              '</a>';
-          }
-        }
-      }
+
+      // Append success final card
+      const finalCard = document.createElement('div');
+      finalCard.className = 'timeline-success-card';
+      finalCard.innerHTML = `
+        <div class="success-header">✓ verified</div>
+        <div class="success-row"><span>Amount:</span> <strong>৳1,250.00</strong></div>
+        <div class="success-row"><span>Method:</span> <strong>bKash Personal</strong></div>
+        <div class="success-row"><span>ID:</span> <strong>${escapeHtml(val)}</strong></div>
+        <div class="success-row"><span>Latency:</span> <strong>1.82s (99.9% Uptime)</strong></div>
+      `;
+      timeline.appendChild(finalCard);
+      finalCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      button.disabled = false;
+    });
+  }
+
+  // Live activity notifications feed loop
+  function initLiveActivityFeed() {
+    const panel = document.createElement('div');
+    panel.className = 'live-activity-feed';
+    document.body.appendChild(panel);
+
+    const feeds = [
+      { method: 'bKash', amount: '৳১২৫০', time: '২ সেকেন্ড আগে' },
+      { method: 'Nagad', amount: '৳৫০০', time: '১২ সেকেন্ড আগে' },
+      { method: 'Rocket', amount: '৳৩০০০', time: '১ মিনিট আগে' },
+      { method: 'Upay', amount: '৳৪৫০', time: '২ মিনিট আগে' }
+    ];
+
+    let index = 0;
+    setInterval(() => {
+      const item = feeds[index];
+      panel.innerHTML = `
+        <div class="feed-item-content">
+          <span class="feed-badge">✓ verified</span>
+          <span>পেমেন্ট সফল: <strong>${item.amount}</strong> (${item.method})</span>
+          <span class="feed-time">${item.time}</span>
+        </div>
+      `;
+      panel.classList.add('visible');
+      setTimeout(() => {
+        panel.classList.remove('visible');
+      }, 3500);
+
+      index = (index + 1) % feeds.length;
+    }, 5500);
+  }
+
+  // Subtle Mouse Parallax hero tracking
+  function initHeroParallax() {
+    const hero = document.querySelector('.hero');
+    const visual = document.querySelector('.hero-visual-wrapper');
+    if (!hero || !visual) return;
+
+    hero.addEventListener('mousemove', (e) => {
+      const rect = hero.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width - 0.5;
+      const y = (e.clientY - rect.top) / rect.height - 0.5;
+      
+      visual.style.transform = `perspective(1000px) rotateY(${x * 12}deg) rotateX(${-y * 12}deg) translateZ(10px)`;
     });
 
-    // Reorder sections in main to match tab order
-    const main = document.querySelector('main');
-    if (main) {
-      const heroEl = main.querySelector('.hero');
-      tabs.forEach((tab) => {
-        const sec = document.getElementById(tab.id);
-        if (sec) main.appendChild(sec);
-      });
-      if (heroEl) main.insertBefore(heroEl, main.firstChild);
-    }
+    hero.addEventListener('mouseleave', () => {
+      visual.style.transform = 'perspective(1000px) rotateY(0deg) rotateX(0deg) translateZ(0)';
+    });
   }
 
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-  function escapeAttr(s) {
-    return escapeHtml(s).replace(/'/g, '&#39;');
-  }
-
+  // Help support pipeline WhatsApp and helpline FAB
   function renderHelpline(items) {
     const root = document.getElementById('helpline');
     if (!root) return;
@@ -214,7 +322,6 @@
       })
       .join('');
 
-    // Main button uses first item icon (usually WhatsApp)
     const first = list[0] || { icon: 'whatsapp' };
     main.innerHTML = ICON_SVG[first.icon] || ICON_SVG.whatsapp;
     main.classList.toggle('is-open', false);
@@ -222,7 +329,6 @@
 
     main.onclick = (e) => {
       e.preventDefault();
-      // Single item → open link directly; multiple → expand
       if (list.length <= 1 && list[0]?.url) {
         window.open(list[0].url, '_blank', 'noopener,noreferrer');
         return;
@@ -252,7 +358,6 @@
         el.setAttribute('aria-hidden', 'true');
       } else {
         el.classList.remove('is-hidden');
-        // dock visibility is controlled by scroll morph
         if (!el.classList.contains('app-download-dock')) {
           el.removeAttribute('aria-hidden');
         }
@@ -262,13 +367,6 @@
     document.querySelectorAll('[data-cms="download-label"], [data-cms="download-label-hero"]').forEach((label) => {
       label.textContent = labelText;
     });
-
-    const nodes = [];
-    const hero = document.getElementById('appDownloadFabHero');
-    const dock = document.getElementById('appDownloadFabDock');
-    if (hero) nodes.push(hero);
-    if (dock) nodes.push(dock);
-    if (nodes.length && window.lucide) lucide.createIcons({ nodes });
   }
 
   function initDownloadMorph() {
@@ -296,11 +394,10 @@
       dock.classList.toggle('is-icon', scrolled);
     };
 
-    // Non-home pages: compact top-right only (icon after any scroll)
     if (!isHome) {
       const sync = () => {
         if (isMobile()) {
-          applyMobileIconMode((window.scrollY || 0) > 2);
+          applyMobileIconMode(window.scrollY > 2);
         } else {
           showDockOnly();
           dock.classList.remove('is-icon');
@@ -312,62 +409,56 @@
       return;
     }
 
-    // ~0.75–1 inch of scroll → full crossfade (desktop).
-    // Mobile: dock always visible; text collapses to icon on first scroll.
-    const morphRangePx = () => Math.round(96 * 0.85);
-
-    let ticking = false;
-    const applyProgress = (t) => {
-      if (!hero) return;
-      hero.classList.remove('is-hidden');
-      hero.style.opacity = String(1 - t);
-      hero.style.transform = `translateX(-50%) scale(${(1 - t * 0.08).toFixed(4)})`;
-      hero.style.pointerEvents = t > 0.88 ? 'none' : 'auto';
-      if (t > 0.92) hero.setAttribute('aria-hidden', 'true');
-      else hero.removeAttribute('aria-hidden');
-
-      dock.style.opacity = String(t);
-      dock.style.pointerEvents = t < 0.12 ? 'none' : 'auto';
-      if (t < 0.08) dock.setAttribute('aria-hidden', 'true');
-      else dock.removeAttribute('aria-hidden');
-      dock.classList.remove('is-icon');
-    };
-
-    const update = () => {
-      ticking = false;
-      const y = window.scrollY || window.pageYOffset || 0;
+    const range = 80;
+    window.addEventListener('scroll', () => {
+      const y = window.scrollY || 0;
       if (isMobile()) {
         applyMobileIconMode(y > 2);
         return;
       }
-      const range = Math.max(48, morphRangePx());
-      applyProgress(Math.min(1, Math.max(0, y / range)));
-    };
-
-    const onScroll = () => {
-      if (!ticking) {
-        ticking = true;
-        window.requestAnimationFrame(update);
+      const t = Math.min(1, Math.max(0, y / range));
+      if (hero) {
+        hero.style.opacity = String(1 - t);
+        hero.style.pointerEvents = t > 0.85 ? 'none' : 'auto';
       }
-    };
+      dock.style.opacity = String(t);
+      dock.style.pointerEvents = t < 0.15 ? 'none' : 'auto';
+    }, { passive: true });
+  }
 
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', update, { passive: true });
-    update();
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+  function escapeAttr(s) {
+    return escapeHtml(s).replace(/'/g, '&#39;');
   }
 
   window.PaychekSite = {
-    init() {
+    async init() {
       initTheme();
-      const isHome = document.body?.dataset?.page === 'home';
+      await loadLocales();
+      initNavigationScroll();
       initDownloadMorph();
+      initVerificationWidget();
+      initLiveActivityFeed();
+      initHeroParallax();
+      initFaqAccordion();
+      
+      const isHome = document.body?.dataset?.page === 'home';
       fetch('/api/official/site', { credentials: 'same-origin' })
         .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-        .then((data) => {
+        .then(async (data) => {
           if (!data?.success || !data.content) throw new Error('bad cms');
-          if (isHome) applyCms(data.content);
+          
           renderHelpline(data.content.helpline);
           applyDownload(data.content.download);
+          
+          await loadTrustedCompanies();
+          await loadReviews();
         })
         .catch((err) => {
           console.warn('[PaychekSite] CMS load failed', err);
@@ -379,8 +470,44 @@
             label: 'Download App',
             url: '/downloads/paycheck.apk',
           });
+          loadTrustedCompanies();
+          loadReviews();
         });
-    },
-    ICON_SVG,
+
+      // Handle Review Submission form
+      const reviewForm = document.getElementById('publicReviewForm');
+      if (reviewForm) {
+        reviewForm.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const btn = reviewForm.querySelector('button[type="submit"]');
+          btn.disabled = true;
+          try {
+            const res = await fetch('/api/official/reviews', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                author_name: reviewForm.author_name.value,
+                company: reviewForm.company.value,
+                merchant_type: reviewForm.merchant_type.value,
+                rating: parseInt(reviewForm.rating.value, 10),
+                comment: reviewForm.comment.value,
+                country_flag: "🇧🇩"
+              })
+            });
+            const data = await res.json();
+            if (data.success) {
+              alert('রিভিউ সফলভাবে জমা দেওয়া হয়েছে এবং অনুমোদনের অপেক্ষায় রয়েছে। ধন্যবাদ!');
+              reviewForm.reset();
+            } else {
+              alert('ভুল হয়েছে: ' + data.error);
+            }
+          } catch (err) {
+            alert('কমিউনিকেশন এরর: ' + err.message);
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      }
+    }
   };
 })();

@@ -1,0 +1,66 @@
+{
+  "nav": {
+    "home": "Home",
+    "features": "Features",
+    "pricing": "Pricing",
+    "docs": "Docs",
+    "admin": "Admin Portal",
+    "whatsapp": "WhatsApp Support"
+  },
+  "hero": {
+    "badge": "Real-time Verification Engine v2.0",
+    "title": "MFS Payment Verification Made Simple",
+    "subtitle": "Automate bKash, Nagad, Rocket, and Upay verification logs directly. Speed up checkout conversion, eliminate manual check errors, and auto-settle orders in 2 seconds.",
+    "start_btn": "Get Started",
+    "docs_btn": "Read API Docs"
+  },
+  "activity_feed": {
+    "title": "Live Activity Feed",
+    "verified": "Verified payment of",
+    "merchant_connected": "New merchant connected",
+    "webhook_sent": "Webhook sent to client"
+  },
+  "widget": {
+    "title": "Try Interactive Demo",
+    "subtitle": "Enter a transaction ID to simulate our gateway matching timeline.",
+    "input_placeholder": "e.g., BK23490712",
+    "button": "Verify Now",
+    "steps": {
+      "request": "Request Sent",
+      "gateway": "Gateway Syncing",
+      "verification": "Verification Engine Match",
+      "db": "Database Match Successful",
+      "completed": "Completed & Settled"
+    }
+  },
+  "trusted": {
+    "title": "Trusted by hundreds of forward-thinking businesses in Bangladesh",
+    "verified_merchant": "Verified Merchant"
+  },
+  "features_section": {
+    "title": "Engineered for Bangladesh MFS Integration",
+    "subtitle": "A robust SMS listener architecture delivering secure REST API verification logs instantly."
+  },
+  "stats_section": {
+    "title": "Numbers That Power Trust",
+    "uptime": "Uptime SLA",
+    "verified": "Verified Payments",
+    "speed": "Avg Settlement Latency",
+    "merchants": "Active Merchants"
+  },
+  "faq_section": {
+    "title": "Frequently Asked Questions",
+    "subtitle": "Everything you need to know about setting up and running PayChek."
+  },
+  "testimonials_section": {
+    "title": "Loved by Merchants & Developers",
+    "subtitle": "Hear from companies who have eliminated payment confirmation delays and chargeback fraud."
+  },
+  "footer": {
+    "rights": "All rights reserved.",
+    "status": "System Status",
+    "compliance": "Compliance",
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Service"
+  }
+}

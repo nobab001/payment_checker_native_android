@@ -405,9 +405,11 @@ server.listen(PORT, async () => {
       await ensureWebsitePurposeLockColumns();
       const { ensureCheckoutSettlementsTable } = require('./db/ensure-checkout-settlements');
       await ensureCheckoutSettlementsTable();
-      console.log('[DB] ✅ website_purpose + lock + settlements verified.');
+      const { ensureOfficialTables } = require('./db/ensure-official-tables');
+      await ensureOfficialTables();
+      console.log('[DB] ✅ website_purpose + lock + settlements + official tables verified.');
     } catch (purposeErr) {
-      console.warn('[DB] website_purpose ensure failed:', purposeErr.message);
+      console.warn('[DB] website_purpose / official tables ensure failed:', purposeErr.message);
     }
 
     try {

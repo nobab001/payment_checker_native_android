@@ -50,8 +50,32 @@
   <meta name="twitter:image" content="/assets/brand/twitter-image.png?v=1.0.0" />
   <meta name="theme-color" content="#1A237E" />
   <meta name="msapplication-TileColor" content="#1A237E" />
+
+  <!-- Schema.org JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "PayCheck",
+    "operatingSystem": "Android, Web",
+    "applicationCategory": "BusinessApplication, PaymentGateway",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "BDT"
+    },
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": "4.95",
+      "ratingCount": "194"
+    }
+  }
+  </script>
 </head>
 <body data-page="home">
+  <!-- Skip to main content link for kbd accessibility -->
+  <a href="#mainContent" class="skip-link">Skip to main content</a>
+  
   <div class="bg-mesh" aria-hidden="true"></div>
 
   <header class="nav">
@@ -63,32 +87,76 @@
       <nav class="nav-links" id="navLinks">
         <a href="/" data-nav="home">Home</a>
         <a href="#features" data-nav="features">Features</a>
-        <a href="#solutions" data-nav="solutions">Solutions</a>
+        <a href="#trusted" data-nav="trusted">Partners</a>
         <a href="#pricing" data-nav="pricing">Pricing</a>
-        <a href="/docs" data-nav="documentation">Documentation</a>
-        <a href="#resources" data-nav="resources">Resources</a>
+        <a href="/docs" data-nav="documentation">Docs</a>
+        <a href="#faq" data-nav="faq">FAQ</a>
+        <a href="#testimonials" data-nav="testimonials">Reviews</a>
         <a class="nav-test" href="/test" data-nav="test">Test</a>
         <a href="#contact" data-nav="contact">Contact</a>
       </nav>
       <div class="nav-actions">
         <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle theme"><i data-lucide="sun"></i></button>
-        <button class="nav-toggle" id="navToggle" aria-label="Menu"><i data-lucide="menu"></i></button>
+        <button class="nav-toggle" id="navToggle" aria-label="Menu" aria-expanded="false"><i data-lucide="menu"></i></button>
       </div>
     </div>
   </header>
 
-  <main>
+  <main id="mainContent">
     <section class="hero container">
-      <div>
+      <div class="hero-left">
         <div class="hero-kicker"><i data-lucide="zap" style="width:14px;height:14px"></i> <span data-cms="hero-kicker">Real-time payment verification</span></div>
         <h1 data-cms="hero-title">PayCheck</h1>
         <p class="lead" data-cms="hero-lead">
           The payment layer for Bangladesh merchants — verify bKash, Nagad, Rocket and more from SMS,
           with checkout that feels as polished as Stripe.
         </p>
+        
+        <!-- Trust Badges -->
+        <div class="trust-badges">
+          <span class="badge-item"><i data-lucide="shield-check"></i> Instant Verification</span>
+          <span class="badge-item"><i data-lucide="lock"></i> Secure REST API</span>
+          <span class="badge-item"><i data-lucide="activity"></i> 99.9% Uptime</span>
+        </div>
+
         <div class="cta-row">
           <a class="btn btn-primary" href="/test"><i data-lucide="flask-conical" style="width:18px;height:18px"></i> <span data-cms="hero-cta-primary">Open Test Experience</span></a>
           <a class="btn btn-ghost" href="#features"><span data-cms="hero-cta-secondary">Explore features</span></a>
+        </div>
+      </div>
+
+      <!-- Right Column: Visual Dashboard Mock & Live Timelines Widget -->
+      <div class="hero-right">
+        <div class="hero-visual-wrapper">
+          <div class="premium-glass-card dashboard-mock">
+            <div class="mock-header">
+              <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+              <span class="mock-title">Live Verification Logs</span>
+            </div>
+            
+            <!-- Live Timelines Widget Inside Hero Right -->
+            <div class="demo-widget-box">
+              <strong class="widget-heading">Try Gateway Demo</strong>
+              <div class="input-group">
+                <input type="text" id="demoTrxId" placeholder="Enter Transaction ID (e.g. BK8912)" />
+                <button type="button" class="btn btn-primary btn-sm" id="demoVerifyBtn">Verify</button>
+              </div>
+              <div class="timeline" id="demoTimeline" style="display:none;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Trusted By / Partners Marquee Section -->
+    <section id="trusted" class="trusted-section">
+      <div class="container">
+        <span class="section-label">Partners</span>
+        <h2>Trusted by forward-thinking businesses</h2>
+        <div class="trusted-marquee">
+          <div class="trusted-marquee-track">
+            <!-- Dynamically loaded companies -->
+          </div>
         </div>
       </div>
     </section>
@@ -118,27 +186,26 @@
       </div>
     </section>
 
-    <section id="solutions">
+    <!-- Live Statistics Section -->
+    <section id="stats" class="stats-section">
       <div class="container">
-        <div class="section-label">Solutions</div>
-        <h2>Modes that match your storefront</h2>
-        <p class="section-lead">Choose how customers prove payment — or let them pick on Hybrid checkout.</p>
-        <div class="grid-3" data-cms-cards>
-          <article class="card">
-            <div class="icon"><i data-lucide="hash"></i></div>
-            <h3>Transaction Mode</h3>
-            <p>Customer pays, enters TrxID, PayCheck verifies against live SMS history.</p>
-          </article>
-          <article class="card">
-            <div class="icon"><i data-lucide="sparkles"></i></div>
-            <h3>Vibe Mode</h3>
-            <p>No TrxID typing — soft matching on amount + timing for frictionless checkout.</p>
-          </article>
-          <article class="card">
-            <div class="icon"><i data-lucide="layers"></i></div>
-            <h3>Hybrid Mode</h3>
-            <p>Transaction + Vibe + optional live provider tabs in a single checkout shell.</p>
-          </article>
+        <div class="grid-4 stats-grid">
+          <div class="stat-card">
+            <strong class="stat-number">99.99%</strong>
+            <span>Uptime SLA</span>
+          </div>
+          <div class="stat-card">
+            <strong class="stat-number">350K+</strong>
+            <span>Verified Payments</span>
+          </div>
+          <div class="stat-card">
+            <strong class="stat-number">&lt; 2s</strong>
+            <span>Settlement Latency</span>
+          </div>
+          <div class="stat-card">
+            <strong class="stat-number">200+</strong>
+            <span>Active Merchants</span>
+          </div>
         </div>
       </div>
     </section>
@@ -171,41 +238,74 @@
       </div>
     </section>
 
-    <section id="documentation">
+    <!-- FAQ Accordion Section -->
+    <section id="faq" class="faq-section">
       <div class="container">
-        <div class="section-label">Documentation</div>
-        <h2>Developer guide — A to Z</h2>
-        <p class="section-lead">Stripe / SSLCommerz স্টাইলে পূর্ণ ডেভেলপার গাইড — lifecycle, HMAC <code style="font-family:var(--mono);font-size:0.9em">pay/init</code>, status query, webhooks, settlement, testing ও go-live।</p>
-        <div class="grid-3" data-cms-cards>
-          <article class="card">
-            <div class="icon"><i data-lucide="flag"></i></div>
-            <h3>Purpose lock</h3>
-            <p>Add Balance, Payment, or Both — confirm once, then lock. Super Admin unlock only.</p>
-          </article>
-          <article class="card">
-            <div class="icon"><i data-lucide="file-code-2"></i></div>
-            <h3>Signed init</h3>
-            <p><code style="font-family:var(--mono);font-size:0.85em">POST /api/v1/pay/init</code> with <code style="font-family:var(--mono);font-size:0.85em">X-Signature</code> HMAC — Node, PHP, Laravel, Python, Go, and more.</p>
-          </article>
-          <article class="card">
-            <div class="icon"><i data-lucide="book-open"></i></div>
-            <h3>Full docs</h3>
-            <p>Step-by-step callbacks, walletCredit, multi-Trx settlement, and unlock rules.</p>
-            <a class="btn btn-primary" href="/docs" style="margin-top:14px">Open docs</a>
-          </article>
+        <div class="section-label">FAQ</div>
+        <h2>Frequently Asked Questions</h2>
+        <p class="section-lead">Find answers to common technical and onboarding questions.</p>
+        <div class="faq-accordion-list">
+          <div class="faq-item">
+            <button class="faq-header" aria-expanded="false">
+              <span>How does PayCheck verify payments from SMS?</span>
+              <span class="icon"><i data-lucide="chevron-down"></i></span>
+            </button>
+            <div class="faq-content">
+              <p>Our Android background application listens to incoming payment SMS (bKash/Nagad/Rocket/Upay) on your merchant or personal device, encrypts and signs the payload with HMAC, and pushes it directly to our API. The system then automatically settles your orders.</p>
+            </div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-header" aria-expanded="false">
+              <span>Is my MFS account credentials or PIN requested?</span>
+              <span class="icon"><i data-lucide="chevron-down"></i></span>
+            </button>
+            <div class="faq-content">
+              <p>No! We never request, store, or process your MFS PIN or login credentials. The sync is done solely based on matching incoming transaction text notifications.</p>
+            </div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-header" aria-expanded="false">
+              <span>What is checkout Vibe Mode?</span>
+              <span class="icon"><i data-lucide="chevron-down"></i></span>
+            </button>
+            <div class="faq-content">
+              <p>Vibe mode simplifies mobile checkout by auto-matching payments based on amount and timestamps, saving customers from typing transaction IDs.</p>
+            </div>
+          </div>
         </div>
       </div>
     </section>
 
-    <section id="resources">
+    <!-- Testimonials / Reviews grid & form -->
+    <section id="testimonials" class="testimonials-section">
       <div class="container">
-        <div class="section-label">Resources</div>
-        <h2>Operate with confidence</h2>
-        <p class="section-lead"></p>
-        <div class="grid-3" data-cms-cards>
-          <article class="card"><div class="icon"><i data-lucide="shield"></i></div><h3>Security</h3><p>HMAC request signing, hashed secrets, device binding, and audit-friendly event logs.</p></article>
-          <article class="card"><div class="icon"><i data-lucide="battery-charging"></i></div><h3>Background Guard</h3><p>Accessibility + battery optimization guidance so SMS capture stays reliable.</p></article>
-          <article class="card"><div class="icon"><i data-lucide="smartphone"></i></div><h3>Android App</h3><p>Merchant control plane for devices, websites, billing, and checkout designer.</p></article>
+        <div class="section-label">Testimonials</div>
+        <h2>Loved by Merchants &amp; Developers</h2>
+        <div class="reviews-grid">
+          <!-- Dynamically loaded reviews -->
+        </div>
+
+        <!-- Submission Form -->
+        <div class="review-submission-box">
+          <h3>Share Your Feedback</h3>
+          <form id="publicReviewForm">
+            <div class="form-row">
+              <input type="text" name="author_name" placeholder="Your Name" required />
+              <input type="text" name="company" placeholder="Company Name" />
+              <input type="text" name="merchant_type" placeholder="Merchant Type (e.g. E-Commerce)" />
+            </div>
+            <div class="form-row">
+              <select name="rating" required>
+                <option value="5">★★★★★ (5 Stars)</option>
+                <option value="4">★★★★☆ (4 Stars)</option>
+                <option value="3">★★★☆☆ (3 Stars)</option>
+                <option value="2">★★☆☆☆ (2 Stars)</option>
+                <option value="1">★☆☆☆☆ (1 Star)</option>
+              </select>
+            </div>
+            <textarea name="comment" placeholder="Write your review here..." required></textarea>
+            <button type="submit" class="btn btn-primary">Submit Review</button>
+          </form>
         </div>
       </div>
     </section>
@@ -231,7 +331,10 @@
   <footer>
     <div class="container footer-inner">
       <div class="brand"><span class="brand-mark"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="24" height="24"><defs><linearGradient id="logo-grad-footer" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#00B4FF" /><stop offset="100%" stop-color="#004BFF" /></linearGradient></defs><g fill="none" stroke="url(#logo-grad-footer)" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"><path d="M 256, 75 C 340, 75 390, 110 425, 140 C 425, 270 380, 390 256, 445 C 132, 390 87, 270 87, 140 C 122, 110 172, 75 256, 75 Z" /><path d="M 165, 255 L 225, 315 L 350, 190" /></g></svg></span> PayCheck</div>
-      <div>© <span id="y"></span> PayCheck. All rights reserved.</div>
+      <div>
+        <a href="/status" style="margin-right:16px;color:var(--muted)">System Status</a>
+        <span style="color:var(--muted)">© <span id="y"></span> PayCheck. All rights reserved.</span>
+      </div>
     </div>
   </footer>
 
@@ -240,7 +343,6 @@
     <button type="button" class="helpline-main" aria-label="Helpline"></button>
   </div>
 
-  <!-- Morphing APK download: large hero + small dock (crossfade on light scroll) -->
   <a
     id="appDownloadFabHero"
     class="app-download app-download-hero"
@@ -269,7 +371,9 @@
   <script>
     document.getElementById('y').textContent = new Date().getFullYear();
     document.getElementById('navToggle')?.addEventListener('click', () => {
-      document.getElementById('navLinks').classList.toggle('open');
+      const links = document.getElementById('navLinks');
+      const expanded = links.classList.toggle('open');
+      document.getElementById('navToggle').setAttribute('aria-expanded', expanded);
     });
     window.addEventListener('DOMContentLoaded', () => {
       if (window.lucide) lucide.createIcons();

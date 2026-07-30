@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const prisma = require('../db/prisma');
 const admin = require('../controllers/adminController');
 const authenticateToken = require('../middleware/auth');
 const billingController = require('../controllers/billingController');
@@ -115,6 +116,138 @@ router.get('/presence-v25/metrics', async (req, res) => {
     });
   } catch (e) {
     return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ==========================================
+// OFFICIAL WEBSITE REVIEWS MODERATION CRUD
+// ==========================================
+router.get('/official/reviews', async (req, res) => {
+  try {
+    const { status, limit = 100, offset = 0 } = req.query;
+    const where = {};
+    if (status && status !== 'all') {
+      where.status = status;
+    }
+    const total = await prisma.official_reviews.count({ where });
+    const reviews = await prisma.official_reviews.findMany({
+      where,
+      orderBy: { created_at: 'desc' },
+      take: parseInt(limit, 10),
+      skip: parseInt(offset, 10),
+    });
+    return res.json({ success: true, total, reviews });
+  } catch (err) {
+    console.error('Admin get official reviews error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.put('/official/reviews/:id', express.json(), async (req, res) => {
+  try {
+    const { status, admin_reply, rating, comment } = req.body;
+    const updateData = { updated_at: new Date() };
+    if (status) updateData.status = status;
+    if (admin_reply !== undefined) updateData.admin_reply = admin_reply;
+    if (rating !== undefined) updateData.rating = parseInt(rating, 10);
+    if (comment !== undefined) updateData.comment = comment;
+
+    const review = await prisma.official_reviews.update({
+      where: { id: parseInt(req.params.id, 10) },
+      data: updateData
+    });
+    return res.json({ success: true, review });
+  } catch (err) {
+    console.error('Admin update review error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.delete('/official/reviews/:id', async (req, res) => {
+  try {
+    await prisma.official_reviews.delete({
+      where: { id: parseInt(req.params.id, 10) }
+    });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Admin delete review error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// OFFICIAL WEBSITE TRUSTED COMPANIES CRUD
+// ==========================================
+router.get('/official/companies', async (req, res) => {
+  try {
+    const companies = await prisma.official_companies.findMany({
+      orderBy: { priority: 'asc' }
+    });
+    return res.json({ success: true, companies });
+  } catch (err) {
+    console.error('Admin get companies error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/official/companies', express.json(), async (req, res) => {
+  try {
+    const { name, logo_url, website_url, industry, country, merchant_since, is_verified, priority } = req.body;
+    if (!name || !logo_url) {
+      return res.status(400).json({ success: false, error: 'Name and logo_url are required.' });
+    }
+    const company = await prisma.official_companies.create({
+      data: {
+        name,
+        logo_url,
+        website_url: website_url || null,
+        industry: industry || null,
+        country: country || null,
+        merchant_since: merchant_since || null,
+        is_verified: is_verified !== false && is_verified !== 0 ? 1 : 0,
+        priority: parseInt(priority, 10) || 0
+      }
+    });
+    return res.json({ success: true, company });
+  } catch (err) {
+    console.error('Admin create company error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.put('/official/companies/:id', express.json(), async (req, res) => {
+  try {
+    const { name, logo_url, website_url, industry, country, merchant_since, is_verified, priority } = req.body;
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (logo_url !== undefined) updateData.logo_url = logo_url;
+    if (website_url !== undefined) updateData.website_url = website_url;
+    if (industry !== undefined) updateData.industry = industry;
+    if (country !== undefined) updateData.country = country;
+    if (merchant_since !== undefined) updateData.merchant_since = merchant_since;
+    if (is_verified !== undefined) updateData.is_verified = is_verified ? 1 : 0;
+    if (priority !== undefined) updateData.priority = parseInt(priority, 10) || 0;
+
+    const company = await prisma.official_companies.update({
+      where: { id: parseInt(req.params.id, 10) },
+      data: updateData
+    });
+    return res.json({ success: true, company });
+  } catch (err) {
+    console.error('Admin update company error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.delete('/official/companies/:id', async (req, res) => {
+  try {
+    await prisma.official_companies.delete({
+      where: { id: parseInt(req.params.id, 10) }
+    });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Admin delete company error:', err);
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 

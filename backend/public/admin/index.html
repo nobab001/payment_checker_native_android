@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PayCheck Control Hub — Admin Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@0.468.0" defer></script>
+  <style>
+    :root {
+      --bg: #07080a;
+      --bg-elevated: #0e1014;
+      --surface: #12151b;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --text: #f4f5f7;
+      --muted: #9aa3b2;
+      --accent: #2dd4bf;
+      --accent-dim: rgba(45, 212, 191, 0.12);
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
+      --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    * { box-sizing: border-box; }
+
+    /* Login Box styling */
+    .login-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .login-card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      padding: 32px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+    }
+    .login-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 1.3rem;
+      margin-bottom: 24px;
+      color: var(--accent);
+    }
+    .form-group {
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .form-group label {
+      font-size: 0.85rem;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .form-group input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      padding: 10px 14px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .form-group input:focus {
+      border-color: var(--accent);
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--accent);
+      color: #042f2e;
+      border: none;
+      font-weight: 600;
+      padding: 10px 20px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 0.95rem;
+      transition: opacity 0.2s;
+      width: 100%;
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Dashboard Layout */
+    .dashboard-layout {
+      display: none; /* hidden until authenticated */
+      grid-template-columns: 240px 1fr;
+      min-height: 100vh;
+    }
+    .sidebar {
+      background: var(--bg-elevated);
+      border-right: 1px solid var(--border);
+      padding: 24px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+    .nav-menu {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      color: var(--muted);
+      cursor: pointer;
+      text-decoration: none;
+      font-size: 0.95rem;
+      transition: background 0.2s, color 0.2s;
+    }
+    .nav-item:hover, .nav-item.active {
+      background: var(--hover-fill, rgba(255,255,255,0.04));
+      color: var(--text);
+    }
+    .nav-item.active {
+      border-left: 3px solid var(--accent);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      padding-left: 11px;
+    }
+    .main-content {
+      padding: 32px;
+      overflow-y: auto;
+    }
+    .tab-section {
+      display: none;
+    }
+    .tab-section.active {
+      display: block;
+    }
+
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      margin-top: 16px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      background: rgba(255,255,255,0.02);
+      font-weight: 600;
+      color: var(--muted);
+    }
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+    .badge.pending { background: rgba(245, 158, 11, 0.15); color: var(--warn); }
+    .badge.approved { background: rgba(16, 185, 129, 0.15); color: var(--accent); }
+    .badge.spam { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+
+    .action-row {
+      display: flex;
+      gap: 8px;
+    }
+    .action-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text);
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+    .action-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* Modal Form Overlay */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(0,0,0,0.65);
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 500px;
+      padding: 24px;
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. LOGIN AREA -->
+  <div class="login-container" id="loginArea">
+    <div class="login-card">
+      <div class="login-logo">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="24" height="24" fill="none" stroke="currentColor" stroke-width="52"><path d="M 256, 75 C 340, 75 390, 110 425, 140 C 425, 270 380, 390 256, 445 C 132, 390 87, 270 87, 140 C 122, 110 172, 75 256, 75 Z" /><path d="M 165, 255 L 225, 315 L 350, 190" /></svg>
+        PayCheck Hub
+      </div>
+      <h3 style="margin-top:0;">Admin Authenticate</h3>
+      
+      <!-- Phone/Email Form -->
+      <form id="otpRequestForm">
+        <div class="form-group">
+          <label>Phone or Email</label>
+          <input type="text" name="contact" id="loginContact" placeholder="e.g. helaldada510@gmail.com" required />
+        </div>
+        <button class="btn" type="submit" id="requestOtpBtn">Request Verification Code</button>
+      </form>
+
+      <!-- OTP Entry Form (hidden initially) -->
+      <form id="otpVerifyForm" style="display:none; margin-top:16px;">
+        <div class="form-group">
+          <label>Verification Code (OTP)</label>
+          <input type="text" name="otp" id="loginOtp" placeholder="6 Digit OTP" required />
+        </div>
+        <button class="btn" type="submit" id="verifyOtpBtn">Login Securely</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. DASHBOARD AREA -->
+  <div class="dashboard-layout" id="dashboardArea">
+    <aside class="sidebar">
+      <div class="login-logo">PayCheck Hub</div>
+      <nav class="nav-menu">
+        <a class="nav-item active" data-tab="reviewsTab"><i data-lucide="message-square"></i> Reviews Moderation</a>
+        <a class="nav-item" data-tab="companiesTab"><i data-lucide="layers"></i> Trusted Companies</a>
+        <a class="nav-item" data-tab="cmsTab"><i data-lucide="settings"></i> Homepage Builder</a>
+        <a class="nav-item" id="logoutBtn"><i data-lucide="log-out"></i> Logout</a>
+      </nav>
+    </aside>
+
+    <main class="main-content">
+      
+      <!-- REVIEWS MODERATION TAB -->
+      <section class="tab-section active" id="reviewsTab">
+        <h2>Reviews &amp; Feedbacks Moderation</h2>
+        <div class="table-container">
+          <table id="reviewsTable">
+            <thead>
+              <tr>
+                <th>Rating</th>
+                <th>Author</th>
+                <th>Company</th>
+                <th>Status</th>
+                <th>Comment</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Injected by JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TRUSTED COMPANIES TAB -->
+      <section class="tab-section" id="companiesTab">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h2>Trusted Partner Companies</h2>
+          <button class="btn" style="width:auto;" id="addCompanyBtn">Add Company</button>
+        </div>
+        <div class="table-container">
+          <table id="companiesTable">
+            <thead>
+              <tr>
+                <th>Logo</th>
+                <th>Name</th>
+                <th>Industry</th>
+                <th>Country</th>
+                <th>Priority</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Injected by JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- HOMEPAGE BUILDER CMS TAB -->
+      <section class="tab-section" id="cmsTab">
+        <h2>Official Website Builder (Draft / Publish Versioning)</h2>
+        <form id="cmsForm">
+          <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:20px; margin-bottom:16px;">
+            <h3>Hero Section Drafts</h3>
+            <div class="form-group">
+              <label>Kicker Badge</label>
+              <input type="text" id="cmsHeroKicker" />
+            </div>
+            <div class="form-group">
+              <label>Headline Title</label>
+              <input type="text" id="cmsHeroTitle" />
+            </div>
+            <div class="form-group">
+              <label>Hero Description</label>
+              <input type="text" id="cmsHeroLead" />
+            </div>
+            <div class="form-group">
+              <label>Primary CTA Text</label>
+              <input type="text" id="cmsHeroCtaPrimary" />
+            </div>
+            <div class="form-group">
+              <label>Secondary CTA Text</label>
+              <input type="text" id="cmsHeroCtaSecondary" />
+            </div>
+          </div>
+          
+          <div style="display:flex; gap:12px;">
+            <button class="btn" type="submit" style="background:var(--accent);">Save CMS configuration</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <!-- ADD / EDIT COMPANY MODAL -->
+  <div class="modal-overlay" id="companyModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="companyModalTitle">Add Company Logo</h3>
+        <button class="action-btn" id="closeCompanyModalBtn">&times;</button>
+      </div>
+      <form id="companyForm">
+        <input type="hidden" id="companyId" />
+        <div class="form-group">
+          <label>Company Name</label>
+          <input type="text" id="compName" required />
+        </div>
+        <div class="form-group">
+          <label>Logo image URL</label>
+          <input type="text" id="compLogoUrl" required />
+        </div>
+        <div class="form-group">
+          <label>Website URL</label>
+          <input type="text" id="compWebsiteUrl" />
+        </div>
+        <div class="form-group">
+          <label>Industry</label>
+          <input type="text" id="compIndustry" />
+        </div>
+        <div class="form-group">
+          <label>Country Code (e.g. BD)</label>
+          <input type="text" id="compCountry" />
+        </div>
+        <div class="form-group">
+          <label>Display Priority Order</label>
+          <input type="number" id="compPriority" value="0" />
+        </div>
+        <button class="btn" type="submit">Save Partner Details</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- REVIEW REPLY MODAL -->
+  <div class="modal-overlay" id="replyModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Admin Reply to Review</h3>
+        <button class="action-btn" id="closeReplyModalBtn">&times;</button>
+      </div>
+      <form id="replyForm">
+        <input type="hidden" id="replyReviewId" />
+        <div class="form-group">
+          <label>Reply Text</label>
+          <textarea id="replyText" style="width:100%; min-height:100px; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text); padding:8px; outline:none;"></textarea>
+        </div>
+        <button class="btn" type="submit">Submit Reply</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let token = localStorage.getItem('paychek_admin_token') || '';
+
+    window.addEventListener('DOMContentLoaded', () => {
+      if (token) showDashboard();
+      if (window.lucide) lucide.createIcons();
+
+      // Navigation tab switching
+      document.querySelectorAll('.nav-item[data-tab]').forEach(item => {
+        item.addEventListener('click', () => {
+          document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+          document.querySelectorAll('.tab-section').forEach(t => t.classList.remove('active'));
+          item.classList.add('active');
+          document.getElementById(item.dataset.tab).classList.add('active');
+          if (item.dataset.tab === 'reviewsTab') fetchReviews();
+          if (item.dataset.tab === 'companiesTab') fetchCompanies();
+        });
+      });
+
+      // Logout handler
+      document.getElementById('logoutBtn').addEventListener('click', () => {
+        localStorage.removeItem('paychek_admin_token');
+        location.reload();
+      });
+    });
+
+    // 1. AUTHENTICATION HANDLERS
+    const otpRequestForm = document.getElementById('otpRequestForm');
+    const otpVerifyForm = document.getElementById('otpVerifyForm');
+
+    otpRequestForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const contact = document.getElementById('loginContact').value;
+      const btn = document.getElementById('requestOtpBtn');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/auth/send-otp-new', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phoneOrEmail: contact, purpose: 'login' })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('Verification code sent successfully.');
+          otpVerifyForm.style.display = 'block';
+        } else {
+          alert('Error: ' + data.error);
+        }
+      } catch (err) {
+        alert('API error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    otpVerifyForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const contact = document.getElementById('loginContact').value;
+      const otp = document.getElementById('loginOtp').value;
+      const btn = document.getElementById('verifyOtpBtn');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/auth/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phoneOrEmail: contact, otp: otp, purpose: 'login' })
+        });
+        const data = await res.json();
+        if (data.success && data.token) {
+          token = data.token;
+          localStorage.setItem('paychek_admin_token', token);
+          showDashboard();
+        } else {
+          alert('Invalid code or not registered as admin.');
+        }
+      } catch (err) {
+        alert('API error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    function showDashboard() {
+      document.getElementById('loginArea').style.display = 'none';
+      document.getElementById('dashboardArea').style.display = 'grid';
+      fetchReviews();
+      fetchCms();
+    }
+
+    // 2. REVIEWS HANDLERS
+    async function fetchReviews() {
+      try {
+        const res = await fetch('/api/admin/official/reviews', {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        if (!data.success) return;
+        const tbody = document.querySelector('#reviewsTable tbody');
+        tbody.innerHTML = data.reviews.map(r => `
+          <tr>
+            <td>${'★'.repeat(r.rating)}</td>
+            <td><strong>${r.author_name}</strong></td>
+            <td>${r.company || '-'}</td>
+            <td><span class="badge ${r.status}">${r.status}</span></td>
+            <td><small>${r.comment.slice(0, 80)}...</small></td>
+            <td>
+              <div class="action-row">
+                <button class="action-btn" onclick="approveReview(${r.id})">Approve</button>
+                <button class="action-btn" onclick="spamReview(${r.id})">Spam</button>
+                <button class="action-btn" onclick="openReplyModal(${r.id}, '${escapeQuote(r.admin_reply || '')}')">Reply</button>
+                <button class="action-btn" onclick="deleteReview(${r.id})" style="color:var(--danger);">Delete</button>
+              </div>
+            </td>
+          </tr>
+        `).join('');
+      } catch (_) {}
+    }
+
+    async function approveReview(id) {
+      await fetch('/api/admin/official/reviews/' + id, {
+        method: 'PUT',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'approved' })
+      });
+      fetchReviews();
+    }
+
+    async function spamReview(id) {
+      await fetch('/api/admin/official/reviews/' + id, {
+        method: 'PUT',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'spam' })
+      });
+      fetchReviews();
+    }
+
+    async function deleteReview(id) {
+      if (!confirm('Are you sure you want to delete this review?')) return;
+      await fetch('/api/admin/official/reviews/' + id, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      fetchReviews();
+    }
+
+    // 3. COMPANIES HANDLERS
+    async function fetchCompanies() {
+      try {
+        const res = await fetch('/api/admin/official/companies', {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        if (!data.success) return;
+        const tbody = document.querySelector('#companiesTable tbody');
+        tbody.innerHTML = data.companies.map(c => `
+          <tr>
+            <td><img src="${c.logo_url}" style="width:30px; height:30px; border-radius:4px;" /></td>
+            <td><strong>${c.name}</strong></td>
+            <td>${c.industry || '-'}</td>
+            <td>${c.country || '-'}</td>
+            <td>${c.priority}</td>
+            <td>
+              <div class="action-row">
+                <button class="action-btn" onclick="editCompany(${JSON.stringify(c).replace(/"/g, '&quot;')})">Edit</button>
+                <button class="action-btn" onclick="deleteCompany(${c.id})" style="color:var(--danger)">Delete</button>
+              </div>
+            </td>
+          </tr>
+        `).join('');
+      } catch (_) {}
+    }
+
+    // Modal Control helper
+    const compModal = document.getElementById('companyModal');
+    document.getElementById('addCompanyBtn').addEventListener('click', () => {
+      document.getElementById('companyForm').reset();
+      document.getElementById('companyId').value = '';
+      document.getElementById('companyModalTitle').textContent = 'Add Company Partner';
+      compModal.style.display = 'flex';
+    });
+    document.getElementById('closeCompanyModalBtn').addEventListener('click', () => compModal.style.display = 'none');
+
+    document.getElementById('companyForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('companyId').value;
+      const payload = {
+        name: document.getElementById('compName').value,
+        logo_url: document.getElementById('compLogoUrl').value,
+        website_url: document.getElementById('compWebsiteUrl').value,
+        industry: document.getElementById('compIndustry').value,
+        country: document.getElementById('compCountry').value,
+        priority: parseInt(document.getElementById('compPriority').value, 10) || 0
+      };
+
+      const url = id ? '/api/admin/official/companies/' + id : '/api/admin/official/companies';
+      const method = id ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        compModal.style.display = 'none';
+        fetchCompanies();
+      } else {
+        alert('Failed to save partner logo.');
+      }
+    });
+
+    function editCompany(c) {
+      document.getElementById('companyId').value = c.id;
+      document.getElementById('compName').value = c.name;
+      document.getElementById('compLogoUrl').value = c.logo_url;
+      document.getElementById('compWebsiteUrl').value = c.website_url || '';
+      document.getElementById('compIndustry').value = c.industry || '';
+      document.getElementById('compCountry').value = c.country || '';
+      document.getElementById('compPriority').value = c.priority || 0;
+      document.getElementById('companyModalTitle').textContent = 'Edit Company Partner';
+      compModal.style.display = 'flex';
+    }
+
+    async function deleteCompany(id) {
+      if (!confirm('Delete this company logo?')) return;
+      await fetch('/api/admin/official/companies/' + id, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      fetchCompanies();
+    }
+
+    // 4. CMS BUILDER HANDLERS
+    async function fetchCms() {
+      try {
+        const res = await fetch('/api/admin/official-website', {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        if (!data.success) return;
+        const hero = data.content?.hero || {};
+        document.getElementById('cmsHeroKicker').value = hero.kicker || '';
+        document.getElementById('cmsHeroTitle').value = hero.title || '';
+        document.getElementById('cmsHeroLead').value = hero.lead || '';
+        document.getElementById('cmsHeroCtaPrimary').value = hero.ctaPrimary || '';
+        document.getElementById('cmsHeroCtaSecondary').value = hero.ctaSecondary || '';
+      } catch (_) {}
+    }
+
+    document.getElementById('cmsForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        hero: {
+          kicker: document.getElementById('cmsHeroKicker').value,
+          title: document.getElementById('cmsHeroTitle').value,
+          lead: document.getElementById('cmsHeroLead').value,
+          ctaPrimary: document.getElementById('cmsHeroCtaPrimary').value,
+          ctaSecondary: document.getElementById('cmsHeroCtaSecondary').value
+        }
+      };
+
+      const res = await fetch('/api/admin/official-website', {
+        method: 'PUT',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: payload })
+      });
+      if (res.ok) {
+        alert('Configuration saved successfully.');
+      } else {
+        alert('Failed to save Configuration.');
+      }
+    });
+
+    // 5. REPLY MODAL HANDLERS
+    const replyModal = document.getElementById('replyModal');
+    window.openReplyModal = (id, curReply) => {
+      document.getElementById('replyReviewId').value = id;
+      document.getElementById('replyText').value = curReply;
+      replyModal.style.display = 'flex';
+    };
+    document.getElementById('closeReplyModalBtn').addEventListener('click', () => replyModal.style.display = 'none');
+
+    document.getElementById('replyForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('replyReviewId').value;
+      const text = document.getElementById('replyText').value;
+
+      const res = await fetch('/api/admin/official/reviews/' + id, {
+        method: 'PUT',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_reply: text })
+      });
+      if (res.ok) {
+        replyModal.style.display = 'none';
+        fetchReviews();
+      } else {
+        alert('Failed to submit reply.');
+      }
+    });
+
+    function escapeQuote(s) {
+      return s.replace(/'/g, "\\'");
+    }
+  </script>
+</body>
+</html>

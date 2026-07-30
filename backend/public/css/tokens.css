@@ -1,0 +1,117 @@
+/* Primitive Tokens */
+:root {
+  /* Colors */
+  --slate-50: #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;
+  --slate-300: #cbd5e1;
+  --slate-400: #94a3b8;
+  --slate-500: #64748b;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1e293b;
+  --slate-900: #0f172a;
+  --slate-950: #020617;
+
+  --teal-50: #f0fdfa;
+  --teal-100: #ccfbf1;
+  --teal-200: #99f6e4;
+  --teal-300: #5eead4;
+  --teal-400: #2dd4bf;
+  --teal-500: #14b8a6;
+  --teal-600: #0d9488;
+  --teal-700: #0f766e;
+  --teal-800: #115e59;
+  --teal-900: #134e4a;
+  --teal-950: #042f2e;
+
+  --cyan-400: #22d3ee;
+  --blue-500: #3b82f6;
+  --blue-600: #2563eb;
+  --red-500: #ef4444;
+  --amber-500: #f59e0b;
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+
+  /* Typography */
+  --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-display: "Syne", var(--font-sans), sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 9999px;
+  
+  /* Transitions */
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Semantic & Component Tokens — Dark Theme (Default) */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #07080a;
+  --bg-elevated: #0e1014;
+  --surface: #12151b;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --text: #f4f5f7;
+  --muted: #9aa3b2;
+  --accent: var(--teal-400);
+  --accent-dim: rgba(45, 212, 191, 0.14);
+  --danger: var(--red-500);
+  --warn: var(--amber-500);
+  --nav-bg: rgba(7, 8, 10, 0.72);
+  --mesh-a: rgba(45, 212, 191, 0.12);
+  --mesh-b: rgba(56, 189, 248, 0.08);
+  --mesh-base: linear-gradient(180deg, #07080a 0%, #0a0c10 50%, #07080a 100%);
+  --hover-fill: rgba(255, 255, 255, 0.04);
+  --nav-mobile-bg: rgba(7, 8, 10, 0.96);
+  --btn-primary-fg: var(--teal-950);
+  --fab-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  
+  /* Component Tokens */
+  --btn-primary-bg: var(--teal-400);
+  --btn-ghost-border: var(--border);
+  --card-bg: var(--surface);
+  --card-hover-border: var(--accent);
+}
+
+/* Semantic & Component Tokens — Light Theme */
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f6f8;
+  --bg-elevated: #ffffff;
+  --surface: #ffffff;
+  --border: rgba(15, 23, 42, 0.1);
+  --border-strong: rgba(15, 23, 42, 0.18);
+  --text: #0f172a;
+  --muted: #64748b;
+  --accent: var(--teal-600);
+  --accent-dim: rgba(13, 148, 136, 0.12);
+  --danger: var(--red-500);
+  --warn: var(--amber-500);
+  --nav-bg: rgba(244, 246, 248, 0.86);
+  --mesh-a: rgba(13, 148, 136, 0.1);
+  --mesh-b: rgba(14, 165, 233, 0.08);
+  --mesh-base: linear-gradient(180deg, #f4f6f8 0%, #eef2f6 50%, #f4f6f8 100%);
+  --hover-fill: rgba(15, 23, 42, 0.04);
+  --nav-mobile-bg: rgba(255, 255, 255, 0.98);
+  --btn-primary-fg: var(--slate-50);
+  --fab-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+  
+  /* Component Tokens */
+  --btn-primary-bg: var(--teal-600);
+  --btn-ghost-border: var(--border-strong);
+  --card-bg: var(--bg-elevated);
+  --card-hover-border: var(--accent);
+}
