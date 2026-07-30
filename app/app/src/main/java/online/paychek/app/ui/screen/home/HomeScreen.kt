@@ -353,7 +353,12 @@ fun HomeScreen(
         }
     }
     // Survive leaving Home for Checkout / Website / Docs so back returns to API tab (not Home).
-    var selectedTabName by rememberSaveable { mutableStateOf(retainedHomeTabName) }
+    // Fix: rememberSaveable বাদ দিয়ে remember ব্যবহার করা হচ্ছে।
+    // rememberSaveable Bundle-এ tab name save করে — process clear করার পরেও
+    // PROFILE/DEVICE tab restore করত। এখন remember শুধু composition-এ থাকে।
+    // Process fresh start হলে retainedHomeTabName = HomeTab.HOME.name → HOME থেকে শুরু।
+    // App minimized → resume (same process) হলে retainedHomeTabName আগের tab ধরে রাখে।
+    var selectedTabName by remember { mutableStateOf(retainedHomeTabName) }
     val selectedTab = remember(selectedTabName) {
         runCatching { HomeTab.valueOf(selectedTabName) }.getOrDefault(HomeTab.HOME)
     }

@@ -171,8 +171,16 @@ fun ProfileSettingsScreen(
         if (!isRemote) return@LaunchedEffect
 
         val syncedMarker = sharedPrefs.getString("pcu_synced_avatar", "") ?: ""
+        // Fix: localAvatarFile.exists() check সর্বোচ্চ priority।
+        // Reinstall-এর পর file মুছে যায় কিন্তু marker SharedPrefs-এ থাকে।
+        // ফলে needDownload=false হয়ে spinner আটকে যায়।
+        // এখন: file না থাকলে সবসময় download হবে, marker নির্বিশেষে।
         val needDownload = !localAvatarFile.exists() || syncedMarker != server
         if (needDownload) {
+            // Marker clear করো যাতে পরের try-তেও download হয় যদি এবার fail করে
+            if (!localAvatarFile.exists()) {
+                sharedPrefs.edit().remove("pcu_synced_avatar").apply()
+            }
             val fullUrl = if (server.startsWith("http")) server
                           else "${AppConfig.BASE_URL}${server.trimStart('/')}"
             val ok = withContext(Dispatchers.IO) {
