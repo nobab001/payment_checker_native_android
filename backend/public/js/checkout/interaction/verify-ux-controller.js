@@ -295,41 +295,73 @@ const HELPLINE_SVG = {
 };
 
 /**
- * Helpline URL open করার helper — Browser এবং Android WebView উভয়ের জন্য।
+ * Helpline URL open করার helper — Browser এবং সব Android WebView-এর জন্য।
  *
- * মূল সমস্যা:
- *   window.open(url, '_blank') Android WebView-এ সবসময় silent fail করে কারণ
- *   CheckoutActivity-তে onCreateWindow implement নেই। ফলে shouldOverrideUrlLoading
- *   কখনো call হয় না এবং কোনো app open হয় না।
+ * সমস্যা:
+ *   - window.open('_blank') WebView-এ silent fail করে।
+ *   - window.location.href দিয়ে https://wa.me/ navigate করলে
+ *     merchant-এর WebView shouldOverrideUrlLoading কনফিগার না থাকলে
+ *     wa.me ওয়েবসাইট হিসেবে load করে।
  *
- * Fix:
- *   সব হেল্পলাইন URL-এ window.location.href ব্যবহার করা হয়।
- *   এতে WebView সবসময় shouldOverrideUrlLoading trigger করে এবং
- *   Android-এর handleSpecialUri সঠিক app খুলে দেয়।
+ * সমাধান — Android-এ intent:// URI scheme:
+ *   Android WebView built-in ভাবে intent:// handle করে।
+ *   কোনো merchant-side shouldOverrideUrlLoading configuration ছাড়াই
+ *   সঠিক native app open হয়।
  *
- *   Browser (Chrome/Safari): https:// URL-এ wa.me বা t.me ইত্যাদি
- *   universal link ব্রাউজার নিজেই app-এ redirect করে।
+ *   Android → intent:// (সব merchant WebView-এ কাজ করে)
+ *   Browser / iOS → https:// universal link
  */
+
+const _isAndroid = /Android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
+
+/** Android WebView intent:// URI builder */
+function _buildIntent(pkg, scheme, path) {
+  return `intent://${path}#Intent;scheme=${scheme};package=${pkg};end`;
+}
+
 function openHelplineUrl(url) {
   if (!url) return;
 
   try {
-    // whatsapp://send/?phone=880... → https://wa.me/880...
-    // তারপর window.location.href দিয়ে navigate করা হয়
-    if (url.startsWith('whatsapp://')) {
-      const waMatch = url.match(/[?&]phone=([0-9+]+)/);
-      const textMatch = url.match(/[?&]text=([^&]*)/);
-      const phone = waMatch ? waMatch[1] : '';
-      const text = textMatch ? decodeURIComponent(textMatch[1]) : '';
-      const waUrl = phone
-        ? 'https://wa.me/' + phone + (text ? '?text=' + encodeURIComponent(text) : '')
-        : 'https://wa.me/';
-      window.location.href = waUrl;
+    // ── WhatsApp ──────────────────────────────────────────────────────────
+    // Backend → https://wa.me/{phone}  |  Legacy → whatsapp://send?phone=
+    const waWebPhone = (url.match(/^https?:\/\/wa\.me\/([0-9+]+)/) || [])[1];
+    const waSchemePhone = url.startsWith('whatsapp://')
+      ? (url.match(/[?&]phone=([0-9+]+)/) || [])[1]
+      : null;
+    const waPhone = waWebPhone || waSchemePhone;
+
+    if (waPhone || url.includes('wa.me') || url.startsWith('whatsapp://')) {
+      if (_isAndroid && waPhone) {
+        // intent:// — সব Android WebView-এ কাজ করে, merchant config দরকার নেই
+        window.location.href = _buildIntent('com.whatsapp', 'whatsapp', `send?phone=${waPhone}`);
+      } else {
+        // Browser / iOS — universal link
+        window.location.href = waPhone ? `https://wa.me/${waPhone}` : 'https://wa.me/';
+      }
       return;
     }
 
-    // সব URL-এ window.location.href — Android WebView shouldOverrideUrlLoading trigger করবে
-    // Browser-এ https:// universal link app open করবে; tel: dialer open করবে
+    // ── Telegram ──────────────────────────────────────────────────────────
+    // Backend → https://t.me/{username}
+    const tgUsername = (url.match(/^https?:\/\/t\.me\/([^/?#]+)/) || [])[1];
+    if (tgUsername || url.startsWith('tg://') || url.includes('t.me/')) {
+      if (_isAndroid && tgUsername) {
+        window.location.href = _buildIntent('org.telegram.messenger', 'tg', `resolve?domain=${tgUsername}`);
+      } else {
+        window.location.href = tgUsername ? `https://t.me/${tgUsername}` : url;
+      }
+      return;
+    }
+
+    // ── tel: / mailto: / sms: ─────────────────────────────────────────────
+    // Android, Browser, iOS — সব জায়গায় location.href কাজ করে
+    if (url.startsWith('tel:') || url.startsWith('mailto:') || url.startsWith('sms:')) {
+      window.location.href = url;
+      return;
+    }
+
+    // ── অন্য সব URL (Facebook, Instagram, Messenger, generic https://) ────
     window.location.href = url;
   } catch (_) {
     window.location.href = url;
