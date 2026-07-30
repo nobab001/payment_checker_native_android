@@ -635,11 +635,7 @@ fun LoginScreen(
                             spotColor = LoginPrimary.copy(alpha = 0.55f)
                         )
                         .clip(RoundedCornerShape(22.dp))
-                        .background(
-                            brush = Brush.linearGradient(
-                                colors = listOf(LoginLogoBlue, LoginPrimaryDeep)
-                            )
-                        ),
+                        .background(Color.White),
                     contentAlignment = Alignment.Center
                 ) {
                     Image(

@@ -113,11 +113,11 @@ button, input, select { font: inherit; }
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: linear-gradient(145deg, #2dd4bf, #0f766e);
+  background: transparent;
   display: grid;
   place-items: center;
 }
-.brand-mark svg { width: 16px; height: 16px; color: #042f2e; }
+.brand-mark svg { width: 28px; height: 28px; display: block; }
 .nav-links {
   display: flex;
   align-items: center;
