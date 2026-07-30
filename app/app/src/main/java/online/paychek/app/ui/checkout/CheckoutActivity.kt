@@ -147,22 +147,37 @@ class CheckoutActivity : FragmentActivity() {
             return true
         }
 
-        // Keep http(s) inside WebView; open all other schemes externally (tel, mailto, sms, whatsapp, telegram, market, etc.)
+        // Known universal app-link domains — https:// but should open native app, not WebView.
+        // JS uses window.location.href so shouldOverrideUrlLoading fires; we intercept here.
+        // Supported: WhatsApp (wa.me), Telegram (t.me), Messenger (m.me),
+        //            WhatsApp API (api.whatsapp.com), Viber (link.viber.com)
+        val appLinkHosts = setOf("wa.me", "t.me", "m.me", "api.whatsapp.com", "link.viber.com")
+        if ((scheme == "http" || scheme == "https") && uri.host?.lowercase() in appLinkHosts) {
+            openExternal(uri)
+            return true
+        }
+
+        // Keep http(s) inside WebView; open all other schemes externally
+        // (tel, mailto, sms, whatsapp://, telegram://, market://, intent://, etc.)
         if (scheme != "http" && scheme != "https") {
-            try {
-                val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                    addCategory(Intent.CATEGORY_BROWSABLE)
-                }
-                startActivity(intent)
-            } catch (e: android.content.ActivityNotFoundException) {
-                android.util.Log.w("CheckoutActivity", "No activity found to handle uri: $uri")
-                Toast.makeText(this, "প্রয়োজনীয় অ্যাপটি ইনস্টল করা নেই।", Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {
-                android.util.Log.e("CheckoutActivity", "Unexpected error handling uri: $uri", e)
-            }
+            openExternal(uri)
             return true
         }
         return false
+    }
+
+    private fun openExternal(uri: Uri) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                addCategory(Intent.CATEGORY_BROWSABLE)
+            }
+            startActivity(intent)
+        } catch (e: android.content.ActivityNotFoundException) {
+            android.util.Log.w("CheckoutActivity", "No activity found to handle uri: $uri")
+            Toast.makeText(this, "প্রয়োজনীয় অ্যাপটি ইনস্টল করা নেই।", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            android.util.Log.e("CheckoutActivity", "Unexpected error handling uri: $uri", e)
+        }
     }
 
     override fun onDestroy() {

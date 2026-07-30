@@ -295,21 +295,27 @@ const HELPLINE_SVG = {
 };
 
 /**
- * WebView-এ custom URL scheme (whatsapp://, tel:, etc.) open করার helper.
+ * Helpline URL open করার helper — Browser এবং Android WebView উভয়ের জন্য।
  *
- * সমস্যা: window.open(url, '_blank') WebView-এ ERR_UNKNOWN_URL_SCHEME দেয় কারণ
- * WebView নতুন window খুলতে পারে না এবং custom scheme redirect করতে পারে না।
+ * মূল সমস্যা:
+ *   window.open(url, '_blank') Android WebView-এ সবসময় silent fail করে কারণ
+ *   CheckoutActivity-তে onCreateWindow implement নেই। ফলে shouldOverrideUrlLoading
+ *   কখনো call হয় না এবং কোনো app open হয় না।
  *
  * Fix:
- *  - whatsapp:// → https://wa.me/ (universal link, সব browser/WebView-এ কাজ করে)
- *  - tel:         → window.location.href (same window, Android native dialer trigger)
- *  - অন্য scheme  → window.location.href (native app intent trigger করার জন্য)
+ *   সব হেল্পলাইন URL-এ window.location.href ব্যবহার করা হয়।
+ *   এতে WebView সবসময় shouldOverrideUrlLoading trigger করে এবং
+ *   Android-এর handleSpecialUri সঠিক app খুলে দেয়।
+ *
+ *   Browser (Chrome/Safari): https:// URL-এ wa.me বা t.me ইত্যাদি
+ *   universal link ব্রাউজার নিজেই app-এ redirect করে।
  */
 function openHelplineUrl(url) {
   if (!url) return;
 
   try {
     // whatsapp://send/?phone=880... → https://wa.me/880...
+    // তারপর window.location.href দিয়ে navigate করা হয়
     if (url.startsWith('whatsapp://')) {
       const waMatch = url.match(/[?&]phone=([0-9+]+)/);
       const textMatch = url.match(/[?&]text=([^&]*)/);
@@ -318,34 +324,18 @@ function openHelplineUrl(url) {
       const waUrl = phone
         ? 'https://wa.me/' + phone + (text ? '?text=' + encodeURIComponent(text) : '')
         : 'https://wa.me/';
-      window.open(waUrl, '_blank', 'noopener,noreferrer');
+      window.location.href = waUrl;
       return;
     }
 
-    // tel:, mailto:, sms: — same window দিয়ে navigate করলে Android native app trigger হয়
-    if (
-      url.startsWith('tel:') ||
-      url.startsWith('mailto:') ||
-      url.startsWith('sms:')
-    ) {
-      window.location.href = url;
-      return;
-    }
-
-    // https:// এবং http:// — normal link
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      window.open(url, '_blank', 'noopener,noreferrer');
-      return;
-    }
-
-    // অন্য যেকোনো custom scheme (telegram://, fb-messenger://, etc.)
-    // window.location.href দিলে Android Intent system native app খুলে দেয়
+    // সব URL-এ window.location.href — Android WebView shouldOverrideUrlLoading trigger করবে
+    // Browser-এ https:// universal link app open করবে; tel: dialer open করবে
     window.location.href = url;
   } catch (_) {
-    // Fallback: last resort
     window.location.href = url;
   }
 }
+
 
 function mountHelpline(links) {
   const root = $('checkout-helpline-fab');
