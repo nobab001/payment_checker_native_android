@@ -812,6 +812,10 @@ async function findUserPersonalBySender(userId, senderId) {
 }
 
 async function gatewayMethodExistsForSender(userId, deviceId, simSlot, senderId) {
+  // Rule: শুধু is_parseable=0 (custom archive) methods duplicate check করে।
+  // is_parseable=1 (template/parseable) method-এর sender same slot-এ থাকলেও
+  // আলাদাভাবে Custom Archive (is_parseable=0) add করা যাবে।
+  // Different slot-এ same sender সবসময় allowed।
   const rows = await prisma.$queryRaw`
     SELECT gm.id
     FROM gateway_methods gm
@@ -820,6 +824,7 @@ async function gatewayMethodExistsForSender(userId, deviceId, simSlot, senderId)
       AND gm.device_id = ${String(deviceId)}
       AND gm.sim_slot = ${simSlot}
       AND LOWER(t.sender_id) = LOWER(${senderId})
+      AND t.is_parseable = 0
     LIMIT 1
   `;
   return rows[0] ? Number(rows[0].id) : null;

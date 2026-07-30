@@ -119,6 +119,10 @@ class CustomSenderReadyMadeViewModel : ViewModel() {
                 )
                 if (methodsRes.isSuccessful) {
                     methodsRes.body()?.data.orEmpty()
+                        // Rule: শুধু same slot-এর isParseable=0 (custom archive) methods block করবে।
+                        // isParseable=1 (template/parseable) methods-এর sender ID গুলো allow —
+                        // কারণ user ওই sender-এ custom archive আলাদাভাবে add করতে পারবে।
+                        // Different slot-এ same sender সবসময় allowed।
                         .filter { it.simSlot == simSlot && (it.isParseable ?: 1) == 0 }
                         .mapNotNull { it.senderId?.trim()?.lowercase()?.takeIf { id -> id.isNotEmpty() } }
                         .toSet()
