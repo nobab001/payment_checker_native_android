@@ -2,15 +2,15 @@
  * Checkout app bootstrap — fetch API, build model, mount layout + interaction layers.
  */
 
-import { buildCheckoutModel, roundPayableTaka } from './model.js';
-import { CheckoutRenderer } from './checkout-renderer.js';
-import { HeaderComponent } from './components/header.js';
-import { InteractionController } from './interaction/interaction-controller.js';
-import { SkeletonController } from './interaction/skeleton-controller.js';
-import { ErrorController } from './interaction/error-controller.js';
-import { snapshotTab, SortController } from './interaction/sort-controller.js';
-import { VerifyUxController } from './interaction/verify-ux-controller.js';
-import { applyI18n, t } from './i18n.js';
+import { buildCheckoutModel, roundPayableTaka } from './model.js?v=9';
+import { CheckoutRenderer } from './checkout-renderer.js?v=9';
+import { HeaderComponent } from './components/header.js?v=9';
+import { InteractionController } from './interaction/interaction-controller.js?v=9';
+import { SkeletonController } from './interaction/skeleton-controller.js?v=9';
+import { ErrorController } from './interaction/error-controller.js?v=9';
+import { snapshotTab, SortController } from './interaction/sort-controller.js?v=9';
+import { VerifyUxController } from './interaction/verify-ux-controller.js?v=9';
+import { applyI18n, t } from './i18n.js?v=9';
 
 const urlParams = new URLSearchParams(window.location.search);
 export const apiKey = urlParams.get('apiKey');
