@@ -1,7 +1,7 @@
 @echo off
 title Paychek APK Builder
 echo ===================================================
-echo   Building Paychek Debug APK...
+echo   Building Paychek Release APK...
 echo ===================================================
 
 :: Set Android SDK location
@@ -28,13 +28,13 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 :: Run the Gradle build
-call gradlew.bat assembleDebug
+call gradlew.bat assembleRelease
 
 if %ERRORLEVEL% EQU 0 (
     echo.
     echo ===================================================
     echo   BUILD SUCCESSFUL
-    echo   APK: %~dp0app\app\build\outputs\apk\debug\app-debug.apk
+    echo   APK: %~dp0app\app\build\outputs\apk\release\app-release.apk
     echo ===================================================
 ) else (
     echo.

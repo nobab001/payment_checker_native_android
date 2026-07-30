@@ -905,6 +905,7 @@ fun HomeScreen(
                     HomeTab.HOME -> DashboardScreen(
                         onNavigateToHistory = { selectTab(HomeTab.SEARCH) },
                         onNavigateToSubscription = { onNavigate(AppNavKey.SubscriptionPackages()) },
+                        onNavigateToDevice = { selectTab(HomeTab.DEVICE) },
                         onPullRefresh = triggerPendingRefresh,
                         hasSmartPopup = entitlements.hasSmartPopup,
                         hasManualTransaction = entitlements.hasManualTransaction,

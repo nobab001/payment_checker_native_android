@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.vectorResource
 import online.paychek.app.R
+import androidx.compose.foundation.Image
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -641,11 +642,10 @@ fun LoginScreen(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.AccountBalanceWallet,
-                        contentDescription = "Wallet Logo",
-                        tint = Color.White,
-                        modifier = Modifier.size(logoSize * 0.48f)
+                    Image(
+                        painter = androidx.compose.ui.res.painterResource(id = R.drawable.logo_app),
+                        contentDescription = "Paychek Logo",
+                        modifier = Modifier.size(logoSize * 0.58f)
                     )
                 }
             }

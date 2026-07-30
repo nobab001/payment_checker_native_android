@@ -5,6 +5,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import android.content.Intent
 import android.net.Uri
 import android.Manifest
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -111,6 +112,7 @@ private val GradientHeader = Brush.linearGradient(
 fun DashboardScreen(
     onNavigateToHistory: () -> Unit,
     onNavigateToSubscription: () -> Unit,
+    onNavigateToDevice: () -> Unit,
     onPullRefresh: () -> Unit = {},
     hasSmartPopup: Boolean = false,
     hasManualTransaction: Boolean = false,
@@ -156,6 +158,7 @@ fun DashboardScreen(
             }
         }
     }
+
 
     var isAccessibilityEnabled by remember {
         mutableStateOf(AccessibilityHelper.isAccessibilityServiceEnabled(context))
@@ -282,6 +285,64 @@ fun DashboardScreen(
     val successStats = (screenState.uiState as? DashboardUiState.Success)?.stats
     val isPaid = successStats?.isPaid ?: false
     val isTrial = successStats?.isTrial ?: false
+
+    /**
+     * Monitor Toggle ON — Sequential Permission Guard Chain
+     * প্রতিটি অনুপস্থিত permission-এর জন্য সরাসরি সেই সেটিংস/পেজে navigate করে।
+     * ইউজার ফিরে এলে LaunchedEffect(RESUMED) পরবর্তী step auto-resume করে।
+     */
+    fun handleMonitorToggleOn() {
+        if (!isPaid) {
+            android.widget.Toast.makeText(
+                context,
+                "SMS মনিটর চালু করতে প্যাকেজ কিনুন",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        // Step 1: Accessibility → Settings
+        if (!isAccessibilityEnabled) {
+            online.paychek.app.data.local.prefs.PrefsHelper.setPendingMonitorStart(context, true)
+            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            return
+        }
+        // Step 2: Battery → System popup
+        if (!isBatteryUnrestricted) {
+            online.paychek.app.data.local.prefs.PrefsHelper.setPendingMonitorStart(context, true)
+            try {
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:${context.packageName}")
+                    )
+                )
+            } catch (_: Exception) {
+                context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            }
+            return
+        }
+        // Step 3: Device SIM setup → Device Tab
+        val deviceGate = online.paychek.app.utils.DeviceMonitoringGate.check(context)
+        if (!deviceGate.ready) {
+            online.paychek.app.data.local.prefs.PrefsHelper.setPendingMonitorStart(context, true)
+            onNavigateToDevice()
+            android.widget.Toast.makeText(context, deviceGate.message, android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+        // Step 4: SMS permissions → runtime dialog
+        val hasReceiveSms = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, Manifest.permission.RECEIVE_SMS
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val hasReadSms = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, Manifest.permission.READ_SMS
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (hasReceiveSms && hasReadSms) {
+            tryStartMonitorAfterGuards()
+        } else {
+            online.paychek.app.MainActivity.isRequestingPermission = true
+            smsPermissionsLauncher.launch(arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS))
+        }
+    }
     val daysRemaining = remember(successStats?.expiryDate) {
         calculateDaysRemaining(successStats?.expiryDate)
     }
@@ -539,55 +600,7 @@ fun DashboardScreen(
                     onBuyPlanClick = onNavigateToSubscription,
                     isServiceActive = screenState.isServiceActive,
                     onServiceToggle = { enable ->
-                        if (enable) {
-                            if (!isPaid) {
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "SMS মনিটর চালু করতে প্যাকেজ কিনুন",
-                                    android.widget.Toast.LENGTH_LONG
-                                ).show()
-                            } else {
-                                val deviceGate = online.paychek.app.utils.DeviceMonitoringGate.check(context)
-                                if (!deviceGate.ready) {
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        deviceGate.message,
-                                        android.widget.Toast.LENGTH_LONG
-                                    ).show()
-                                } else if (!isAccessibilityEnabled || !isBatteryUnrestricted) {
-                                    online.paychek.app.data.local.prefs.PrefsHelper
-                                        .setPendingMonitorStart(context, true)
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "অ্যাপে থাকুন — নিচে Background Guard কার্ড থেকে সেটিংস সম্পূর্ণ করুন",
-                                        android.widget.Toast.LENGTH_LONG
-                                    ).show()
-                                } else {
-                                    val hasReceiveSms = androidx.core.content.ContextCompat.checkSelfPermission(
-                                        context,
-                                        Manifest.permission.RECEIVE_SMS
-                                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                                    val hasReadSms = androidx.core.content.ContextCompat.checkSelfPermission(
-                                        context,
-                                        Manifest.permission.READ_SMS
-                                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
-                                    if (hasReceiveSms && hasReadSms) {
-                                        tryStartMonitorAfterGuards()
-                                    } else {
-                                        online.paychek.app.MainActivity.isRequestingPermission = true
-                                        smsPermissionsLauncher.launch(
-                                            arrayOf(
-                                                Manifest.permission.RECEIVE_SMS,
-                                                Manifest.permission.READ_SMS
-                                            )
-                                        )
-                                    }
-                                }
-                            }
-                        } else {
-                            viewModel.toggleSmsService(false)
-                        }
+                        if (enable) handleMonitorToggleOn() else viewModel.toggleSmsService(false)
                     }
                 )
             }

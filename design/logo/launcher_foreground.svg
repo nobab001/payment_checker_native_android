@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="shield-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#00B4FF" />
+      <stop offset="100%" stop-color="#004BFF" />
+    </linearGradient>
+  </defs>
+  <!-- Centered and scaled by 0.7 for Adaptive Safe Zone compliance -->
+  <g transform="translate(256, 256) scale(0.7) translate(-256, -256)" fill="none" stroke="url(#shield-grad)" stroke-width="52" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 256, 75 C 340, 75 390, 110 425, 140 C 425, 270 380, 390 256, 445 C 132, 390 87, 270 87, 140 C 122, 110 172, 75 256, 75 Z" />
+    <path d="M 165, 255 L 225, 315 L 350, 190" />
+  </g>
+</svg>

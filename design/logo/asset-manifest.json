@@ -1,0 +1,305 @@
+{
+  "version": "1.0.0",
+  "assets": [
+    {
+      "file": "design/logo/logo-ui.webp",
+      "width": 512,
+      "height": 512,
+      "format": "webp",
+      "size": 9952,
+      "sha256": "8cd5dcfed145228e2163fd01ba5364e3cda846c43568fea397ce7b4ed98a721e",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.676Z"
+    },
+    {
+      "file": "backend/public/assets/brand/logo-ui.webp",
+      "width": 512,
+      "height": 512,
+      "format": "webp",
+      "size": 9952,
+      "sha256": "8cd5dcfed145228e2163fd01ba5364e3cda846c43568fea397ce7b4ed98a721e",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.695Z"
+    },
+    {
+      "file": "backend/public/assets/brand/favicon.ico",
+      "width": 48,
+      "height": 48,
+      "format": "ico",
+      "size": 1332,
+      "sha256": "08dc21e16e142c3812da9624f51bae5434c41d84ab4fe50adc2510ff4760d09e",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.699Z"
+    },
+    {
+      "file": "backend/public/assets/brand/favicon-16.png",
+      "width": 16,
+      "height": 16,
+      "format": "png",
+      "size": 449,
+      "sha256": "3a7daadc3afda31fba419a00a956133b79ed38e6783ed3cb965243cf280ccced",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.701Z"
+    },
+    {
+      "file": "backend/public/assets/brand/favicon-32.png",
+      "width": 32,
+      "height": 32,
+      "format": "png",
+      "size": 893,
+      "sha256": "4c22ff94a882a3069d23953db5f75a2d80af1fdcccfce0f9c02b7b0107d9e5f5",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.703Z"
+    },
+    {
+      "file": "backend/public/assets/brand/favicon-48.png",
+      "width": 48,
+      "height": 48,
+      "format": "png",
+      "size": 1332,
+      "sha256": "08dc21e16e142c3812da9624f51bae5434c41d84ab4fe50adc2510ff4760d09e",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.705Z"
+    },
+    {
+      "file": "backend/public/assets/brand/apple-touch-icon.png",
+      "width": 180,
+      "height": 180,
+      "format": "png",
+      "size": 5163,
+      "sha256": "b408a7351ea120299d309bf1625e29a0db15ffd2410824f3dd6071143283c21c",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.707Z"
+    },
+    {
+      "file": "backend/public/assets/brand/android-chrome-192.png",
+      "width": 192,
+      "height": 192,
+      "format": "png",
+      "size": 5448,
+      "sha256": "d6930aa9680123e6efe2342e86a97cf2db26402d7aa9348fc9f1d0741a314451",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.710Z"
+    },
+    {
+      "file": "backend/public/assets/brand/android-chrome-512.png",
+      "width": 512,
+      "height": 512,
+      "format": "png",
+      "size": 16589,
+      "sha256": "8cff07ea9e238cd651d82cb5e0a0ab68e570d8846ada65e5285e5134da5076a9",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.716Z"
+    },
+    {
+      "file": "app/app/src/main/res/drawable/logo_app.webp",
+      "width": 512,
+      "height": 512,
+      "format": "webp",
+      "size": 9952,
+      "sha256": "8cd5dcfed145228e2163fd01ba5364e3cda846c43568fea397ce7b4ed98a721e",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.734Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-mdpi/ic_launcher.webp",
+      "width": 48,
+      "height": 48,
+      "format": "webp",
+      "size": 794,
+      "sha256": "6c079f2deca9b2f4272f44c7849196061cbbbac352a3c0328c4f4d4a67cf43ca",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.741Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-mdpi/ic_launcher_round.webp",
+      "width": 48,
+      "height": 48,
+      "format": "webp",
+      "size": 794,
+      "sha256": "6c079f2deca9b2f4272f44c7849196061cbbbac352a3c0328c4f4d4a67cf43ca",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.746Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.png",
+      "width": 48,
+      "height": 48,
+      "format": "png",
+      "size": 1013,
+      "sha256": "1c5fecba1f4fc9d043d7592a455df314b76dc727547312f6e8f0e443a47d4f7b",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.748Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-mdpi/ic_launcher_monochrome.png",
+      "width": 48,
+      "height": 48,
+      "format": "png",
+      "size": 949,
+      "sha256": "61e91dd47fa66eaa29db73b4539cff60d579325f0ee9882a5bd53aa2638d9994",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.750Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-hdpi/ic_launcher.webp",
+      "width": 72,
+      "height": 72,
+      "format": "webp",
+      "size": 1136,
+      "sha256": "92c2b924d981128081565b2fcfea9d0270df5c101971488bf76c4eda02fa28d1",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.756Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-hdpi/ic_launcher_round.webp",
+      "width": 72,
+      "height": 72,
+      "format": "webp",
+      "size": 1136,
+      "sha256": "92c2b924d981128081565b2fcfea9d0270df5c101971488bf76c4eda02fa28d1",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.762Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.png",
+      "width": 72,
+      "height": 72,
+      "format": "png",
+      "size": 1521,
+      "sha256": "d1dc95a5dd9679a3ceb38de35e0ef51a04a16d2efbfbd8bb365b6bb9fabc5617",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.766Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-hdpi/ic_launcher_monochrome.png",
+      "width": 72,
+      "height": 72,
+      "format": "png",
+      "size": 1416,
+      "sha256": "347fd9a618338527c602c2861a1cc0f83cd3c8f71621ca458d5429b61ad331f5",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.768Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-xhdpi/ic_launcher.webp",
+      "width": 96,
+      "height": 96,
+      "format": "webp",
+      "size": 1466,
+      "sha256": "a240828192417dc1b4d4e9e73eac053e357e2deb11ea0666bad1f9c31a8cb6bf",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.777Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-xhdpi/ic_launcher_round.webp",
+      "width": 96,
+      "height": 96,
+      "format": "webp",
+      "size": 1466,
+      "sha256": "a240828192417dc1b4d4e9e73eac053e357e2deb11ea0666bad1f9c31a8cb6bf",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.786Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png",
+      "width": 96,
+      "height": 96,
+      "format": "png",
+      "size": 1954,
+      "sha256": "cdd09519f20e82db6d39519d6d0ce2b994280c94ac4a86d54a89e435f6b88982",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.789Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-xhdpi/ic_launcher_monochrome.png",
+      "width": 96,
+      "height": 96,
+      "format": "png",
+      "size": 1834,
+      "sha256": "aaf4848906dade00d1f30a1920e18fd1dc44cf5009c955226d0a6f4a5949779b",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.792Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-xxhdpi/ic_launcher.webp",
+      "width": 144,
+      "height": 144,
+      "format": "webp",
+      "size": 2158,
+      "sha256": "2e8acb8c89fbdf88e3a88546670926369a1fec426c009103524f250092de31ca",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.805Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.webp",
+      "width": 144,
+      "height": 144,
+      "format": "webp",
+      "size": 2158,
+      "sha256": "2e8acb8c89fbdf88e3a88546670926369a1fec426c009103524f250092de31ca",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.817Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png",
+      "width": 144,
+      "height": 144,
+      "format": "png",
+      "size": 3134,
+      "sha256": "1b1426e0a236ba9314389e719379f925fa85ccdae956603563b0c6b109bcac1c",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.820Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-xxhdpi/ic_launcher_monochrome.png",
+      "width": 144,
+      "height": 144,
+      "format": "png",
+      "size": 2892,
+      "sha256": "1f29eb426aa07b4ba725a211ba61c573b64d0b0c10e25b21cb74a0a6d5958f3c",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.822Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp",
+      "width": 192,
+      "height": 192,
+      "format": "webp",
+      "size": 2892,
+      "sha256": "c58db465122d050210fd87e207ef01cf1c3853c02c869125ba39732eb751e3d0",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.834Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp",
+      "width": 192,
+      "height": 192,
+      "format": "webp",
+      "size": 2892,
+      "sha256": "c58db465122d050210fd87e207ef01cf1c3853c02c869125ba39732eb751e3d0",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.846Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png",
+      "width": 192,
+      "height": 192,
+      "format": "png",
+      "size": 4062,
+      "sha256": "a999c490ff885c7b5786e0c751ef7647c53385a047e1abe6da6ab85485e1bb3a",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.849Z"
+    },
+    {
+      "file": "app/app/src/main/res/mipmap-xxxhdpi/ic_launcher_monochrome.png",
+      "width": 192,
+      "height": 192,
+      "format": "png",
+      "size": 3872,
+      "sha256": "feca78424bdedb67b22e6af449a2560fbfddae2daf0b3bc8c876bc125c72d671",
+      "brandVersion": "1.0.0",
+      "createdAt": "2026-07-30T16:50:23.852Z"
+    }
+  ]
+}

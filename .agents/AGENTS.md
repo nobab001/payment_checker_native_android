@@ -57,10 +57,10 @@ Whenever you make changes to the codebase (add/modify/delete screens, buttons, A
 ## 3. Post-Task Deploy Pipeline (decide by WHAT changed)
 
 ### A. App changed (`app/**`, Android UI/services/DTOs)
-1. Build debug APK: run `build-apk.bat` (repo root) **or** `gradlew assembleDebug` inside `app/`.
-2. Report APK path: `app/app/build/outputs/apk/debug/app-debug.apk`.
+1. Build release APK: run `build-apk.bat` (repo root) **or** `gradlew assembleRelease` inside `app/`.
+2. Report APK path: `app/app/build/outputs/apk/release/app-release.apk`.
 3. **Device check (every build):** run `adb devices`.
-   - If a device shows as `device`: `adb install -r app/app/build/outputs/apk/debug/app-debug.apk` → then launch `adb shell am start -n online.paychek.app/.MainActivity`.
+   - If a device shows as `device`: `adb install -r app/app/build/outputs/apk/release/app-release.apk` → then launch `adb shell am start -n online.paychek.app/.MainActivity`.
    - If no device connected: only give the APK path. Do **not** ask for IP/PORT unless user wants wireless install.
 
 ### B. Backend / Website / Checkout page (`backend/**`, checkout JS, HTML, CSS)
@@ -68,7 +68,7 @@ Whenever you make changes to the codebase (add/modify/delete screens, buttons, A
 2. **Website & Checkout Auto-Deploy Rule**: As requested by user, whenever website, checkout page (`backend/public/**`), or backend API changes are completed, **ALWAYS automatically deploy to VPS (`paycheckbd.com`)** via git push + `deploy.sh` so changes are immediately live for users without needing a separate ask.
 
 ### C. Both app + backend
-- Restart local server, build the APK (with adb device check), and deploy backend/website changes to VPS automatically.
+- Restart local server, build the release APK (with adb device check), and deploy backend/website changes to VPS automatically.
 
 ---
 
