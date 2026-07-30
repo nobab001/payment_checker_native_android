@@ -1209,3 +1209,32 @@ Clients connect and pass a JWT token and hardware device ID during the connectio
 
 
 
+---
+
+### ✅ Session: 2026-07-30 — SMS Routing Engine (Phase 6)
+
+**কী করা হয়েছে:**
+
+**নতুন ফাইল: `SmsRoutingEngine.kt`** (`app/services/sms/`)
+- 3-Stage Pipeline: `collectCandidates()` → `resolveRoute()` → `buildPayload()`
+- Route Types (Android-internal): `HISTORY`, `ARCHIVE`, `DROP`
+- Routing decision **Template Match Result** দেখে নেয় — `isParseable` flag দেখে নয়
+- `firstOrNull` বাদ দিয়ে **সব matching methods collect** করে priority অনুযায়ী route করে
+- Priority: Body regex match → `HISTORY`; Archive configured → `ARCHIVE`; Neither → `DROP`
+- Server payload-এ শেষে `isParseable=1/0` translate হয় — Backend অপরিবর্তিত
+
+**পরিবর্তিত: `SmsReceiver.kt`** (Guard-1)
+- সব routing logic সরানো হয়েছে, শুধু SMS read + Engine call
+- `handleIncomingSms()` পরিষ্কার — কোনো business logic নেই
+
+**পরিবর্তিত: `SmsPollWorker.kt`** (Guard-2)
+- সব routing logic সরানো হয়েছে, Inbox scan + Engine call — SmsReceiver-এর মতো same pattern
+- `shouldSkipOldSms()` helper দিয়ে পুরনো SMS filter আলাদা করা হয়েছে
+
+**অপরিবর্তিত:** Backend, Database, API, Billing, ProcessIncomingSmsUseCase
+
+**Business Impact:**
+- একই sender (যেমন bKash) gateway + custom archive উভয়ে configured থাকলে:
+  Body regex match → `sms_history`; Regex fail + archive → `custom_sms_archives`; Neither → DROP
+
+

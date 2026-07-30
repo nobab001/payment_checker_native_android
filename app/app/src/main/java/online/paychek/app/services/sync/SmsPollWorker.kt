@@ -14,16 +14,14 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import online.paychek.app.config.AppConfig
 import online.paychek.app.data.local.prefs.PrefsHelper
 import online.paychek.app.data.remote.dto.GatewayMethod
-import online.paychek.app.domain.usecase.sms.ProcessIncomingSmsUseCase
 import online.paychek.app.services.sms.SmsInboxScanner
+import online.paychek.app.services.sms.SmsRoutingEngine
 import online.paychek.app.utils.SimSlotHelper
-import online.paychek.app.utils.SmsParser
-import java.util.Locale
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import java.util.concurrent.TimeUnit
 
 /**
@@ -33,21 +31,16 @@ import java.util.concurrent.TimeUnit
  *  Android 14/15-এ OS-level throttle বা OEM battery kill এর কারণে
  *  Guard-1 (BroadcastReceiver) miss করা payment SMS গুলো catch করা।
  *
- * পদ্ধতি:
- *  ১. READ_SMS permission চেক
- *  ২. SmsInboxScanner দিয়ে নতুন SMS candidate collect করা
- *  ③. বিদ্যমান gateway config (sim slot, sender, keyword) দিয়ে filter করা
- *  ④. ProcessIncomingSmsUseCase দিয়ে queue করা
- *     → rawBodyHash UNIQUE index Guard-1 এবং Guard-2 উভয়ের duplicate রোধ করে
+ * Refactored (Phase 6 — SmsRoutingEngine):
+ *  Worker-এর কাজ শুধু inbox scan করা এবং SmsRoutingEngine-এ পাঠানো।
+ *  কোনো Business Logic, filter chain বা regex match এখানে নেই।
+ *  সব routing decision SmsRoutingEngine নেয় (HISTORY / ARCHIVE / DROP)।
+ *  Duplicate protection: rawBodyHash UNIQUE index — Guard-1 ও Guard-2
+ *  একই SMS process করলে duplicate insert হয় না।
  *
  * Schedule:
  *  - প্রতি 15 মিনিটে (Android minimum)
- *  - INTERNET connected হলেই চলবে
  *  - KEEP policy — duplicate instance তৈরি হবে না
- *
- * Integration:
- *  SmsMonitorService.onCreate() → SmsPollWorker.schedule()
- *  SmsMonitorService.onDestroy() → SmsPollWorker.cancel()
  * ============================================================================
  */
 class SmsPollWorker(
@@ -63,7 +56,6 @@ class SmsPollWorker(
         /**
          * Guard-2 WorkManager job schedule করা।
          * Safe to call multiple times — KEEP policy prevents duplicates।
-         * Inbox scan-এ নেটওয়ার্ক লাগে না — শুধু Room queue-তে লেখা হয়।
          */
         fun schedule(context: Context) {
             val workRequest = PeriodicWorkRequestBuilder<SmsPollWorker>(
@@ -102,7 +94,6 @@ class SmsPollWorker(
 
         /**
          * Guard-2 WorkManager job cancel করা।
-         * সাধারণত SmsMonitorService.onDestroy()-এ call করা হয়।
          */
         fun cancel(context: Context) {
             WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
@@ -113,17 +104,17 @@ class SmsPollWorker(
     override suspend fun doWork(): Result {
         Log.i(TAG, "[Guard-2] Poll cycle শুরু")
 
-        // ── Guard 1: READ_SMS permission ──────────────────────────────────
+        // ── READ_SMS permission check ──────────────────────────────────────────
         val hasReadSms = ContextCompat.checkSelfPermission(
             context, Manifest.permission.READ_SMS
         ) == PackageManager.PERMISSION_GRANTED
 
         if (!hasReadSms) {
             Log.w(TAG, "[Guard-2] READ_SMS permission নেই — poll skip")
-            return Result.success() // retry করব না — permission না পেলে worker-ই fail করা উচিত না
+            return Result.success()
         }
 
-        // ── Guard 2: Gateway methods cache ────────────────────────────────
+        // ── Gateway methods cache ──────────────────────────────────────────────
         val methodsJson = PrefsHelper.getGatewayMethodsCache(context)
         val methodsType = object : TypeToken<List<GatewayMethod>>() {}.type
         val cachedMethods: List<GatewayMethod> = try {
@@ -138,7 +129,7 @@ class SmsPollWorker(
             return Result.success()
         }
 
-        // ── Inbox scan করা ───────────────────────────────────────────────
+        // ── Inbox scan ─────────────────────────────────────────────────────────
         val scanner    = SmsInboxScanner(context)
         val candidates = scanner.scanSinceLastCursor()
 
@@ -152,35 +143,29 @@ class SmsPollWorker(
             return Result.success()
         }
 
-        Log.i(TAG, "[Guard-2] ${candidates.size}টি SMS candidate পাওয়া গেছে — filter শুরু")
+        Log.i(TAG, "[Guard-2] ${candidates.size}টি SMS candidate পাওয়া গেছে — routing শুরু")
 
-        // ── SharedPrefs থেকে SIM enabled state পড়া ──────────────────────
+        // ── SharedPrefs থেকে SIM enabled state ────────────────────────────────
         val prefs       = context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
         val sim1Enabled = prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, false)
         val sim2Enabled = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, false)
 
         var processedCount = 0
 
-        // ── Cursor high-water mark ─────────────────────────────────────────
-        // candidates ASC (_id) ক্রমে। প্রতিটি SMS "durably handled" (queued /
-        // duplicate / বৈধ skip) হলে committableId এগোয়। প্রথম hard-failure
-        // (exception বা pipeline failure) হলে cursorBlocked=true — এর পর আর
-        // cursor এগোয় না, ফলে ওই SMS ও তার পরের সব SMS পরের poll-এ আবার
-        // scan হবে (data-loss রোধ)।
+        // ── Cursor high-water mark ─────────────────────────────────────────────
+        // candidates ASC (_id) ক্রমে। প্রতিটি SMS "durably handled" হলে
+        // committableId এগোয়। প্রথম hard-failure হলে cursorBlocked=true।
         var committableId = -1L
         var cursorBlocked = false
 
         for (candidate in candidates) {
-            // durably handled না হলে (retry দরকার) false হবে
             var handled = true
             try {
-                val cleanSender = candidate.sender.trim().lowercase(Locale.US)
-
-                // ── SIM slot resolve করা ─────────────────────────────────
+                // SIM slot resolve
                 val simSlot   = SimSlotHelper.resolveSimSlot(context, candidate.subscriptionId)
                 val simNumber = SimSlotHelper.resolveSimNumber(context, candidate.subscriptionId)
 
-                // ── SIM slot filter (বৈধ skip → handled) ─────────────────
+                // SIM slot filter (বৈধ skip → handled)
                 val simAllowed = if (simSlot != null) {
                     if (simSlot == 1) sim1Enabled else sim2Enabled
                 } else {
@@ -190,102 +175,39 @@ class SmsPollWorker(
                 if (!simAllowed) {
                     Log.d(TAG, "[Guard-2] Skip — SIM slot ${simSlot ?: "?"} disabled (handled)")
                 } else {
-                    // ── 4-Step Verification Chain (Dynamic) ───────────────
-                    val matchingMethod = cachedMethods.firstOrNull { method ->
-                        val isArchiveMode = (method.isParseable ?: 1) == 0
-                        method.isEnabled == 1 &&
-                        (simSlot == null || method.simSlot == simSlot) &&
-                        (
-                            if (method.templateId == null) {
-                                cleanSender == method.provider.trim().lowercase(Locale.US)
-                            } else {
-                                val targetSender = method.senderId?.trim()?.lowercase(Locale.US)
-                                    ?: method.provider.lowercase(Locale.US)
-                                cleanSender == targetSender
-                            }
-                        ) &&
-                        (
-                            isArchiveMode ||
-                            method.senderNumber.isNullOrBlank() ||
-                            run {
-                                val targetSenderNumber = method.senderNumber.trim().lowercase(Locale.US)
-                                cleanSender == targetSenderNumber
-                            }
-                        ) &&
-                        (
-                            isArchiveMode ||
-                            method.matchingKeyword.isNullOrBlank() ||
-                            method.matchingKeyword.split(",")
-                                .map { it.trim() }.filter { it.isNotEmpty() }
-                                .any { kw -> candidate.body.contains(kw, ignoreCase = true) }
-                        )
-                    }
+                    // পুরনো SMS filter (method তৈরির আগের)
+                    // createdAt check এখানে রাখা হয়েছে কারণ এটা SmsInboxScanner-specific
+                    val skipOld = shouldSkipOldSms(candidate, cachedMethods, simSlot)
 
-                    if (matchingMethod == null) {
-                        Log.d(TAG, "[Guard-2] Skip — no matching gateway config for '${candidate.sender}' (handled)")
+                    if (skipOld) {
+                        Log.d(TAG, "[Guard-2] Skip old SMS for '${candidate.sender}' — before method creation (handled)")
                     } else {
-                        val isArchiveMode = (matchingMethod.isParseable ?: 1) == 0
+                        // ── SmsRoutingEngine: 3-Stage decision ────────────────────
+                        // Worker শুধু SMS সংগ্রহ করে। সব routing decision engine নেয়।
+                        val routeResult = SmsRoutingEngine.resolve(
+                            sender        = candidate.sender,
+                            body          = candidate.body,
+                            simSlot       = simSlot,
+                            cachedMethods = cachedMethods
+                        )
 
-                        // পুরনো SMS (method তৈরির আগের) → বৈধ skip
-                        val createdAtStr = matchingMethod.createdAt
-                        val tooOld = !createdAtStr.isNullOrBlank() && run {
-                            val createdTimeMs = parseIsoDateToMillis(createdAtStr)
-                            createdTimeMs > 0L && candidate.timestamp < createdTimeMs
-                        }
-
-                        if (tooOld) {
-                            Log.d(TAG, "[Guard-2] Skip old SMS for '${candidate.sender}' — before method creation (handled)")
+                        if (routeResult == null) {
+                            Log.d(TAG, "[Guard-2] No route for '${candidate.sender}' → DROP (handled)")
                         } else {
-                            // Forward RAW SMS payload — archive senders skip parsing
-                            val payment = if (isArchiveMode) {
-                                SmsParser.ParsedPayment(
-                                    amount         = 0.0,
-                                    trxId          = "",
-                                    providerTag    = matchingMethod.provider,
-                                    senderNumber   = candidate.sender,
-                                    rawBody        = candidate.body,
-                                    smsTimestamp   = candidate.timestamp,
-                                    simSlot        = simSlot,
-                                    simNumber      = simNumber ?: matchingMethod.number,
-                                    isCustomSender = true,
-                                    fullSms        = candidate.body,
-                                    isParseable    = 0
-                                )
-                            } else {
-                                SmsParser.parseWithDynamicRegex(
-                                    body = candidate.body,
-                                    regexPattern = matchingMethod.regexPattern,
-                                    providerTag = matchingMethod.provider,
-                                    senderNumber = candidate.sender,
-                                    timestamp = candidate.timestamp,
-                                    simSlot = simSlot,
-                                    simNumber = simNumber ?: matchingMethod.number,
-                                    isCustomSender = false
-                                ) ?: SmsParser.parseSms(candidate.sender, candidate.body, candidate.timestamp)?.copy(
-                                    simSlot = simSlot,
-                                    simNumber = simNumber ?: matchingMethod.number,
-                                    isCustomSender = false,
-                                    providerTag = matchingMethod.provider
-                                ) ?: SmsParser.ParsedPayment(
-                                    amount         = 0.0,
-                                    trxId          = "",
-                                    providerTag    = matchingMethod.provider,
-                                    senderNumber   = candidate.sender,
-                                    rawBody        = candidate.body,
-                                    smsTimestamp   = candidate.timestamp,
-                                    simSlot        = simSlot,
-                                    simNumber      = simNumber ?: matchingMethod.number,
-                                    isCustomSender = false,
-                                    fullSms        = candidate.body,
-                                    isParseable    = matchingMethod.isParseable ?: 1
-                                )
-                            }
+                            val payment = SmsRoutingEngine.buildPayload(
+                                result    = routeResult,
+                                sender    = candidate.sender,
+                                body      = candidate.body,
+                                timestamp = candidate.timestamp,
+                                simSlot   = simSlot,
+                                simNumber = simNumber
+                            )
 
-                            Log.i(TAG, "[Guard-2] 4 Conditions Met. Forwarding RAW payload to queue. Provider: ${matchingMethod.provider} | SIM: $simSlot")
+                            Log.i(TAG, "[Guard-2] Route=${routeResult.route} | Provider=${routeResult.matchedMethod.provider} → queuing")
 
-                            // ── ProcessIncomingSmsUseCase দিয়ে queue এ push ──
-                            // rawBodyHash UNIQUE index Guard-1 এর duplicate ignore করবে
-                            val result = ProcessIncomingSmsUseCase(context).execute(payment)
+                            // ProcessIncomingSmsUseCase দিয়ে queue-এ push
+                            // rawBodyHash UNIQUE index Guard-1 duplicate ignore করবে
+                            val result = online.paychek.app.domain.usecase.sms.ProcessIncomingSmsUseCase(context).execute(payment)
                             result.fold(
                                 onSuccess = { id ->
                                     if (id > 0L) {
@@ -296,7 +218,6 @@ class SmsPollWorker(
                                     }
                                 },
                                 onFailure = { e ->
-                                    // queue insert ব্যর্থ → retry দরকার, cursor এগোবে না
                                     handled = false
                                     Log.e(TAG, "[Guard-2] Pipeline error — smsId=${candidate.smsId}: ${e.message}")
                                 }
@@ -305,23 +226,52 @@ class SmsPollWorker(
                     }
                 }
             } catch (e: Exception) {
-                // অপ্রত্যাশিত exception → retry দরকার, cursor এগোবে না
                 handled = false
                 Log.e(TAG, "[Guard-2] Candidate processing error — smsId=${candidate.smsId}: ${e.message}", e)
             }
 
-            // Cursor শুধু ধারাবাহিক durably-handled SMS পর্যন্ত এগোয়।
             if (!handled) cursorBlocked = true
             if (!cursorBlocked) committableId = candidate.smsId
         }
 
-        // ── Cursor commit — শুধুমাত্র নিশ্চিতভাবে handle হওয়া SMS পর্যন্ত ──
+        // ── Cursor commit ──────────────────────────────────────────────────────
         if (committableId > 0L) {
             scanner.commitCursor(committableId)
         }
 
         Log.i(TAG, "[Guard-2] Poll complete — ${candidates.size} candidates | $processedCount নতুন queued | cursor→$committableId${if (cursorBlocked) " (blocked, বাকিগুলো পরের poll-এ retry হবে)" else ""}")
         return Result.success()
+    }
+
+    /**
+     * SMS টি method তৈরির আগের কিনা তা পরীক্ষা করে।
+     * Guard-2 inbox scan-এ পুরনো SMS process না হওয়ার জন্য।
+     */
+    private fun shouldSkipOldSms(
+        candidate: SmsInboxScanner.SmsCandidate,
+        cachedMethods: List<GatewayMethod>,
+        simSlot: Int?
+    ): Boolean {
+        val cleanSender = candidate.sender.trim().lowercase(java.util.Locale.US)
+        // sender-এর যেকোনো matching method-এর createdAt দেখো
+        val matchingForCreatedAt = cachedMethods.firstOrNull { method ->
+            method.isEnabled == 1 &&
+            (simSlot == null || method.simSlot == simSlot) &&
+            (
+                if (method.templateId == null) {
+                    cleanSender == method.provider.trim().lowercase(java.util.Locale.US)
+                } else {
+                    val targetSender = method.senderId?.trim()?.lowercase(java.util.Locale.US)
+                        ?: method.provider.lowercase(java.util.Locale.US)
+                    cleanSender == targetSender
+                }
+            )
+        } ?: return false
+
+        val createdAtStr = matchingForCreatedAt.createdAt
+        if (createdAtStr.isNullOrBlank()) return false
+        val createdTimeMs = parseIsoDateToMillis(createdAtStr)
+        return createdTimeMs > 0L && candidate.timestamp < createdTimeMs
     }
 
     private fun parseIsoDateToMillis(isoString: String): Long {

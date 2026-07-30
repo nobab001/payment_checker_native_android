@@ -22,22 +22,18 @@ import java.util.Locale
 import java.util.regex.Pattern
 
 /**
- * SmsReceiver — Incoming SMS filter with 3-layer security and dynamic twin-mode logic.
+ * SmsReceiver — Guard-1: Incoming SMS BroadcastReceiver
  *
- * Security filtering logic:
- *  1. Condition 1 & 2 (mandatory): SIM Slot and Sender ID must match the active config.
- *  2. Condition 3 (twin-mode):
- *     - Official provider (Strict Mode): matchingKeyword verification + regex parse.
- *     - Custom provider (Backup Mode): dummy TrxID (BKUP-timestamp-hash), 0 amount, direct backup.
+ * Refactored (Phase 6 — SmsRoutingEngine):
+ *  Receiver-এর কাজ শুধু SMS সংগ্রহ করা এবং SmsRoutingEngine-এ পাঠানো।
+ *  কোনো Business Logic, filter chain বা regex match এখানে নেই।
+ *  সব routing decision SmsRoutingEngine নেয় (HISTORY / ARCHIVE / DROP)।
  *
- * Phase 5 refactor:
- *  saveToOfflineQueueAndForward() now delegates entirely to ProcessIncomingSmsUseCase.execute().
- *  All crypto, hashing, and Room insert logic has been removed from this class.
- *  SmsReceiver is now ONLY responsible for:
- *   - Receiving and filtering incoming broadcasts
- *   - Parsing SMS into ParsedPayment
- *   - Handing ParsedPayment to the use case
- *   - Hosting syncPendingQueue() for backward compatibility
+ * Guard-1 Pipeline:
+ *  SMS_RECEIVED_ACTION → WakeLock → SmsRoutingEngine.resolve() →
+ *  SmsRoutingEngine.buildPayload() → ProcessIncomingSmsUseCase → Queue → Sync
+ *
+ * syncPendingQueue() এবং syncPendingQueueAndAwait() backward-compatible রাখা হয়েছে।
  */
 class SmsReceiver(
     private val onPaymentSmsReceived: ((SmsParser.ParsedPayment) -> Unit)? = null
@@ -45,44 +41,31 @@ class SmsReceiver(
 
     companion object {
         private const val TAG = "SmsReceiver"
-        // EncryptedSharedPreferences key for per-user secretKey
         const val KEY_HMAC_SECRET = "pcu_hmac_secret_key_v2"
 
         // -----------------------------------------------------------------------
         // GUARD: SHA-256 computation is ONLY done via HmacHelper.sha256Hex().
-        // Never compute SHA-256 of rawBody here — there is ONE canonical location.
         // -----------------------------------------------------------------------
 
         /**
          * calculateNextRetryMs — exponential backoff delay for failed queue items.
-         * retryCount 0 = first failure, caps at 6 hours after the 4th attempt.
-         *
          * Schedule: 30s -> 2min -> 10min -> 1hr -> 6hr (cap)
          */
-        // Transient (server-down) failure-এর ছোট fixed backoff — server ফিরলে দ্রুত flush নিশ্চিত করে।
-        // PingEngine-ও fail হলে ৫s পর পর প্রাথমিক দ্রুত রিট্রাই করে; দুটো সামঞ্জস্যপূর্ণ রাখতে ৫s।
         private const val TRANSIENT_RETRY_MS = 5_000L
 
         fun calculateNextRetryMs(retryCount: Int, nowMs: Long): Long {
             val delayMs = when (retryCount) {
-                0    -> 30_000L       // 30 seconds
-                1    -> 120_000L      // 2 minutes
-                2    -> 600_000L      // 10 minutes
-                3    -> 3_600_000L    // 1 hour
-                else -> 21_600_000L   // 6 hours (cap)
+                0    -> 30_000L
+                1    -> 120_000L
+                2    -> 600_000L
+                3    -> 3_600_000L
+                else -> 21_600_000L
             }
             return nowMs + delayMs
         }
 
         /**
-         * syncPendingQueue — pushes pending SMS items as soon as connectivity is available.
-         * Call this when ConnectivityService.observe() emits true.
-         *
-         * Retry policy:
-         *  - HTTP 2xx          -> markAsSynced()
-         *  - HTTP 422          -> markPermanentlyFailed() — server parse failed, retrying is pointless
-         *  - Other HTTP error  -> markRetryFailed() with exponential backoff
-         *  - Network exception -> markRetryFailed() with exponential backoff
+         * syncPendingQueue — connectivity restore হলে pending SMS push করে।
          */
         fun syncPendingQueue(context: Context) {
             CoroutineScope(Dispatchers.IO).launch {
@@ -90,9 +73,6 @@ class SmsReceiver(
             }
         }
 
-        /**
-         * @return true if queue empty or all eligible items synced; false if failures remain
-         */
         suspend fun syncPendingQueueAndAwait(context: Context): Boolean {
             return withContext(Dispatchers.IO) {
                 syncPendingQueueInternal(context)
@@ -105,9 +85,6 @@ class SmsReceiver(
                 val dao = db.pendingSmsDao()
                 val nowMs = System.currentTimeMillis()
 
-                // দ্রষ্টব্য: retryCount-ভিত্তিক permanent-fail আর করা হয় না। server outage transient,
-                // তাই আগের build-এ retryCount≥10 হয়ে ভুলভাবে আটকে থাকা আইটেমগুলোও এখানে পুনরুদ্ধার
-                // করা হয় (permanent-fail কেবল server 422 unparseable-এর জন্য)।
                 dao.recoverOutageFailedItems()
 
                 val pendingItems = dao.getPendingItemsForRetry(nowMs)
@@ -207,12 +184,13 @@ class SmsReceiver(
             item: online.paychek.app.data.local.entity.PendingSmsEntity,
             nowMs: Long
         ) {
-            // Server outage / network / 5xx হলো transient global failure — per-item দোষ নয়।
-            // তাই retryCount বাড়ানো হয় না (কখনো drop হবে না); শুধু ছোট fixed backoff (30s)
-            // দেওয়া হয় যাতে PingEngine server-return টের পেলে দ্রুত সব একসাথে flush করতে পারে।
             dao.markTransientFailure(item.id, nowMs, nowMs + TRANSIENT_RETRY_MS)
         }
     }
+
+    // =========================================================================
+    // Guard-1: BroadcastReceiver entry point
+    // =========================================================================
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
@@ -240,6 +218,10 @@ class SmsReceiver(
         }
     }
 
+    /**
+     * SMS পড়ে SmsRoutingEngine-এ পাঠায়।
+     * Receiver-এ কোনো Business Logic নেই — শুধু data collection।
+     */
     private suspend fun handleIncomingSms(context: Context, intent: Intent) {
         try {
             val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
@@ -250,20 +232,20 @@ class SmsReceiver(
             val simSlot        = SimSlotHelper.resolveSimSlotFromIntent(context, intent)
             val simNumber      = SimSlotHelper.resolveSimNumber(context, subscriptionId)
 
-            // Load config and gateway method cache from SharedPreferences
+            // SMS monitor active?
             val prefs = context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
             if (!prefs.getBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, false)) {
                 Log.d(TAG, "SMS ignored: monitor service disabled by user")
                 return
             }
+
+            // SIM slot enabled?
             val sim1Enabled = prefs.getBoolean(AppConfig.KEY_SIM1_ENABLED, false)
             val sim2Enabled = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, false)
-
-            // Condition 1: SIM Slot filter (SIM Slot is active/enabled)
             if (simSlot != null) {
                 val isSimEnabled = if (simSlot == 1) sim1Enabled else sim2Enabled
                 if (!isSimEnabled) {
-                    Log.d(TAG, "SMS ignored: SIM slot $simSlot is disabled in master settings.")
+                    Log.d(TAG, "SMS ignored: SIM slot $simSlot is disabled.")
                     return
                 }
             } else {
@@ -273,121 +255,47 @@ class SmsReceiver(
                 }
             }
 
-            // Combine multi-part SMS parts into a single message body
-            val sender = messages[0].originatingAddress ?: return
+            // Combine multi-part SMS into single body
+            val sender    = messages[0].originatingAddress ?: return
             val timestamp = messages[0].timestampMillis
-            val body = StringBuilder().apply {
-                for (msg in messages) {
-                    msg.messageBody?.let { append(it) }
-                }
+            val body      = StringBuilder().apply {
+                for (msg in messages) msg.messageBody?.let { append(it) }
             }.toString()
 
-            // Read live cache dynamically
+            Log.d(TAG, "[Guard-1] Incoming SMS — From: $sender | SIM: $simSlot | SubId: $subscriptionId | Len: ${body.length}")
+
+            // Load gateway method cache (SharedPrefs — no server call)
             val methodsJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(context)
             val methodsType = object : com.google.gson.reflect.TypeToken<List<GatewayMethod>>() {}.type
             val cachedMethods: List<GatewayMethod> = try {
                 online.paychek.app.utils.GsonUtils.gson.fromJson(methodsJson, methodsType)
-            } catch (e: Exception) {
-                emptyList()
-            }
+            } catch (e: Exception) { emptyList() }
 
-            Log.d(TAG, "Incoming SMS — From: $sender | SIM Slot: $simSlot | SubId: $subscriptionId | Length: ${body.length}")
-
-            val cleanSender = sender.trim().lowercase(Locale.US)
-
-            // ── 4-Step Verification Chain (Dynamic) ──────────────────────
-            // Step 1: SIM Slot   — already filtered above
-            // Step 2: Sender ID  — alphanumeric/phone sender match
-            // Step 3: Sender Number — separate sender_number field match
-            // Step 4: SMS Body   — matching keywords from template conditions
-            val matchingMethod = cachedMethods.firstOrNull { method ->
-                val isArchiveMode = (method.isParseable ?: 1) == 0
-                // Step 1: Method must be enabled and SIM slot must match
-                method.isEnabled == 1 &&
-                (simSlot == null || method.simSlot == simSlot) &&
-                // Step 2: Sender ID match (exact — no prefix/substring)
-                (
-                    if (method.templateId == null) {
-                        cleanSender == method.provider.trim().lowercase(Locale.US)
-                    } else {
-                        val targetSender = method.senderId?.trim()?.lowercase(Locale.US) ?: method.provider.lowercase(Locale.US)
-                        cleanSender == targetSender
-                    }
-                ) &&
-                // Step 3: Sender Number match (if configured; exact)
-                (
-                    isArchiveMode ||
-                    method.senderNumber.isNullOrBlank() ||
-                    run {
-                        val targetSenderNumber = method.senderNumber.trim().lowercase(Locale.US)
-                        cleanSender == targetSenderNumber
-                    }
-                ) &&
-                // Step 4: SMS Body keyword conditions (skip for custom/archive senders)
-                (
-                    isArchiveMode ||
-                    method.matchingKeyword.isNullOrBlank() ||
-                    method.matchingKeyword.split(",").map { it.trim() }.filter { it.isNotEmpty() }.any { keyword ->
-                        body.contains(keyword, ignoreCase = true)
-                    }
-                )
-            }
-
-            if (matchingMethod == null) {
-                Log.d(TAG, "Payment SMS ignored: No matching gateway config found for $sender or keywords mismatch")
+            // ── SmsRoutingEngine: 3-Stage decision ────────────────────────────
+            // Stage-1: Collect Candidates (all matching methods, not firstOrNull)
+            // Stage-2: Resolve Route (Template Match → HISTORY | Archive → ARCHIVE | DROP)
+            // Stage-3: Build Payload (isParseable=1/0 translate হয় server payload-এ)
+            val routeResult = SmsRoutingEngine.resolve(
+                sender        = sender,
+                body          = body,
+                simSlot       = simSlot,
+                cachedMethods = cachedMethods
+            ) ?: run {
+                Log.d(TAG, "[Guard-1] No route for sender='$sender' → DROP")
                 return
             }
 
-            val isArchiveMode = (matchingMethod.isParseable ?: 1) == 0
+            val parsedPayment = SmsRoutingEngine.buildPayload(
+                result    = routeResult,
+                sender    = sender,
+                body      = body,
+                timestamp = timestamp,
+                simSlot   = simSlot,
+                simNumber = simNumber
+            )
 
-                // ── Body Pattern Match Verification ───────────────────────────
-                if (!isArchiveMode) {
-                val patternsToTry = mutableListOf<String>()
-                matchingMethod.customPatterns?.let { patternsToTry.addAll(it) }
-                if (!matchingMethod.regexPattern.isNullOrBlank()) {
-                    patternsToTry.add(matchingMethod.regexPattern)
-                }
-
-                var bodyMatched = false
-                for (pattern in patternsToTry) {
-                    if (pattern.isBlank()) continue
-                    try {
-                        val subPatterns = pattern.split("|||")
-                        for (sub in subPatterns) {
-                            if (sub.isBlank()) continue
-                            val compiled = java.util.regex.Pattern.compile(sub, java.util.regex.Pattern.CASE_INSENSITIVE or java.util.regex.Pattern.DOTALL)
-                            if (compiled.matcher(body.trim()).matches()) {
-                                bodyMatched = true
-                                break
-                            }
-                        }
-                    } catch (_: Exception) { }
-                    if (bodyMatched) break
-                }
-
-                if (!bodyMatched) {
-                    Log.d(TAG, "Payment SMS ignored: Regex patterns did not match the full body structure.")
-                    return
-                }
-                }
-
-                // Build minimal payload — archive SMS goes to custom_sms_archives on server
-                val parsedPayment = online.paychek.app.utils.SmsParser.ParsedPayment(
-                    amount       = 0.0,
-                    trxId        = "",
-                    providerTag  = matchingMethod.provider,
-                    senderNumber = sender,
-                    rawBody      = body,
-                    smsTimestamp  = timestamp,
-                    simSlot      = simSlot,
-                    simNumber    = simNumber ?: matchingMethod.number,
-                    isCustomSender = isArchiveMode,
-                    fullSms      = body,
-                    isParseable  = if (isArchiveMode) 0 else (matchingMethod.isParseable ?: 1)
-                )
-
-                Log.i(TAG, "4 Conditions Met. Forwarding RAW SMS payload to queue. Provider: ${matchingMethod.provider}")
-                saveToOfflineQueueAndForward(context, parsedPayment)
+            Log.i(TAG, "[Guard-1] Route=${routeResult.route} | Provider=${routeResult.matchedMethod.provider} → queuing")
+            saveToOfflineQueueAndForward(context, parsedPayment)
 
         } catch (e: SecurityException) {
             Log.e(TAG, "SecurityException — no SIM read permission: ${e.message}")
@@ -404,6 +312,7 @@ class SmsReceiver(
         }
     }
 
+    @Suppress("unused") // backward-compat: referenced by other legacy call sites if any
     private fun parseWithCustomRegex(body: String, patternStr: String, providerTag: String, timestamp: Long): SmsParser.ParsedPayment? {
         return try {
             val pattern = Pattern.compile(patternStr, Pattern.CASE_INSENSITIVE or Pattern.DOTALL)
@@ -412,10 +321,8 @@ class SmsReceiver(
                 val groupCount = matcher.groupCount()
                 val amountStr = matcher.group(1)?.replace(",", "") ?: "0.0"
                 val amount = amountStr.toDoubleOrNull() ?: 0.0
-
                 val trxId: String
                 val senderNumber: String
-
                 if (groupCount >= 3) {
                     senderNumber = matcher.group(2) ?: "Unknown"
                     trxId = matcher.group(3) ?: ""
@@ -423,7 +330,6 @@ class SmsReceiver(
                     trxId = if (groupCount >= 2) matcher.group(2) ?: "" else ""
                     senderNumber = "Unknown"
                 }
-
                 if (trxId.isNotEmpty()) {
                     SmsParser.ParsedPayment(
                         amount       = amount,
