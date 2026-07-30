@@ -247,38 +247,6 @@
     });
   }
 
-  // Live activity notifications feed loop
-  function initLiveActivityFeed() {
-    const panel = document.createElement('div');
-    panel.className = 'live-activity-feed';
-    document.body.appendChild(panel);
-
-    const feeds = [
-      { method: 'bKash', amount: '৳১২৫০', time: '২ সেকেন্ড আগে' },
-      { method: 'Nagad', amount: '৳৫০০', time: '১২ সেকেন্ড আগে' },
-      { method: 'Rocket', amount: '৳৩০০০', time: '১ মিনিট আগে' },
-      { method: 'Upay', amount: '৳৪৫০', time: '২ মিনিট আগে' }
-    ];
-
-    let index = 0;
-    setInterval(() => {
-      const item = feeds[index];
-      panel.innerHTML = `
-        <div class="feed-item-content">
-          <span class="feed-badge">✓ verified</span>
-          <span>পেমেন্ট সফল: <strong>${item.amount}</strong> (${item.method})</span>
-          <span class="feed-time">${item.time}</span>
-        </div>
-      `;
-      panel.classList.add('visible');
-      setTimeout(() => {
-        panel.classList.remove('visible');
-      }, 3500);
-
-      index = (index + 1) % feeds.length;
-    }, 5500);
-  }
-
   // Subtle Mouse Parallax hero tracking
   function initHeroParallax() {
     const hero = document.querySelector('.hero');
@@ -444,7 +412,6 @@
       initNavigationScroll();
       initDownloadMorph();
       initVerificationWidget();
-      initLiveActivityFeed();
       initHeroParallax();
       initFaqAccordion();
       

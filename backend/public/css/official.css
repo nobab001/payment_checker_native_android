@@ -846,47 +846,6 @@ footer {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Live Activity feed box */
-.live-activity-feed {
-  position: fixed;
-  bottom: 24px;
-  left: 24px;
-  z-index: 100;
-  background: rgba(18, 21, 27, 0.85);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  padding: 10px var(--space-md);
-  box-shadow: var(--fab-shadow);
-  transform: translateY(20px);
-  opacity: 0;
-  pointer-events: none;
-  font-size: 0.85rem;
-  transition: transform var(--transition-normal), opacity var(--transition-normal);
-}
-.live-activity-feed.visible {
-  transform: translateY(0);
-  opacity: 1;
-  pointer-events: auto;
-}
-.feed-badge {
-  display: inline-block;
-  background: var(--accent);
-  color: var(--btn-primary-fg);
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  font-weight: bold;
-  padding: 1px 5px;
-  border-radius: 3px;
-  margin-right: 6px;
-}
-.feed-time {
-  display: block;
-  font-size: 0.7rem;
-  color: var(--muted);
-  margin-top: 2px;
-}
-
 /* Trusted Marquee */
 .trusted-section {
   padding-block: var(--space-xl);
