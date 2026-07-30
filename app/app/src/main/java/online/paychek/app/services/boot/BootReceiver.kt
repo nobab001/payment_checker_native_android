@@ -13,6 +13,14 @@ import online.paychek.app.utils.SessionFlags
 /**
  * BootReceiver — starts SMS monitoring after reboot without Keystore decrypt.
  * Uses plain [SessionFlags] so boot is not blocked by Android Keystore unlock.
+ *
+ * APK Update (MY_PACKAGE_REPLACED) handling:
+ *  - Direct startForegroundService() করা যাবে না — race condition তৈরি হয়।
+ *  - পুরনো process kill হওয়ার সময় onDestroy() → enqueueImmediateRecovery() এবং
+ *    MY_PACKAGE_REPLACED → startForegroundService() একই সাথে চললে
+ *    ForegroundServiceDidNotStartInTimeException crash হয়।
+ *  - Fix: MY_PACKAGE_REPLACED-এ শুধু WorkManager delayed recovery enqueue করা হয়,
+ *    direct startForegroundService() করা হয় না। নতুন process নিজেই start হবে।
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -24,11 +32,11 @@ class BootReceiver : BroadcastReceiver() {
         val action = intent.action
         Log.i(TAG, "Boot broadcast — Action: $action")
 
+        val isPackageReplaced = action == Intent.ACTION_MY_PACKAGE_REPLACED
         val isBootEvent = action == Intent.ACTION_BOOT_COMPLETED ||
-            action == Intent.ACTION_MY_PACKAGE_REPLACED ||
             action == "android.intent.action.LOCKED_BOOT_COMPLETED"
 
-        if (!isBootEvent) return
+        if (!isBootEvent && !isPackageReplaced) return
 
         val prefs = context.getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
         val isEnabled = prefs.getBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, false)
@@ -44,6 +52,24 @@ class BootReceiver : BroadcastReceiver() {
             return
         }
 
+        if (isPackageReplaced) {
+            // APK update: direct startForegroundService() করলে race condition crash হয়।
+            // পুরনো process onDestroy → recovery এবং নতুন process start — দুটো একসাথে
+            // চললে ForegroundServiceDidNotStartInTimeException throw হয়।
+            // Fix: শুধু WorkManager delayed recovery enqueue করা হয় (5s+ delay)।
+            // MainActivity.onResume → healIfNeeded() নতুন process চালু হলে service heal করবে।
+            Log.i(TAG, "MY_PACKAGE_REPLACED — scheduling delayed WorkManager recovery (no immediate FGS start)")
+            try {
+                SmsServiceGuard.enqueueImmediateRecovery(context)
+                SmsServiceGuard.scheduleWatchdog(context)
+                SmsPollWorker.schedule(context.applicationContext)
+            } catch (e: Exception) {
+                Log.e(TAG, "Package replace recovery schedule failed: ${e.message}")
+            }
+            return
+        }
+
+        // Normal BOOT_COMPLETED / LOCKED_BOOT_COMPLETED
         try {
             SmsServiceGuard.startService(context, NumberHeartbeatEngine.TRIGGER_BOOT_COMPLETED)
             SmsServiceGuard.scheduleWatchdog(context)

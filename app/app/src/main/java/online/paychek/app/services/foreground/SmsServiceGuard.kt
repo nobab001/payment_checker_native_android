@@ -43,7 +43,14 @@ object SmsServiceGuard {
     /**
      * When user left SMS ON but OEM killed the foreground service, restart it.
      * @return true if prefs say ON (heal attempted when unhealthy).
+     *
+     * Rate-limited: APK update সময় WorkManager recovery + new process heal
+     * একসাথে চললে forceRestart() → stopService() → race condition crash হয়।
+     * Fix: 10s এর মধ্যে দুটো heal হতে দেওয়া হবে না।
      */
+    @Volatile private var lastHealAtMs: Long = 0L
+    private const val HEAL_COOLDOWN_MS = 10_000L // 10 seconds
+
     fun healIfNeeded(context: Context): Boolean {
         val app = context.applicationContext
         if (!PrefsHelper.isSmsServiceActive(app)) return false
@@ -51,6 +58,12 @@ object SmsServiceGuard {
             scheduleWatchdog(app)
             return true
         }
+        val now = System.currentTimeMillis()
+        if (now - lastHealAtMs < HEAL_COOLDOWN_MS) {
+            Log.i(TAG, "healIfNeeded skipped — cooldown active (${(now - lastHealAtMs)}ms since last heal)")
+            return true // প্রক্রিয়া চলছে, শুধু একটু সময় লাগছে
+        }
+        lastHealAtMs = now
         Log.w(TAG, "SMS service unhealthy while prefs ON — forcing restart")
         forceRestart(app)
         scheduleWatchdog(app)

@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
+import androidx.core.content.pm.PackageInfoCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -48,7 +49,12 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+        // APK update crash fix: Navigation3 rememberNavBackStack পুরনো Bundle থেকে
+        // NavKey deserialize করতে গিয়ে SerializationException throw করে।
+        // Fix: version change ধরা পড়লে savedInstanceState null করে দেওয়া হয় —
+        // fresh navigation শুরু হয়, কোনো stale back stack restore হয় না।
+        val effectiveSavedState = if (hasVersionChanged()) null else savedInstanceState
+        super.onCreate(effectiveSavedState)
 
         val sharedPrefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
         sharedPrefs.registerOnSharedPreferenceChangeListener(prefListener)
@@ -125,11 +131,32 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    /**
+     * APK update ধরার জন্য — versionCode আগের launch-এর সাথে compare করা হয়।
+     * Update হলে prefs-এ নতুন code save করে true return করে।
+     * First install (stored == -1): savedState এমনিতেই null, false return করো।
+     */
+    private fun hasVersionChanged(): Boolean {
+        val prefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+        val stored = prefs.getLong(KEY_LAST_VERSION_CODE, -1L)
+        val current = try {
+            PackageInfoCompat.getLongVersionCode(
+                packageManager.getPackageInfo(packageName, 0)
+            )
+        } catch (_: Exception) { -1L }
+        if (stored != current) {
+            prefs.edit().putLong(KEY_LAST_VERSION_CODE, current).apply()
+            return stored != -1L // First install-এ false (savedState এমনিতেই null)
+        }
+        return false
+    }
+
     companion object {
         var isRequestingPermission = false
         /** User left for Accessibility / Battery settings — skip PIN lock on quick return. */
         private const val KEY_SETTINGS_HANDOFF_AT = "pcu_settings_handoff_at_ms"
         private const val SETTINGS_HANDOFF_GRACE_MS = 180_000L // 3 minutes
+        private const val KEY_LAST_VERSION_CODE    = "pcu_last_version_code"
 
         val pendingBillingSuccess = mutableStateOf(false)
         var pendingBillingOrderId: String? = null
