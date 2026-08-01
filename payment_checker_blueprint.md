@@ -184,6 +184,7 @@ admin/lib/
 ```
 server/
 ├── app.js                          # Core server entry point initializing databases, Socket.io, and mounting routes
+├── ecosystem.config.js             # PM2 configuration file for production
 ├── package.json                    # Package metadata containing Node.js dependencies
 ├── schema.sql                      # Primary DDL schema establishing main users and OTP tables
 ├── migrate.sql                     # SQL script to migrate and upgrade existing MySQL installations
@@ -204,6 +205,9 @@ server/
 │   ├── checkoutPublicRoutes.js     # Routes serving user checkouts, public forms, and verification gates
 │   ├── merchantRoutes.js           # API keys and checkout site registration routes for users
 │   └── paymentPostgresRoutes.js    # Routes pushing parsed payment messages to sharded PG storage
+├── scripts/
+│   ├── deploy.sh                   # Deployment script executing git pulls, DB backups, switches, and PM2 reloads
+│   └── pm2-save.sh                 # Process and release validation wrapper before saving PM2 state
 ├── services/
 │   ├── authSchemaInit.js           # Initializes credentials and device locking schemas on startup
 │   ├── credentialAuth.js           # Validates contact structures, OTP cooldown limits, and user lookups
