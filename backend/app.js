@@ -205,14 +205,88 @@ app.use((req, res, next) => {
   next();
 });
 
-// Root check route
-app.get('/health', (req, res) => {
-  res.json({ status: 'UP', env: process.env.APP_ENV || 'unknown', timestamp: new Date().toISOString() });
+// Helper for running promises with a timeout
+function withTimeout(promise, timeoutMs, errMessage) {
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(errMessage)), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+}
+
+// Liveness Check: process status & metadata
+app.get('/live', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.json({
+    status: 'UP',
+    environment: process.env.APP_ENV || 'production',
+    build: {
+      version: process.env.BUILD_VERSION || '1.0.0',
+      commit: process.env.BUILD_COMMIT || 'unknown',
+      date: process.env.BUILD_DATE || new Date().toISOString()
+    },
+    node: process.version,
+    pm2_id: process.env.pm_id != null ? parseInt(process.env.pm_id, 10) : null,
+    uptime: Math.round(process.uptime()),
+    memory: {
+      rss: `${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`,
+      heapUsed: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`
+    },
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Alias for load balancers / staging probes
+// Readiness Check: live dependency probes (database + redis) with 2-second fail-fast timeout
+app.get('/ready', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  
+  let databaseStatus = 'unknown';
+  let redisStatus = 'unknown';
+  let hasErrors = false;
+
+  try {
+    await withTimeout(prisma.$queryRaw`SELECT 1`, 2000, 'Database timeout');
+    databaseStatus = 'connected';
+  } catch (err) {
+    databaseStatus = `error: ${err.message}`;
+    hasErrors = true;
+  }
+
+  try {
+    const redisClient = require('./services/redisClient').getRedisClient();
+    await withTimeout(redisClient.ping(), 2000, 'Redis timeout');
+    redisStatus = 'connected';
+  } catch (err) {
+    redisStatus = `error: ${err.message}`;
+    hasErrors = true;
+  }
+
+  const payload = {
+    status: hasErrors ? 'DOWN' : 'UP',
+    environment: process.env.APP_ENV || 'production',
+    build: {
+      version: process.env.BUILD_VERSION || '1.0.0',
+      commit: process.env.BUILD_COMMIT || 'unknown',
+      date: process.env.BUILD_DATE || new Date().toISOString()
+    },
+    node: process.version,
+    pm2_id: process.env.pm_id != null ? parseInt(process.env.pm_id, 10) : null,
+    uptime: Math.round(process.uptime()),
+    database: databaseStatus,
+    redis: redisStatus,
+    timestamp: new Date().toISOString()
+  };
+
+  if (hasErrors) {
+    res.status(503).json(payload);
+  } else {
+    res.json(payload);
+  }
+});
+
+// Alias for load balancers / staging probes (fallback alias pointing to ready check)
 app.get('/payment/health', (req, res) => {
-  res.redirect(307, '/api/v1/payment/health');
+  res.redirect(307, '/ready');
 });
 
 // Mount Authentication & Device Trial Routes

@@ -39,6 +39,14 @@ LOG_FILE="${APP_ROOT}/logs/deploy_${RELEASE}.log"
 # tee all output (stdout+stderr) into the timestamped deploy log
 exec > >(tee -a "${LOG_FILE}") 2>&1
 
+# ---- locking ------------------------------------------------------
+LOCK_FILE="/var/run/payment-checker-deploy.lock"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  echo "FATAL: Another deployment is already in progress (locked via $LOCK_FILE)."
+  exit 1
+fi
+
 log() { echo "[$(date -Is)] $*"; }
 die() { log "FATAL: $*"; log "Deploy ABORTED — production left untouched. Log: ${LOG_FILE}"; exit 1; }
 
@@ -54,6 +62,20 @@ command -v npm  >/dev/null 2>&1 || die "npm not found"
 
 PREV_RELEASE="$(readlink -f "${APP_ROOT}/current" 2>/dev/null || true)"
 log "previous release: ${PREV_RELEASE:-<none>}"
+
+# ---- pre-deploy snapshot ------------------------------------------
+log "==> Pre-deploy config snapshot"
+SNAPSHOT_DIR="/var/backups/apps/snapshots/${RELEASE}"
+mkdir -p "${SNAPSHOT_DIR}"
+chmod 700 /var/backups/apps /var/backups/apps/snapshots "${SNAPSHOT_DIR}" 2>/dev/null || true
+
+# Copy current configurations
+[ -f "/root/.pm2/dump.pm2" ] && cp -p "/root/.pm2/dump.pm2" "${SNAPSHOT_DIR}/dump.pm2" 2>/dev/null || true
+[ -f "${APP_ROOT}/shared/.env" ] && cp -p "${APP_ROOT}/shared/.env" "${SNAPSHOT_DIR}/.env" 2>/dev/null || true
+[ -f "${APP_ROOT}/current/ecosystem.config.js" ] && cp -p "${APP_ROOT}/current/ecosystem.config.js" "${SNAPSHOT_DIR}/ecosystem.config.js" 2>/dev/null || true
+[ -f "/etc/nginx/sites-available/default" ] && cp -p "/etc/nginx/sites-available/default" "${SNAPSHOT_DIR}/nginx_default" 2>/dev/null || true
+[ -f "/etc/nginx/nginx.conf" ] && cp -p "/etc/nginx/nginx.conf" "${SNAPSHOT_DIR}/nginx.conf" 2>/dev/null || true
+log "Pre-deploy config snapshot saved in ${SNAPSHOT_DIR}"
 
 # ---- 1. database backup (before any migration) --------------------
 if [ -x "${SCRIPTS_DIR}/backup.sh" ]; then
@@ -82,6 +104,16 @@ log "==> npm ci"
 npm ci --no-audit --no-fund || die "npm ci failed"
 log "==> prisma generate"
 npx prisma generate || die "prisma generate failed"
+
+# ---- 3.5. inject build metadata -----------------------------------
+log "==> Injecting build metadata into shared/.env"
+sed -i '/^BUILD_VERSION=/d' "${APP_ROOT}/shared/.env" 2>/dev/null || true
+sed -i '/^BUILD_COMMIT=/d' "${APP_ROOT}/shared/.env" 2>/dev/null || true
+sed -i '/^BUILD_DATE=/d' "${APP_ROOT}/shared/.env" 2>/dev/null || true
+echo "BUILD_VERSION=${REF}" >> "${APP_ROOT}/shared/.env"
+echo "BUILD_COMMIT=${GIT_SHA}" >> "${APP_ROOT}/shared/.env"
+echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${APP_ROOT}/shared/.env"
+
 # NOTE: schema changes are applied via additive runtime ensure-guards
 # (services/* ensureSchema, db/ensure-*.js) — never `prisma db push` here,
 # which could drop columns. Backups are already taken above.
@@ -182,7 +214,7 @@ for svc in "${PM2_WORKER}" "${PM2_SOCKET}"; do
     pm2 reload "${svc}" --update-env || pm2 reload "${svc}" || log "WARN: reload ${svc} failed"
   fi
 done
-pm2 save >/dev/null 2>&1 || true
+# pm2 save >/dev/null 2>&1 || true # Omitted to prevent state overwriting on dead PM2 daemons
 
 # ---- 9. POST health check (auto-rollback on failure) --------------
 log "==> post-deploy health check"
@@ -203,6 +235,7 @@ fi
 log "==> retention"
 ls -1dt "${APP_ROOT}"/releases/*/ 2>/dev/null | tail -n +11 | xargs -r rm -rf
 ls -1t  "${APP_ROOT}"/backups/db_*.sql.gz 2>/dev/null | tail -n +11 | xargs -r rm -f
+ls -1dt /var/backups/apps/snapshots/*/ 2>/dev/null | tail -n +8 | xargs -r rm -rf
 log "releases kept: $(ls -1d "${APP_ROOT}"/releases/*/ 2>/dev/null | wc -l)"
 
 # ---- 11. cleanup temp build ---------------------------------------
