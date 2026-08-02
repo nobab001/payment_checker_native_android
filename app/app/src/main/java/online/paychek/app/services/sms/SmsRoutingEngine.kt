@@ -171,7 +171,7 @@ object SmsRoutingEngine {
         simSlot: Int?,
         cachedMethods: List<GatewayMethod>
     ): List<GatewayMethod> {
-        val exact = cachedMethods.filter { method ->
+        val exactRaw = cachedMethods.filter { method ->
             if (isAllSenderPolicy(method)) return@filter false
             val isArchive = (method.isParseable ?: 1) == 0
 
@@ -206,6 +206,13 @@ object SmsRoutingEngine {
                     .filter { it.isNotEmpty() }
                     .any { keyword -> body.contains(keyword, ignoreCase = true) }
             )
+        }
+        // Unknown SIM: refuse ambiguous cross-SIM exact matches (same spirit as ALL exclusion).
+        val exact = if (simSlot != null) {
+            exactRaw
+        } else {
+            val slots = exactRaw.map { it.simSlot }.distinct()
+            if (slots.size <= 1) exactRaw else emptyList()
         }
 
         // Per-SIM ALL archive policy → ARCHIVE candidate for any sender on this slot.

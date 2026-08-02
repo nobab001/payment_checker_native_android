@@ -84,6 +84,7 @@ class ProcessIncomingSmsUseCase(private val context: Context) {
                 senderNumber  = payment.senderNumber,
                 simSlot       = payment.simSlot,
                 simNumber     = payment.simNumber,
+                isParseable   = payment.isParseable,
                 smsTimestamp  = payment.smsTimestamp
             )
 

@@ -64,6 +64,13 @@ data class PendingSmsEntity(
     /** SIM-এর নিজস্ব ফোন নম্বর */
     val simNumber: String?,
 
+    /**
+     * Server route flag: 1=HISTORY (parseable payment), 0=ARCHIVE (custom/ALL).
+     * Must be persisted at queue time — sync must NOT re-derive from a possibly stale cache
+     * (stale/empty cache previously defaulted to 1 and mis-routed ARCHIVE → 422).
+     */
+    val isParseable: Int = 1,
+
     /** SMS আসার মূল timestamp (epoch ms) */
     val smsTimestamp: Long,
 

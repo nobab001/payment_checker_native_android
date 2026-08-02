@@ -161,9 +161,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // Device setup incomplete → do not keep/restart monitor
         val gate = online.paychek.app.utils.DeviceMonitoringGate.check(context)
         if (!gate.ready) {
+            // Prefs OFF must commit before cancel — otherwise concurrent heal/a11y can re-arm.
+            prefs.edit().putBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, false).commit()
             SmsServiceGuard.stopService(context)
             SmsServiceGuard.cancelWatchdog(context)
-            prefs.edit().putBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, false).apply()
             _state.update { it.copy(isServiceActive = false) }
             return
         }

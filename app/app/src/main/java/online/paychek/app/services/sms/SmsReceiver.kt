@@ -102,17 +102,9 @@ class SmsReceiver(
                 val chunks = pendingItems.chunked(50)
                 for (chunk in chunks) {
                     try {
-                        val methodsJson = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsCache(context)
-                        val methodsType = object : com.google.gson.reflect.TypeToken<List<online.paychek.app.data.remote.dto.GatewayMethod>>() {}.type
-                        val cachedMethods: List<online.paychek.app.data.remote.dto.GatewayMethod> = try {
-                            online.paychek.app.utils.GsonUtils.gson.fromJson(methodsJson, methodsType)
-                        } catch (e: Exception) {
-                            emptyList()
-                        }
-
                         val requestItems = chunk.map { item ->
-                            val matchedMethod = cachedMethods.find { it.provider == item.providerTag }
-                            val isParseableVal = matchedMethod?.isParseable ?: 1
+                            // Persist-at-queue-time flag (Room v4+). Do not re-derive from cache
+                            // — empty/stale cache previously defaulted ARCHIVE → 1 → 422.
                             online.paychek.app.data.remote.dto.PaymentIngestRequest(
                                 amount         = 0.0,
                                 trxId          = "",
@@ -123,7 +115,7 @@ class SmsReceiver(
                                 rawBody        = item.rawBody,
                                 simSlot        = item.simSlot,
                                 simNumber      = item.simNumber,
-                                isParseable    = isParseableVal,
+                                isParseable    = item.isParseable,
                                 hmacSignature  = item.hmacSignature,
                                 isOfflineSync  = true
                             )

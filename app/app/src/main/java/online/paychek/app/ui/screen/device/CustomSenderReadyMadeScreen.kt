@@ -152,16 +152,19 @@ class CustomSenderReadyMadeViewModel : ViewModel() {
                     // Keep local routing cache in sync so Guard-1/2 see ALL immediately.
                     val isLocalTarget = targetDeviceId.isNullOrBlank() ||
                         targetDeviceId == localDeviceId
-                    if (isLocalTarget) {
-                        res.body()?.data?.let { methods ->
-                            runCatching {
-                                val json = online.paychek.app.utils.GsonUtils.gson.toJson(methods)
-                                online.paychek.app.data.local.prefs.PrefsHelper
-                                    .setGatewayMethodsCache(context, json)
-                            }
-                        }
+                    val methods = res.body()?.data
+                    var cacheOk = !isLocalTarget
+                    if (isLocalTarget && methods != null) {
+                        cacheOk = runCatching {
+                            val json = online.paychek.app.utils.GsonUtils.gson.toJson(methods)
+                            online.paychek.app.data.local.prefs.PrefsHelper
+                                .setGatewayMethodsCache(context, json)
+                        }.getOrDefault(false)
                     }
-                    _state.update { it.copy(allAlreadyEnabled = true) }
+                    // Only mark enabled when we have methods (or remote — DeviceScreen will refresh).
+                    if (!isLocalTarget || (methods != null && cacheOk)) {
+                        _state.update { it.copy(allAlreadyEnabled = true) }
+                    }
                     onDone()
                 } else {
                     val msg = online.paychek.app.utils.ApiErrorParser.parse(res.errorBody()?.string())
