@@ -58,6 +58,10 @@ class SmsPollWorker(
          * Safe to call multiple times — KEEP policy prevents duplicates।
          */
         fun schedule(context: Context) {
+            if (!PrefsHelper.isSmsServiceActive(context)) {
+                cancel(context)
+                return
+            }
             val workRequest = PeriodicWorkRequestBuilder<SmsPollWorker>(
                 AppConfig.SMS_POLL_WORKER_INTERVAL_MIN, TimeUnit.MINUTES
             )
@@ -80,6 +84,10 @@ class SmsPollWorker(
          * স্ক্রিন বন্ধ/লক হলে বা broadcast miss হলে তৎক্ষণাৎ inbox স্ক্যান।
          */
         fun scheduleImmediate(context: Context) {
+            if (!PrefsHelper.isSmsServiceActive(context)) {
+                cancel(context)
+                return
+            }
             val workRequest = OneTimeWorkRequestBuilder<SmsPollWorker>()
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .build()
@@ -93,16 +101,25 @@ class SmsPollWorker(
         }
 
         /**
-         * Guard-2 WorkManager job cancel করা।
+         * Guard-2 WorkManager job cancel করা (periodic + immediate).
          */
         fun cancel(context: Context) {
-            WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+            val wm = WorkManager.getInstance(context)
+            wm.cancelUniqueWork(WORK_NAME)
+            wm.cancelUniqueWork(WORK_NAME_IMMEDIATE)
             Log.i(TAG, "[Guard-2] SmsPollWorker cancelled")
         }
     }
 
     override suspend fun doWork(): Result {
         Log.i(TAG, "[Guard-2] Poll cycle শুরু")
+
+        // SMS monitor OFF → never ingest via inbox recovery (fail closed on toggle).
+        if (!PrefsHelper.isSmsServiceActive(context)) {
+            Log.i(TAG, "[Guard-2] SMS service inactive — cancelling poll work")
+            cancel(context)
+            return Result.success()
+        }
 
         // ── READ_SMS permission check ──────────────────────────────────────────
         val hasReadSms = ContextCompat.checkSelfPermission(
@@ -151,15 +168,17 @@ class SmsPollWorker(
         val sim2Enabled = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, false)
 
         var processedCount = 0
-
-        // ── Cursor high-water mark ─────────────────────────────────────────────
-        // candidates ASC (_id) ক্রমে। প্রতিটি SMS "durably handled" হলে
-        // committableId এগোয়। প্রথম hard-failure হলে cursorBlocked=true।
-        var committableId = -1L
-        var cursorBlocked = false
+        val cursorTracker = Guard2CursorTracker()
 
         for (candidate in candidates) {
-            var handled = true
+            // User disabled monitoring mid-batch — stop processing/uploading; leave cursor.
+            if (!PrefsHelper.isSmsServiceActive(context)) {
+                Log.i(TAG, "[Guard-2] SMS turned OFF mid-poll — abort remaining candidates")
+                cancel(context)
+                break
+            }
+
+            var outcome = Guard2CursorTracker.Outcome.HANDLED
             try {
                 // SIM slot resolve
                 val simSlot   = SimSlotHelper.resolveSimSlot(context, candidate.subscriptionId)
@@ -218,28 +237,43 @@ class SmsPollWorker(
                                     }
                                 },
                                 onFailure = { e ->
-                                    handled = false
-                                    Log.e(TAG, "[Guard-2] Pipeline error — smsId=${candidate.smsId}: ${e.message}")
+                                    if (e is PermanentSmsQueueException) {
+                                        // Poison input — advance past so later SMS are not stalled forever.
+                                        outcome = Guard2CursorTracker.Outcome.HANDLED
+                                        Log.w(TAG, "[Guard-2] Permanent skip — smsId=${candidate.smsId}: ${e.message}")
+                                    } else {
+                                        // HMAC / unknown — do not advance cursor; remains recoverable.
+                                        outcome = Guard2CursorTracker.Outcome.RETRYABLE_FAILURE
+                                        Log.e(TAG, "[Guard-2] Retryable pipeline error — smsId=${candidate.smsId}: ${e.message}")
+                                    }
                                 }
                             )
                         }
                     }
                 }
             } catch (e: Exception) {
-                handled = false
+                outcome = if (e is PermanentSmsQueueException) {
+                    Guard2CursorTracker.Outcome.HANDLED
+                } else {
+                    Guard2CursorTracker.Outcome.RETRYABLE_FAILURE
+                }
                 Log.e(TAG, "[Guard-2] Candidate processing error — smsId=${candidate.smsId}: ${e.message}", e)
             }
 
-            if (!handled) cursorBlocked = true
-            if (!cursorBlocked) committableId = candidate.smsId
+            cursorTracker.onCandidate(candidate.smsId, outcome)
         }
 
-        // ── Cursor commit ──────────────────────────────────────────────────────
-        if (committableId > 0L) {
-            scanner.commitCursor(committableId)
+        // ── Cursor commit — only contiguous durably-handled prefix ─────────────
+        if (cursorTracker.shouldCommit()) {
+            scanner.commitCursor(cursorTracker.committableId)
         }
 
-        Log.i(TAG, "[Guard-2] Poll complete — ${candidates.size} candidates | $processedCount নতুন queued | cursor→$committableId${if (cursorBlocked) " (blocked, বাকিগুলো পরের poll-এ retry হবে)" else ""}")
+        Log.i(
+            TAG,
+            "[Guard-2] Poll complete — ${candidates.size} candidates | $processedCount নতুন queued | " +
+                "cursor→${cursorTracker.committableId}" +
+                if (cursorTracker.blocked) " (blocked — retryable failure, later poll will retry)" else ""
+        )
         return Result.success()
     }
 

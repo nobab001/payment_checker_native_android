@@ -130,6 +130,8 @@ object SmsServiceGuard {
         WorkManager.getInstance(context).cancelUniqueWork(WATCH_WORK_NAME)
         WorkManager.getInstance(context).cancelUniqueWork(RECOVER_WORK_NAME)
         ServiceKeepAliveScheduler.cancel(context)
+        // Toggle OFF must also stop Guard-2 inbox recovery (periodic + immediate).
+        SmsPollWorker.cancel(context)
     }
 
     fun enqueueImmediateRecovery(context: Context) {

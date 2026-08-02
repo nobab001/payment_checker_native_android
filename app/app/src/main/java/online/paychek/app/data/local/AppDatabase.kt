@@ -29,7 +29,7 @@ import online.paychek.app.data.local.entity.SeenSmsCursorEntity
         PendingSmsEntity::class,
         SeenSmsCursorEntity::class   // v3: Guard-2 ContentProvider polling cursor
     ],
-    version = 3,          // v2 → v3: sms_seen_cursor table for Guard-2 SMS inbox polling
+    version = 4,          // v3 → v4: pending_sms_queue.isParseable persisted for sync
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -116,6 +116,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // ─────────────────────────────────────────────────────────────────
+        // MIGRATION 3 → 4
+        // Changes:
+        //  • pending_sms_queue.isParseable — persist HISTORY(1)/ARCHIVE(0) at queue time
+        // Existing rows default to 1 (legacy HISTORY assumption).
+        // ─────────────────────────────────────────────────────────────────
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE pending_sms_queue ADD COLUMN isParseable INTEGER NOT NULL DEFAULT 1"
+                )
+            }
+        }
+
         /**
          * Thread-safe singleton instance।
          * Context হিসেবে Application context পাস করতে হবে।
@@ -128,7 +142,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "paychek_offline_queue.db"
                 )
                     // ✅ Explicit migrations — data কখনো destroy হবে না
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     // ⛔ fallbackToDestructiveMigration REMOVED — Production-unsafe
                     //    এই line যোগ করলে App Update-এ offline queue মুছে যাবে
                     .build()
