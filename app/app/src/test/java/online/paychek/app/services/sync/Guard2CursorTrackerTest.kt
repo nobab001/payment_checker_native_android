@@ -107,4 +107,92 @@ class Guard2CursorTrackerTest {
         assertTrue(SmsQueueFailureKind.isRetryable(IllegalStateException("HMAC generation failed")))
         assertFalse(SmsQueueFailureKind.isRetryable(PermanentSmsQueueException("rawBody is blank")))
     }
+
+    // ── Explicit production gate scenarios (TEST 1–5) ─────────────────────────
+
+    @Test
+    fun test1_successThenHmacFailThenSuccess_doesNotSkipFailedId() {
+        // SMS #1 success, #2 temporary HMAC failure, #3 success
+        val t = Guard2CursorTracker()
+        t.onCandidate(101L, Guard2CursorTracker.Outcome.HANDLED)
+        t.onCandidate(102L, Guard2CursorTracker.Outcome.RETRYABLE_FAILURE)
+        t.onCandidate(103L, Guard2CursorTracker.Outcome.HANDLED)
+
+        assertEquals(101L, t.committableId)
+        assertTrue(t.blocked)
+        // #2 must remain below commit watermark — not silently skipped
+        assertTrue(t.committableId < 102L)
+    }
+
+    @Test
+    fun test2_temporaryHmacFailure_thenRetrySucceeds_exactlyOnceCursorPath() {
+        val failPoll = Guard2CursorTracker()
+        failPoll.onCandidate(200L, Guard2CursorTracker.Outcome.RETRYABLE_FAILURE)
+        assertFalse(failPoll.shouldCommit())
+
+        // Later poll: same SMS queued once → HANDLED; duplicate on further poll also HANDLED
+        val okPoll = Guard2CursorTracker()
+        okPoll.onCandidate(200L, Guard2CursorTracker.Outcome.HANDLED) // queued
+        okPoll.onCandidate(201L, Guard2CursorTracker.Outcome.HANDLED) // next
+        assertEquals(201L, okPoll.committableId)
+
+        val dupPoll = Guard2CursorTracker()
+        dupPoll.onCandidate(200L, Guard2CursorTracker.Outcome.HANDLED) // Room UNIQUE → duplicate skip
+        assertEquals(200L, dupPoll.committableId)
+        // Server-side single upload: CODE path uses rawBodyHash UNIQUE; runtime E2E BLOCKED here
+    }
+
+    @Test
+    fun test3_permanentInvalid_doesNotPoisonCursorForever() {
+        val t = Guard2CursorTracker()
+        t.onCandidate(301L, Guard2CursorTracker.Outcome.HANDLED) // permanent blank → worker maps to HANDLED
+        t.onCandidate(302L, Guard2CursorTracker.Outcome.HANDLED)
+        t.onCandidate(303L, Guard2CursorTracker.Outcome.HANDLED)
+
+        assertEquals(303L, t.committableId)
+        assertFalse(t.blocked)
+    }
+
+    @Test
+    fun test4_smsOffMidPoll_abortLeavesCursorAtLastHandledOnly() {
+        // Worker breaks the loop on OFF; remaining candidates never call onCandidate.
+        val t = Guard2CursorTracker()
+        t.onCandidate(401L, Guard2CursorTracker.Outcome.HANDLED)
+        t.onCandidate(402L, Guard2CursorTracker.Outcome.HANDLED)
+        // OFF → break (403/404 never observed)
+        assertEquals(402L, t.committableId)
+        assertFalse(t.blocked)
+        assertTrue(t.shouldCommit())
+        // Full PrefsHelper mid-poll instrumented test: BLOCKED without Android runtime
+    }
+
+    @Test
+    fun test5_retryAfterFailure_duplicateIsHandled_noCursorRegression() {
+        // First attempt fails HMAC for 500; later success then duplicate both HANDLED
+        val p1 = Guard2CursorTracker()
+        p1.onCandidate(500L, Guard2CursorTracker.Outcome.RETRYABLE_FAILURE)
+        assertEquals(-1L, p1.committableId)
+
+        val p2 = Guard2CursorTracker()
+        p2.onCandidate(500L, Guard2CursorTracker.Outcome.HANDLED) // first successful queue
+        assertEquals(500L, p2.committableId)
+
+        val p3 = Guard2CursorTracker()
+        p3.onCandidate(500L, Guard2CursorTracker.Outcome.HANDLED) // duplicate skip still HANDLED
+        assertEquals(500L, p3.committableId)
+        assertFalse(p3.blocked)
+        // Exact-once server history/archive: requires runtime ingest — BLOCKED in this JVM suite
+    }
+
+    @Test
+    fun cursorNeverMovesBackwardWithinSinglePoll() {
+        val t = Guard2CursorTracker()
+        t.onCandidate(10L, Guard2CursorTracker.Outcome.HANDLED)
+        t.onCandidate(11L, Guard2CursorTracker.Outcome.HANDLED)
+        val after = t.committableId
+        t.onCandidate(12L, Guard2CursorTracker.Outcome.RETRYABLE_FAILURE)
+        t.onCandidate(13L, Guard2CursorTracker.Outcome.HANDLED)
+        assertEquals(after, t.committableId) // stuck at last contiguous HANDLED prefix
+        assertTrue(t.committableId < 12L)
+    }
 }
