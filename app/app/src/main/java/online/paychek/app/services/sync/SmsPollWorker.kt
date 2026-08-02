@@ -58,6 +58,10 @@ class SmsPollWorker(
          * Safe to call multiple times — KEEP policy prevents duplicates।
          */
         fun schedule(context: Context) {
+            if (!PrefsHelper.isSmsServiceActive(context)) {
+                cancel(context)
+                return
+            }
             val workRequest = PeriodicWorkRequestBuilder<SmsPollWorker>(
                 AppConfig.SMS_POLL_WORKER_INTERVAL_MIN, TimeUnit.MINUTES
             )
@@ -80,6 +84,10 @@ class SmsPollWorker(
          * স্ক্রিন বন্ধ/লক হলে বা broadcast miss হলে তৎক্ষণাৎ inbox স্ক্যান।
          */
         fun scheduleImmediate(context: Context) {
+            if (!PrefsHelper.isSmsServiceActive(context)) {
+                cancel(context)
+                return
+            }
             val workRequest = OneTimeWorkRequestBuilder<SmsPollWorker>()
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .build()
@@ -93,16 +101,25 @@ class SmsPollWorker(
         }
 
         /**
-         * Guard-2 WorkManager job cancel করা।
+         * Guard-2 WorkManager job cancel করা (periodic + immediate).
          */
         fun cancel(context: Context) {
-            WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+            val wm = WorkManager.getInstance(context)
+            wm.cancelUniqueWork(WORK_NAME)
+            wm.cancelUniqueWork(WORK_NAME_IMMEDIATE)
             Log.i(TAG, "[Guard-2] SmsPollWorker cancelled")
         }
     }
 
     override suspend fun doWork(): Result {
         Log.i(TAG, "[Guard-2] Poll cycle শুরু")
+
+        // SMS monitor OFF → never ingest via inbox recovery (fail closed on toggle).
+        if (!PrefsHelper.isSmsServiceActive(context)) {
+            Log.i(TAG, "[Guard-2] SMS service inactive — cancelling poll work")
+            cancel(context)
+            return Result.success()
+        }
 
         // ── READ_SMS permission check ──────────────────────────────────────────
         val hasReadSms = ContextCompat.checkSelfPermission(

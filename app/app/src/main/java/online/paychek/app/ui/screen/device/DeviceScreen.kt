@@ -116,6 +116,10 @@ fun DeviceScreen(
                 viewModel.loadGatewayMethods()
                 viewModel.loadTemplates()
                 viewModel.syncPhysicalSimNumbers()
+                // After SIM [+] ALL save (local or remote), refresh remote methods if open.
+                if (viewModel.state.value.activeRemoteDevice != null) {
+                    viewModel.loadRemoteGatewayData()
+                }
             }
         }
     }
