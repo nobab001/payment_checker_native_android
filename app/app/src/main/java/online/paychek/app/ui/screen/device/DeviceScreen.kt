@@ -113,13 +113,16 @@ fun DeviceScreen(
             if (state == androidx.lifecycle.Lifecycle.State.RESUMED) {
                 isAccessibilityEnabled = online.paychek.app.utils.AccessibilityHelper.isAccessibilityServiceEnabled(context)
                 viewModel.refreshAccountEntitlements()
-                viewModel.loadGatewayMethods()
-                viewModel.loadTemplates()
-                viewModel.syncPhysicalSimNumbers()
-                // After SIM [+] ALL save (local or remote), refresh remote methods if open.
-                if (viewModel.state.value.activeRemoteDevice != null) {
+                val remoteOpen = viewModel.state.value.activeRemoteDevice != null
+                if (remoteOpen) {
+                    // Remote settings open (e.g. after ALL save) — refresh remote gateway once.
+                    // Skip duplicate local methods/templates fetch on this resume path.
                     viewModel.loadRemoteGatewayData()
+                } else {
+                    viewModel.loadGatewayMethods()
+                    viewModel.loadTemplates()
                 }
+                viewModel.syncPhysicalSimNumbers()
             }
         }
     }

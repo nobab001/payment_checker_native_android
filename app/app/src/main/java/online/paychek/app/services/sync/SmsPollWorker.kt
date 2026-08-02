@@ -168,15 +168,17 @@ class SmsPollWorker(
         val sim2Enabled = prefs.getBoolean(AppConfig.KEY_SIM2_ENABLED, false)
 
         var processedCount = 0
-
-        // ── Cursor high-water mark ─────────────────────────────────────────────
-        // candidates ASC (_id) ক্রমে। প্রতিটি SMS "durably handled" হলে
-        // committableId এগোয়। প্রথম hard-failure হলে cursorBlocked=true।
-        var committableId = -1L
-        var cursorBlocked = false
+        val cursorTracker = Guard2CursorTracker()
 
         for (candidate in candidates) {
-            var handled = true
+            // User disabled monitoring mid-batch — stop processing/uploading; leave cursor.
+            if (!PrefsHelper.isSmsServiceActive(context)) {
+                Log.i(TAG, "[Guard-2] SMS turned OFF mid-poll — abort remaining candidates")
+                cancel(context)
+                break
+            }
+
+            var outcome = Guard2CursorTracker.Outcome.HANDLED
             try {
                 // SIM slot resolve
                 val simSlot   = SimSlotHelper.resolveSimSlot(context, candidate.subscriptionId)
@@ -235,28 +237,43 @@ class SmsPollWorker(
                                     }
                                 },
                                 onFailure = { e ->
-                                    handled = false
-                                    Log.e(TAG, "[Guard-2] Pipeline error — smsId=${candidate.smsId}: ${e.message}")
+                                    if (e is PermanentSmsQueueException) {
+                                        // Poison input — advance past so later SMS are not stalled forever.
+                                        outcome = Guard2CursorTracker.Outcome.HANDLED
+                                        Log.w(TAG, "[Guard-2] Permanent skip — smsId=${candidate.smsId}: ${e.message}")
+                                    } else {
+                                        // HMAC / unknown — do not advance cursor; remains recoverable.
+                                        outcome = Guard2CursorTracker.Outcome.RETRYABLE_FAILURE
+                                        Log.e(TAG, "[Guard-2] Retryable pipeline error — smsId=${candidate.smsId}: ${e.message}")
+                                    }
                                 }
                             )
                         }
                     }
                 }
             } catch (e: Exception) {
-                handled = false
+                outcome = if (e is PermanentSmsQueueException) {
+                    Guard2CursorTracker.Outcome.HANDLED
+                } else {
+                    Guard2CursorTracker.Outcome.RETRYABLE_FAILURE
+                }
                 Log.e(TAG, "[Guard-2] Candidate processing error — smsId=${candidate.smsId}: ${e.message}", e)
             }
 
-            if (!handled) cursorBlocked = true
-            if (!cursorBlocked) committableId = candidate.smsId
+            cursorTracker.onCandidate(candidate.smsId, outcome)
         }
 
-        // ── Cursor commit ──────────────────────────────────────────────────────
-        if (committableId > 0L) {
-            scanner.commitCursor(committableId)
+        // ── Cursor commit — only contiguous durably-handled prefix ─────────────
+        if (cursorTracker.shouldCommit()) {
+            scanner.commitCursor(cursorTracker.committableId)
         }
 
-        Log.i(TAG, "[Guard-2] Poll complete — ${candidates.size} candidates | $processedCount নতুন queued | cursor→$committableId${if (cursorBlocked) " (blocked, বাকিগুলো পরের poll-এ retry হবে)" else ""}")
+        Log.i(
+            TAG,
+            "[Guard-2] Poll complete — ${candidates.size} candidates | $processedCount নতুন queued | " +
+                "cursor→${cursorTracker.committableId}" +
+                if (cursorTracker.blocked) " (blocked — retryable failure, later poll will retry)" else ""
+        )
         return Result.success()
     }
 

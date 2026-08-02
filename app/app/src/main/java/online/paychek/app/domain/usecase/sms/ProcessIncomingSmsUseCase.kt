@@ -10,6 +10,8 @@ import online.paychek.app.utils.HmacHelper
 import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.utils.SmsParser
 import online.paychek.app.config.AppConfig
+import online.paychek.app.services.sync.PermanentSmsQueueException
+import online.paychek.app.services.sync.RetryableSmsQueueException
 import online.paychek.app.utils.SmsSecuritySpec
 
 /**
@@ -51,7 +53,8 @@ class ProcessIncomingSmsUseCase(private val context: Context) {
         if (!SmsSecuritySpec.isRawBodyValid(payment.rawBody)) {
             val msg = "rawBody is blank — aborting to prevent hash mismatch"
             Log.e(TAG, "[Guard] $msg")
-            return Result.failure(IllegalArgumentException(msg))
+            // Permanent: advancing Guard-2 past poison blank bodies is safe.
+            return Result.failure(PermanentSmsQueueException(msg))
         }
 
         return try {
@@ -60,13 +63,14 @@ class ProcessIncomingSmsUseCase(private val context: Context) {
             if (!HmacHelper.isKeyValid(secretKey)) {
                 val msg = "HMAC secret missing/invalid — refusing to queue SMS"
                 Log.e(TAG, "[HMAC] $msg")
-                return Result.failure(IllegalStateException(msg))
+                // Retryable: do not advance Guard-2 cursor — SMS must remain recoverable.
+                return Result.failure(RetryableSmsQueueException(msg))
             }
             val hmac = HmacHelper.generate(payment.rawBody, secretKey)
             if (hmac.isNullOrBlank()) {
                 val msg = "HMAC generation failed — refusing to queue SMS"
                 Log.e(TAG, "[HMAC] $msg")
-                return Result.failure(IllegalStateException(msg))
+                return Result.failure(RetryableSmsQueueException(msg))
             }
 
             // 3. SHA-256 rawBodyHash (SmsSecuritySpec Section 3) — never log raw body
