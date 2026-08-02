@@ -209,6 +209,11 @@ class MainActivity : FragmentActivity() {
         }
         if (SessionFlags.hasAuth(this) && SessionFlags.isProfileComplete(this)) {
             online.paychek.app.services.foreground.SmsServiceGuard.healIfNeeded(this)
+            // Guard-2: recover SMS that arrived while process was dead (inbox ContentProvider).
+            if (online.paychek.app.data.local.prefs.PrefsHelper.isSmsServiceActive(this)) {
+                online.paychek.app.services.sync.SmsPollWorker.scheduleImmediate(this)
+                online.paychek.app.services.sync.SmsPollWorker.schedule(this)
+            }
             healDeviceConfigCache()
             refreshMaintenanceGate()
         }

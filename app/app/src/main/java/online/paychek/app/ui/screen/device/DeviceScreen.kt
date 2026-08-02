@@ -2312,7 +2312,10 @@ private fun SimCard(
                 // Render archive/custom senders on this device (is_parseable = 0)
                 methods.filter { it.simSlot == simSlot && (it.isParseable ?: 1) == 0 }.forEach { method ->
                     val isSelected = method.isEnabled == 1
-                    val displayName = method.senderId ?: method.provider.removePrefix("Custom-")
+                    val displayName = when {
+                        online.paychek.app.services.sms.SmsRoutingEngine.isAllSenderPolicy(method) -> "ALL"
+                        else -> method.senderId ?: method.provider.removePrefix("Custom-")
+                    }
 
                     TemplateChip(
                         name = displayName,

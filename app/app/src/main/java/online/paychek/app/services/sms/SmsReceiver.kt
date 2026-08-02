@@ -306,6 +306,10 @@ class SmsReceiver(
 
     private suspend fun saveToOfflineQueueAndForward(context: Context, payment: SmsParser.ParsedPayment) {
         onPaymentSmsReceived?.invoke(payment)
+        // FGS may listen for notification status text only (ingest does not require FGS).
+        try {
+            online.paychek.app.services.foreground.SmsMonitorService.paymentStatusListener?.invoke(payment)
+        } catch (_: Exception) { }
         val result = ProcessIncomingSmsUseCase(context).execute(payment)
         result.onFailure { e ->
             Log.e(TAG, "[Queue] Pipeline failed for TrxID ${payment.trxId}: ${e.message}")

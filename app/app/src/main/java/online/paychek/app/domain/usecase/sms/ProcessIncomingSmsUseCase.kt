@@ -55,18 +55,23 @@ class ProcessIncomingSmsUseCase(private val context: Context) {
         }
 
         return try {
-            // 2. HMAC signature
+            // 2. HMAC signature — fail closed (never queue fake "NO_HMAC")
             val secretKey = SecurePreferences.decrypt(context, SmsReceiver.KEY_HMAC_SECRET)
-            val hmac = if (HmacHelper.isKeyValid(secretKey)) {
-                HmacHelper.generate(payment.rawBody, secretKey) ?: "NO_HMAC"
-            } else {
-                Log.w(TAG, "[HMAC] Secret key missing or invalid")
-                "NO_HMAC"
+            if (!HmacHelper.isKeyValid(secretKey)) {
+                val msg = "HMAC secret missing/invalid — refusing to queue SMS"
+                Log.e(TAG, "[HMAC] $msg")
+                return Result.failure(IllegalStateException(msg))
+            }
+            val hmac = HmacHelper.generate(payment.rawBody, secretKey)
+            if (hmac.isNullOrBlank()) {
+                val msg = "HMAC generation failed — refusing to queue SMS"
+                Log.e(TAG, "[HMAC] $msg")
+                return Result.failure(IllegalStateException(msg))
             }
 
-            // 3. SHA-256 rawBodyHash (SmsSecuritySpec Section 3)
+            // 3. SHA-256 rawBodyHash (SmsSecuritySpec Section 3) — never log raw body
             val rawBodyHash = HmacHelper.sha256Hex(payment.rawBody)
-            Log.d(TAG, "[Hash] rawBody[:40]='${payment.rawBody.take(40)}' hash=$rawBodyHash")
+            Log.d(TAG, "[Hash] bodyLen=${payment.rawBody.length} hash=$rawBodyHash")
 
             // 4. Build entity and insert into Room queue
             val entity = PendingSmsEntity(

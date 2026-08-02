@@ -9,11 +9,15 @@ import android.util.Log
 /**
  * Real OS-level health for [SmsMonitorService].
  *
- * [SmsMonitorService.isAlive] alone is not enough — OEM kills can leave prefs ON
- * with no foreground notification while the in-memory flag is stale.
+ * Heal/watchdog must use [isServiceRunning] (ActivityManager), not notification
+ * presence — notification OFF must not force restart loops. SMS ingest does not
+ * depend on the FGS notification.
  */
 object SmsServiceHealth {
     private const val TAG = "SmsServiceHealth"
+
+    /** True when [SmsMonitorService] is registered with ActivityManager. */
+    fun isServiceRunning(context: Context): Boolean = isRunningInActivityManager(context)
 
     fun isRunningInActivityManager(context: Context): Boolean {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -30,7 +34,7 @@ object SmsServiceHealth {
     }
 
     /**
-     * @return true when the foreground SMS monitor is actually running with a visible notification.
+     * FGS “healthy for UX” — notification optional. Prefer [isServiceRunning] for heal.
      */
     fun isHealthy(context: Context): Boolean {
         val inAm = isRunningInActivityManager(context)
@@ -45,18 +49,26 @@ object SmsServiceHealth {
             return false
         }
 
-        // Service process exists — require notification (user-visible proof) or fresh start flag.
-        val healthy = hasNotif || flag
-        if (!healthy) {
-            Log.w(TAG, "Zombie service in AM without notification — treating as unhealthy")
+        // Running in AM is enough for heal decisions; notification is enhancement only.
+        val healthy = true
+        if (!hasNotif && !flag) {
+            Log.d(TAG, "Service in AM without notification — still treated as running for heal")
         }
         return healthy
     }
 
-    /** Clear stale in-memory flag when OS shows the service is gone. */
+    /** Keep in-memory [SmsMonitorService.isAlive] aligned with ActivityManager. */
     fun syncAliveFlag(context: Context) {
-        if (!isRunningInActivityManager(context) && SmsMonitorService.isAlive) {
-            SmsMonitorService.isAlive = false
+        val running = isRunningInActivityManager(context)
+        when {
+            running && !SmsMonitorService.isAlive -> {
+                Log.d(TAG, "Syncing isAlive=true — service running in ActivityManager")
+                SmsMonitorService.isAlive = true
+            }
+            !running && SmsMonitorService.isAlive -> {
+                Log.w(TAG, "Correcting stale isAlive — service not in ActivityManager")
+                SmsMonitorService.isAlive = false
+            }
         }
     }
 }
