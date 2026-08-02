@@ -11,7 +11,6 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.provider.Telephony
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
@@ -56,7 +55,6 @@ class SmsMonitorService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var wakeLock: PowerManager.WakeLock? = null
     private var wakeLockRenewJob: Job? = null
-    private var smsReceiver: SmsReceiver? = null
     private var screenReceiver: BroadcastReceiver? = null
     private var socket: Socket? = null
     @Volatile private var socketListenersRegistered = false
@@ -76,6 +74,13 @@ class SmsMonitorService : Service() {
         /** Set when user explicitly toggles OFF — blocks auto-restart in onDestroy. */
         @Volatile
         var userInitiatedStop: Boolean = false
+
+        /**
+         * Optional FGS notification status callback.
+         * Manifest [SmsReceiver] is the sole SMS ingest path — this is display-only.
+         */
+        @Volatile
+        var paymentStatusListener: ((SmsParser.ParsedPayment) -> Unit)? = null
 
         const val NOTIFICATION_ID   = 991
         const val CHANNEL_ID        = "sms_monitor_channel"
@@ -104,6 +109,7 @@ class SmsMonitorService : Service() {
         if (action == ACTION_STOP) {
             userInitiatedStop = true
             isAlive = false
+            paymentStatusListener = null
             stopMonitoring()
             return START_NOT_STICKY
         }
@@ -123,11 +129,16 @@ class SmsMonitorService : Service() {
             startForeground(NOTIFICATION_ID, buildNotification())
         }
 
-        // Lightweight sync work on main; heavy recovery off the service thread
-        registerSmsReceiver()
+        // Manifest SmsReceiver is the sole SMS ingest path (no dynamic register).
+        paymentStatusListener = { parsedPayment ->
+            lastPaymentTime = formatTime(parsedPayment.smsTimestamp)
+            updateNotification("✅ সর্বশেষ: ${parsedPayment.providerTag} ${parsedPayment.amount}৳ — $lastPaymentTime")
+        }
         registerScreenReceiver()
         acquireWakeLock()
         startWakeLockRenewal()
+        // Missed-SMS recovery when FGS starts after process death.
+        SmsPollWorker.scheduleImmediate(this)
 
         serviceScope.launch {
             startOfflineRecovery()
@@ -146,31 +157,6 @@ class SmsMonitorService : Service() {
         }
 
         return START_STICKY // সিস্টেম kill করলে নিজে পুনরায় চালু হবে
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // SMS BroadcastReceiver রেজিস্ট্রেশন
-    // ─────────────────────────────────────────────────────────────────────────
-    private fun registerSmsReceiver() {
-        if (smsReceiver != null) return // ইতিমধ্যে রেজিস্টার্ড
-
-        smsReceiver = SmsReceiver { parsedPayment ->
-            // SMS রিসিভ হলে শুধু নোটিফিকেশন আপডেট হবে, সিঙ্ক লজিক ProcessIncomingSmsUseCase হ্যান্ডেল করবে
-            lastPaymentTime = formatTime(parsedPayment.smsTimestamp)
-            updateNotification("✅ সর্বশেষ: ${parsedPayment.providerTag} ${parsedPayment.amount}৳ — $lastPaymentTime")
-        }
-
-        val filter = IntentFilter(Telephony.Sms.Intents.SMS_RECEIVED_ACTION).apply {
-            priority = 999
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(smsReceiver, filter, RECEIVER_EXPORTED)
-        } else {
-            @Suppress("UnspecifiedRegisterReceiverFlag")
-            registerReceiver(smsReceiver, filter)
-        }
-        Log.d(TAG, "SmsReceiver dynamically registered ✅")
     }
 
     /**
@@ -301,18 +287,6 @@ class SmsMonitorService : Service() {
             PingEngine.start(this)
             ServerProbeWorker.scheduleSoon(this)
         }
-    }
-
-    private fun unregisterSmsReceiver() {
-        smsReceiver?.let {
-            try {
-                unregisterReceiver(it)
-                Log.d(TAG, "SmsReceiver unregistered")
-            } catch (e: Exception) {
-                Log.w(TAG, "Unregister failed (already removed?): ${e.message}")
-            }
-        }
-        smsReceiver = null
     }
 
     private fun getUserIdFromToken(token: String): String? {
@@ -650,11 +624,11 @@ class SmsMonitorService : Service() {
         super.onDestroy()
         Log.i(TAG, "Foreground service onDestroy")
         isAlive = false
+        paymentStatusListener = null
         NumberHeartbeatEngine.stop()
         wakeLockRenewJob?.cancel()
         wakeLockRenewJob = null
         releaseWakeLock()
-        unregisterSmsReceiver()
         unregisterScreenReceiver()
         connectivityJob?.cancel()
         connectivityJob = null

@@ -9,7 +9,7 @@ import online.paychek.app.services.foreground.SmsServiceGuard
 
 /**
  * Background watchdog — if user left SMS service ON but OEM killed the foreground service,
- * attempt restart and keep Guard-2 inbox polling scheduled.
+ * start it (check-only) and keep Guard-2 inbox polling scheduled.
  */
 class SmsServiceWatchWorker(
     context: Context,
@@ -23,17 +23,15 @@ class SmsServiceWatchWorker(
             return Result.success()
         }
 
-        if (!SmsServiceGuard.isServiceHealthy(app)) {
-            Log.w(TAG, "SMS service dead while prefs ON — attempting restart")
-            SmsServiceGuard.healIfNeeded(app)
-        } else {
+        if (SmsServiceGuard.isServiceRunning(app)) {
             SmsServiceGuard.scheduleWatchdog(app)
+            SmsPollWorker.scheduleImmediate(app)
+        } else {
+            Log.w(TAG, "SMS service not running while prefs ON — starting")
+            SmsServiceGuard.healIfNeeded(app)
         }
         SmsPollWorker.schedule(app)
 
-        // Doze-safe presence backstop: keep the device's numbers ONLINE even if the
-        // in-service heartbeat loop was suspended while idle. Runs inside the worker
-        // coroutine so the POST completes before the job ends.
         try {
             NumberHeartbeatEngine.sendHeartbeatBlocking(app)
         } catch (e: Exception) {

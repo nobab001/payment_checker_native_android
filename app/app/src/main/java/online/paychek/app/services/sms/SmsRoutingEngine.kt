@@ -48,6 +48,16 @@ object SmsRoutingEngine {
 
     private const val TAG = "SmsRoutingEngine"
 
+    /** Per-SIM archive policy: accept any sender → isParseable=0 (does not bypass SIM/HMAC/dedupe). */
+    const val ALL_SENDER_ID = "*"
+
+    fun isAllSenderPolicy(method: GatewayMethod): Boolean {
+        val sid = (method.senderId?.takeIf { it.isNotBlank() } ?: method.provider)
+            .trim()
+            .lowercase(Locale.US)
+        return sid == ALL_SENDER_ID || sid == "all"
+    }
+
     // =========================================================================
     // Regex Pattern Cache — প্রতি SMS-এ compile না করে cache থেকে নেওয়া হয়।
     // ConcurrentHashMap — multiple threads (Guard-1 / Guard-2) safe।
@@ -161,7 +171,8 @@ object SmsRoutingEngine {
         simSlot: Int?,
         cachedMethods: List<GatewayMethod>
     ): List<GatewayMethod> {
-        return cachedMethods.filter { method ->
+        val exact = cachedMethods.filter { method ->
+            if (isAllSenderPolicy(method)) return@filter false
             val isArchive = (method.isParseable ?: 1) == 0
 
             // Step 1: Method enabled + SIM slot match
@@ -196,6 +207,17 @@ object SmsRoutingEngine {
                     .any { keyword -> body.contains(keyword, ignoreCase = true) }
             )
         }
+
+        // Per-SIM ALL archive policy → ARCHIVE candidate for any sender on this slot.
+        // HISTORY (body match) still wins in resolveRoute when exact parseable candidates exist.
+        val allPolicy = cachedMethods.filter { method ->
+            method.isEnabled == 1 &&
+            (method.isParseable ?: 1) == 0 &&
+            (simSlot == null || method.simSlot == simSlot) &&
+            isAllSenderPolicy(method)
+        }
+
+        return (exact + allPolicy).distinctBy { it.id }
     }
 
     // =========================================================================

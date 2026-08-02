@@ -75,6 +75,7 @@ class BootReceiver : BroadcastReceiver() {
             SmsServiceGuard.scheduleWatchdog(context)
             Log.i(TAG, "SMS Monitor Service started on boot (BOOT_COMPLETED heartbeat scheduled)")
             SmsPollWorker.schedule(context.applicationContext)
+            SmsPollWorker.scheduleImmediate(context.applicationContext)
         } catch (e: Exception) {
             Log.e(TAG, "Boot service start failed: ${e.message}")
         }
