@@ -914,14 +914,6 @@ fun HomeScreen(
                     HomeTab.DEVICE -> DeviceScreen(
                         onNavigateBack = { selectTab(HomeTab.HOME) },
                         onNavigateToSubscription = { tab -> onNavigate(AppNavKey.SubscriptionPackages(tab)) },
-                        onNavigateToCustomSenderReadyMade = { simSlot, targetDeviceId ->
-                            onNavigate(
-                                AppNavKey.CustomSenderReadyMade(
-                                    simSlot = simSlot,
-                                    targetDeviceId = targetDeviceId.orEmpty()
-                                )
-                            )
-                        },
                         externalRefreshTick = approvalPollTick,
                         modifier = Modifier.fillMaxSize()
                     )

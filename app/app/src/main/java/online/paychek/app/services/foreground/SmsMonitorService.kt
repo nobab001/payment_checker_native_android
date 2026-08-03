@@ -482,6 +482,10 @@ class SmsMonitorService : Service() {
                                 body?.dataVersion?.takeIf { it > 0 }?.let {
                                     online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsLastSync(this@SmsMonitorService, it)
                                 }
+                                body?.globalBlockedSenders?.let { blocked ->
+                                    online.paychek.app.data.local.prefs.PrefsHelper
+                                        .setGlobalBlockedSenders(this@SmsMonitorService, blocked)
+                                }
                                 body?.data?.let { methods ->
                                     val jsonStr = online.paychek.app.utils.GsonUtils.gson.toJson(methods)
                                     online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(this@SmsMonitorService, jsonStr)

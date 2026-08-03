@@ -48,6 +48,17 @@ interface AdminApiService {
         @Path("id") id: Int
     ): Response<AdminGenericResponse>
 
+    @GET("admin/global-blocked-senders")
+    suspend fun getGlobalBlockedSenders(
+        @Header("Authorization") token: String
+    ): Response<GlobalBlockedSendersResponse>
+
+    @PUT("admin/global-blocked-senders")
+    suspend fun saveGlobalBlockedSenders(
+        @Header("Authorization") token: String,
+        @Body request: SaveGlobalBlockedSendersRequest
+    ): Response<GlobalBlockedSendersResponse>
+
     // 3. Checkout View Templates
     @GET("admin/checkout-templates")
     suspend fun getCheckoutTemplates(

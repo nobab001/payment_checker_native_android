@@ -29,12 +29,14 @@ import online.paychek.app.ui.screen.device.RemoteLockScreen
 import online.paychek.app.ui.screen.maintenance.MaintenanceScreen
 import online.paychek.app.ui.theme.AppTheme
 import online.paychek.app.utils.SessionFlags
+import online.paychek.app.utils.SessionLockPolicy
 
 /**
  * Cold-start optimized:
  *  - No Keystore decrypt / RootBeer on the main thread before first frame
  *  - Session lock uses plain [SessionFlags] (instant after reboot)
  *  - Root check runs after UI is shown
+ *  - Cold start and background resume share the same 5-minute [SessionLockPolicy]
  */
 class MainActivity : FragmentActivity() {
     private var isAppLocked by mutableStateOf(false)
@@ -60,10 +62,9 @@ class MainActivity : FragmentActivity() {
         sharedPrefs.registerOnSharedPreferenceChangeListener(prefListener)
         isAppDeactivated = !sharedPrefs.getBoolean("pcu_is_app_active", true)
 
-        // Fast path — plain prefs only (no Android Keystore)
-        if (SessionFlags.hasAuth(this) && SessionFlags.isProfileComplete(this)) {
-            isAppLocked = true
-        }
+        // Fast path — plain prefs only (no Android Keystore).
+        // Same 5-minute rule as background resume (not always-lock on cold start).
+        isAppLocked = shouldLockForCurrentSession(skipWasStoppedCheck = true)
 
         consumeBillingSuccessIntent(intent)
 
@@ -184,16 +185,27 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    override fun onStart() {
-        val wasRequesting = isRequestingPermission || isWithinSystemSettingsHandoff(this)
-        super.onStart()
-
-        val sharedPrefs = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
-        val lastBackgroundTime = sharedPrefs.getLong("last_background_time", 0)
-        val timePassedMs = System.currentTimeMillis() - lastBackgroundTime
-
+    /**
+     * Whether the security gate should show for the current authenticated session.
+     * @param skipWasStoppedCheck true for cold start (process recreate); false for resume
+     *        where we only re-lock after a real onStop → onStart cycle.
+     */
+    private fun shouldLockForCurrentSession(skipWasStoppedCheck: Boolean): Boolean {
+        if (!skipWasStoppedCheck && !wasStopped) return false
+        val skipHandoff = isRequestingPermission || isWithinSystemSettingsHandoff(this)
         val hasSession = SessionFlags.hasAuth(this) && SessionFlags.isProfileComplete(this)
-        if (hasSession && wasStopped && !wasRequesting && timePassedMs > 300000) {
+        val lastBackgroundTime = getSharedPreferences(AppConfig.PREF_NAME, Context.MODE_PRIVATE)
+            .getLong("last_background_time", 0L)
+        return SessionLockPolicy.shouldLock(
+            hasAuthSession = hasSession,
+            lastBackgroundTimeMs = lastBackgroundTime,
+            skipForSystemHandoff = skipHandoff,
+        )
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (shouldLockForCurrentSession(skipWasStoppedCheck = false)) {
             isAppLocked = true
         }
         wasStopped = false

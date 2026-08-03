@@ -42,6 +42,17 @@ data class SmsTemplatesResponse(
     @SerializedName("unchanged") val unchanged: Boolean? = false
 )
 
+data class GlobalBlockedSendersResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("senders") val senders: List<String>? = null,
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("error") val error: String? = null
+)
+
+data class SaveGlobalBlockedSendersRequest(
+    @SerializedName("senders") val senders: List<String>
+)
+
 data class SmsTemplateReorderItem(
     @SerializedName("id") val id: Int,
     @SerializedName("display_order") val displayOrder: Int

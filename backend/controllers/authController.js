@@ -2185,12 +2185,23 @@ async function getChildDevices(req, res) {
        ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, created_at DESC`,
       [userId]
     );
-    const data = devices.map((d) => ({
-      ...d,
-      custom_device_name: d.custom_device_name || d.device_name || '',
-      is_current: d.device_id === currentDeviceId ? 1 : 0,
-      has_device_pin: d.device_specific_pin ? 1 : 0,
-    }));
+    const numberHealth = require('../services/numberHealthService');
+    const data = [];
+    for (const d of devices) {
+      const health = await numberHealth.getDeviceStateForDisplay(
+        userId,
+        d.device_id,
+        d.last_seen_at,
+      );
+      data.push({
+        ...d,
+        custom_device_name: d.custom_device_name || d.device_name || '',
+        is_current: d.device_id === currentDeviceId ? 1 : 0,
+        has_device_pin: d.device_specific_pin ? 1 : 0,
+        health_state: health.state,
+        health_last_seen_ms: health.lastSeenMs || null,
+      });
+    }
     return res.json({ success: true, data });
   } catch (error) {
     console.error('Error fetching child devices:', error);

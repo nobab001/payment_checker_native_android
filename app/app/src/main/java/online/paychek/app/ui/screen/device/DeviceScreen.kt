@@ -99,7 +99,6 @@ private fun providerEmoji(tag: String): String = when (tag.lowercase()) {
 fun DeviceScreen(
     onNavigateBack: (() -> Unit)? = null,
     onNavigateToSubscription: (Int) -> Unit = {},
-    onNavigateToCustomSenderReadyMade: (simSlot: Int, targetDeviceId: String?) -> Unit = { _, _ -> },
     externalRefreshTick: Int = 0,
     modifier: Modifier = Modifier,
     viewModel: DeviceViewModel = viewModel()
@@ -151,14 +150,10 @@ fun DeviceScreen(
     val sheetState  = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val accountNumbersSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    var showAddSenderDialog by remember { mutableStateOf(false) }
+    var showAllBlockDialog by remember { mutableStateOf(false) }
     var activeSimSlotForCustomSender by remember { mutableStateOf(1) }
-    var showRemoteAddSenderDialog by remember { mutableStateOf(false) }
-    var remoteActiveSimSlotForCustomSender by remember { mutableStateOf(1) }
+    var allBlockTargetDeviceId by remember { mutableStateOf<String?>(null) }
     var remoteMethodToDelete by remember { mutableStateOf<GatewayMethod?>(null) }
-    var customSenderInput by remember { mutableStateOf("") }
-    var selectedOfficialTemplateId by remember { mutableStateOf<Int?>(null) }
-    var forcePersonalSender by remember { mutableStateOf(false) }
     var methodToDelete by remember { mutableStateOf<GatewayMethod?>(null) }
 
     val prefs = remember(context) {
@@ -332,10 +327,9 @@ fun DeviceScreen(
                     onBack = { viewModel.closeRemoteDeviceSettings() },
                     onRemoteAddSender = { slot ->
                         viewModel.onAddCustomSenderClick(slot) { allowedSlot ->
-                            onNavigateToCustomSenderReadyMade(
-                                allowedSlot,
-                                remoteDevice.deviceId
-                            )
+                            activeSimSlotForCustomSender = allowedSlot
+                            allBlockTargetDeviceId = remoteDevice.deviceId
+                            showAllBlockDialog = true
                         }
                     },
                     onRemoteDeleteSender = { remoteMethodToDelete = it }
@@ -429,7 +423,9 @@ fun DeviceScreen(
                             onToggleTemplate = { viewModel.toggleTemplate(1, it) },
                             onAddCustomSenderClick = { slot ->
                                 viewModel.onAddCustomSenderClick(slot) { allowedSlot ->
-                                    onNavigateToCustomSenderReadyMade(allowedSlot, null)
+                                    activeSimSlotForCustomSender = allowedSlot
+                                    allBlockTargetDeviceId = null
+                                    showAllBlockDialog = true
                                 }
                             },
                             onDeleteCustomSenderClick = { method ->
@@ -452,7 +448,9 @@ fun DeviceScreen(
                             onToggleTemplate = { viewModel.toggleTemplate(2, it) },
                             onAddCustomSenderClick = { slot ->
                                 viewModel.onAddCustomSenderClick(slot) { allowedSlot ->
-                                    onNavigateToCustomSenderReadyMade(allowedSlot, null)
+                                    activeSimSlotForCustomSender = allowedSlot
+                                    allBlockTargetDeviceId = null
+                                    showAllBlockDialog = true
                                 }
                             },
                             onDeleteCustomSenderClick = { method ->
@@ -772,333 +770,19 @@ fun DeviceScreen(
             }
         }
 
-        // Add Custom Sender Dialog
-        if (showAddSenderDialog) {
-            Dialog(
-                onDismissRequest = {
-                    showAddSenderDialog = false
-                    customSenderInput = ""
-                    selectedOfficialTemplateId = null
-                    forcePersonalSender = false
-                    viewModel.clearDialogErrorMessage()
-                },
-                properties = DialogProperties(usePlatformDefaultWidth = true)
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = GwCard,
-                    border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
-                    tonalElevation = 8.dp,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .wrapContentHeight()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(AccentCyan.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Add",
-                                tint = AccentCyan,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                        Text(
-                            text = "কাস্টম সেন্ডার আইডি যোগ করুন",
-                            fontWeight = FontWeight.Bold,
-                            color = TextWhite,
-                            fontSize = 18.sp
-                        )
-                        Text(
-                            text = "SIM $activeSimSlotForCustomSender এর জন্য একটি কাস্টম সেন্ডার নাম (যেমন: GP, BL) লিখুন।",
-                            color = TextMuted,
-                            fontSize = 13.sp,
-                            textAlign = TextAlign.Center,
-                            lineHeight = 18.sp
-                        )
-
-                        OutlinedTextField(
-                            value = customSenderInput,
-                            onValueChange = {
-                                customSenderInput = it
-                                selectedOfficialTemplateId = null
-                                forcePersonalSender = false
-                            },
-                            label = { Text("সেন্ডার আইডি (যেমন: GP-ALERT)", color = TextMuted) },
-                            singleLine = true,
-                            enabled = !state.isSaving,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = AccentCyan,
-                                unfocusedBorderColor = ToggleOff,
-                                focusedTextColor = TextWhite,
-                                unfocusedTextColor = TextWhite
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        val archiveSuggestions = remember(customSenderInput, state.templates) {
-                            val q = customSenderInput.trim()
-                            if (q.length < 2) emptyList()
-                            else state.templates.filter {
-                                it.isOfficial == 1 && it.isParseable == 0 &&
-                                    (it.senderId.contains(q, ignoreCase = true) ||
-                                        it.templateName.contains(q, ignoreCase = true))
-                            }.take(5)
-                        }
-
-                        if (archiveSuggestions.isNotEmpty()) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text(
-                                    text = "এডমিন আর্কাইভ সাজেশন",
-                                    color = TextMuted,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                archiveSuggestions.forEach { suggestion ->
-                                    val selected = selectedOfficialTemplateId == suggestion.id
-                                    Surface(
-                                        onClick = {
-                                            selectedOfficialTemplateId = suggestion.id
-                                            customSenderInput = suggestion.senderId
-                                            forcePersonalSender = false
-                                        },
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = if (selected) AccentCyan.copy(alpha = 0.15f) else GwBg,
-                                        border = BorderStroke(
-                                            1.dp,
-                                            if (selected) AccentCyan else TextMuted.copy(alpha = 0.25f)
-                                        ),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            if (selected) {
-                                                Icon(
-                                                    Icons.Default.Check,
-                                                    contentDescription = null,
-                                                    tint = AccentCyan,
-                                                    modifier = Modifier.size(14.dp)
-                                                )
-                                            }
-                                            Column {
-                                                Text(
-                                                    text = suggestion.senderId,
-                                                    color = TextWhite,
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                                Text(
-                                                    text = suggestion.templateName,
-                                                    color = TextMuted,
-                                                    fontSize = 10.sp
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                                if (archiveSuggestions.any { it.senderId.equals(customSenderInput.trim(), ignoreCase = true) }) {
-                                    TextButton(
-                                        onClick = {
-                                            selectedOfficialTemplateId = null
-                                            forcePersonalSender = true
-                                        },
-                                        contentPadding = PaddingValues(0.dp)
-                                    ) {
-                                        Text(
-                                            text = "নিজের নামে আলাদা যোগ করুন",
-                                            color = AccentCyan,
-                                            fontSize = 11.sp
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        state.dialogErrorMessage?.let { errMsg ->
-                            Text(
-                                text = errMsg,
-                                color = Color(0xFFEF4444),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                textAlign = TextAlign.Start,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
-                            )
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = {
-                                    showAddSenderDialog = false
-                                    customSenderInput = ""
-                                    selectedOfficialTemplateId = null
-                                    viewModel.clearDialogErrorMessage()
-                                },
-                                enabled = !state.isSaving,
-                                modifier = Modifier.weight(1f).fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMuted),
-                                contentPadding = PaddingValues(vertical = 12.dp, horizontal = 8.dp)
-                            ) {
-                                Text("বাতিল")
-                            }
-                            Button(
-                                onClick = {
-                                    if (customSenderInput.trim().isNotEmpty()) {
-                                        val createPersonal = forcePersonalSender
-                                        viewModel.addCustomSender(
-                                            simSlot = activeSimSlotForCustomSender,
-                                            senderId = customSenderInput.trim(),
-                                            officialTemplateId = selectedOfficialTemplateId,
-                                            createPersonal = createPersonal
-                                        ) {
-                                            showAddSenderDialog = false
-                                            customSenderInput = ""
-                                            selectedOfficialTemplateId = null
-                                            forcePersonalSender = false
-                                        }
-                                    }
-                                },
-                                enabled = !state.isSaving && customSenderInput.trim().isNotEmpty(),
-                                colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
-                                modifier = Modifier.weight(1f).fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(vertical = 12.dp, horizontal = 8.dp)
-                            ) {
-                                if (state.isSaving) {
-                                    CircularProgressIndicator(
-                                        color = Color(0xFF0F172A),
-                                        modifier = Modifier.size(20.dp),
-                                        strokeWidth = 2.dp
-                                    )
-                                } else {
-                                    Text("যুক্ত করুন", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
+        if (showAllBlockDialog) {
+            CustomSenderAllBlockDialog(
+                simSlot = activeSimSlotForCustomSender,
+                targetDeviceId = allBlockTargetDeviceId,
+                onDismiss = { showAllBlockDialog = false },
+                onChanged = {
+                    if (allBlockTargetDeviceId.isNullOrBlank()) {
+                        viewModel.loadGatewayMethods()
+                    } else {
+                        viewModel.loadRemoteGatewayData()
                     }
                 }
-            }
-        }
-
-        // Remote Add Custom Sender Dialog
-        if (showRemoteAddSenderDialog) {
-            Dialog(
-                onDismissRequest = {
-                    showRemoteAddSenderDialog = false
-                    customSenderInput = ""
-                    selectedOfficialTemplateId = null
-                    forcePersonalSender = false
-                    viewModel.clearDialogErrorMessage()
-                },
-                properties = DialogProperties(usePlatformDefaultWidth = true)
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = GwCard,
-                    border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
-                    tonalElevation = 8.dp,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .wrapContentHeight()
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Text(
-                            text = "রিমোট কাস্টম সেন্ডার যোগ",
-                            fontWeight = FontWeight.Bold,
-                            color = TextWhite,
-                            fontSize = 18.sp
-                        )
-                        Text(
-                            text = "SIM $remoteActiveSimSlotForCustomSender — টার্গেট ডিভাইসে সেন্ডার যোগ হবে",
-                            color = TextMuted,
-                            fontSize = 13.sp,
-                            textAlign = TextAlign.Center
-                        )
-                        OutlinedTextField(
-                            value = customSenderInput,
-                            onValueChange = {
-                                customSenderInput = it
-                                selectedOfficialTemplateId = null
-                                forcePersonalSender = false
-                            },
-                            label = { Text("সেন্ডার আইডি", color = TextMuted) },
-                            singleLine = true,
-                            enabled = !state.isSaving,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = AccentCyan,
-                                unfocusedBorderColor = ToggleOff,
-                                focusedTextColor = TextWhite,
-                                unfocusedTextColor = TextWhite
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        state.dialogErrorMessage?.let { errMsg ->
-                            Text(errMsg, color = Color(0xFFEF4444), fontSize = 12.sp)
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = {
-                                    showRemoteAddSenderDialog = false
-                                    customSenderInput = ""
-                                    viewModel.clearDialogErrorMessage()
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp)
-                            ) { Text("বাতিল") }
-                            Button(
-                                onClick = {
-                                    if (customSenderInput.trim().isNotEmpty()) {
-                                        viewModel.remoteAddCustomSender(
-                                            simSlot = remoteActiveSimSlotForCustomSender,
-                                            senderId = customSenderInput.trim(),
-                                            officialTemplateId = selectedOfficialTemplateId,
-                                            createPersonal = forcePersonalSender
-                                        ) {
-                                            showRemoteAddSenderDialog = false
-                                            customSenderInput = ""
-                                            selectedOfficialTemplateId = null
-                                            forcePersonalSender = false
-                                        }
-                                    }
-                                },
-                                enabled = !state.isSaving && customSenderInput.trim().isNotEmpty(),
-                                colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp)
-                            ) { Text("যুক্ত করুন", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold) }
-                        }
-                    }
-                }
-            }
+            )
         }
 
         // Remote Delete Custom Sender Confirmation
@@ -2018,15 +1702,25 @@ private fun ChildDeviceCard(
     modifier: Modifier = Modifier
 ) {
     val isPendingApproval = device.isApproved == 0 || device.status == "pending"
-    val isAppActive = device.isAppActive == 1
+    val health = device.healthState?.uppercase()
     val statusText = when {
         isPendingApproval -> "অনুমোদন পেন্ডিং"
-        isAppActive -> "সক্রিয়"
-        else -> "নিষ্ক্রিয়"
+        health == "ONLINE" -> "অনলাইন"
+        health == "GRACE" -> "গ্রেস"
+        health == "OFFLINE" -> "অফলাইন"
+        health == "DISABLED" -> "বন্ধ"
+        health == "STALE" -> "নিষ্ক্রিয়"
+        device.isAppActive == 1 -> "সক্রিয়"
+        else -> "নিষ্ক্রিয়"
     }
     val statusColor = when {
         isPendingApproval -> Color(0xFFF59E0B)
-        isAppActive -> AccentGreen
+        health == "ONLINE" -> AccentGreen
+        health == "GRACE" -> Color(0xFFF59E0B)
+        health == "OFFLINE" -> Color(0xFFEF4444)
+        health == "DISABLED" -> Color(0xFF64748B)
+        health == "STALE" -> Color(0xFF94A3B8)
+        device.isAppActive == 1 -> AccentGreen
         else -> Color(0xFFEF4444)
     }
     val roleLabel = if (device.deviceRole == "owner") "মালিক" else "স্টাফ"
@@ -2317,7 +2011,11 @@ private fun SimCard(
                 }
 
                 // Render archive/custom senders on this device (is_parseable = 0)
-                methods.filter { it.simSlot == simSlot && (it.isParseable ?: 1) == 0 }.forEach { method ->
+                methods.filter {
+                    it.simSlot == simSlot &&
+                        (it.isParseable ?: 1) == 0 &&
+                        !online.paychek.app.services.sms.SmsRoutingEngine.isBlockSenderMethod(it)
+                }.forEach { method ->
                     val isSelected = method.isEnabled == 1
                     val displayName = when {
                         online.paychek.app.services.sms.SmsRoutingEngine.isAllSenderPolicy(method) -> "ALL"
@@ -2335,7 +2033,11 @@ private fun SimCard(
 
                 // Other devices' custom senders — visible but inactive on this device
                 val localArchiveSenderIds = methods
-                    .filter { it.simSlot == simSlot && (it.isParseable ?: 1) == 0 }
+                    .filter {
+                        it.simSlot == simSlot &&
+                            (it.isParseable ?: 1) == 0 &&
+                            !online.paychek.app.services.sms.SmsRoutingEngine.isBlockSenderMethod(it)
+                    }
                     .mapNotNull { it.senderId?.lowercase() }
                     .toSet()
                 templates
@@ -2508,9 +2210,16 @@ private fun RemoteSimTemplateSection(
                     onClick = { if (simActive) onToggleTemplate(template) }
                 )
             }
-            methods.filter { it.simSlot == simSlot && (it.isParseable ?: 1) == 0 }.forEach { method ->
+            methods.filter {
+                it.simSlot == simSlot &&
+                    (it.isParseable ?: 1) == 0 &&
+                    !online.paychek.app.services.sms.SmsRoutingEngine.isBlockSenderMethod(it)
+            }.forEach { method ->
                 val isSelected = method.isEnabled == 1
-                val displayName = method.senderId ?: method.provider.removePrefix("Custom-")
+                val displayName = when {
+                    online.paychek.app.services.sms.SmsRoutingEngine.isAllSenderPolicy(method) -> "ALL"
+                    else -> method.senderId ?: method.provider.removePrefix("Custom-")
+                }
                 TemplateChip(
                     name = displayName,
                     dotColor = Color(0xFF94A3B8),
@@ -2521,7 +2230,11 @@ private fun RemoteSimTemplateSection(
                 )
             }
             val localArchiveSenderIds = methods
-                .filter { it.simSlot == simSlot && (it.isParseable ?: 1) == 0 }
+                .filter {
+                    it.simSlot == simSlot &&
+                        (it.isParseable ?: 1) == 0 &&
+                        !online.paychek.app.services.sms.SmsRoutingEngine.isBlockSenderMethod(it)
+                }
                 .mapNotNull { it.senderId?.lowercase() }
                 .toSet()
             templates

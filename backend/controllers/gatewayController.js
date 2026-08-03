@@ -391,17 +391,26 @@ async function getGatewayMethods(req, res) {
     const serverVersion = await dataSyncCache.getDeviceSyncVersion(userId, deviceId);
 
     if (dataSyncCache.isClientSyncCurrent(lastSync, serverVersion)) {
+      const globalBlockedSenders = await require('../services/globalBlockedSenders').getGlobalBlockedSenders();
       return res.json({
         success: true,
         data: null,
         data_version: serverVersion,
         unchanged: true,
+        global_blocked_senders: globalBlockedSenders,
       });
     }
 
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
+    const globalBlockedSenders = await require('../services/globalBlockedSenders').getGlobalBlockedSenders();
 
-    return res.json({ success: true, data, data_version: serverVersion, unchanged: false });
+    return res.json({
+      success: true,
+      data,
+      data_version: serverVersion,
+      unchanged: false,
+      global_blocked_senders: globalBlockedSenders,
+    });
   } catch (error) {
     console.error('[GATEWAY] getGatewayMethods error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
@@ -831,67 +840,12 @@ async function gatewayMethodExistsForSender(userId, deviceId, simSlot, senderId)
 }
 
 /**
- * GET /api/gateway/custom-sender/suggestions?q=gp&category=ROBI
- * Admin archive templates (is_parseable=0) visible to all users.
- * Empty q + category → full ready-made list for that operator tab.
+ * GET /api/gateway/custom-sender/suggestions
+ * Ready-made admin archive catalog removed — always empty (ALL + block-list only).
  */
 async function getCustomSenderSuggestions(req, res) {
   try {
-    const q = String(req.query.q || '').trim();
-    const category = String(req.query.category || '').trim().toUpperCase();
-    const customCats = ['ROBI', 'AIRTEL', 'GP', 'BL', 'TELETAK', 'BANK', 'OTHERS'];
-
-    if (!q && !category) {
-      return res.json({ success: true, suggestions: [] });
-    }
-
-    const like = q ? `%${q.toLowerCase()}%` : null;
-    const catFilter = category && customCats.includes(category) ? category : null;
-
-    let rows;
-    if (catFilter && like) {
-      rows = await prisma.$queryRaw`
-        SELECT id, template_name, sender_id, sender_number, is_parseable, is_official, category, display_order
-        FROM sms_templates
-        WHERE is_official = 1 AND is_parseable = 0
-          AND UPPER(COALESCE(category, '')) = ${catFilter}
-          AND (LOWER(sender_id) LIKE ${like} OR LOWER(template_name) LIKE ${like})
-        ORDER BY display_order ASC, template_name ASC
-        LIMIT 50
-      `;
-    } else if (catFilter) {
-      rows = await prisma.$queryRaw`
-        SELECT id, template_name, sender_id, sender_number, is_parseable, is_official, category, display_order
-        FROM sms_templates
-        WHERE is_official = 1 AND is_parseable = 0
-          AND UPPER(COALESCE(category, '')) = ${catFilter}
-        ORDER BY display_order ASC, template_name ASC
-        LIMIT 100
-      `;
-    } else {
-      rows = await prisma.$queryRaw`
-        SELECT id, template_name, sender_id, sender_number, is_parseable, is_official, category, display_order
-        FROM sms_templates
-        WHERE is_official = 1 AND is_parseable = 0
-          AND (LOWER(sender_id) LIKE ${like} OR LOWER(template_name) LIKE ${like})
-        ORDER BY display_order ASC, template_name ASC
-        LIMIT 8
-      `;
-    }
-
-    return res.json({
-      success: true,
-      suggestions: rows.map((r) => ({
-        id: Number(r.id),
-        template_name: r.template_name,
-        sender_id: r.sender_id,
-        sender_number: r.sender_number || '',
-        category: r.category || 'OTHERS',
-        is_parseable: Number(r.is_parseable ?? 0),
-        is_official: 1,
-        is_admin_archive: true,
-      })),
-    });
+    return res.json({ success: true, suggestions: [] });
   } catch (error) {
     console.error('[GATEWAY] getCustomSenderSuggestions error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
@@ -902,11 +856,12 @@ async function addCustomSender(req, res) {
   try {
     const userId = req.user.userId;
     const deviceId = req.headers['x-device-id'] || req.body.deviceId || req.user.deviceId || '';
-    const { sim_slot, sender_id, official_template_id, create_personal } = req.body;
+    const { sim_slot, sender_id, official_template_id, create_personal, is_block } = req.body;
     const cleanSenderId = typeof sender_id === 'string' ? sender_id.trim() : '';
     const simSlotNum = parseInt(sim_slot, 10);
     const officialTemplateId = official_template_id ? parseInt(official_template_id, 10) : null;
     const forcePersonal = create_personal === true || create_personal === 1 || create_personal === '1';
+    const isBlock = is_block === true || is_block === 1 || is_block === '1';
 
     if (!Number.isInteger(simSlotNum) || simSlotNum < 1 || simSlotNum > 2) {
       return res.status(400).json({ error: 'sim_slot ১ বা ২ হতে হবে' });
@@ -915,9 +870,101 @@ async function addCustomSender(req, res) {
       return res.status(400).json({ error: 'sender_id আবশ্যক' });
     }
 
+    // ── Block-list sender (DROP) — not ALL, not ready-made archive ────────────
+    const BLOCK_KEYWORD = '__BLOCK_SENDER__';
+    if (isBlock) {
+      if (cleanSenderId === '*' || cleanSenderId.toUpperCase() === 'ALL') {
+        return res.status(400).json({ error: 'ALL সেন্ডার ব্লক লিস্টে যোগ করা যাবে না' });
+      }
+      const user = await prisma.users.findUnique({
+        where: { id: userId },
+        select: { role: true },
+      });
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      let isAllowed = user.role === 'admin';
+      if (!isAllowed) {
+        const perm = await requirePermission(userId, 'perm_custom_sender');
+        isAllowed = perm.ok;
+      }
+      if (!isAllowed) {
+        return res.status(403).json({
+          success: false,
+          error: 'FEATURE_GATED',
+          message: 'কাস্টম সেন্ডার আইডি ব্যবহার করতে হলে আপনার প্যাকেজ আপগ্রেড করুন অথবা অ্যাড-অন কিনুন।',
+        });
+      }
+
+      const existingBlock = await prisma.$queryRaw`
+        SELECT gm.id
+        FROM gateway_methods gm
+        INNER JOIN sms_templates t ON t.id = gm.template_id
+        WHERE gm.user_id = ${String(userId)}
+          AND gm.device_id = ${String(deviceId)}
+          AND gm.sim_slot = ${simSlotNum}
+          AND COALESCE(t.is_parseable, 1) = 0
+          AND COALESCE(t.matching_keyword, '') = ${BLOCK_KEYWORD}
+          AND LOWER(t.sender_id) = LOWER(${cleanSenderId})
+        LIMIT 1
+      `;
+      if (existingBlock && existingBlock[0]) {
+        await prisma.gateway_methods.update({
+          where: { id: existingBlock[0].id },
+          data: { is_enabled: 1, provider: 'BLOCK' },
+        });
+      } else {
+        const blockTemplate = await prisma.sms_templates.create({
+          data: {
+            user_id: userId,
+            device_id: deviceId || null,
+            template_name: `Block-${cleanSenderId}`,
+            sender_id: cleanSenderId,
+            sender_number: '',
+            regex_pattern: '',
+            matching_keyword: BLOCK_KEYWORD,
+            is_official: 0,
+            is_active: 0,
+            is_parseable: 0,
+            category: 'OTHERS',
+          },
+        });
+        const maxPriorityRow = await prisma.gateway_methods.aggregate({
+          where: { user_id: String(userId), device_id: String(deviceId) },
+          _max: { priority: true },
+        });
+        const nextPriority = (maxPriorityRow._max.priority || 0) + 1;
+        await prisma.gateway_methods.create({
+          data: {
+            user_id: String(userId),
+            device_id: String(deviceId),
+            template_id: blockTemplate.id,
+            sim_slot: simSlotNum,
+            provider: 'BLOCK',
+            number: '',
+            is_enabled: 1,
+            priority: nextPriority,
+          },
+        });
+      }
+
+      const data = await fetchGatewayMethodsForUser(userId, deviceId);
+      const io = req.app.get('io');
+      if (io && deviceId) {
+        io.to(`${userId}:${deviceId}`).emit('sync_gateway_methods', data);
+      }
+      await touchDeviceSync(userId, deviceId, { userCustomChanged: true });
+      return res.json({
+        success: true,
+        message: `SIM ${simSlotNum}-এ সেন্ডার "${cleanSenderId}" ব্লক করা হয়েছে।`,
+        template_source: 'block_sender',
+        data,
+      });
+    }
+
     // ── Per-SIM ALL archive policy (sender_id = * | ALL) ─────────────────────
     // Filtering config only — does not bypass SMS permissions / HMAC / dedupe.
-    // Supersedes other is_parseable=0 methods on this device+slot.
+    // Supersedes other is_parseable=0 methods on this device+slot (except block-list).
     const isAllPolicy = cleanSenderId === '*' || cleanSenderId.toUpperCase() === 'ALL';
     if (isAllPolicy) {
       const user = await prisma.users.findUnique({
@@ -973,6 +1020,8 @@ async function addCustomSender(req, res) {
           AND gm.sim_slot = ${simSlotNum}
           AND COALESCE(t.is_parseable, 1) = 0
           AND LOWER(COALESCE(t.sender_id, gm.provider, '')) <> '*'
+          AND COALESCE(t.matching_keyword, '') <> '__BLOCK_SENDER__'
+          AND UPPER(COALESCE(gm.provider, '')) <> 'BLOCK'
       `;
       for (const row of slotArchiveMethods || []) {
         await prisma.gateway_methods.delete({ where: { id: row.id } });

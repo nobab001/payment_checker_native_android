@@ -509,6 +509,8 @@ async function getDashboardStats(req, res) {
       console.log(`[STATS] Client cache current (${lastSync} >= ${latestServerUpdateTime}). Skipping template/method payload.`);
     }
 
+    const globalBlockedSenders = await require('../services/globalBlockedSenders').getGlobalBlockedSenders();
+
     return res.json({
       success: true,
       data: {
@@ -530,6 +532,7 @@ async function getDashboardStats(req, res) {
         recent_transactions: mappedRecentRows,
         global_templates:    globalTemplates,
         gateway_methods:     gatewayMethods,
+        global_blocked_senders: globalBlockedSenders,
         gateway_methods_last_sync: latestServerUpdateTime,
         data_version:        latestServerUpdateTime,
         cache_hit:           cacheHit

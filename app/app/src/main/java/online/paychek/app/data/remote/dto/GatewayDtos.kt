@@ -67,7 +67,9 @@ data class GatewayListResponse(
     @SerializedName("data_version") val dataVersion: Long? = null,
     val unchanged: Boolean? = false,
     @SerializedName("has_conflict") val hasConflict: Boolean? = null,
-    @SerializedName("running_device_name") val runningDeviceName: String? = null
+    @SerializedName("running_device_name") val runningDeviceName: String? = null,
+    /** Admin-global blocked sender IDs (lowercase-ready). */
+    @SerializedName("global_blocked_senders") val globalBlockedSenders: List<String>? = null
 )
 
 // =============================================================================
@@ -154,7 +156,9 @@ data class ChildDeviceDto(
     @SerializedName("status") val status: String? = null,
     @SerializedName("last_seen_at") val lastSeenAt: String? = null,
     @SerializedName("is_current") val isCurrent: Int = 0,
-    @SerializedName("has_device_pin") val hasDevicePin: Int = 0
+    @SerializedName("has_device_pin") val hasDevicePin: Int = 0,
+    /** Presence health: ONLINE | GRACE | OFFLINE | STALE (same as account numbers). */
+    @SerializedName("health_state") val healthState: String? = null
 )
 
 data class ChildDeviceListResponse(
@@ -215,7 +219,9 @@ data class AddCustomSenderRequest(
     @SerializedName("sender_id") val senderId: String,
     @SerializedName("deviceId") val deviceId: String? = null,
     @SerializedName("official_template_id") val officialTemplateId: Int? = null,
-    @SerializedName("create_personal") val createPersonal: Boolean? = null
+    @SerializedName("create_personal") val createPersonal: Boolean? = null,
+    /** true → block-list sender (DROP); not archive ALL. */
+    @SerializedName("is_block") val isBlock: Boolean? = null
 )
 
 data class CustomSenderSuggestionDto(

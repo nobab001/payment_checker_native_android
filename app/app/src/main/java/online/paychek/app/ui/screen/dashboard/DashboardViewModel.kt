@@ -305,6 +305,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
+        stats.globalBlockedSenders?.let { blocked ->
+            online.paychek.app.data.local.prefs.PrefsHelper
+                .setGlobalBlockedSenders(getApplication(), blocked)
+        }
+
         if (stats.globalTemplates != null) {
             try {
                 val jsonTemplates = online.paychek.app.utils.GsonUtils.gson.toJson(stats.globalTemplates)

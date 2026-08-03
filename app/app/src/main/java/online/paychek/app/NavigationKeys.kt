@@ -30,8 +30,4 @@ sealed interface NavKey : androidx.navigation3.runtime.NavKey {
     @Serializable data object AdminBillingConfig : NavKey
     @Serializable data class SubscriptionPackages(val initialTab: Int = 0) : NavKey
     @Serializable data object PaymentGatewayMock : NavKey
-    @Serializable data class CustomSenderReadyMade(
-        val simSlot: Int,
-        val targetDeviceId: String = ""
-    ) : NavKey
 }

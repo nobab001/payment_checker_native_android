@@ -3,7 +3,6 @@ package online.paychek.app.ui.screen.dashboard
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material.icons.filled.ContentCopy
 import android.content.Intent
-import android.net.Uri
 import android.Manifest
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -188,6 +187,7 @@ fun DashboardScreen(
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
             if (state == androidx.lifecycle.Lifecycle.State.RESUMED) {
+                BatteryOptimizationHelper.onReturnedFromBatterySettings(context)
                 isAccessibilityEnabled = AccessibilityHelper.isAccessibilityServiceEnabled(context)
                 isBatteryUnrestricted = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
                 viewModel.ensureSmsServiceRunning()
@@ -306,19 +306,10 @@ fun DashboardScreen(
             context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             return
         }
-        // Step 2: Battery → System popup
+        // Step 2: Battery — dialog when safe; otherwise App Info → Battery → Unrestricted
         if (!isBatteryUnrestricted) {
             online.paychek.app.data.local.prefs.PrefsHelper.setPendingMonitorStart(context, true)
-            try {
-                context.startActivity(
-                    Intent(
-                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        Uri.parse("package:${context.packageName}")
-                    )
-                )
-            } catch (_: Exception) {
-                context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-            }
+            BatteryOptimizationHelper.requestExemptionIfNeeded(context)
             return
         }
         // Step 3: Device SIM setup → Device Tab

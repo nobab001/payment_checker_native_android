@@ -25,7 +25,6 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import online.paychek.app.utils.AccessibilityHelper
 import online.paychek.app.utils.BatteryOptimizationHelper
-import online.paychek.app.utils.OemBackgroundHelper
 
 /**
  * Setup Progress Card — শুধু সেটিংস বাকি থাকলে দেখায়।
@@ -51,6 +50,8 @@ fun BackgroundPersistenceCard(
     var showReadyCelebration by remember { mutableStateOf(false) }
 
     fun refreshChecks() {
+        // Learn: system dialog landed on wrong page / user returned without exemption → next tap App Info
+        BatteryOptimizationHelper.onReturnedFromBatterySettings(context)
         val wasIncomplete = !accessibilityOk || !batteryOk
         accessibilityOk = AccessibilityHelper.isAccessibilityServiceEnabled(context)
         batteryOk = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
@@ -124,11 +125,7 @@ fun BackgroundPersistenceCard(
             SetupRow(
                 done = batteryOk,
                 title = "২. Battery Unrestricted",
-                subtitle = when (OemBackgroundHelper.detectVendor()) {
-                    online.paychek.app.utils.OemVendor.SAMSUNG ->
-                        "Apps Info → Battery → Unrestricted / অপ্টিমাইজ করবেন না"
-                    else -> "অপ্টিমাইজ করবেন না / Unrestricted"
-                },
+                subtitle = "সেটআপ → (সম্ভব হলে) Allow ডায়ালগ, নাহলে Apps Info → Battery → Unrestricted",
                 onSetup = {
                     BatteryOptimizationHelper.requestExemptionIfNeeded(context)
                 }

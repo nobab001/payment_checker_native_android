@@ -113,6 +113,28 @@ object PrefsHelper {
         return writeAndVerify(context, AppConfig.KEY_SMS_TEMPLATES_CACHE, json)
     }
 
+    fun getGlobalBlockedSenders(context: Context): List<String> {
+        migrateCachesFromSecureStoreIfNeeded(context)
+        val raw = prefs(context).getString(AppConfig.KEY_GLOBAL_BLOCKED_SENDERS, null)
+        if (raw.isNullOrBlank()) return emptyList()
+        return try {
+            val type = object : com.google.gson.reflect.TypeToken<List<String>>() {}.type
+            online.paychek.app.utils.GsonUtils.gson.fromJson<List<String>>(raw, type)
+                ?.map { it.trim().lowercase() }
+                ?.filter { it.isNotEmpty() }
+                ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun setGlobalBlockedSenders(context: Context, senders: List<String>): Boolean {
+        migrateCachesFromSecureStoreIfNeeded(context)
+        val normalized = senders.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val json = online.paychek.app.utils.GsonUtils.gson.toJson(normalized)
+        return writeAndVerify(context, AppConfig.KEY_GLOBAL_BLOCKED_SENDERS, json)
+    }
+
     fun hasGatewayMethodsCache(context: Context): Boolean {
         val raw = getGatewayMethodsCache(context)
         return raw.isNotBlank() && raw != "[]"

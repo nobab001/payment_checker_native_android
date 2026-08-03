@@ -41,6 +41,9 @@ router.post('/sms-templates', admin.saveSmsTemplate);
 router.post('/sms-templates/reorder', admin.reorderSmsTemplates);
 router.delete('/sms-templates/:id', admin.deleteSmsTemplate);
 
+router.get('/global-blocked-senders', admin.getGlobalBlockedSendersAdmin);
+router.put('/global-blocked-senders', admin.saveGlobalBlockedSendersAdmin);
+
 // 3. Checkout View Templates
 router.get('/checkout-templates', admin.getCheckoutTemplates);
 router.post('/checkout-templates', admin.saveCheckoutTemplate);

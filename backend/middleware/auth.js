@@ -64,6 +64,11 @@ async function restrictDevice(req, res, next) {
 
 authenticateToken.restrictDevice = restrictDevice;
 
+/**
+ * Optional owner-caller gate (not applied to post-login device-management routes —
+ * staff and owner share those capabilities). Kept for any future owner-only endpoints.
+ * Controllers must still enforce account/target authorization via JWT userId.
+ */
 async function requireOwnerCaller(req, res, next) {
   try {
     const userId = req.user.userId;

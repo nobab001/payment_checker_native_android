@@ -51,11 +51,66 @@ object SmsRoutingEngine {
     /** Per-SIM archive policy: accept any sender → isParseable=0 (does not bypass SIM/HMAC/dedupe). */
     const val ALL_SENDER_ID = "*"
 
+    /**
+     * Block-list marker stored on personal archive templates (`matching_keyword`).
+     * SMS from these sender IDs are DROP'd after HISTORY fails (never archived/sent).
+     */
+    const val BLOCK_SENDER_KEYWORD = "__BLOCK_SENDER__"
+
     fun isAllSenderPolicy(method: GatewayMethod): Boolean {
         val sid = (method.senderId?.takeIf { it.isNotBlank() } ?: method.provider)
             .trim()
             .lowercase(Locale.US)
         return sid == ALL_SENDER_ID || sid == "all"
+    }
+
+    fun isBlockSenderMethod(method: GatewayMethod): Boolean {
+        val kw = method.matchingKeyword?.trim().orEmpty()
+        if (kw.equals(BLOCK_SENDER_KEYWORD, ignoreCase = true)) return true
+        return method.provider.trim().equals("BLOCK", ignoreCase = true)
+    }
+
+    fun isSenderBlocked(
+        cleanSender: String,
+        simSlot: Int?,
+        cachedMethods: List<GatewayMethod>,
+        globalBlockedSenders: List<String> = emptyList()
+    ): Boolean {
+        if (globalBlockedSenders.any { it.trim().equals(cleanSender, ignoreCase = true) }) {
+            return true
+        }
+        return cachedMethods.any { method ->
+            method.isEnabled == 1 &&
+                isBlockSenderMethod(method) &&
+                (simSlot == null || method.simSlot == simSlot) &&
+                method.senderId?.trim()?.lowercase(Locale.US) == cleanSender
+        }
+    }
+
+    /**
+     * HISTORY (isParseable=1) sender gate:
+     * SMS address may be brand name ("bkash") OR short code ("16216").
+     * Match either [GatewayMethod.senderId] / provider OR [GatewayMethod.senderNumber].
+     */
+    fun matchesMethodSender(cleanSender: String, method: GatewayMethod): Boolean {
+        if (method.templateId == null) {
+            return cleanSender == method.provider.trim().lowercase(Locale.US)
+        }
+        val targetSender = method.senderId?.trim()?.lowercase(Locale.US)
+            ?: method.provider.lowercase(Locale.US)
+        if (cleanSender == targetSender) return true
+        val senderNum = method.senderNumber?.trim()?.lowercase(Locale.US)
+        return !senderNum.isNullOrBlank() && cleanSender == senderNum
+    }
+
+    private fun hasAllPolicyOnSlot(simSlot: Int?, cachedMethods: List<GatewayMethod>): Boolean {
+        if (simSlot == null) return false
+        return cachedMethods.any { method ->
+            method.isEnabled == 1 &&
+                (method.isParseable ?: 1) == 0 &&
+                method.simSlot == simSlot &&
+                isAllSenderPolicy(method)
+        }
     }
 
     // =========================================================================
@@ -86,6 +141,7 @@ object SmsRoutingEngine {
     enum class RouteReason {
         BODY_MATCH,           // regex .find() match হয়েছে → HISTORY
         BODY_FAIL_ARCHIVE,    // regex fail, archive configured → ARCHIVE
+        BLOCKED_SENDER,       // archive path blocked by sender block-list → DROP
         NO_CANDIDATES,        // sender কোনো method-এর সাথে match করেনি → DROP
         NO_PERMISSION         // match হয়েছে কিন্তু কোনো route নেই → DROP
     }
@@ -122,7 +178,8 @@ object SmsRoutingEngine {
         sender: String,
         body: String,
         simSlot: Int?,
-        cachedMethods: List<GatewayMethod>
+        cachedMethods: List<GatewayMethod>,
+        globalBlockedSenders: List<String> = emptyList()
     ): SmsRouteResult? {
         val cleanSender = sender.trim().lowercase(Locale.US)
 
@@ -140,10 +197,17 @@ object SmsRoutingEngine {
         }
 
         // ── Stage 2: Resolve Route ────────────────────────────────────────────
-        val result = resolveRoute(body = body, candidates = candidates)
+        val result = resolveRoute(
+            body = body,
+            candidates = candidates,
+            cleanSender = cleanSender,
+            simSlot = simSlot,
+            cachedMethods = cachedMethods,
+            globalBlockedSenders = globalBlockedSenders
+        )
 
         if (result == null) {
-            Log.d(TAG, "[Route] All candidates failed routing → DROP (NO_PERMISSION) for sender='$sender'")
+            Log.d(TAG, "[Route] DROP for sender='$sender' (no HISTORY/ARCHIVE or blocked)")
         } else {
             Log.i(TAG, "[Route] ${result.route}(${result.reason}) | Provider=${result.matchedMethod.provider} | isParseable=${result.isParseable}")
         }
@@ -159,11 +223,15 @@ object SmsRoutingEngine {
      * 4-Step filter chain: SIM slot → Sender ID → Sender Number → Keyword.
      *
      * গুরুত্বপূর্ণ: firstOrNull নয় — সব matching methods return হয়।
-     * একই sender-এর isParseable=1 ও isParseable=0 উভয় method-ই collect হবে।
+     * একই sender-এর isParseable=1 ও isParseable=0 (ALL) উভয়ই collect হবে।
      *
-     * Archive mode (isParseable=0) এর জন্য:
-     *  - Sender Number check skip (archive sender-এ senderNumber থাকে না)
-     *  - Keyword check skip (archive SMS-এ keyword filter নেই)
+     * ALL চালু থাকলে (প্রতি SIM):
+     *  - HISTORY: senderId অথবা senderNumber মিললে candidate; keyword গেট স্কিপ
+     *    (body regex-ই HISTORY vs ARCHIVE সিদ্ধান্ত নেয়)
+     *  - ARCHIVE: ALL policy যেকোনো sender-এর জন্য candidate
+     *
+     * Archive mode (isParseable=0, non-ALL):
+     *  - Sender Number / Keyword check skip
      */
     private fun collectCandidates(
         cleanSender: String,
@@ -171,41 +239,48 @@ object SmsRoutingEngine {
         simSlot: Int?,
         cachedMethods: List<GatewayMethod>
     ): List<GatewayMethod> {
+        val allEnabled = hasAllPolicyOnSlot(simSlot, cachedMethods)
+
         val exactRaw = cachedMethods.filter { method ->
             if (isAllSenderPolicy(method)) return@filter false
+            if (isBlockSenderMethod(method)) return@filter false
             val isArchive = (method.isParseable ?: 1) == 0
 
             // Step 1: Method enabled + SIM slot match
-            method.isEnabled == 1 &&
-            (simSlot == null || method.simSlot == simSlot) &&
+            if (method.isEnabled != 1) return@filter false
+            if (simSlot != null && method.simSlot != simSlot) return@filter false
 
-            // Step 2: Sender ID exact match (lowercase normalized)
-            (
-                if (method.templateId == null) {
-                    cleanSender == method.provider.trim().lowercase(Locale.US)
+            // Step 2–3: Sender match
+            // HISTORY: senderId OR senderNumber (short-code vs brand)
+            // Legacy archive (non-ALL): exact senderId/provider only
+            if (isArchive) {
+                val targetSender = if (method.templateId == null) {
+                    method.provider.trim().lowercase(Locale.US)
                 } else {
-                    val targetSender = method.senderId?.trim()?.lowercase(Locale.US)
+                    method.senderId?.trim()?.lowercase(Locale.US)
                         ?: method.provider.lowercase(Locale.US)
-                    cleanSender == targetSender
                 }
-            ) &&
+                if (cleanSender != targetSender) return@filter false
+            } else {
+                if (!matchesMethodSender(cleanSender, method)) return@filter false
+                // When ALL is on: do NOT require senderNumber-only exclusivity or keyword —
+                // body regex in resolveRoute decides HISTORY vs fall-through to ALL archive.
+                if (!allEnabled) {
+                    // Step 3 (legacy, ALL off): optional senderNumber must match if set
+                    // (matchesMethodSender already accepts either field; keep keyword gate)
+                    // Step 4: Keyword pre-filter for HISTORY when ALL is off
+                    val kw = method.matchingKeyword
+                    if (!kw.isNullOrBlank()) {
+                        val ok = kw.split(",")
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() }
+                            .any { keyword -> body.contains(keyword, ignoreCase = true) }
+                        if (!ok) return@filter false
+                    }
+                }
+            }
 
-            // Step 3: Sender Number exact match (skip for archive)
-            (
-                isArchive ||
-                method.senderNumber.isNullOrBlank() ||
-                cleanSender == method.senderNumber.trim().lowercase(Locale.US)
-            ) &&
-
-            // Step 4: Keyword match (skip for archive)
-            (
-                isArchive ||
-                method.matchingKeyword.isNullOrBlank() ||
-                method.matchingKeyword.split(",")
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() }
-                    .any { keyword -> body.contains(keyword, ignoreCase = true) }
-            )
+            true
         }
         // Unknown SIM: refuse ambiguous cross-SIM exact matches (same spirit as ALL exclusion).
         val exact = if (simSlot != null) {
@@ -216,8 +291,7 @@ object SmsRoutingEngine {
         }
 
         // Per-SIM ALL archive policy → ARCHIVE candidate for any sender on this slot.
-        // HISTORY (body match) still wins in resolveRoute when exact parseable candidates exist.
-        // Unknown SIM slot: never apply ALL (would merge SIM1+SIM2 policies incorrectly).
+        // HISTORY (body match on parseable=1) still wins in resolveRoute when candidates exist.
         val allPolicy = if (simSlot == null) {
             emptyList()
         } else {
@@ -239,20 +313,21 @@ object SmsRoutingEngine {
     /**
      * Template Match Result দেখে Route নির্ধারণ করে।
      *
-     * Priority:
+     * Priority (ALL চালু থাকলেও একই):
      *  1. isParseable=1 candidate এর body regex match → HISTORY
-     *  2. isParseable=0 candidate আছে             → ARCHIVE
-     *  3. কোনোটাই না                               → null (DROP)
+     *  2. Blocked sender → DROP
+     *  3. isParseable=0 / ALL candidate → ARCHIVE
+     *  4. অন্যথায় → null (DROP)
      *
-     * "isParseable=1 আগে" নয়, বরং "Template Match হয়েছে কিনা" — এটাই decision।
-     * ভবিষ্যতে বহু template type আসলেও এই logic অপরিবর্তিত থাকবে।
-     *
-     * Template candidates priority ascending sort করা হয় — priority=1 সবচেয়ে উপরে।
-     * Archive candidates priority ascending sort — deterministic selection।
+     * ALL = পুরো ইনবক্স archive fallback; isParseable=1 বডি মিললে HISTORY অগ্রাধিকার পায়।
      */
     private fun resolveRoute(
         body: String,
-        candidates: List<GatewayMethod>
+        candidates: List<GatewayMethod>,
+        cleanSender: String,
+        simSlot: Int?,
+        cachedMethods: List<GatewayMethod>,
+        globalBlockedSenders: List<String>
     ): SmsRouteResult? {
 
         // ── Priority 1: Template body match (HISTORY) ─────────────────────────
@@ -273,13 +348,19 @@ object SmsRoutingEngine {
         }
 
         if (templateCandidates.isNotEmpty()) {
-            Log.d(TAG, "[Route] ${templateCandidates.size} template candidate(s) found but none matched body regex → checking archive")
+            Log.d(TAG, "[Route] ${templateCandidates.size} template candidate(s) found but none matched body regex → checking block/archive")
         }
 
-        // ── Priority 2: Archive configured (ARCHIVE) ──────────────────────────
+        // ── Priority 2: Blocked sender (device + admin-global) → DROP ─────────
+        if (isSenderBlocked(cleanSender, simSlot, cachedMethods, globalBlockedSenders)) {
+            Log.i(TAG, "[Route] DROP(BLOCKED_SENDER) sender='$cleanSender' sim=$simSlot")
+            return null
+        }
+
+        // ── Priority 3: Archive configured (ARCHIVE) ──────────────────────────
         // Priority ascending sort — ছোট priority number = আগে। Deterministic।
         val archiveCandidate = candidates
-            .filter { (it.isParseable ?: 1) == 0 }
+            .filter { (it.isParseable ?: 1) == 0 && !isBlockSenderMethod(it) }
             .minByOrNull { it.priority }
 
         if (archiveCandidate != null) {
@@ -291,7 +372,7 @@ object SmsRoutingEngine {
             )
         }
 
-        // ── Priority 3: Drop ──────────────────────────────────────────────────
+        // ── Priority 4: Drop ──────────────────────────────────────────────────
         return null
     }
 

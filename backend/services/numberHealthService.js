@@ -518,6 +518,58 @@ async function getDeviceHealth(userId, deviceId) {
 }
 
 /**
+ * Device list UI (Others Device) — same ONLINE/GRACE/OFFLINE vocabulary as account numbers.
+ * Falls back to MySQL last_seen_at when Redis TTL expired (uninstalled / silent days).
+ * Missing proof-of-life → OFFLINE (not GRACE migration default).
+ */
+async function getDeviceStateForDisplay(userId, deviceId, dbLastSeenAt = null, now = Date.now()) {
+  const uid = String(userId);
+  const dev = String(deviceId || '');
+  const profile = await getCachedProfile(uid);
+
+  if (dev && (await isDeviceSocketLive(uid, dev))) {
+    return {
+      deviceId: dev,
+      state: 'ONLINE',
+      lastSeenMs: now,
+      ageMs: 0,
+      profile: profile.id,
+    };
+  }
+
+  let lastSeenMs = 0;
+  try {
+    const redis = getRedisClient();
+    const seen = await redis.get(KEYS.deviceLastSeen(uid, dev));
+    lastSeenMs = seen ? parseInt(seen, 10) || 0 : 0;
+  } catch (_) { /* ignore */ }
+
+  if (!lastSeenMs && dbLastSeenAt) {
+    const parsed = new Date(dbLastSeenAt).getTime();
+    if (Number.isFinite(parsed) && parsed > 0) lastSeenMs = parsed;
+  }
+
+  if (!lastSeenMs || lastSeenMs <= 0) {
+    return {
+      deviceId: dev,
+      state: 'OFFLINE',
+      lastSeenMs: 0,
+      ageMs: null,
+      profile: profile.id,
+    };
+  }
+
+  const state = computeState(lastSeenMs, false, now, profile);
+  return {
+    deviceId: dev,
+    state,
+    lastSeenMs,
+    ageMs: now - lastSeenMs,
+    profile: profile.id,
+  };
+}
+
+/**
  * Filter + rank checkout rows by number health (failover: ONLINE before GRACE).
  */
 async function applyHealthToCheckoutRows(userId, rows) {
@@ -607,6 +659,7 @@ module.exports = {
   setNumberDisabled,
   purgeNumber,
   getDeviceHealth,
+  getDeviceStateForDisplay,
   applyHealthToCheckoutRows,
   getCachedProfile,
   invalidateProfileCache,

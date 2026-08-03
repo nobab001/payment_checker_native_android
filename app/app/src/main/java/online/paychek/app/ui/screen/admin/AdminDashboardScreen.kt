@@ -67,6 +67,7 @@ fun AdminDashboardScreen(
     var showEmailDialog by remember { mutableStateOf<EmailAccountDto?>(null) }
     var showGatewayDialog by remember { mutableStateOf<SmsSettingsDto?>(null) }
     var showCheckoutDialog by remember { mutableStateOf<CheckoutTemplateDto?>(null) }
+    var showGlobalBlockDialog by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -241,7 +242,8 @@ fun AdminDashboardScreen(
                         onDeleteCheckout = { viewModel.deleteCheckoutTemplate(it) },
                         onDeleteEmail = { viewModel.deleteEmailAccount(it) },
                         onUpdateOtpFormat = { viewModel.updateOtpFormat(it) },
-                        onReorderTemplates = { viewModel.reorderSmsTemplates(it) }
+                        onReorderTemplates = { viewModel.reorderSmsTemplates(it) },
+                        onOpenGlobalBlock = { showGlobalBlockDialog = true }
                     )
                     1 -> CheckoutDesignTab(
                         uiState = uiState,
@@ -322,6 +324,18 @@ fun AdminDashboardScreen(
             }
         )
     }
+
+    if (showGlobalBlockDialog) {
+        AdminGlobalAllBlockDialog(
+            initialSenders = uiState.globalBlockedSenders,
+            isSaving = uiState.isSaving,
+            onDismiss = { showGlobalBlockDialog = false },
+            onSave = { senders ->
+                viewModel.saveGlobalBlockedSenders(senders)
+                showGlobalBlockDialog = false
+            }
+        )
+    }
 }
 
 @Composable
@@ -335,17 +349,13 @@ private fun GatewaysAndTemplatesTab(
     onDeleteCheckout: (Int) -> Unit,
     onDeleteEmail: (Int) -> Unit,
     onUpdateOtpFormat: (String) -> Unit,
-    onReorderTemplates: (List<SmsTemplateDto>) -> Unit
+    onReorderTemplates: (List<SmsTemplateDto>) -> Unit,
+    onOpenGlobalBlock: () -> Unit
 ) {
     val scrollState = rememberScrollState()
     var showCheckoutOrder by remember { mutableStateOf(false) }
-    var showCustomOrder by remember { mutableStateOf(false) }
     val parseableOnes = remember(uiState.smsTemplates) {
         uiState.smsTemplates.filter { it.isParseable == 1 }
-            .sortedWith(compareBy({ it.displayOrder }, { it.id ?: 0 }))
-    }
-    val parseableZeros = remember(uiState.smsTemplates) {
-        uiState.smsTemplates.filter { it.isParseable == 0 }
             .sortedWith(compareBy({ it.displayOrder }, { it.id ?: 0 }))
     }
     Column(
@@ -575,14 +585,31 @@ private fun GatewaysAndTemplatesTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Checkout (is_parseable = 1)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = RoyalIndigo)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onOpenGlobalBlock) {
+                            Icon(
+                                Icons.Default.AddCircle,
+                                contentDescription = "ALL / Block Sender",
+                                tint = AccentCyan
+                            )
+                        }
+                        Text(
+                            text = "See All",
+                            color = RoyalIndigo,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            modifier = Modifier
+                                .clickable { showCheckoutOrder = true }
+                                .padding(4.dp)
+                        )
+                    }
+                }
+                if (uiState.globalBlockedSenders.isNotEmpty()) {
                     Text(
-                        text = "See All",
-                        color = RoyalIndigo,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        modifier = Modifier
-                            .clickable { showCheckoutOrder = true }
-                            .padding(4.dp)
+                        text = "Global block: ${uiState.globalBlockedSenders.size}টি সেন্ডার",
+                        fontSize = 11.sp,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(bottom = 2.dp)
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -596,37 +623,6 @@ private fun GatewaysAndTemplatesTab(
                         Text("… আরও ${parseableOnes.size - 8}টি — See All এ খুলুন", fontSize = 11.sp, color = TextSecondary)
                     }
                 }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // —— Parseable = 0 (Custom Sender) ——
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Custom Sender (is_parseable = 0)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = RoyalIndigo)
-                    Text(
-                        text = "See All",
-                        color = RoyalIndigo,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        modifier = Modifier
-                            .clickable { showCustomOrder = true }
-                            .padding(4.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                if (parseableZeros.isEmpty()) {
-                    Text("কোনো কাস্টম সেন্ডার টেমপ্লেট নেই।", fontSize = 12.sp, color = TextSecondary)
-                } else {
-                    parseableZeros.take(8).forEach { temp ->
-                        AdminTemplateRow(temp, onEditTemplate, onDeleteTemplate)
-                    }
-                    if (parseableZeros.size > 8) {
-                        Text("… আরও ${parseableZeros.size - 8}টি — See All এ খুলুন", fontSize = 11.sp, color = TextSecondary)
-                    }
-                }
             }
         }
 
@@ -637,16 +633,6 @@ private fun GatewaysAndTemplatesTab(
                 onSave = { ordered ->
                     onReorderTemplates(ordered)
                     showCheckoutOrder = false
-                }
-            )
-        }
-        if (showCustomOrder) {
-            AdminCustomSenderTemplateOrderDialog(
-                templates = uiState.smsTemplates,
-                onDismiss = { showCustomOrder = false },
-                onSave = { ordered ->
-                    onReorderTemplates(ordered)
-                    showCustomOrder = false
                 }
             )
         }
@@ -995,6 +981,164 @@ private fun GlobalSettingsTab(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun AdminGlobalAllBlockDialog(
+    initialSenders: List<String>,
+    isSaving: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (List<String>) -> Unit
+) {
+    var blocked by remember { mutableStateOf(initialSenders.map { it.trim() }.filter { it.isNotEmpty() }) }
+    var draft by remember { mutableStateOf("") }
+
+    fun addDraft() {
+        val value = draft.trim()
+        if (value.isEmpty()) return
+        if (blocked.any { it.equals(value, ignoreCase = true) }) {
+            draft = ""
+            return
+        }
+        blocked = blocked + value
+        draft = ""
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = CardBackground,
+            tonalElevation = 8.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = "ALL + Block Sender (Global)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = TextPrimary
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, AccentCyan.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
+                        .background(AccentCyan.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("ALL", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = AccentCyan)
+                        Text(
+                            text = "সকল এসএমএস আর্কাইভ বক্সে রিসিভ",
+                            fontSize = 12.sp,
+                            color = TextSecondary,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = StatusGreen,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Text(
+                    text = "Block Sender ID",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    color = TextPrimary
+                )
+                Text(
+                    text = "এই সেন্ডারগুলো থেকে SMS কোনো ডিভাইসেই আর্কাইভ/হিস্ট্রিতে যাবে না।",
+                    fontSize = 12.sp,
+                    color = TextSecondary
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        label = { Text("Sender ID") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = { addDraft() },
+                        enabled = draft.trim().isNotEmpty()
+                    ) {
+                        Icon(Icons.Default.AddCircle, contentDescription = "Add sender", tint = AccentCyan)
+                    }
+                }
+
+                if (blocked.isEmpty()) {
+                    Text("এখনো কোনো ব্লক সেন্ডার নেই।", fontSize = 12.sp, color = TextSecondary)
+                } else {
+                    blocked.forEach { sender ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(sender, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                            IconButton(
+                                onClick = {
+                                    blocked = blocked.filterNot { it.equals(sender, ignoreCase = true) }
+                                }
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Remove", tint = StatusRed)
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss, enabled = !isSaving) {
+                        Text("বাতিল")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            addDraft()
+                            onSave(blocked)
+                        },
+                        enabled = !isSaving,
+                        colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo)
+                    ) {
+                        if (isSaving) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                        } else {
+                            Text("সেভ", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun SmsTemplateEditDialog(
     template: SmsTemplateDto,
     onDismiss: () -> Unit,
@@ -1014,7 +1158,7 @@ private fun SmsTemplateEditDialog(
     }
     var newRegex by remember { mutableStateOf("") }
     var isActive by remember { mutableIntStateOf(runCatching { template.isActive }.getOrDefault(1)) }
-    var isParseable by remember { mutableIntStateOf(runCatching { template.isParseable }.getOrDefault(1)) }
+    var isParseable by remember { mutableIntStateOf(1) }
     var category by remember {
         mutableStateOf(template.category?.takeIf { it.isNotBlank() } ?: "SEND_MONEY")
     }
@@ -1025,27 +1169,7 @@ private fun SmsTemplateEditDialog(
         "BANK" to "ব্যাংক",
         "CARD" to "কার্ড"
     )
-    val customSenderCategoryOptions = listOf(
-        "ROBI" to "Robi",
-        "AIRTEL" to "Airtel",
-        "GP" to "GP",
-        "BL" to "BL",
-        "TELETAK" to "Teletalk",
-        "BANK" to "Bank",
-        "OTHERS" to "Others"
-    )
-    val operatorOnly = setOf("ROBI", "AIRTEL", "GP", "BL", "TELETAK", "OTHERS")
-    var purpose by remember {
-        val initialCat = template.category?.uppercase().orEmpty()
-        mutableStateOf(
-            when {
-                initialCat in operatorOnly -> "custom"
-                template.isParseable == 0 -> "custom"
-                else -> "checkout"
-            }
-        )
-    }
-    val categoryOptions = if (purpose == "custom") customSenderCategoryOptions else checkoutCategoryOptions
+    val categoryOptions = checkoutCategoryOptions
     var categoryExpanded by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -1106,39 +1230,7 @@ private fun SmsTemplateEditDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // Purpose: Checkout vs Custom Sender
-                Text("টেমপ্লেট ধরন", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextSecondary)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf("checkout" to "চেকআউট", "custom" to "কাস্টম সেন্ডার").forEach { (key, label) ->
-                        val selected = purpose == key
-                        FilterChip(
-                            selected = selected,
-                            onClick = {
-                                purpose = key
-                                if (key == "checkout") {
-                                    isParseable = 1
-                                    if (category !in checkoutCategoryOptions.map { it.first }) {
-                                        category = "SEND_MONEY"
-                                    }
-                                } else {
-                                    isParseable = 0
-                                    if (category !in customSenderCategoryOptions.map { it.first }) {
-                                        category = "ROBI"
-                                    }
-                                }
-                            },
-                            label = { Text(label, fontSize = 12.sp) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = RoyalIndigo.copy(alpha = 0.2f),
-                                selectedLabelColor = RoyalIndigo
-                            )
-                        )
-                    }
-                }
-
+                // Checkout templates only — custom ready-made catalog removed (device ALL + block-list).
                 ExposedDropdownMenuBox(
                     expanded = categoryExpanded,
                     onExpandedChange = { categoryExpanded = it },
@@ -1148,9 +1240,7 @@ private fun SmsTemplateEditDialog(
                         value = categoryOptions.find { it.first == category }?.second ?: category,
                         onValueChange = {},
                         readOnly = true,
-                        label = {
-                            Text(if (purpose == "custom") "অপারেটর / টাইপ" else "চেকআউট টাইপ")
-                        },
+                        label = { Text("চেকআউট টাইপ") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -1287,22 +1377,6 @@ private fun SmsTemplateEditDialog(
                 }
 
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column {
-                        Text("পার্সেবল (Is Parseable)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Text(
-                            "ON = পেমেন্ট SMS → sms_history | OFF = আর্কাইভ SMS → custom_sms_archives",
-                            color = TextSecondary,
-                            fontSize = 11.sp
-                        )
-                    }
-                    Switch(checked = isParseable == 1, onCheckedChange = { isParseable = if (it) 1 else 0 })
-                }
-
-                Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
@@ -1319,7 +1393,7 @@ private fun SmsTemplateEditDialog(
                                     matchingKeyword = "",
                                     regexPattern = finalRegexPattern,
                                     isActive = isActive,
-                                    isParseable = isParseable,
+                                    isParseable = 1,
                                     category = category
                                 )
                             )

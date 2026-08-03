@@ -206,6 +206,9 @@ data class DashboardStats(
     @SerializedName("gateway_methods")
     val gatewayMethods: List<GatewayMethod>? = null,
 
+    @SerializedName("global_blocked_senders")
+    val globalBlockedSenders: List<String>? = null,
+
     @SerializedName("gateway_methods_last_sync")
     val gatewayMethodsLastSync: Long? = 0L,
 

@@ -6,26 +6,20 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,6 +30,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
@@ -52,7 +48,7 @@ import online.paychek.app.services.sms.SmsRoutingEngine
 import online.paychek.app.utils.DeviceIdHelper
 import online.paychek.app.utils.SecurePreferences
 
-/** Admin archive category tabs (Persistent-0 official catalog). Device UI uses ALL only. */
+/** Kept for admin checkout reorder only (custom ready-made catalog removed). */
 val ReadyMadeTabs = listOf(
     "ROBI" to "Robi",
     "AIRTEL" to "Airtel",
@@ -63,20 +59,17 @@ val ReadyMadeTabs = listOf(
     "OTHERS" to "Others"
 )
 
-data class ReadyMadeUiState(
+data class AllOnlyUiState(
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val error: String? = null,
     val allAlreadyEnabled: Boolean = false
 )
 
-/**
- * Device Persistent-0 path: SIM [+] → ALL → Save.
- * Persistent-1 templates remain on DeviceScreen unchanged.
- */
-class CustomSenderReadyMadeViewModel : ViewModel() {
-    private val _state = MutableStateFlow(ReadyMadeUiState())
-    val state: StateFlow<ReadyMadeUiState> = _state.asStateFlow()
+/** User Device [+]: ALL archive only (block list is admin-global). */
+class CustomSenderAllBlockViewModel : ViewModel() {
+    private val _state = MutableStateFlow(AllOnlyUiState())
+    val state: StateFlow<AllOnlyUiState> = _state.asStateFlow()
 
     fun loadSlotState(
         context: android.content.Context,
@@ -99,14 +92,19 @@ class CustomSenderReadyMadeViewModel : ViewModel() {
                     deviceId = headerDeviceId
                 )
             }.onSuccess { methodsRes ->
-                val allOn = if (methodsRes.isSuccessful) {
-                    methodsRes.body()?.data.orEmpty().any { m ->
-                        m.simSlot == simSlot &&
-                            m.isEnabled == 1 &&
-                            (m.isParseable ?: 1) == 0 &&
-                            SmsRoutingEngine.isAllSenderPolicy(m)
-                    }
-                } else false
+                val methods = if (methodsRes.isSuccessful) {
+                    methodsRes.body()?.data.orEmpty()
+                } else emptyList()
+                methodsRes.body()?.globalBlockedSenders?.let { blocked ->
+                    online.paychek.app.data.local.prefs.PrefsHelper
+                        .setGlobalBlockedSenders(context, blocked)
+                }
+                val allOn = methods.any { m ->
+                    m.simSlot == simSlot &&
+                        m.isEnabled == 1 &&
+                        (m.isParseable ?: 1) == 0 &&
+                        SmsRoutingEngine.isAllSenderPolicy(m)
+                }
                 _state.update {
                     it.copy(isLoading = false, allAlreadyEnabled = allOn, error = null)
                 }
@@ -137,7 +135,6 @@ class CustomSenderReadyMadeViewModel : ViewModel() {
                 simSlot = simSlot,
                 senderId = SmsRoutingEngine.ALL_SENDER_ID,
                 deviceId = headerDeviceId,
-                officialTemplateId = null,
                 createPersonal = true
             )
             runCatching {
@@ -149,22 +146,21 @@ class CustomSenderReadyMadeViewModel : ViewModel() {
             }.onSuccess { res ->
                 _state.update { it.copy(isSaving = false) }
                 if (res.isSuccessful && res.body()?.success == true) {
-                    // Keep local routing cache in sync so Guard-1/2 see ALL immediately.
+                    val methods = res.body()?.data
+                    res.body()?.globalBlockedSenders?.let { blocked ->
+                        online.paychek.app.data.local.prefs.PrefsHelper
+                            .setGlobalBlockedSenders(context, blocked)
+                    }
                     val isLocalTarget = targetDeviceId.isNullOrBlank() ||
                         targetDeviceId == localDeviceId
-                    val methods = res.body()?.data
-                    var cacheOk = !isLocalTarget
                     if (isLocalTarget && methods != null) {
-                        cacheOk = runCatching {
+                        runCatching {
                             val json = online.paychek.app.utils.GsonUtils.gson.toJson(methods)
                             online.paychek.app.data.local.prefs.PrefsHelper
                                 .setGatewayMethodsCache(context, json)
-                        }.getOrDefault(false)
+                        }
                     }
-                    // Only mark enabled when we have methods (or remote — DeviceScreen will refresh).
-                    if (!isLocalTarget || (methods != null && cacheOk)) {
-                        _state.update { it.copy(allAlreadyEnabled = true) }
-                    }
+                    _state.update { it.copy(allAlreadyEnabled = true) }
                     onDone()
                 } else {
                     val msg = online.paychek.app.utils.ApiErrorParser.parse(res.errorBody()?.string())
@@ -178,14 +174,13 @@ class CustomSenderReadyMadeViewModel : ViewModel() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CustomSenderReadyMadeScreen(
+fun CustomSenderAllBlockDialog(
     simSlot: Int,
     targetDeviceId: String? = null,
-    onNavigateBack: () -> Unit,
-    modifier: Modifier = Modifier,
-    viewModel: CustomSenderReadyMadeViewModel = viewModel(key = "ready-made-sim-$simSlot")
+    onDismiss: () -> Unit,
+    onChanged: () -> Unit = {},
+    viewModel: CustomSenderAllBlockViewModel = viewModel(key = "all-only-sim-$simSlot-${targetDeviceId ?: "local"}")
 ) {
     val context = LocalContext.current
     val uiState by viewModel.state.collectAsStateWithLifecycle()
@@ -198,132 +193,104 @@ fun CustomSenderReadyMadeScreen(
     val card = if (bg == Color(0xFF0B0E14)) Color(0xFF151A23) else Color.White
     val textPrimary = MaterialTheme.colorScheme.onBackground
     val muted = textPrimary.copy(alpha = 0.55f)
-    val accent = Color(0xFF06B6D4)
+    val accent = Color(0xFF22D3EE)
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "কাস্টম সেন্ডার — ALL",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 17.sp
-                        )
-                        Text(text = "SIM $simSlot", fontSize = 12.sp, color = muted)
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = bg)
-            )
-        },
-        containerColor = bg
-    ) { padding ->
-        Column(
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = true)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = card,
+            tonalElevation = 8.dp,
             modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp)
         ) {
-            if (uiState.isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .padding(24.dp),
-                    color = accent
-                )
-            }
-
-            uiState.error?.let { err ->
-                Text(text = err, color = Color(0xFFEF4444), fontSize = 12.sp)
-            }
-
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(card, RoundedCornerShape(12.dp))
-                    .border(
-                        width = 1.dp,
-                        color = if (uiState.allAlreadyEnabled) accent else muted.copy(alpha = 0.25f),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "ALL",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp,
-                        color = textPrimary
+                Text(
+                    text = "কাস্টম সেন্ডার — SIM $simSlot",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = textPrimary
+                )
+
+                if (uiState.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .align(Alignment.CenterHorizontally),
+                        color = accent,
+                        strokeWidth = 3.dp
                     )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
+                        .background(accent.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("ALL", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = accent)
+                        Text(
+                            text = "সকল এসএমএস আর্কাইভ বক্সে রিসিভ",
+                            fontSize = 12.sp,
+                            color = muted,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
                     if (uiState.allAlreadyEnabled) {
                         Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Enabled",
-                            tint = accent,
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Color(0xFF10B981),
                             modifier = Modifier.size(22.dp)
-                        )
-                        Text(
-                            text = "সক্রিয়",
-                            color = accent,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
-                Text(
-                    text = "এই SIM-এর যেকোনো সেন্ডার থেকে আসা SMS, known payment template-এর সাথে body match না করলেও archive (isParseable=0) হিসেবে সার্ভারে যাবে। মিললে isParseable=1 অপরিবর্তিত থাকবে।",
-                    color = muted,
-                    fontSize = 12.sp,
-                    lineHeight = 18.sp
-                )
-                Text(
-                    text = "সতর্কতা: OTP/ব্যাংক অ্যালার্টসহ অপ্রয়োজনীয় SMSও archive হতে পারে। শুধু প্রয়োজনে চালু করুন।",
-                    color = Color(0xFFF59E0B),
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp
-                )
-            }
 
-            Button(
-                onClick = {
-                    viewModel.saveAllPolicy(context, simSlot, targetDeviceId) {
-                        Toast.makeText(context, "SIM $simSlot — ALL সংরক্ষিত", Toast.LENGTH_SHORT).show()
-                        onNavigateBack()
+                Button(
+                    onClick = {
+                        viewModel.saveAllPolicy(context, simSlot, targetDeviceId) {
+                            Toast.makeText(context, "SIM $simSlot — ALL সংরক্ষিত", Toast.LENGTH_SHORT).show()
+                            onChanged()
+                            onDismiss()
+                        }
+                    },
+                    enabled = !uiState.isSaving && !uiState.isLoading,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = accent,
+                        contentColor = Color(0xFF0B0E14)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    if (uiState.isSaving) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = Color(0xFF0B0E14)
+                        )
+                    } else {
+                        Text("সাবমিট", fontWeight = FontWeight.Bold)
                     }
-                },
-                enabled = !uiState.isSaving && !uiState.isLoading,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = accent),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                if (uiState.isSaving) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(22.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Text(
-                        text = if (uiState.allAlreadyEnabled) "ALL আবার সংরক্ষণ করুন" else "ALL সংরক্ষণ করুন",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
+                }
+
+                uiState.error?.let { err ->
+                    Text(err, color = Color(0xFFEF4444), fontSize = 12.sp)
+                }
+
+                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+                    Text("বন্ধ", color = muted)
                 }
             }
         }

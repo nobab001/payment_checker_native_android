@@ -24,17 +24,19 @@ router.post('/complete-profile', authenticateToken, authController.completeProfi
 
 // Parent-Child Control Hub Endpoints
 router.get('/v1/devices', authenticateToken, authController.getChildDevices);
-router.post('/v1/devices/remote-update', authenticateToken, authenticateToken.requireOwnerCaller, authController.remoteUpdateDevice);
+// Staff and owner callers share post-login device-management access.
+// Controllers still scope by JWT userId + target deviceId (and account PIN where required).
+router.post('/v1/devices/remote-update', authenticateToken, authController.remoteUpdateDevice);
 router.get('/v1/devices/my-config', authenticateToken, authController.getMyDeviceConfig);
 
 // Cross-Device Multi-Approval & RBAC Endpoints
 router.get('/v1/devices/pending-approvals', authenticateToken, authController.getPendingApprovals);
-router.post('/v1/devices/approve-by-pin', authenticateToken, authenticateToken.requireOwnerCaller, authController.approveByPin);
+router.post('/v1/devices/approve-by-pin', authenticateToken, authController.approveByPin);
 router.post('/v1/devices/submit-role', authenticateToken, authController.submitRole);
 router.get('/v1/devices/check-approval-status', authenticateToken, authController.checkApprovalStatus);
 router.post('/v1/devices/mark-setup-completed', authenticateToken, authController.markSetupCompleted);
 router.post('/v1/devices/toggle-remote-role', authenticateToken, authController.toggleRemoteRole);
-router.post('/v1/devices/delete', authenticateToken, authenticateToken.requireOwnerCaller, authController.deleteDevice);
+router.post('/v1/devices/delete', authenticateToken, authController.deleteDevice);
 
 // Profile Endpoints
 router.get('/v1/profile', authenticateToken, authController.getProfile);

@@ -251,6 +251,10 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 .onSuccess { res ->
                     if (res.isSuccessful && res.body()?.success == true) {
                         val body = res.body()!!
+                        body.globalBlockedSenders?.let {
+                            online.paychek.app.data.local.prefs.PrefsHelper
+                                .setGlobalBlockedSenders(getApplication(), it)
+                        }
                         body.dataVersion?.takeIf { it > 0 }?.let {
                             online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsLastSync(getApplication(), it)
                         }
@@ -266,6 +270,10 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                                     .onSuccess { fullRes ->
                                         val fullBody = fullRes.body()
                                         if (fullRes.isSuccessful && fullBody?.success == true && fullBody.data != null) {
+                                            fullBody.globalBlockedSenders?.let {
+                                                online.paychek.app.data.local.prefs.PrefsHelper
+                                                    .setGlobalBlockedSenders(getApplication(), it)
+                                            }
                                             fullBody.dataVersion?.takeIf { it > 0 }?.let {
                                                 online.paychek.app.data.local.prefs.PrefsHelper
                                                     .setGatewayMethodsLastSync(getApplication(), it)

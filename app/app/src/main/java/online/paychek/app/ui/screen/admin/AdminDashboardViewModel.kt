@@ -43,7 +43,8 @@ data class AdminUiState(
     val errorMessage: String? = null,
     val successMessage: String? = null,
     val v3Settings: SubscriptionV3SettingsDto? = null,
-    val pendingRefunds: List<V3PendingRefundDto> = emptyList()
+    val pendingRefunds: List<V3PendingRefundDto> = emptyList(),
+    val globalBlockedSenders: List<String> = emptyList()
 )
 
 class AdminDashboardViewModel(application: Application) : AndroidViewModel(application) {
@@ -85,6 +86,19 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                     if (res.isSuccessful) {
                         val templates = res.body()?.templates ?: emptyList()
                         _state.update { it.copy(smsTemplates = templates) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            val jobGlobalBlocked = launch {
+                try {
+                    val res = api.getGlobalBlockedSenders(token)
+                    if (res.isSuccessful) {
+                        _state.update {
+                            it.copy(globalBlockedSenders = res.body()?.senders.orEmpty())
+                        }
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -263,7 +277,7 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
             }
 
             kotlinx.coroutines.joinAll(
-                jobConfigs, jobTemplates, jobCheckouts, jobEmails, jobSmsSettings,
+                jobConfigs, jobTemplates, jobGlobalBlocked, jobCheckouts, jobEmails, jobSmsSettings,
                 jobUsers, jobOtpFormat, jobPlans, jobAddonPlans, jobV3Settings, jobPendingRefunds, jobCheckoutDesign,
                 jobOfficialWebsite, jobDemoPayments
             )
@@ -432,6 +446,43 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
     }
 
     // SMS Template Mutations
+    fun saveGlobalBlockedSenders(senders: List<String>) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, errorMessage = null) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val response = api.saveGlobalBlockedSenders(
+                    token,
+                    SaveGlobalBlockedSendersRequest(senders)
+                )
+                if (response.isSuccessful && response.body()?.success == true) {
+                    val saved = response.body()?.senders.orEmpty()
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            globalBlockedSenders = saved,
+                            successMessage = response.body()?.message
+                                ?: "গ্লোবাল ব্লক সেন্ডার সংরক্ষিত হয়েছে।"
+                        )
+                    }
+                } else {
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            errorMessage = response.body()?.message
+                                ?: response.body()?.error
+                                ?: "গ্লোবাল ব্লক সেভ ব্যর্থ হয়েছে।"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(isSaving = false, errorMessage = e.localizedMessage)
+                }
+            }
+        }
+    }
+
     fun saveSmsTemplate(template: SmsTemplateDto) {
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true) }

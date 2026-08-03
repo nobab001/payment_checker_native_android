@@ -1152,6 +1152,32 @@ async function updateDemoPaymentRefund(req, res) {
   }
 }
 
+async function getGlobalBlockedSendersAdmin(req, res) {
+  try {
+    const { getGlobalBlockedSenders } = require('../services/globalBlockedSenders');
+    const senders = await getGlobalBlockedSenders();
+    return res.json({ success: true, senders });
+  } catch (err) {
+    console.error('getGlobalBlockedSendersAdmin error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function saveGlobalBlockedSendersAdmin(req, res) {
+  try {
+    const { setGlobalBlockedSenders } = require('../services/globalBlockedSenders');
+    const senders = await setGlobalBlockedSenders(req.body?.senders || []);
+    try {
+      const dataSyncCache = require('../services/dataSyncCache');
+      await dataSyncCache.bumpGlobalTemplateVersion();
+    } catch (_) { /* optional */ }
+    return res.json({ success: true, senders, message: 'গ্লোবাল ব্লক সেন্ডার সংরক্ষিত হয়েছে।' });
+  } catch (err) {
+    console.error('saveGlobalBlockedSendersAdmin error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   verifyAdmin,
   listAllWebsites,
@@ -1192,6 +1218,8 @@ module.exports = {
   updateOtpFormat,
   addSite,
   manualGrace,
+  getGlobalBlockedSendersAdmin,
+  saveGlobalBlockedSendersAdmin,
   extendSubscription,
   generateCustomRegex
 };
