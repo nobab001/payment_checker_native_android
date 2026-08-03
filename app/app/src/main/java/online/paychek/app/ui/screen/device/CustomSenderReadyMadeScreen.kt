@@ -3,26 +3,17 @@ package online.paychek.app.ui.screen.device
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -31,32 +22,20 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
@@ -69,11 +48,12 @@ import kotlinx.coroutines.launch
 import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.data.remote.dto.AddCustomSenderRequest
-import online.paychek.app.data.remote.dto.CustomSenderSuggestionDto
+import online.paychek.app.services.sms.SmsRoutingEngine
 import online.paychek.app.utils.DeviceIdHelper
 import online.paychek.app.utils.SecurePreferences
 
-internal val ReadyMadeTabs = listOf(
+/** Admin archive category tabs (Persistent-0 official catalog). Device UI uses ALL only. */
+val ReadyMadeTabs = listOf(
     "ROBI" to "Robi",
     "AIRTEL" to "Airtel",
     "GP" to "GP",
@@ -86,18 +66,21 @@ internal val ReadyMadeTabs = listOf(
 data class ReadyMadeUiState(
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
-    val items: List<CustomSenderSuggestionDto> = emptyList(),
     val error: String? = null,
-    /** Sender IDs already on the *current* SIM slot only (lowercase). */
-    val addedSenderIds: Set<String> = emptySet()
+    /** True when this SIM slot already has ALL (*) archive policy. */
+    val allAlreadyEnabled: Boolean = false
 )
 
+/**
+ * Custom sender screen — Persistent-0 / archive path is now SIM-level ALL only.
+ * Flow: Device SIM [+] → this screen → ALL → Save.
+ * Persistent-1 (parseable templates) is unchanged on DeviceScreen.
+ */
 class CustomSenderReadyMadeViewModel : ViewModel() {
     private val _state = MutableStateFlow(ReadyMadeUiState())
     val state: StateFlow<ReadyMadeUiState> = _state.asStateFlow()
 
-    fun load(
-        category: String,
+    fun loadSlotState(
         context: android.content.Context,
         simSlot: Int,
         targetDeviceId: String? = null
@@ -112,69 +95,36 @@ class CustomSenderReadyMadeViewModel : ViewModel() {
             val localDeviceId = DeviceIdHelper.getHashedAndroidId(context)
             val headerDeviceId = targetDeviceId?.takeIf { it.isNotBlank() } ?: localDeviceId
 
-            val existingOnSlot = runCatching {
-                val methodsRes = RetrofitClient.gatewayApiService.getGatewayMethods(
-                    token = "Bearer $token",
-                    deviceId = headerDeviceId
-                )
-                if (methodsRes.isSuccessful) {
-                    methodsRes.body()?.data.orEmpty()
-                        // Rule: শুধু same slot-এর isParseable=0 (custom archive) methods block করবে।
-                        // isParseable=1 (template/parseable) methods-এর sender ID গুলো allow —
-                        // কারণ user ওই sender-এ custom archive আলাদাভাবে add করতে পারবে।
-                        // Different slot-এ same sender সবসময় allowed।
-                        .filter { it.simSlot == simSlot && (it.isParseable ?: 1) == 0 }
-                        .mapNotNull { it.senderId?.trim()?.lowercase()?.takeIf { id -> id.isNotEmpty() } }
-                        .toSet()
-                } else {
-                    emptySet()
-                }
-            }.getOrDefault(emptySet())
-
             runCatching {
-                RetrofitClient.gatewayApiService.getCustomSenderSuggestions(
+                RetrofitClient.gatewayApiService.getGatewayMethods(
                     token = "Bearer $token",
-                    query = "",
-                    category = category,
                     deviceId = headerDeviceId
                 )
-            }.onSuccess { res ->
-                if (res.isSuccessful && res.body()?.success == true) {
-                    _state.update {
-                        it.copy(
-                            isLoading = false,
-                            items = res.body()?.suggestions.orEmpty(),
-                            addedSenderIds = existingOnSlot,
-                            error = null
-                        )
+            }.onSuccess { methodsRes ->
+                val allOn = if (methodsRes.isSuccessful) {
+                    methodsRes.body()?.data.orEmpty().any { m ->
+                        m.simSlot == simSlot &&
+                            m.isEnabled == 1 &&
+                            (m.isParseable ?: 1) == 0 &&
+                            SmsRoutingEngine.isAllSenderPolicy(m)
                     }
                 } else {
-                    _state.update {
-                        it.copy(
-                            isLoading = false,
-                            addedSenderIds = existingOnSlot,
-                            error = "লিস্ট লোড করতে ব্যর্থ (${res.code()})"
-                        )
-                    }
+                    false
+                }
+                _state.update {
+                    it.copy(isLoading = false, allAlreadyEnabled = allOn, error = null)
                 }
             }.onFailure { e ->
                 _state.update {
-                    it.copy(
-                        isLoading = false,
-                        addedSenderIds = existingOnSlot,
-                        error = e.message ?: "নেটওয়ার্ক সমস্যা"
-                    )
+                    it.copy(isLoading = false, error = e.message ?: "নেটওয়ার্ক সমস্যা")
                 }
             }
         }
     }
 
-    fun addSender(
+    fun saveAllPolicy(
         context: android.content.Context,
         simSlot: Int,
-        senderId: String,
-        officialTemplateId: Int?,
-        createPersonal: Boolean,
         targetDeviceId: String?,
         onDone: () -> Unit
     ) {
@@ -187,13 +137,12 @@ class CustomSenderReadyMadeViewModel : ViewModel() {
             }
             val localDeviceId = DeviceIdHelper.getHashedAndroidId(context)
             val headerDeviceId = targetDeviceId?.takeIf { it.isNotBlank() } ?: localDeviceId
-            val cleanId = senderId.trim()
             val request = AddCustomSenderRequest(
                 simSlot = simSlot,
-                senderId = cleanId,
+                senderId = SmsRoutingEngine.ALL_SENDER_ID,
                 deviceId = headerDeviceId,
-                officialTemplateId = officialTemplateId,
-                createPersonal = if (createPersonal) true else null
+                officialTemplateId = null,
+                createPersonal = true
             )
             runCatching {
                 RetrofitClient.gatewayApiService.addCustomSender(
@@ -204,9 +153,7 @@ class CustomSenderReadyMadeViewModel : ViewModel() {
             }.onSuccess { res ->
                 _state.update { it.copy(isSaving = false) }
                 if (res.isSuccessful && res.body()?.success == true) {
-                    _state.update {
-                        it.copy(addedSenderIds = it.addedSenderIds + cleanId.lowercase())
-                    }
+                    _state.update { it.copy(allAlreadyEnabled = true) }
                     onDone()
                 } else {
                     val msg = online.paychek.app.utils.ApiErrorParser.parse(res.errorBody()?.string())
@@ -231,14 +178,9 @@ fun CustomSenderReadyMadeScreen(
 ) {
     val context = LocalContext.current
     val uiState by viewModel.state.collectAsStateWithLifecycle()
-    val pagerState = rememberPagerState(pageCount = { ReadyMadeTabs.size })
-    val scope = rememberCoroutineScope()
-    var showManualDialog by remember { mutableStateOf(false) }
-    var manualSender by remember { mutableStateOf("") }
 
-    val category = ReadyMadeTabs[pagerState.currentPage].first
-    LaunchedEffect(category, simSlot, targetDeviceId) {
-        viewModel.load(category, context, simSlot, targetDeviceId)
+    LaunchedEffect(simSlot, targetDeviceId) {
+        viewModel.loadSlotState(context, simSlot, targetDeviceId)
     }
 
     val bg = MaterialTheme.colorScheme.background
@@ -254,7 +196,7 @@ fun CustomSenderReadyMadeScreen(
                 title = {
                     Column {
                         Text(
-                            text = "কাস্টম সেন্ডার রেডিমেট",
+                            text = "কাস্টম সেন্ডার — ALL",
                             fontWeight = FontWeight.Bold,
                             fontSize = 17.sp
                         )
@@ -269,29 +211,6 @@ fun CustomSenderReadyMadeScreen(
                         )
                     }
                 },
-                actions = {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .clickable { showManualDialog = true }
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "লিস্টের বাইরে",
-                            tint = accent,
-                            modifier = Modifier.size(26.dp)
-                        )
-                        Text(
-                            text = "*লিস্টের বাইরে",
-                            color = accent,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = bg)
             )
         },
@@ -301,271 +220,101 @@ fun CustomSenderReadyMadeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            ScrollableTabRow(
-                selectedTabIndex = pagerState.currentPage,
-                edgePadding = 12.dp,
-                containerColor = bg,
-                contentColor = accent
-            ) {
-                ReadyMadeTabs.forEachIndexed { index, pair ->
-                    Tab(
-                        selected = pagerState.currentPage == index,
-                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                        text = {
-                            Text(
-                                text = pair.second,
-                                fontWeight = if (pagerState.currentPage == index) {
-                                    FontWeight.Bold
-                                } else {
-                                    FontWeight.Medium
-                                },
-                                fontSize = 13.sp
-                            )
-                        }
-                    )
-                }
+            if (uiState.isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(24.dp),
+                    color = accent
+                )
             }
 
             uiState.error?.let { err ->
-                Text(
-                    text = err,
-                    color = Color(0xFFEF4444),
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
+                Text(text = err, color = Color(0xFFEF4444), fontSize = 12.sp)
             }
 
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize()
-            ) { page ->
-                val pageCategory = ReadyMadeTabs[page].first
-                // Reload when page becomes visible (LaunchedEffect on category already covers current)
-                ReadyMadePageContent(
-                    isActivePage = pagerState.currentPage == page,
-                    category = pageCategory,
-                    uiState = uiState,
-                    cardColor = card,
-                    textPrimary = textPrimary,
-                    muted = muted,
-                    accent = accent,
-                    onAddFromList = { item ->
-                        viewModel.addSender(
-                            context = context,
-                            simSlot = simSlot,
-                            senderId = item.senderId,
-                            officialTemplateId = item.id,
-                            createPersonal = false,
-                            targetDeviceId = targetDeviceId
-                        ) {
-                            Toast.makeText(context, "${item.senderId} যোগ হয়েছে", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                )
-            }
-        }
-    }
-
-    if (showManualDialog) {
-        Dialog(onDismissRequest = { if (!uiState.isSaving) showManualDialog = false }) {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = card,
-                modifier = Modifier.fillMaxWidth()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(card, RoundedCornerShape(12.dp))
+                    .border(
+                        width = 1.dp,
+                        color = if (uiState.allAlreadyEnabled) accent else muted.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "লিস্টের বাইরে সেন্ডার যোগ",
+                        text = "ALL",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
+                        fontSize = 20.sp,
                         color = textPrimary
                     )
-                    Text(
-                        text = "নিজের মতো সেন্ডার নাম লিখে অ্যাড করুন (যেমন: GP-ALERT)",
-                        color = muted,
-                        fontSize = 13.sp
-                    )
-                    OutlinedTextField(
-                        value = manualSender,
-                        onValueChange = { manualSender = it },
-                        label = { Text("সেন্ডার আইডি") },
-                        singleLine = true,
-                        enabled = !uiState.isSaving,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        TextButton(
-                            onClick = { showManualDialog = false },
-                            enabled = !uiState.isSaving,
-                            modifier = Modifier.weight(1f)
-                        ) { Text("বাতিল") }
-                        Button(
-                            onClick = {
-                                val sid = manualSender.trim()
-                                if (sid.isEmpty()) return@Button
-                                viewModel.addSender(
-                                    context = context,
-                                    simSlot = simSlot,
-                                    senderId = sid,
-                                    officialTemplateId = null,
-                                    createPersonal = true,
-                                    targetDeviceId = targetDeviceId
-                                ) {
-                                    Toast.makeText(context, "$sid যোগ হয়েছে", Toast.LENGTH_SHORT).show()
-                                    manualSender = ""
-                                    showManualDialog = false
-                                }
-                            },
-                            enabled = !uiState.isSaving && manualSender.trim().isNotEmpty(),
-                            colors = ButtonDefaults.buttonColors(containerColor = accent),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            if (uiState.isSaving) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Text("অ্যাড", color = Color.White, fontWeight = FontWeight.Bold)
-                            }
-                        }
+                    if (uiState.allAlreadyEnabled) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Enabled",
+                            tint = accent,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Text(
+                            text = "সক্রিয়",
+                            color = accent,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReadyMadePageContent(
-    isActivePage: Boolean,
-    category: String,
-    uiState: ReadyMadeUiState,
-    cardColor: Color,
-    textPrimary: Color,
-    muted: Color,
-    accent: Color,
-    onAddFromList: (CustomSenderSuggestionDto) -> Unit
-) {
-    // Only show loading/items for the active page's loaded state (shared VM loads current category)
-    if (!isActivePage) {
-        Spacer(modifier = Modifier.fillMaxSize())
-        return
-    }
-    when {
-        uiState.isLoading -> {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                CircularProgressIndicator(color = accent)
-            }
-        }
-        uiState.items.isEmpty() -> {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
                 Text(
-                    text = "এই ট্যাবে এখনো কোনো রেডিমেট সেন্ডার নেই",
+                    text = "এই SIM-এর যেকোনো সেন্ডার থেকে আসা SMS, known payment template-এর সাথে body match না করলেও archive (Persistent-0) হিসেবে সার্ভারে যাবে। মিললে Persistent-1 অপরিবর্তিত থাকবে।",
                     color = muted,
-                    fontSize = 14.sp
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp
+                )
+                Text(
+                    text = "সতর্কতা: OTP/ব্যাংক অ্যালার্টসহ অপ্রয়োজনীয় SMSও archive হতে পারে। শুধু প্রয়োজনে চালু করুন।",
+                    color = Color(0xFFF59E0B),
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
                 )
             }
-        }
-        else -> {
-            LazyColumn(
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxSize()
+
+            Button(
+                onClick = {
+                    viewModel.saveAllPolicy(context, simSlot, targetDeviceId) {
+                        Toast.makeText(context, "SIM $simSlot — ALL সংরক্ষিত", Toast.LENGTH_SHORT).show()
+                        onNavigateBack()
+                    }
+                },
+                enabled = !uiState.isSaving && !uiState.isLoading,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = accent),
+                shape = RoundedCornerShape(10.dp)
             ) {
-                items(uiState.items, key = { it.id }) { item ->
-                    val already = uiState.addedSenderIds.contains(item.senderId.lowercase())
-                    ReadyMadeSenderRow(
-                        item = item,
-                        alreadyAdded = already,
-                        isSaving = uiState.isSaving,
-                        cardColor = cardColor,
-                        textPrimary = textPrimary,
-                        muted = muted,
-                        accent = accent,
-                        onClick = { onAddFromList(item) }
+                if (uiState.isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(
+                        text = if (uiState.allAlreadyEnabled) "ALL আবার সংরক্ষণ করুন" else "ALL সংরক্ষণ করুন",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
                     )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun ReadyMadeSenderRow(
-    item: CustomSenderSuggestionDto,
-    alreadyAdded: Boolean,
-    isSaving: Boolean,
-    cardColor: Color,
-    textPrimary: Color,
-    muted: Color,
-    accent: Color,
-    onClick: () -> Unit
-) {
-    val borderColor = if (alreadyAdded) {
-        Color(0xFF22C55E).copy(alpha = 0.4f)
-    } else {
-        muted.copy(alpha = 0.2f)
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(cardColor)
-            .border(width = 1.dp, color = borderColor, shape = RoundedCornerShape(14.dp))
-            .clickable(enabled = !isSaving && !alreadyAdded, onClick = onClick)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.templateName.ifBlank { item.senderId },
-                fontWeight = FontWeight.SemiBold,
-                color = textPrimary,
-                fontSize = 15.sp
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = "Sender: ${item.senderId}",
-                color = muted,
-                fontSize = 12.sp
-            )
-        }
-        when {
-            alreadyAdded -> Icon(
-                imageVector = Icons.Default.CheckCircle,
-                contentDescription = null,
-                tint = Color(0xFF22C55E),
-                modifier = Modifier.size(22.dp)
-            )
-            isSaving -> CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
-                strokeWidth = 2.dp,
-                color = accent
-            )
-            else -> Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "Add",
-                tint = accent,
-                modifier = Modifier.size(22.dp)
-            )
         }
     }
 }

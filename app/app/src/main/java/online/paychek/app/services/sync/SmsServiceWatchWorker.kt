@@ -23,11 +23,11 @@ class SmsServiceWatchWorker(
             return Result.success()
         }
 
-        if (!SmsServiceGuard.isServiceHealthy(app)) {
-            Log.w(TAG, "SMS service dead while prefs ON — attempting restart")
-            SmsServiceGuard.healIfNeeded(app)
-        } else {
+        if (SmsServiceGuard.isServiceRunning(app)) {
             SmsServiceGuard.scheduleWatchdog(app)
+        } else {
+            Log.w(TAG, "SMS service not running while prefs ON — starting")
+            SmsServiceGuard.healIfNeeded(app)
         }
         SmsPollWorker.schedule(app)
 

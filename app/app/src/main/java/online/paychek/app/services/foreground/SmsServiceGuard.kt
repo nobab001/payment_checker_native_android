@@ -31,7 +31,7 @@ object SmsServiceGuard {
     private fun watchdogIntervalMinutes(): Long = 15L // WorkManager periodic minimum
 
     fun isServiceAlive(): Boolean {
-        // Kept for hot paths; callers that heal should use [isServiceHealthy].
+        // Kept for hot paths; watchdog/heal should use [isServiceRunning].
         return SmsMonitorService.isAlive
     }
 
@@ -40,13 +40,17 @@ object SmsServiceGuard {
         return SmsServiceHealth.isHealthy(context.applicationContext)
     }
 
+    /** True when the foreground SMS monitor process is actually running. */
+    fun isServiceRunning(context: Context): Boolean {
+        SmsServiceHealth.syncAliveFlag(context.applicationContext)
+        return SmsServiceHealth.isServiceRunning(context.applicationContext)
+    }
+
     /**
-     * When user left SMS ON but OEM killed the foreground service, restart it.
-     * @return true if prefs say ON (heal attempted when unhealthy).
+     * When user left SMS ON but the foreground service is not running, start it.
+     * If already running in ActivityManager, does nothing (no stop/restart cycle).
      *
-     * Rate-limited: APK update সময় WorkManager recovery + new process heal
-     * একসাথে চললে forceRestart() → stopService() → race condition crash হয়।
-     * Fix: 10s এর মধ্যে দুটো heal হতে দেওয়া হবে না।
+     * Rate-limited: duplicate start attempts within 10s are skipped.
      */
     @Volatile private var lastHealAtMs: Long = 0L
     private const val HEAL_COOLDOWN_MS = 10_000L // 10 seconds
@@ -54,33 +58,26 @@ object SmsServiceGuard {
     fun healIfNeeded(context: Context): Boolean {
         val app = context.applicationContext
         if (!PrefsHelper.isSmsServiceActive(app)) return false
-        if (isServiceHealthy(app)) {
+
+        SmsServiceHealth.syncAliveFlag(app)
+        if (isServiceRunning(app)) {
             scheduleWatchdog(app)
+            // Still scan inbox — FGS alive does not mean Guard-1 caught every SMS (OEM throttle).
+            SmsPollWorker.scheduleImmediate(app)
             return true
         }
+
         val now = System.currentTimeMillis()
         if (now - lastHealAtMs < HEAL_COOLDOWN_MS) {
-            Log.i(TAG, "healIfNeeded skipped — cooldown active (${(now - lastHealAtMs)}ms since last heal)")
-            return true // প্রক্রিয়া চলছে, শুধু একটু সময় লাগছে
+            Log.i(TAG, "healIfNeeded skipped — cooldown active (${now - lastHealAtMs}ms since last start)")
+            return false
         }
         lastHealAtMs = now
-        Log.w(TAG, "SMS service unhealthy while prefs ON — forcing restart")
-        forceRestart(app)
+        Log.w(TAG, "SMS service not running while prefs ON — starting")
+        startService(app, online.paychek.app.services.sync.NumberHeartbeatEngine.TRIGGER_BOOT_COMPLETED)
         scheduleWatchdog(app)
-        enqueueImmediateRecovery(app)
+        SmsPollWorker.scheduleImmediate(app)
         return true
-    }
-
-    /** Stop a zombie instance then start fresh — never clears the user ON pref. */
-    private fun forceRestart(context: Context) {
-        try {
-            SmsMonitorService.userInitiatedStop = false
-            context.stopService(android.content.Intent(context, SmsMonitorService::class.java))
-        } catch (e: Exception) {
-            Log.w(TAG, "stopService during forceRestart: ${e.message}")
-        }
-        SmsMonitorService.isAlive = false
-        startService(context, online.paychek.app.services.sync.NumberHeartbeatEngine.TRIGGER_BOOT_COMPLETED)
     }
 
     fun startIfEnabled(context: Context): Boolean {
@@ -164,6 +161,6 @@ object SmsServiceGuard {
         val prefOn = PrefsHelper.isSmsServiceActive(app)
         if (!prefOn) return false
         healIfNeeded(app)
-        return prefOn
+        return isServiceRunning(app)
     }
 }

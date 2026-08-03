@@ -15,6 +15,9 @@ import android.util.Log
 object SmsServiceHealth {
     private const val TAG = "SmsServiceHealth"
 
+    /** True when [SmsMonitorService] is registered with ActivityManager (actually running). */
+    fun isServiceRunning(context: Context): Boolean = isRunningInActivityManager(context)
+
     fun isRunningInActivityManager(context: Context): Boolean {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         @Suppress("DEPRECATION")
@@ -53,10 +56,18 @@ object SmsServiceHealth {
         return healthy
     }
 
-    /** Clear stale in-memory flag when OS shows the service is gone. */
+    /** Keep in-memory [SmsMonitorService.isAlive] aligned with ActivityManager. */
     fun syncAliveFlag(context: Context) {
-        if (!isRunningInActivityManager(context) && SmsMonitorService.isAlive) {
-            SmsMonitorService.isAlive = false
+        val running = isRunningInActivityManager(context)
+        when {
+            running && !SmsMonitorService.isAlive -> {
+                Log.d(TAG, "Syncing isAlive=true — service running in ActivityManager")
+                SmsMonitorService.isAlive = true
+            }
+            !running && SmsMonitorService.isAlive -> {
+                Log.w(TAG, "Correcting stale isAlive — service not in ActivityManager")
+                SmsMonitorService.isAlive = false
+            }
         }
     }
 }

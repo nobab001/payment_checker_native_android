@@ -18,11 +18,11 @@ class KeepAliveAlarmReceiver : BroadcastReceiver() {
             ServiceKeepAliveScheduler.cancel(app)
             return
         }
-        if (!SmsServiceGuard.isServiceHealthy(app)) {
-            Log.w(TAG, "Keep-alive: service dead — restarting")
-            SmsServiceGuard.healIfNeeded(app)
-        } else {
+        if (SmsServiceGuard.isServiceRunning(app)) {
             SmsServiceGuard.scheduleWatchdog(app)
+        } else {
+            Log.w(TAG, "Keep-alive: service not running — starting")
+            SmsServiceGuard.healIfNeeded(app)
         }
         ServiceKeepAliveScheduler.schedule(app)
 

@@ -292,13 +292,12 @@ class PaychekAccessibilityService : AccessibilityService() {
         val ctx = applicationContext
         if (!PrefsHelper.isSmsServiceActive(ctx)) return
 
-        if (!SmsServiceGuard.isServiceHealthy(ctx)) {
-            Log.w(TAG, "Watchdog: SMS service dead — restarting via accessibility anchor")
-            SmsServiceGuard.healIfNeeded(ctx)
-        } else {
+        if (SmsServiceGuard.isServiceRunning(ctx)) {
             SmsServiceGuard.scheduleWatchdog(ctx)
+        } else {
+            Log.w(TAG, "Watchdog: SMS service not running — starting via accessibility anchor")
+            SmsServiceGuard.healIfNeeded(ctx)
         }
-        ServiceKeepAliveScheduler.schedule(ctx)
         ServiceKeepAliveScheduler.schedule(ctx)
     }
 

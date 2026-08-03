@@ -915,6 +915,142 @@ async function addCustomSender(req, res) {
       return res.status(400).json({ error: 'sender_id আবশ্যক' });
     }
 
+    // ── Per-SIM ALL archive policy (sender_id = * | ALL) ─────────────────────
+    // Filtering config only — does not bypass SMS permissions / HMAC / dedupe.
+    // Supersedes other is_parseable=0 methods on this device+slot.
+    const isAllPolicy = cleanSenderId === '*' || cleanSenderId.toUpperCase() === 'ALL';
+    if (isAllPolicy) {
+      const user = await prisma.users.findUnique({
+        where: { id: userId },
+        select: { role: true },
+      });
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      let isAllowed = user.role === 'admin';
+      if (!isAllowed) {
+        const perm = await requirePermission(userId, 'perm_custom_sender');
+        isAllowed = perm.ok;
+      }
+      if (!isAllowed) {
+        return res.status(403).json({
+          success: false,
+          error: 'FEATURE_GATED',
+          message: 'কাস্টম সেন্ডার আইডি ব্যবহার করতে হলে আপনার প্যাকেজ আপগ্রেড করুন অথবা অ্যাড-অন কিনুন।',
+        });
+      }
+
+      let allTemplate = await findUserPersonalBySender(userId, '*');
+      if (!allTemplate) {
+        allTemplate = await prisma.sms_templates.create({
+          data: {
+            user_id: userId,
+            device_id: deviceId || null,
+            template_name: 'ALL',
+            sender_id: '*',
+            sender_number: '',
+            regex_pattern: '^(.*)$',
+            matching_keyword: '',
+            is_official: 0,
+            is_active: 0,
+            is_parseable: 0,
+            category: 'OTHERS',
+          },
+        });
+      } else if (allTemplate.template_name !== 'ALL') {
+        allTemplate = await prisma.sms_templates.update({
+          where: { id: allTemplate.id },
+          data: { template_name: 'ALL', sender_id: '*' },
+        });
+      }
+
+      // Remove other archive (is_parseable=0) methods on this slot — ALL supersedes them.
+      const slotArchiveMethods = await prisma.$queryRaw`
+        SELECT gm.id, gm.template_id
+        FROM gateway_methods gm
+        LEFT JOIN sms_templates t ON t.id = gm.template_id
+        WHERE gm.user_id = ${String(userId)}
+          AND gm.device_id = ${String(deviceId)}
+          AND gm.sim_slot = ${simSlotNum}
+          AND COALESCE(t.is_parseable, 1) = 0
+          AND LOWER(COALESCE(t.sender_id, gm.provider, '')) <> '*'
+      `;
+      for (const row of slotArchiveMethods || []) {
+        await prisma.gateway_methods.delete({ where: { id: row.id } });
+        if (row.template_id) {
+          const tmpl = await prisma.sms_templates.findUnique({ where: { id: row.template_id } });
+          if (tmpl && tmpl.is_official === 0 && tmpl.user_id === userId) {
+            const otherUses = await prisma.gateway_methods.count({
+              where: { template_id: row.template_id },
+            });
+            if (otherUses === 0) {
+              await prisma.sms_templates.delete({ where: { id: row.template_id } }).catch(() => {});
+            }
+          }
+        }
+      }
+
+      let slotPhone = '';
+      try {
+        const binding = await prisma.sim_slot_bindings.findFirst({
+          where: {
+            user_id: String(userId),
+            device_id: String(deviceId),
+            sim_slot: simSlotNum,
+          },
+          select: { phone_number: true },
+        });
+        slotPhone = (binding?.phone_number || '').trim();
+      } catch (_) { /* optional */ }
+
+      const existingAllMethod = await prisma.gateway_methods.findFirst({
+        where: {
+          user_id: String(userId),
+          device_id: String(deviceId),
+          template_id: allTemplate.id,
+          sim_slot: simSlotNum,
+        },
+      });
+
+      if (existingAllMethod) {
+        await prisma.gateway_methods.update({
+          where: { id: existingAllMethod.id },
+          data: { is_enabled: 1, provider: 'ALL', number: slotPhone || existingAllMethod.number },
+        });
+      } else {
+        const maxPriorityRow = await prisma.gateway_methods.aggregate({
+          where: { user_id: String(userId), device_id: String(deviceId) },
+          _max: { priority: true },
+        });
+        const nextPriority = (maxPriorityRow._max.priority || 0) + 1;
+        await prisma.gateway_methods.create({
+          data: {
+            user_id: String(userId),
+            device_id: String(deviceId),
+            template_id: allTemplate.id,
+            sim_slot: simSlotNum,
+            provider: 'ALL',
+            number: slotPhone,
+            is_enabled: 1,
+            priority: nextPriority,
+          },
+        });
+      }
+
+      const data = await fetchGatewayMethodsForUser(userId, deviceId);
+      const io = req.app.get('io');
+      if (io && deviceId) {
+        io.to(`${userId}:${deviceId}`).emit('sync_gateway_methods', data);
+      }
+      await touchDeviceSync(userId, deviceId, { userCustomChanged: true });
+      return res.json({
+        success: true,
+        message: `SIM ${simSlotNum}-এ ALL কাস্টম সেন্ডার নীতি সক্রিয় করা হয়েছে।`,
+        template_source: 'all_policy',
+        data,
+      });
+    }
+
     // Verify user authorization for custom sender feature via account entitlements.
     const user = await prisma.users.findUnique({
       where: { id: userId },
