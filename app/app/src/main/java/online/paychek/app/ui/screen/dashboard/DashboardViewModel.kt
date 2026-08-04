@@ -26,6 +26,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.stateIn
+import online.paychek.app.ui.common.HistoryLoadTier
+import online.paychek.app.ui.common.nextHistoryDays
+import online.paychek.app.ui.common.tierForHistoryDays
 
 // =============================================================================
 // UI State — Dashboard স্ক্রিনের সম্পূর্ণ অবস্থা
@@ -54,6 +57,10 @@ data class DashboardScreenState(
     val globalTemplates: List<SmsTemplateDto> = emptyList(),
     val dateFilteredTransactions: List<TransactionItem> = emptyList(),
     val isFilterLoading: Boolean       = false,
+    /** Progressive history beyond dashboard recent-20 (7/15/21/30 day windows). */
+    val extendedTransactions: List<TransactionItem> = emptyList(),
+    val historyTier: HistoryLoadTier = HistoryLoadTier.INITIAL_20,
+    val isLoadingMoreHistory: Boolean = false,
     // Custom Sender ID Archive additions
     val selectedTab: Int               = 0, // 0 = Payment Records, 1 = Custom Archive
     val customArchives: List<CustomArchiveItem> = emptyList(),
@@ -329,6 +336,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 uiState = DashboardUiState.Success(stats),
                 isRefreshing = false,
                 globalTemplates = templatesForUi,
+                extendedTransactions = emptyList(),
+                historyTier = HistoryLoadTier.INITIAL_20,
+                isLoadingMoreHistory = false,
                 lastUpdatedAtMs = if (it.isRefreshing) {
                     System.currentTimeMillis()
                 } else {
@@ -527,7 +537,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun fetchDateFilteredTransactions(startDate: String, endDate: String) {
         viewModelScope.launch {
-            _state.update { it.copy(isFilterLoading = true) }
+            _state.update {
+                it.copy(
+                    isFilterLoading = true,
+                    historyTier = HistoryLoadTier.CUSTOM,
+                    extendedTransactions = emptyList()
+                )
+            }
             val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
             if (token.isNotEmpty()) {
                 val result = repository.fetchTransactionHistory(
@@ -560,7 +576,76 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun clearDateFilter() {
-        _state.update { it.copy(dateFilteredTransactions = emptyList()) }
+        _state.update {
+            it.copy(
+                dateFilteredTransactions = emptyList(),
+                historyTier = HistoryLoadTier.INITIAL_20,
+                extendedTransactions = emptyList()
+            )
+        }
+    }
+
+    /**
+     * Progressive history: 20 → 7d → 15d → 21d → 30d (same as Search).
+     * Always fetches provider=all; UI filters by selected template locally.
+     */
+    fun loadMoreHistory() {
+        val current = _state.value
+        if (current.isLoadingMoreHistory || current.isFilterLoading) return
+        if (current.historyTier == HistoryLoadTier.CUSTOM) return
+        val nextDays = current.historyTier.nextHistoryDays() ?: return
+
+        viewModelScope.launch {
+            _state.update { it.copy(isLoadingMoreHistory = true) }
+            val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
+            if (token.isEmpty()) {
+                _state.update { it.copy(isLoadingMoreHistory = false) }
+                return@launch
+            }
+            val range = quickDateRange(nextDays)
+            val result = repository.fetchTransactionHistory(
+                token = token,
+                page = 1,
+                limit = 200,
+                provider = "all",
+                startDate = range.first,
+                endDate = range.second,
+                historyLastSync = null
+            )
+            result.fold(
+                onSuccess = { pageResult ->
+                    _state.update {
+                        it.copy(
+                            extendedTransactions = pageResult.items,
+                            dateFilteredTransactions = emptyList(),
+                            historyTier = tierForHistoryDays(nextDays),
+                            isLoadingMoreHistory = false
+                        )
+                    }
+                },
+                onFailure = {
+                    _state.update { it.copy(isLoadingMoreHistory = false) }
+                }
+            )
+        }
+    }
+
+    /** If template filter has zero hits on current window, auto-expand once to 7 days. */
+    fun ensureHistoryForProviderFilter(hasLocalMatches: Boolean) {
+        val s = _state.value
+        if (hasLocalMatches) return
+        if (s.historyTier != HistoryLoadTier.INITIAL_20) return
+        if (s.isLoadingMoreHistory || s.isFilterLoading) return
+        if (s.dateFilteredTransactions.isNotEmpty()) return
+        loadMoreHistory()
+    }
+
+    private fun quickDateRange(days: Int): Pair<String, String> {
+        val cal = java.util.Calendar.getInstance()
+        val endStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(cal.time)
+        cal.add(java.util.Calendar.DAY_OF_YEAR, -(days - 1))
+        val startStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(cal.time)
+        return Pair(startStr, endStr)
     }
 
     fun createManualTransaction(

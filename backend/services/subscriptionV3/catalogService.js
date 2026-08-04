@@ -6,6 +6,7 @@ function mapPlanCategory(row) {
   const c = String(row.plan_category || '').trim();
   if (c === 'personal_business') return CATEGORIES.PERSONAL_BUSINESS;
   if (c === 'personal' || c === 'personal_custom_center') return CATEGORIES.PERSONAL;
+  // Admin stores payment_gateway; V3 UI key is gateway
   return CATEGORIES.GATEWAY;
 }
 

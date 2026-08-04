@@ -177,7 +177,8 @@ interface GatewayApiService {
     suspend fun postHeartbeat(
         @Header("Authorization") token: String,
         @Body request: HeartbeatRequest,
-        @Header("X-Device-Id") deviceId: String = ""
+        @Header("X-Device-Id") deviceId: String = "",
+        @Header("X-Gateway-Last-Sync") lastSync: Long = 0L
     ): Response<HeartbeatResponse>
 
     /** All active SIM numbers under this account */

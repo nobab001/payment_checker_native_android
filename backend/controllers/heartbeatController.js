@@ -90,7 +90,12 @@ async function postHeartbeat(req, res) {
       console.warn('[PresenceV25] markDeviceAlive heartbeat failed:', e.message);
     }
 
-    const forceSync = false;
+    const clientLastSync = parseInt(
+      req.headers['x-gateway-last-sync'] || req.headers['X-Gateway-Last-Sync'] || '0',
+      10,
+    ) || 0;
+    const tplVer = Number(templateVersion) || 0;
+    const forceSync = commPolicy.shouldForceTemplateSync(clientLastSync, tplVer);
 
     return res.json({
       success: true,
@@ -98,7 +103,7 @@ async function postHeartbeat(req, res) {
       numbers: result.updated,
       states: result.states,
       forceSync,
-      templateVersion,
+      templateVersion: tplVer || templateVersion,
       message: null,
       ...policy,
       thresholds: {

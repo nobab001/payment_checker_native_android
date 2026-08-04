@@ -446,73 +446,9 @@ class SmsMonitorService : Service() {
                 }
             }
 
-            socket?.on("force_template_sync") { args ->
-                var serverVersion = 0L
-                if (args.isNotEmpty()) {
-                    try {
-                        val raw = args[0]
-                        val json = when (raw) {
-                            is org.json.JSONObject -> raw
-                            else -> org.json.JSONObject(raw.toString())
-                        }
-                        serverVersion = json.optLong("version", json.optLong("timestamp", 0L))
-                    } catch (_: Exception) {
-                        // ignore malformed payload
-                    }
-                }
+            // force_template_sync not registered — Comm Policy is HTTP-heartbeat only;
+            // template propagation uses heartbeat forceSync → refreshGatewayCaches.
 
-                val localSync = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsLastSync(this@SmsMonitorService)
-                if (serverVersion > 0 && localSync > 0 && serverVersion <= localSync) {
-                    Log.i(TAG, "Template sync skipped: local cache current (local=$localSync, server=$serverVersion)")
-                    return@on
-                }
-
-                Log.i(TAG, "✅ Push-Driven Cache Sync: Global template updated. Scheduling random delayed fetch to prevent server overload...")
-                CoroutineScope(Dispatchers.IO).launch {
-                    try {
-                        val randomDelayMs = (500..2000).random().toLong()
-                        delay(randomDelayMs)
-
-                        val token = SecurePreferences.decrypt(this@SmsMonitorService, AppConfig.KEY_AUTH_TOKEN)
-                        if (token.isNotEmpty()) {
-                            val syncToken = online.paychek.app.data.local.prefs.PrefsHelper.getGatewayMethodsLastSync(this@SmsMonitorService)
-                            val res = RetrofitClient.gatewayApiService.getGatewayMethods("Bearer $token", syncToken)
-                            if (res.isSuccessful) {
-                                val body = res.body()
-                                body?.dataVersion?.takeIf { it > 0 }?.let {
-                                    online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsLastSync(this@SmsMonitorService, it)
-                                }
-                                body?.globalBlockedSenders?.let { blocked ->
-                                    online.paychek.app.data.local.prefs.PrefsHelper
-                                        .setGlobalBlockedSenders(this@SmsMonitorService, blocked)
-                                }
-                                body?.data?.let { methods ->
-                                    val jsonStr = online.paychek.app.utils.GsonUtils.gson.toJson(methods)
-                                    online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(this@SmsMonitorService, jsonStr)
-                                    NumberHeartbeatEngine.pulse(this@SmsMonitorService)
-                                }
-                            }
-
-                            val resTemplates = RetrofitClient.gatewayApiService.getTemplates("Bearer $token", syncToken)
-                            if (resTemplates.isSuccessful) {
-                                val templateBody = resTemplates.body()
-                                templateBody?.dataVersion?.takeIf { it > 0 }?.let {
-                                    online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsLastSync(this@SmsMonitorService, it)
-                                }
-                                templateBody?.templates?.let { templates ->
-                                    val jsonTemplates = online.paychek.app.utils.GsonUtils.gson.toJson(templates)
-                                    online.paychek.app.data.local.prefs.PrefsHelper.setSmsTemplatesCache(this@SmsMonitorService, jsonTemplates)
-                                }
-                            }
-
-                            Log.i(TAG, "✅ Background Sync Complete: Gateway methods and templates cache updated after ${randomDelayMs}ms.")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Background Sync Failed: ${e.message}")
-                    }
-                }
-            }
-            
             socket?.connect()
         } catch (e: Exception) {
             Log.w(TAG, "Socket connection failed: ${e.message}")

@@ -34,6 +34,7 @@ object NumberHeartbeatEngine {
     @Volatile private var socketConnected = false
     /** After SMS upload success, skip the next scheduled heartbeat (server already marked alive). */
     @Volatile private var skipNextScheduled = false
+    @Volatile private var cacheSyncInFlight = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     /** Call after successful SMS upload to server — resets timer / skips duplicate HB. */
@@ -198,16 +199,25 @@ object NumberHeartbeatEngine {
             RetrofitClient.gatewayApiService.postHeartbeat(
                 token = "Bearer $token",
                 request = request,
-                deviceId = deviceId
+                deviceId = deviceId,
+                lastSync = PrefsHelper.getGatewayMethodsLastSync(context)
             )
         }.onSuccess { res ->
             if (res.isSuccessful) {
                 val body = res.body()
                 if (body != null) {
                     CommPolicyStore.applyHeartbeatResponse(context, body)
-                    if (body.forceSync == true) {
-                        Log.i(TAG, "Server requested forceSync (templateVersion=${body.templateVersion})")
-                        // Soft signal — existing dashboards poll templates; optional future hook.
+                    val serverTpl = parseTemplateVersion(body.templateVersion)
+                    val localSync = PrefsHelper.getGatewayMethodsLastSync(context)
+                    val needsSync = body.forceSync == true ||
+                        (serverTpl > 0L && localSync < serverTpl)
+                    if (needsSync) {
+                        Log.i(
+                            TAG,
+                            "Server requested cache sync (forceSync=${body.forceSync}, " +
+                                "templateVersion=$serverTpl, local=$localSync)"
+                        )
+                        refreshGatewayCaches(context, reason = "heartbeat_forceSync")
                     }
                 }
                 Log.i(
@@ -226,6 +236,117 @@ object NumberHeartbeatEngine {
         }.onFailure { e ->
             Log.w(TAG, "Heartbeat failed: ${e.message}")
             if (smsActive) ServerProbeWorker.scheduleSoon(context)
+        }
+    }
+
+    private fun parseTemplateVersion(raw: Any?): Long {
+        return when (raw) {
+            null -> 0L
+            is Number -> raw.toLong()
+            is String -> raw.toLongOrNull() ?: 0L
+            else -> raw.toString().toLongOrNull() ?: 0L
+        }
+    }
+
+    /**
+     * Template/methods sync — separate from presence heartbeat.
+     * Advances local templateVersion ONLY after successful cache persistence
+     * (or explicit unchanged confirmation that local content is already current).
+     */
+    fun refreshGatewayCaches(context: Context, reason: String = "manual") {
+        if (cacheSyncInFlight) {
+            Log.d(TAG, "Cache sync already in flight — skip ($reason)")
+            return
+        }
+        cacheSyncInFlight = true
+        scope.launch {
+            try {
+                val token = SecurePreferences.decrypt(context, AppConfig.KEY_AUTH_TOKEN)
+                if (token.isEmpty()) return@launch
+
+                if (reason == "heartbeat_forceSync") {
+                    delay((300L..1800L).random())
+                }
+
+                // Stale/force path: full fetch so we always get authoritative payload.
+                val forceFull = reason == "heartbeat_forceSync" || reason == "stale_template"
+                val syncToken = if (forceFull) 0L else PrefsHelper.getGatewayMethodsLastSync(context)
+
+                var methodsOk = false
+                var templatesOk = false
+                var appliedVersion = 0L
+
+                val res = RetrofitClient.gatewayApiService.getGatewayMethods("Bearer $token", syncToken)
+                if (res.isSuccessful) {
+                    val body = res.body()
+                    body?.globalBlockedSenders?.let { blocked ->
+                        PrefsHelper.setGlobalBlockedSenders(context, blocked)
+                    }
+                    when {
+                        body?.data != null -> {
+                            val jsonStr = GsonUtils.gson.toJson(body.data)
+                            if (PrefsHelper.setGatewayMethodsCache(context, jsonStr)) {
+                                methodsOk = true
+                                appliedVersion = maxOf(appliedVersion, body.dataVersion ?: 0L)
+                                if (PrefsHelper.isSmsServiceActive(context)) {
+                                    pulse(context)
+                                }
+                            } else {
+                                Log.e(TAG, "Methods cache write/verify failed — version not advanced")
+                            }
+                        }
+                        body?.unchanged == true -> {
+                            methodsOk = true
+                            appliedVersion = maxOf(appliedVersion, body.dataVersion ?: 0L)
+                        }
+                        else -> {
+                            Log.w(TAG, "Methods sync: empty payload and not unchanged")
+                        }
+                    }
+                } else {
+                    Log.w(TAG, "Methods sync HTTP ${res.code()}")
+                }
+
+                val resTemplates = RetrofitClient.gatewayApiService.getTemplates("Bearer $token", syncToken)
+                if (resTemplates.isSuccessful) {
+                    val templateBody = resTemplates.body()
+                    when {
+                        templateBody?.templates != null -> {
+                            val jsonTemplates = GsonUtils.gson.toJson(templateBody.templates)
+                            if (PrefsHelper.setSmsTemplatesCache(context, jsonTemplates)) {
+                                templatesOk = true
+                                appliedVersion = maxOf(appliedVersion, templateBody.dataVersion ?: 0L)
+                            } else {
+                                Log.e(TAG, "Templates cache write/verify failed — version not advanced")
+                            }
+                        }
+                        templateBody?.unchanged == true -> {
+                            templatesOk = true
+                            appliedVersion = maxOf(appliedVersion, templateBody.dataVersion ?: 0L)
+                        }
+                        else -> {
+                            Log.w(TAG, "Templates sync: empty payload and not unchanged")
+                        }
+                    }
+                } else {
+                    Log.w(TAG, "Templates sync HTTP ${resTemplates.code()}")
+                }
+
+                if (methodsOk && templatesOk && appliedVersion > 0L) {
+                    PrefsHelper.setGatewayMethodsLastSync(context, appliedVersion)
+                    Log.i(TAG, "Gateway cache refresh OK ($reason) version=$appliedVersion")
+                } else {
+                    Log.w(
+                        TAG,
+                        "Gateway cache refresh incomplete ($reason) " +
+                            "methodsOk=$methodsOk templatesOk=$templatesOk — local version unchanged"
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Gateway cache refresh failed ($reason): ${e.message}")
+            } finally {
+                cacheSyncInFlight = false
+            }
         }
     }
 

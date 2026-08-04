@@ -12,9 +12,6 @@ const KEYS = {
   userHistoryVersion: (userId) => `paychek:sync:history:${userId}`,
 };
 
-let broadcastTimer = null;
-let pendingBroadcastVersion = 0;
-
 async function safeRedisGet(key) {
   try {
     return await getRedisClient().get(key);
@@ -201,21 +198,11 @@ async function getOfficialTemplatesForAdmin() {
 }
 
 function scheduleTemplateSyncBroadcast(io, version) {
-  pendingBroadcastVersion = version;
-  if (broadcastTimer) {
-    clearTimeout(broadcastTimer);
-  }
-
-  broadcastTimer = setTimeout(() => {
-    if (io) {
-      io.emit('force_template_sync', {
-        version: pendingBroadcastVersion,
-        timestamp: Date.now(),
-      });
-      console.log(`[DataSyncCache] Debounced force_template_sync broadcast (version=${pendingBroadcastVersion})`);
-    }
-    broadcastTimer = null;
-  }, 3000);
+  // Devices are HTTP-heartbeat only (CommPolicy useSocket=false). Socket broadcast
+  // never reaches production clients — template sync is heartbeat forceSync driven.
+  console.log(
+    `[DataSyncCache] Template version=${version} bumped — devices will sync on next heartbeat (no socket broadcast)`,
+  );
 }
 
 function isClientSyncCurrent(clientLastSync, serverVersion) {

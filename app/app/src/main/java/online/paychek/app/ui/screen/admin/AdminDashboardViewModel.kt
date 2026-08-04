@@ -25,9 +25,9 @@ data class AdminUiState(
     val plans: List<SubscriptionPlanDto> = emptyList(),
     val addonPlans: List<AddonPlanDto> = emptyList(),
     val billingTabOrder: List<String> = listOf(
-        "personal_custom_center",
+        "payment_gateway",
         "personal_business",
-        "payment_gateway"
+        "personal"
     ),
     val checkoutDesignTabs: Map<String, CheckoutTabDto> = emptyMap(),
     val providerBranding: Map<String, ProviderBrandingDto> = emptyMap(),
@@ -171,7 +171,7 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                     if (res.isSuccessful) {
                         val body = res.body()
                         val plans = body?.plans ?: emptyList()
-                        val tabOrder = body?.tabOrder?.takeIf { it.isNotEmpty() }
+                        val tabOrder = body?.tabOrder?.takeIf { it.isNotEmpty() }?.let { normalizeBillingTabOrder(it) }
                         _state.update {
                             it.copy(
                                 plans = plans,
@@ -190,7 +190,7 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                     if (res.isSuccessful) {
                         val body = res.body()
                         val addonPlans = body?.plans ?: emptyList()
-                        val tabOrder = body?.tabOrder?.takeIf { it.isNotEmpty() }
+                        val tabOrder = body?.tabOrder?.takeIf { it.isNotEmpty() }?.let { normalizeBillingTabOrder(it) }
                         _state.update {
                             it.copy(
                                 addonPlans = addonPlans,
@@ -833,7 +833,9 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 _state.update {
                     it.copy(
                         plans = body?.plans ?: emptyList(),
-                        billingTabOrder = body?.tabOrder?.takeIf { o -> o.isNotEmpty() } ?: it.billingTabOrder,
+                        billingTabOrder = body?.tabOrder?.takeIf { o -> o.isNotEmpty() }
+                            ?.let { o -> normalizeBillingTabOrder(o) }
+                            ?: it.billingTabOrder,
                         isSaving = false
                     )
                 }
@@ -971,19 +973,38 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
     }
 
     companion object {
+        private val CANONICAL_BILLING_TABS = listOf(
+            "payment_gateway",
+            "personal_business",
+            "personal"
+        )
+
         fun normalizePlanCategory(category: String?): String {
             val c = category?.trim().orEmpty()
             return when {
                 c == "personal_business" -> "personal_business"
-                c.isBlank() || c == "personal" -> "payment_gateway"
+                c == "personal" || c == "personal_custom_center" -> "personal"
+                c == "gateway" || c.isBlank() || c == "payment_gateway" -> "payment_gateway"
                 else -> c
             }
         }
 
+        fun normalizeBillingTabOrder(raw: List<String>?): List<String> {
+            val out = mutableListOf<String>()
+            for (key in raw.orEmpty()) {
+                val n = normalizePlanCategory(key)
+                if (n in CANONICAL_BILLING_TABS && n !in out) out.add(n)
+            }
+            for (key in CANONICAL_BILLING_TABS) {
+                if (key !in out) out.add(key)
+            }
+            return out
+        }
+
         fun billingTabLabel(key: String): String = when (key) {
-            "personal_custom_center" -> "পার্সোনাল কাস্টম সেন্টার"
+            "personal", "personal_custom_center" -> "পার্সোনাল"
             "personal_business" -> "পার্সোনাল বিজনেস"
-            "payment_gateway" -> "পেমেন্ট গেটওয়ে"
+            "payment_gateway", "gateway" -> "পেমেন্ট গেটওয়ে"
             else -> key
         }
     }
@@ -1061,7 +1082,9 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 _state.update {
                     it.copy(
                         addonPlans = body?.plans ?: emptyList(),
-                        billingTabOrder = body?.tabOrder?.takeIf { o -> o.isNotEmpty() } ?: it.billingTabOrder,
+                        billingTabOrder = body?.tabOrder?.takeIf { o -> o.isNotEmpty() }
+                            ?.let { o -> normalizeBillingTabOrder(o) }
+                            ?: it.billingTabOrder,
                         isSaving = false
                     )
                 }

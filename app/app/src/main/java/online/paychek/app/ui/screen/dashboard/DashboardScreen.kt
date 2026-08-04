@@ -77,6 +77,9 @@ import online.paychek.app.utils.OemBackgroundHelper
 import online.paychek.app.utils.adaptivePadding
 import online.paychek.app.utils.adaptiveTextSize
 import online.paychek.app.utils.screenWidth
+import online.paychek.app.ui.common.HistoryLoadTier
+import online.paychek.app.ui.common.historyLoadMoreLabelBn
+import online.paychek.app.ui.common.nextHistoryDays
 import online.paychek.app.ui.theme.*
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
@@ -281,6 +284,31 @@ fun DashboardScreen(
     var showManualTxnDialog by remember { mutableStateOf(false) }
     var customStartDate by remember { mutableStateOf<Long?>(null) }
     var customEndDate by remember { mutableStateOf<Long?>(null) }
+
+    // Template chip: if no matches in current 20, auto-expand to 7-day history (Search parity)
+    LaunchedEffect(
+        selectedProviderName,
+        selectedDate,
+        screenState.historyTier,
+        screenState.isLoadingMoreHistory,
+        screenState.isFilterLoading,
+        screenState.extendedTransactions.size,
+        (screenState.uiState as? DashboardUiState.Success)?.stats?.recentTransactions?.size
+    ) {
+        val name = selectedProviderName ?: return@LaunchedEffect
+        if (selectedDate == "custom") return@LaunchedEffect
+        if (screenState.historyTier != HistoryLoadTier.INITIAL_20) return@LaunchedEffect
+        if (screenState.isLoadingMoreHistory || screenState.isFilterLoading) return@LaunchedEffect
+        val base = when {
+            screenState.dateFilteredTransactions.isNotEmpty() -> screenState.dateFilteredTransactions
+            screenState.extendedTransactions.isNotEmpty() -> screenState.extendedTransactions
+            else -> (screenState.uiState as? DashboardUiState.Success)?.stats?.recentTransactions.orEmpty()
+        }
+        val hasMatch = base.any { it.providerTag.equals(name, ignoreCase = true) }
+        if (!hasMatch) {
+            viewModel.ensureHistoryForProviderFilter(hasLocalMatches = false)
+        }
+    }
 
     val successStats = (screenState.uiState as? DashboardUiState.Success)?.stats
     val isPaid = successStats?.isPaid ?: false
@@ -899,12 +927,11 @@ fun DashboardScreen(
                     }
                 }
 
-                // ৬. আজকের ট্রানজেকশন list
-                // - "সব দেখুন" বাটন সহ
-                val recentList = if (screenState.dateFilteredTransactions.isNotEmpty()) {
-                    screenState.dateFilteredTransactions
-                } else {
-                    (screenState.uiState as? DashboardUiState.Success)
+                // ৬. আজকের ট্রানজেকশন list + progressive history (Search-এর মতো)
+                val recentList = when {
+                    screenState.dateFilteredTransactions.isNotEmpty() -> screenState.dateFilteredTransactions
+                    screenState.extendedTransactions.isNotEmpty() -> screenState.extendedTransactions
+                    else -> (screenState.uiState as? DashboardUiState.Success)
                         ?.stats?.recentTransactions ?: emptyList()
                 }
 
@@ -914,13 +941,8 @@ fun DashboardScreen(
                         (trx.senderNumber != null && trx.senderNumber.contains(searchQuery, ignoreCase = true)) ||
                         trx.amount.toString().contains(searchQuery)
 
-                    val matchesProvider = selectedProvider == null || run {
-                        val tag = trx.providerTag
-                        tag.equals(selectedProviderName, ignoreCase = true) ||
-                            tag.equals(selectedProvider, ignoreCase = true) ||
-                            (!selectedProvider.isNullOrBlank() && tag.contains(selectedProvider!!, ignoreCase = true)) ||
-                            (!selectedProviderName.isNullOrBlank() && tag.contains(selectedProviderName!!, ignoreCase = true))
-                    }
+                    val matchesProvider = selectedProviderName == null ||
+                        trx.providerTag.equals(selectedProviderName, ignoreCase = true)
 
                     val matchesDate = isDateMatching(trx.smsTimestamp, selectedDate, customStartDate, customEndDate)
 
@@ -940,7 +962,7 @@ fun DashboardScreen(
                     }
                 }
 
-                if (screenState.isFilterLoading) {
+                if (screenState.isFilterLoading || (screenState.isLoadingMoreHistory && filteredList.isEmpty())) {
                     item {
                         Box(
                             modifier = Modifier
@@ -973,6 +995,42 @@ fun DashboardScreen(
                                 text = "কোনো ট্রানজেকশন পাওয়া যায়নি",
                                 color = TextMuted,
                                 fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+
+                val nextDays = screenState.historyTier.nextHistoryDays()
+                if (
+                    screenState.uiState is DashboardUiState.Success &&
+                    !screenState.isFilterLoading &&
+                    selectedDate != "custom" &&
+                    nextDays != null &&
+                    (filteredList.isNotEmpty() || selectedProviderName != null)
+                ) {
+                    item {
+                        OutlinedButton(
+                            onClick = { viewModel.loadMoreHistory() },
+                            enabled = !screenState.isLoadingMoreHistory,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, AccentCyan.copy(alpha = 0.5f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentCyan)
+                        ) {
+                            if (screenState.isLoadingMoreHistory) {
+                                CircularProgressIndicator(
+                                    color = AccentCyan,
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Text(
+                                text = historyLoadMoreLabelBn(nextDays),
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp
                             )
                         }
                     }

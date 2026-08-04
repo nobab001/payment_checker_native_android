@@ -11,6 +11,7 @@ const {
   handleBillingWebhook,
   getCheckoutOrderStatus,
 } = require('../services/subscriptionCheckoutService');
+const { ensureSubscriptionV3Schema } = require('../services/subscriptionV3/schema');
 
 let addonPlansTableReady = false;
 
@@ -69,11 +70,26 @@ async function ensurePlanFeaturesColumns() {
   await ensureBillingSortSchema();
 }
 
+/** Admin + user-aligned category tabs (maps to V3: gateway / personal_business / personal). */
 const DEFAULT_BILLING_TAB_ORDER = [
-  'personal_custom_center',
-  'personal_business',
   'payment_gateway',
+  'personal_business',
+  'personal',
 ];
+
+const ALLOWED_PLAN_CATEGORIES = new Set([
+  'payment_gateway',
+  'personal_business',
+  'personal',
+]);
+
+function normalizePlanCategoryValue(raw) {
+  const c = String(raw || '').trim();
+  if (c === 'personal_custom_center') return 'personal';
+  if (c === 'gateway') return 'payment_gateway';
+  if (ALLOWED_PLAN_CATEGORIES.has(c)) return c;
+  return 'payment_gateway';
+}
 
 async function ensureBillingSortSchema() {
   const subSort = await prisma.$queryRaw`SHOW COLUMNS FROM subscription_plans LIKE 'sort_order'`;
@@ -132,6 +148,36 @@ async function ensureBillingSortSchema() {
         VALUES ('billing_tab_order', ${JSON.stringify(DEFAULT_BILLING_TAB_ORDER)})
       `;
     });
+  } else {
+    // Migrate legacy personal_custom_center → personal in stored tab order.
+    const normalized = normalizeTabOrder(tabCfg.config_value);
+    const current = (() => {
+      try {
+        return JSON.stringify(JSON.parse(tabCfg.config_value));
+      } catch {
+        return '';
+      }
+    })();
+    if (current !== JSON.stringify(normalized)) {
+      await prisma.global_config.update({
+        where: { config_key: 'billing_tab_order' },
+        data: { config_value: JSON.stringify(normalized) },
+      });
+    }
+  }
+
+  // Repair: Personal package must not sit under payment_gateway / archived.
+  try {
+    await prisma.$executeRaw`
+      UPDATE subscription_plans
+      SET plan_category = 'personal',
+          is_visible = 1,
+          catalog_status = 'active'
+      WHERE sku_key = 'personal_main'
+         OR (LOWER(plan_name) = 'personal' AND plan_category IN ('payment_gateway', 'gateway', 'personal_custom_center', ''))
+    `;
+  } catch (e) {
+    console.warn('[Billing] personal category repair skip:', e.message);
   }
 }
 
@@ -146,7 +192,8 @@ function normalizeTabOrder(raw) {
   const out = [];
   if (Array.isArray(parsed)) {
     for (const key of parsed) {
-      if (allowed.has(key) && !out.includes(key)) out.push(key);
+      const normalized = normalizePlanCategoryValue(key);
+      if (allowed.has(normalized) && !out.includes(normalized)) out.push(normalized);
     }
   }
   for (const key of DEFAULT_BILLING_TAB_ORDER) {
@@ -225,17 +272,22 @@ function defaultAddonFeatures(plan) {
 }
 
 function mapSubscriptionPlanRow(row) {
+  const price1m = Number(row.price_1m ?? 0);
+  const price6m = Number(row.price_6m ?? 0);
+  const price12m = Number(row.price_12m ?? 0);
+  const legacyPrice = Number(row.price ?? 0);
   const plan = {
     id: Number(row.id),
     plan_name: row.plan_name,
-    price: Number(row.price),
+    price: legacyPrice,
+    price_1m: price1m > 0 ? price1m : legacyPrice,
+    price_6m: price6m,
+    price_12m: price12m > 0 ? price12m : legacyPrice,
     max_sites: Number(row.max_sites),
     max_devices: Number(row.max_devices),
     is_custom_sender_allowed: Number(row.is_custom_sender_allowed || 0),
     duration_days: Number(row.duration_days || 365),
-    plan_category: row.plan_category === 'personal' || !row.plan_category
-      ? 'payment_gateway'
-      : row.plan_category,
+    plan_category: normalizePlanCategoryValue(row.plan_category),
     perm_template: Number(row.perm_template ?? 1),
     perm_website: Number(row.perm_website ?? 1),
     perm_device: Number(row.perm_device ?? 1),
@@ -586,10 +638,13 @@ async function updateFcmToken(req, res) {
 async function listPlans(req, res) {
   try {
     await ensurePlanFeaturesColumns();
+    await ensureSubscriptionV3Schema();
     const tabOrder = await getBillingTabOrder();
     const rows = await prisma.$queryRaw`
-      SELECT id, plan_name, price, max_sites, max_devices, is_custom_sender_allowed, duration_days, features_json,
-             plan_category, perm_template, perm_website, perm_device, perm_smart_popup, perm_manual_transaction, sort_order
+      SELECT id, plan_name, price, price_1m, price_6m, price_12m, max_sites, max_devices,
+             is_custom_sender_allowed, duration_days, features_json,
+             plan_category, perm_template, perm_website, perm_device, perm_smart_popup,
+             perm_manual_transaction, sort_order
       FROM subscription_plans
       ORDER BY sort_order ASC, id ASC
     `;
@@ -771,27 +826,34 @@ async function deleteAddonPlan(req, res) {
 async function createPlan(req, res) {
   try {
     await ensurePlanFeaturesColumns();
+    await ensureSubscriptionV3Schema();
     const {
-      id, plan_name, price, max_sites, max_devices, duration_days, is_custom_sender_allowed, features,
+      id, plan_name, price, price_1m, price_6m, price_12m,
+      max_sites, max_devices, duration_days, is_custom_sender_allowed, features,
       plan_category, perm_template, perm_website, perm_device, perm_smart_popup, perm_manual_transaction,
     } = req.body;
 
-    if (!plan_name || price === undefined || max_sites === undefined || max_devices === undefined) {
+    const hasAnyPrice = price !== undefined || price_1m !== undefined || price_12m !== undefined;
+    if (!plan_name || !hasAnyPrice || max_sites === undefined || max_devices === undefined) {
       return res.status(400).json({ success: false, error: 'Missing required plan fields.' });
     }
 
+    const p1 = Number(price_1m ?? price ?? 0);
+    const p6 = Number(price_6m ?? 0);
+    const p12 = Number(price_12m ?? price ?? p1);
+    // Legacy `price` column stays in sync with yearly (or monthly fallback) for old screens.
+    const legacyPrice = p12 > 0 ? p12 : p1;
+
     const data = {
       plan_name,
-      price,
+      price: legacyPrice,
       max_sites,
       max_devices,
       is_custom_sender_allowed: is_custom_sender_allowed ? 1 : 0,
       duration_days: duration_days || 365,
     };
     const featuresJson = serializeFeatures(features);
-    const category = ['personal_business', 'payment_gateway'].includes(plan_category)
-      ? plan_category
-      : (plan_category === 'personal' ? 'payment_gateway' : 'payment_gateway');
+    const category = normalizePlanCategoryValue(plan_category);
     const permTpl = perm_template === false || perm_template === 0 ? 0 : 1;
     const permWeb = perm_website === false || perm_website === 0 ? 0 : 1;
     const permDev = perm_device === false || perm_device === 0 ? 0 : 1;
@@ -809,6 +871,9 @@ async function createPlan(req, res) {
         UPDATE subscription_plans
         SET features_json = ${featuresJson},
             plan_category = ${category},
+            price_1m = ${p1},
+            price_6m = ${p6},
+            price_12m = ${p12},
             perm_template = ${permTpl},
             perm_website = ${permWeb},
             perm_device = ${permDev},
@@ -830,12 +895,17 @@ async function createPlan(req, res) {
         UPDATE subscription_plans
         SET features_json = ${featuresJson},
             plan_category = ${category},
+            price_1m = ${p1},
+            price_6m = ${p6},
+            price_12m = ${p12},
             perm_template = ${permTpl},
             perm_website = ${permWeb},
             perm_device = ${permDev},
             perm_smart_popup = ${permSmart},
             perm_manual_transaction = ${permManual},
-            sort_order = ${sortOrder}
+            sort_order = ${sortOrder},
+            catalog_status = 'active',
+            is_visible = 1
         WHERE id = ${planId}
       `;
     }

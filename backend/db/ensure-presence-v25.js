@@ -6,7 +6,7 @@ const prisma = require('../db/prisma');
 const DEFAULT_POLICIES = [
   {
     package_key: 'welcome',
-    heartbeat_interval_sec: 300,
+    heartbeat_interval_sec: 900,
     probe_steps_json: '[60,120,180]',
     worker_sweep_sec: 30,
     sync_interval_sec: 1800,
@@ -15,7 +15,7 @@ const DEFAULT_POLICIES = [
   },
   {
     package_key: 'gateway',
-    heartbeat_interval_sec: 300,
+    heartbeat_interval_sec: 900,
     probe_steps_json: '[60,120,180]',
     worker_sweep_sec: 30,
     sync_interval_sec: 1800,
@@ -24,16 +24,16 @@ const DEFAULT_POLICIES = [
   },
   {
     package_key: 'personal_business',
-    heartbeat_interval_sec: 900,
+    heartbeat_interval_sec: 1800,
     probe_steps_json: '[300,300]',
     worker_sweep_sec: 60,
     sync_interval_sec: 3600,
-    jitter_sec: 20,
+    jitter_sec: 30,
     presence_engine_version: 1,
   },
   {
     package_key: 'personal',
-    heartbeat_interval_sec: 1800,
+    heartbeat_interval_sec: 3600,
     probe_steps_json: '[900,900]',
     worker_sweep_sec: 60,
     sync_interval_sec: 3600,
@@ -96,7 +96,15 @@ async function ensurePresenceV25Schema() {
     const existing = await prisma.$queryRaw`
       SELECT id FROM comm_policy WHERE package_key = ${p.package_key} LIMIT 1
     `;
-    if (existing?.length) continue;
+    if (existing?.length) {
+      await prisma.$executeRaw`
+        UPDATE comm_policy
+        SET heartbeat_interval_sec = ${p.heartbeat_interval_sec},
+            jitter_sec = ${p.jitter_sec}
+        WHERE package_key = ${p.package_key}
+      `;
+      continue;
+    }
     await prisma.$executeRawUnsafe(
       `INSERT INTO comm_policy (
         package_key, heartbeat_interval_sec, probe_steps_json,

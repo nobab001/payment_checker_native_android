@@ -62,7 +62,9 @@ fun BillingConfigScreen(
     var showCreatePlanDialog by remember { mutableStateOf(false) }
     var editingPlan by remember { mutableStateOf<SubscriptionPlanDto?>(null) }
     var planName by remember { mutableStateOf("") }
-    var planPrice by remember { mutableStateOf("") }
+    var planPrice1m by remember { mutableStateOf("") }
+    var planPrice6m by remember { mutableStateOf("") }
+    var planPrice12m by remember { mutableStateOf("") }
     var planMaxSites by remember { mutableStateOf("") }
     var planMaxDevices by remember { mutableStateOf("") }
     var planIsCustomSenderAllowed by remember { mutableStateOf(false) }
@@ -120,20 +122,16 @@ fun BillingConfigScreen(
     var previewSubscriptionPlan by remember { mutableStateOf<SubscriptionPlanDto?>(null) }
     var previewAddonPlan by remember { mutableStateOf<AddonPlanDto?>(null) }
 
-    val tabOrder = uiState.billingTabOrder.filter { it != "personal_custom_center" }
+    val tabOrder = remember(uiState.billingTabOrder) {
+        AdminDashboardViewModel.normalizeBillingTabOrder(uiState.billingTabOrder)
+    }
     LaunchedEffect(tabOrder) {
         if (adminPlanTab !in tabOrder.indices) adminPlanTab = 0
     }
-    val selectedTabKey = tabOrder.getOrNull(adminPlanTab) ?: "personal_custom_center"
+    val selectedTabKey = tabOrder.getOrNull(adminPlanTab) ?: "payment_gateway"
     val filteredAdminPlans = remember(uiState.plans, selectedTabKey) {
-        when (selectedTabKey) {
-            "personal_business" -> uiState.plans.filter {
-                normalizePlanCategory(it.planCategory) == "personal_business"
-            }
-            "payment_gateway" -> uiState.plans.filter {
-                normalizePlanCategory(it.planCategory) == "payment_gateway"
-            }
-            else -> emptyList()
+        uiState.plans.filter {
+            normalizePlanCategory(it.planCategory) == normalizePlanCategory(selectedTabKey)
         }
     }
 
@@ -211,9 +209,55 @@ fun BillingConfigScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
-                        value = planPrice,
-                        onValueChange = { planPrice = it },
-                        label = { Text("মূল্য (৳)") },
+                        value = planPrice1m,
+                        onValueChange = { planPrice1m = it },
+                        label = { Text("১ মাসের মূল্য (৳)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedLabelColor = TextSecondary,
+                            unfocusedLabelColor = TextSecondary.copy(alpha = 0.6f),
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = planPrice6m,
+                        onValueChange = { planPrice6m = it },
+                        label = { Text("৬ মাসের মূল্য (৳)") },
+                        supportingText = {
+                            val m = planPrice1m.toDoubleOrNull() ?: 0.0
+                            val s = planPrice6m.toDoubleOrNull() ?: 0.0
+                            val full = m * 6
+                            if (m > 0 && s > 0 && s < full) {
+                                Text("মাসিক হিসাবে ৳${"%.0f".format(full - s)} সাশ্রয় (${((1 - s / full) * 100).toInt()}%)")
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedLabelColor = TextSecondary,
+                            unfocusedLabelColor = TextSecondary.copy(alpha = 0.6f),
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = planPrice12m,
+                        onValueChange = { planPrice12m = it },
+                        label = { Text("১২ মাসের মূল্য (৳)") },
+                        supportingText = {
+                            val m = planPrice1m.toDoubleOrNull() ?: 0.0
+                            val y = planPrice12m.toDoubleOrNull() ?: 0.0
+                            val full = m * 12
+                            if (m > 0 && y > 0 && y < full) {
+                                Text("মাসিক হিসাবে ৳${"%.0f".format(full - y)} সাশ্রয় (${((1 - y / full) * 100).toInt()}%)")
+                            }
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextPrimary,
@@ -283,18 +327,19 @@ fun BillingConfigScreen(
                         )
                     }
                     OutlinedTextField(
-                        value = when (planCategory) {
+                        value = when (normalizePlanCategory(planCategory)) {
                             "personal_business" -> "পার্সোনাল বিজনেস"
+                            "personal" -> "পার্সোনাল"
                             else -> "পেমেন্ট গেটওয়ে"
                         },
                         onValueChange = { },
                         readOnly = true,
-                        label = { Text("ক্যাটাগরি") },
+                        label = { Text("ক্যাটাগরি (ট্যাপ করে পরিবর্তন)") },
                         modifier = Modifier.fillMaxWidth().clickable {
-                            planCategory = if (planCategory == "personal_business") {
-                                "payment_gateway"
-                            } else {
-                                "personal_business"
+                            planCategory = when (normalizePlanCategory(planCategory)) {
+                                "payment_gateway" -> "personal_business"
+                                "personal_business" -> "personal"
+                                else -> "payment_gateway"
                             }
                         },
                         colors = OutlinedTextFieldDefaults.colors(
@@ -347,12 +392,14 @@ fun BillingConfigScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val p = planPrice.toDoubleOrNull() ?: 0.0
+                        val p1 = planPrice1m.toDoubleOrNull() ?: 0.0
+                        val p6 = planPrice6m.toDoubleOrNull() ?: 0.0
+                        val p12 = planPrice12m.toDoubleOrNull() ?: 0.0
                         val ms = planMaxSites.toIntOrNull() ?: 1
                         val md = planMaxDevices.toIntOrNull() ?: 1
                         val dd = planDurationDays.toIntOrNull() ?: 365
                         
-                        if (planName.isNotEmpty()) {
+                        if (planName.isNotEmpty() && (p1 > 0 || p12 > 0)) {
                             val featuresToSave = planFeatures.ifEmpty {
                                 PlanFeaturesDefaults.subscriptionFeatures(ms, md, editingPlan?.features)
                             }
@@ -360,12 +407,15 @@ fun BillingConfigScreen(
                                 SubscriptionPlanDto(
                                     id = editingPlan?.id,
                                     planName = planName,
-                                    price = p,
+                                    price = if (p12 > 0) p12 else p1,
+                                    price1m = p1,
+                                    price6m = p6,
+                                    price12m = p12,
                                     maxSites = ms,
                                     maxDevices = md,
                                     isCustomSenderAllowed = if (planIsCustomSenderAllowed) 1 else 0,
                                     durationDays = dd,
-                                    planCategory = planCategory,
+                                    planCategory = normalizePlanCategory(planCategory),
                                     permTemplate = if (planPermTemplate) 1 else 0,
                                     permWebsite = if (planPermWebsite) 1 else 0,
                                     permDevice = if (planPermDevice) 1 else 0,
@@ -378,7 +428,9 @@ fun BillingConfigScreen(
                                 showCreatePlanDialog = false
                                 editingPlan = null
                                 planName = ""
-                                planPrice = ""
+                                planPrice1m = ""
+                                planPrice6m = ""
+                                planPrice12m = ""
                                 planMaxSites = ""
                                 planMaxDevices = ""
                                 planDurationDays = "365"
@@ -398,7 +450,9 @@ fun BillingConfigScreen(
                         showCreatePlanDialog = false
                         editingPlan = null
                         planName = ""
-                        planPrice = ""
+                        planPrice1m = ""
+                        planPrice6m = ""
+                        planPrice12m = ""
                         planMaxSites = ""
                         planMaxDevices = ""
                         planDurationDays = "365"
@@ -418,7 +472,9 @@ fun BillingConfigScreen(
         PlanFeaturesEditorDialog(
             planName = planName,
             subtitle = "মেয়াদ: ${planDurationDays.toIntOrNull() ?: 365} দিন",
-            price = planPrice.toDoubleOrNull() ?: 0.0,
+            price = planPrice12m.toDoubleOrNull()
+                ?: planPrice1m.toDoubleOrNull()
+                ?: 0.0,
             highlighted = planName.equals("Premium", ignoreCase = true),
             buyButtonText = "Buy Now",
             initialFeatures = planFeatures.ifEmpty {
@@ -1023,16 +1079,14 @@ fun BillingConfigScreen(
                     onClick = {
                         editingPlan = null
                         planName = ""
-                        planPrice = ""
+                        planPrice1m = ""
+                        planPrice6m = ""
+                        planPrice12m = ""
                         planMaxSites = ""
                         planMaxDevices = ""
                         planDurationDays = "365"
                         planIsCustomSenderAllowed = false
-                        planCategory = if (selectedTabKey == "personal_business") {
-                            "personal_business"
-                        } else {
-                            "payment_gateway"
-                        }
+                        planCategory = normalizePlanCategory(selectedTabKey)
                         planPermTemplate = true
                         planPermWebsite = true
                         planPermDevice = true
@@ -1132,7 +1186,9 @@ fun BillingConfigScreen(
                             .clickable {
                                 editingPlan = plan
                                 planName = plan.planName
-                                planPrice = plan.price.toString()
+                                planPrice1m = plan.effectivePrice1m().toString()
+                                planPrice6m = if (plan.effectivePrice6m() > 0) plan.effectivePrice6m().toString() else ""
+                                planPrice12m = plan.effectivePrice12m().toString()
                                 planMaxSites = plan.maxSites.toString()
                                 planMaxDevices = plan.maxDevices.toString()
                                 planDurationDays = plan.durationDays.toString()
@@ -1176,7 +1232,12 @@ fun BillingConfigScreen(
                                         onClick = { previewSubscriptionPlan = plan },
                                         contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
                                     ) { Text("বিস্তারিত", fontSize = 11.sp) }
-                                    Text("৳${plan.price}", fontWeight = FontWeight.Bold, color = Color(0xFF22D3EE), fontSize = 15.sp)
+                                    Text(
+                                        "৳${plan.effectivePrice1m().toInt()}/মাস",
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF22D3EE),
+                                        fontSize = 13.sp
+                                    )
                                     IconButton(
                                         onClick = {
                                             planToDelete = plan
@@ -1195,7 +1256,11 @@ fun BillingConfigScreen(
                                 }
                             }
                             Text("সর্বোচ্চ সাইট: ${plan.maxSites} | সর্বোচ্চ ডিভাইস: ${plan.maxDevices}${if (plan.isCustomSenderAllowed == 1) " | কাস্টম সেন্ডার: হ্যাঁ" else ""}", color = TextSecondary, fontSize = 12.sp)
-                            Text("মেয়াদ: ${plan.durationDays} দিন", color = Color(0xFF10B981), fontSize = 12.sp)
+                            Text(
+                                "১ম: ৳${plan.effectivePrice1m().toInt()} | ৬ম: ৳${plan.effectivePrice6m().toInt()} | ১২ম: ৳${plan.effectivePrice12m().toInt()}",
+                                color = Color(0xFF10B981),
+                                fontSize = 12.sp
+                            )
                         }
                     }
                 }
@@ -1225,12 +1290,14 @@ fun BillingConfigScreen(
                 previewSubscriptionPlan = null
                 editingPlan = plan
                 planName = plan.planName
-                planPrice = plan.price.toString()
+                planPrice1m = plan.effectivePrice1m().toString()
+                planPrice6m = if (plan.effectivePrice6m() > 0) plan.effectivePrice6m().toString() else ""
+                planPrice12m = plan.effectivePrice12m().toString()
                 planMaxSites = plan.maxSites.toString()
                 planMaxDevices = plan.maxDevices.toString()
                 planDurationDays = plan.durationDays.toString()
                 planIsCustomSenderAllowed = plan.isCustomSenderAllowed == 1
-                planCategory = plan.planCategory.ifBlank { "payment_gateway" }.let { if (it == "personal") "payment_gateway" else it }
+                planCategory = normalizePlanCategory(plan.planCategory)
                 planPermTemplate = plan.permTemplate == 1
                 planPermWebsite = plan.permWebsite == 1
                 planPermDevice = plan.permDevice == 1

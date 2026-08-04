@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import online.paychek.app.data.remote.dto.TransactionItem
+import online.paychek.app.ui.common.HistoryLoadTier
+import online.paychek.app.ui.common.historyLoadMoreLabelBn
 import online.paychek.app.ui.components.ConnectionStatusBanner
 import online.paychek.app.ui.components.LastUpdateRow
 import online.paychek.app.utils.BanglaDateTimeFormat
@@ -225,8 +227,8 @@ fun TransactionSearchScreen(
             if (
                 !state.isInitialLoading &&
                 state.errorMessage == null &&
-                state.displayList.isNotEmpty() &&
-                scrolledToBottom.value &&
+                (state.displayList.isNotEmpty() || state.selectedProvider != "all") &&
+                (state.displayList.isNotEmpty() && scrolledToBottom.value || state.displayList.isEmpty()) &&
                 (state.nextHistoryDays() != null || state.isLoadingMoreHistory)
             ) {
                 item {
@@ -875,7 +877,7 @@ private fun LoadMoreHistoryButton(
             Spacer(modifier = Modifier.width(8.dp))
         }
         Text(
-            text = if (nextDays > 0) "আরো history দেখুন ($nextDays দিন)" else "আরো history দেখুন",
+            text = historyLoadMoreLabelBn(nextDays),
             fontWeight = FontWeight.SemiBold,
             fontSize = 13.sp
         )

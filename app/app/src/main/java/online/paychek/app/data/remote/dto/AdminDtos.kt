@@ -231,6 +231,9 @@ data class SubscriptionPlanDto(
     @SerializedName("id") val id: Int? = null,
     @SerializedName("plan_name") val planName: String,
     @SerializedName("price") val price: Double,
+    @SerializedName("price_1m") val price1m: Double = 0.0,
+    @SerializedName("price_6m") val price6m: Double = 0.0,
+    @SerializedName("price_12m") val price12m: Double = 0.0,
     @SerializedName("max_sites") val maxSites: Int,
     @SerializedName("max_devices") val maxDevices: Int,
     @SerializedName("is_custom_sender_allowed") val isCustomSenderAllowed: Int = 0,
@@ -243,7 +246,12 @@ data class SubscriptionPlanDto(
     @SerializedName("perm_manual_transaction") val permManualTransaction: Int = 0,
     @SerializedName("sort_order") val sortOrder: Int = 0,
     @SerializedName("features") val features: List<PlanFeatureDto>? = null
-)
+) {
+    /** Effective monthly / 6-month / yearly prices with legacy `price` fallback. */
+    fun effectivePrice1m(): Double = if (price1m > 0) price1m else price
+    fun effectivePrice6m(): Double = price6m
+    fun effectivePrice12m(): Double = if (price12m > 0) price12m else price
+}
 
 data class SubscriptionPlansResponse(
     @SerializedName("success") val success: Boolean,

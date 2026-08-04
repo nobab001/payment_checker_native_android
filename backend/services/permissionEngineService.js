@@ -22,6 +22,9 @@ async function safeRedisDel(key) {
 
 async function bustEntitlementCache(userId) {
   await safeRedisDel(`${CACHE_PREFIX}${userId}`);
+  try {
+    require('./numberHealthService').invalidateProfileCache(userId);
+  } catch (_) { /* optional */ }
 }
 
 async function getTrialEntitlements() {

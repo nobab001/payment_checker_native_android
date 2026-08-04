@@ -21,18 +21,13 @@ import online.paychek.app.data.local.prefs.PrefsHelper
 import online.paychek.app.utils.GsonUtils
 import com.google.gson.reflect.TypeToken
 
+import online.paychek.app.ui.common.HistoryLoadTier
+import online.paychek.app.ui.common.nextHistoryDays
+import online.paychek.app.ui.common.tierForHistoryDays
+
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
-
-enum class HistoryLoadTier {
-    INITIAL_20,
-    DAYS_7,
-    DAYS_15,
-    DAYS_21,
-    DAYS_30,
-    CUSTOM
-}
 
 data class TransactionSearchState(
     val rawList:     List<TransactionItem> = emptyList(),
@@ -50,13 +45,7 @@ data class TransactionSearchState(
     val errorMessage: String? = null,
     val refreshSkipped: Boolean = false
 ) {
-    fun nextHistoryDays(): Int? = when (historyTier) {
-        HistoryLoadTier.INITIAL_20 -> 7
-        HistoryLoadTier.DAYS_7 -> 15
-        HistoryLoadTier.DAYS_15 -> 21
-        HistoryLoadTier.DAYS_21 -> 30
-        else -> null
-    }
+    fun nextHistoryDays(): Int? = historyTier.nextHistoryDays()
 
     val canLoadMoreHistory: Boolean
         get() = nextHistoryDays() != null && !isInitialLoading && !isLoadingMoreHistory
@@ -91,6 +80,12 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
     val state: StateFlow<TransactionSearchState> = _state.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
+
+    /** Last non-CUSTOM window — restored instantly when calendar date filter is cleared. */
+    private var baselineHistory: List<TransactionItem> = emptyList()
+
+    /** Bumps on each history reload so stale in-flight dated fetches cannot wipe the UI. */
+    private var historyFetchGeneration: Int = 0
 
     private data class HistoryCacheBundle(
         val provider: String,
@@ -130,63 +125,70 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
         }
     }
 
-    private fun currentCacheKey(): HistoryCacheBundle {
-        val s = _state.value
-        return HistoryCacheBundle(
-            provider = s.selectedProvider,
-            startDate = s.startDate,
-            endDate = s.endDate,
-            tier = s.historyTier.name,
-            items = emptyList()
-        )
+    private fun restoreHistoryFromLocalCache(): Boolean {
+        val items = readInitialHistoryCache() ?: return false
+        _state.update { current ->
+            current.copy(
+                rawList = items,
+                isInitialLoading = false,
+                lastUpdatedAtMs = BangladeshTimeUtil.latestTransactionEpochMs(items)
+                    ?: current.lastUpdatedAtMs
+            )
+        }
+        if (baselineHistory.isEmpty()) baselineHistory = items
+        applyLocalFilter()
+        return true
     }
 
-    private fun restoreHistoryFromLocalCache(): Boolean {
+    /** Durable offline cache is only the default INITIAL_20 window (no date filter). */
+    private fun readInitialHistoryCache(): List<TransactionItem>? {
         val bundleJson = PrefsHelper.getTransactionHistoryBundle(getApplication())
-        if (bundleJson.isBlank()) return false
+        if (bundleJson.isBlank()) return null
         return try {
             val type = object : TypeToken<HistoryCacheBundle>() {}.type
-            val bundle = GsonUtils.gson.fromJson<HistoryCacheBundle>(bundleJson, type) ?: return false
-            val key = currentCacheKey()
+            val bundle = GsonUtils.gson.fromJson<HistoryCacheBundle>(bundleJson, type) ?: return null
             if (
-                bundle.provider != key.provider
-                || bundle.startDate != key.startDate
-                || bundle.endDate != key.endDate
-                || bundle.tier != key.tier
+                bundle.provider != "all"
+                || bundle.startDate != null
+                || bundle.endDate != null
+                || bundle.tier != HistoryLoadTier.INITIAL_20.name
+                || bundle.items.isEmpty()
             ) {
-                return false
+                return null
             }
-            if (bundle.items.isEmpty()) return false
-            _state.update { current ->
-                current.copy(
-                    rawList = bundle.items,
-                    isInitialLoading = false,
-                    lastUpdatedAtMs = BangladeshTimeUtil.latestTransactionEpochMs(bundle.items)
-                        ?: current.lastUpdatedAtMs
-                )
-            }
-            applyLocalFilter()
-            true
+            bundle.items
         } catch (_: Exception) {
-            false
+            null
         }
     }
 
     private fun saveHistoryToLocalCache(items: List<TransactionItem>) {
         if (items.isEmpty()) return
         val s = _state.value
+        // Never overwrite the default window cache with CUSTOM / multi-day expansions.
+        if (s.historyTier != HistoryLoadTier.INITIAL_20 || s.startDate != null || s.endDate != null) {
+            return
+        }
         try {
             val json = GsonUtils.gson.toJson(
                 HistoryCacheBundle(
-                    provider = s.selectedProvider,
-                    startDate = s.startDate,
-                    endDate = s.endDate,
-                    tier = s.historyTier.name,
+                    provider = "all",
+                    startDate = null,
+                    endDate = null,
+                    tier = HistoryLoadTier.INITIAL_20.name,
                     items = items
                 )
             )
             PrefsHelper.setTransactionHistoryBundle(getApplication(), json)
         } catch (_: Exception) {}
+    }
+
+    private fun rememberBaseline(items: List<TransactionItem>) {
+        if (items.isEmpty()) return
+        val s = _state.value
+        // Clear-date fallback is the default undated ~20 window only.
+        if (s.historyTier != HistoryLoadTier.INITIAL_20 || s.startDate != null || s.endDate != null) return
+        baselineHistory = items
     }
 
     private fun fetchTemplates() {
@@ -220,39 +222,65 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
     }
 
     fun onProviderFilterChanged(filter: String) {
-        if (_state.value.selectedProvider == filter) return
-        _state.update {
-            it.copy(
-                selectedProvider = filter,
-                rawList          = emptyList(),
-                displayList      = emptyList(),
-                startDate        = null,
-                endDate          = null,
-                historyTier      = HistoryLoadTier.INITIAL_20,
-                isInitialLoading = true,
-                errorMessage     = null
-            )
+        if (_state.value.selectedProvider.equals(filter, ignoreCase = true)) return
+
+        _state.update { it.copy(selectedProvider = filter, errorMessage = null) }
+        applyLocalFilter()
+
+        val provider = filter.trim()
+        val isAll = provider.isEmpty() || provider.equals("all", ignoreCase = true)
+        if (isAll) {
+            // Keep current window; show all rows from rawList.
+            return
         }
-        fetchInitialPage()
+
+        // Template chip: filter the current window first. If empty on INITIAL_20, expand to 7 days.
+        if (_state.value.displayList.isEmpty() &&
+            _state.value.historyTier == HistoryLoadTier.INITIAL_20 &&
+            _state.value.startDate == null
+        ) {
+            loadMoreHistory()
+        }
     }
 
     fun onDateRangeChanged(start: String?, end: String?) {
+        val gen = ++historyFetchGeneration
+        if (start != null && end != null) {
+            // Snapshot the current window before replacing with calendar range.
+            rememberBaseline(_state.value.rawList)
+            _state.update {
+                it.copy(
+                    startDate        = start,
+                    endDate          = end,
+                    historyTier      = HistoryLoadTier.CUSTOM,
+                    rawList          = emptyList(),
+                    displayList      = emptyList(),
+                    isInitialLoading = true,
+                    errorMessage     = null
+                )
+            }
+            fetchDatedHistory(replaceList = true, markRefreshing = false, generation = gen)
+            return
+        }
+
+        // Clear calendar filter: restore latest ~20 immediately (Home-style), then refresh.
+        val fallback = when {
+            baselineHistory.isNotEmpty() -> baselineHistory
+            else -> readInitialHistoryCache().orEmpty()
+        }
         _state.update {
             it.copy(
-                startDate        = start,
-                endDate          = end,
-                historyTier      = if (start != null && end != null) HistoryLoadTier.CUSTOM else HistoryLoadTier.INITIAL_20,
-                rawList          = emptyList(),
-                displayList      = emptyList(),
-                isInitialLoading = true,
+                startDate        = null,
+                endDate          = null,
+                historyTier      = HistoryLoadTier.INITIAL_20,
+                rawList          = fallback,
+                isInitialLoading = fallback.isEmpty(),
+                isLoadingMoreHistory = false,
                 errorMessage     = null
             )
         }
-        if (start != null && end != null) {
-            fetchDatedHistory(replaceList = true, markRefreshing = false)
-        } else {
-            fetchInitialPage()
-        }
+        applyLocalFilter()
+        fetchInitialPage(forceNetwork = true, generation = gen)
     }
 
     private fun loadInitialHistory() {
@@ -278,14 +306,10 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
         if (current.isLoadingMoreHistory || current.isInitialLoading) return
 
         val range = quickDateRange(nextDays)
-        val newTier = when (nextDays) {
-            7 -> HistoryLoadTier.DAYS_7
-            15 -> HistoryLoadTier.DAYS_15
-            21 -> HistoryLoadTier.DAYS_21
-            30 -> HistoryLoadTier.DAYS_30
-            else -> return
-        }
+        val newTier = tierForHistoryDays(nextDays)
+        rememberBaseline(current.rawList)
 
+        val gen = ++historyFetchGeneration
         _state.update {
             it.copy(
                 startDate = range.first,
@@ -295,11 +319,12 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                 errorMessage = null
             )
         }
-        fetchDatedHistory(replaceList = true, markRefreshing = false)
+        fetchDatedHistory(replaceList = true, markRefreshing = false, generation = gen)
     }
 
     fun onRefresh(): Boolean {
         return RefreshCooldown.tryRefresh {
+            val gen = ++historyFetchGeneration
             _state.update {
                 it.copy(
                     isRefreshing = true,
@@ -312,7 +337,7 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                 )
             }
             fetchTemplates()
-            fetchInitialPage(isManualRefresh = true)
+            fetchInitialPage(isManualRefresh = true, forceNetwork = true, generation = gen)
         }
     }
 
@@ -328,25 +353,31 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
         return Pair(startStr, endStr)
     }
 
-    private fun fetchInitialPage(isManualRefresh: Boolean = false) {
+    private fun fetchInitialPage(
+        isManualRefresh: Boolean = false,
+        forceNetwork: Boolean = false,
+        generation: Int = historyFetchGeneration
+    ) {
         viewModelScope.launch {
             val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
             if (token.isEmpty()) {
+                if (generation != historyFetchGeneration) return@launch
                 _state.update {
                     it.copy(
                         isInitialLoading = false,
                         isRefreshing = false,
-                        errorMessage = "লগইন সেশন পাওয়া যায়নি।"
+                        errorMessage = if (it.rawList.isEmpty()) "লগইন সেশন পাওয়া যায়নি।" else it.errorMessage
                     )
                 }
                 return@launch
             }
 
             val provider = _state.value.selectedProvider
-            // Provider filter must hit the server — cache_hit would return unfiltered empty payload
+            // Always fetch unfiltered page for INITIAL_20; template chips filter locally.
             val historyLastSync = if (
                 !isManualRefresh &&
-                provider.equals("all", ignoreCase = true)
+                !forceNetwork &&
+                (provider.isEmpty() || provider.equals("all", ignoreCase = true))
             ) {
                 PrefsHelper.getHistoryLastSync(getApplication()).takeIf { it > 0L }
             } else null
@@ -355,54 +386,73 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                 token = token,
                 page = 1,
                 limit = PAGE_SIZE,
-                provider = provider,
+                provider = "all",
                 startDate = null,
                 endDate = null,
                 historyLastSync = historyLastSync
             )
 
+            if (generation != historyFetchGeneration) return@launch
+
             result.fold(
-                onSuccess = { pageResult -> handleFetchSuccess(pageResult, replaceList = true, isManualRefresh = isManualRefresh) },
-                onFailure = { error -> handleFetchFailure(error) }
+                onSuccess = { pageResult ->
+                    handleFetchSuccess(
+                        pageResult,
+                        replaceList = true,
+                        isManualRefresh = isManualRefresh,
+                        generation = generation
+                    )
+                },
+                onFailure = { error -> handleFetchFailure(error, generation) }
             )
         }
     }
 
-    private fun fetchDatedHistory(replaceList: Boolean, markRefreshing: Boolean) {
+    private fun fetchDatedHistory(
+        replaceList: Boolean,
+        markRefreshing: Boolean,
+        generation: Int = historyFetchGeneration
+    ) {
+        // Capture range before suspend so a later clear cannot change this request's params.
+        val start = _state.value.startDate
+        val end = _state.value.endDate
         viewModelScope.launch {
             val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
             if (token.isEmpty()) {
+                if (generation != historyFetchGeneration) return@launch
                 _state.update {
                     it.copy(
                         isInitialLoading = false,
                         isLoadingMoreHistory = false,
                         isRefreshing = false,
-                        errorMessage = "লগইন সেশন পাওয়া যায়নি।"
+                        errorMessage = if (it.rawList.isEmpty()) "লগইন সেশন পাওয়া যায়নি।" else it.errorMessage
                     )
                 }
                 return@launch
             }
 
-            val s = _state.value
             val result = repository.fetchTransactionHistory(
                 token = token,
                 page = 1,
-                limit = PAGE_SIZE,
-                provider = s.selectedProvider,
-                startDate = s.startDate,
-                endDate = s.endDate,
+                limit = 200,
+                provider = "all",
+                startDate = start,
+                endDate = end,
                 historyLastSync = null
             )
+
+            if (generation != historyFetchGeneration) return@launch
 
             result.fold(
                 onSuccess = { pageResult ->
                     handleFetchSuccess(
                         pageResult,
                         replaceList = replaceList,
-                        isManualRefresh = markRefreshing
+                        isManualRefresh = markRefreshing,
+                        generation = generation
                     )
                 },
-                onFailure = { error -> handleFetchFailure(error) }
+                onFailure = { error -> handleFetchFailure(error, generation) }
             )
         }
     }
@@ -410,12 +460,20 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
     private fun handleFetchSuccess(
         pageResult: TransactionHistoryResult,
         replaceList: Boolean,
-        isManualRefresh: Boolean
+        isManualRefresh: Boolean,
+        generation: Int = historyFetchGeneration
     ) {
+        if (generation != historyFetchGeneration) return
+
         if (pageResult.cacheHit && _state.value.historyTier == HistoryLoadTier.INITIAL_20) {
             if (_state.value.rawList.isEmpty()) {
-                restoreHistoryFromLocalCache()
+                val restored = restoreHistoryFromLocalCache()
+                if (!restored && _state.value.rawList.isEmpty()) {
+                    fetchInitialPage(forceNetwork = true, generation = generation)
+                    return
+                }
             }
+            rememberBaseline(_state.value.rawList)
             applyLocalFilter()
             _state.update { current ->
                 current.copy(
@@ -423,6 +481,12 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                     isLoadingMoreHistory = false,
                     isRefreshing = false,
                     refreshSkipped = isManualRefresh,
+                    lastUpdatedAtMs = if (isManualRefresh || current.isRefreshing) {
+                        System.currentTimeMillis()
+                    } else {
+                        current.lastUpdatedAtMs
+                            ?: BangladeshTimeUtil.latestTransactionEpochMs(current.rawList)
+                    },
                     errorMessage = null
                 )
             }
@@ -440,10 +504,13 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
         _state.update { current ->
             val merged = if (replaceList) newItems else current.rawList + newItems
             val refreshed = isManualRefresh || current.isRefreshing
-            val updatedAt = if (refreshed || current.lastUpdatedAtMs == null) {
-                BangladeshTimeUtil.latestTransactionEpochMs(merged) ?: System.currentTimeMillis()
+            // Refresh tap updates wall-clock "last checked" even when SMS list is unchanged.
+            val updatedAt = if (refreshed) {
+                System.currentTimeMillis()
             } else {
-                BangladeshTimeUtil.latestTransactionEpochMs(merged) ?: current.lastUpdatedAtMs
+                current.lastUpdatedAtMs
+                    ?: BangladeshTimeUtil.latestTransactionEpochMs(merged)
+                    ?: System.currentTimeMillis()
             }
             current.copy(
                 rawList = merged,
@@ -455,17 +522,24 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                 errorMessage = null
             )
         }
+        rememberBaseline(_state.value.rawList)
         saveHistoryToLocalCache(_state.value.rawList)
         applyLocalFilter()
     }
 
-    private fun handleFetchFailure(error: Throwable) {
+    private fun handleFetchFailure(error: Throwable, generation: Int = historyFetchGeneration) {
+        if (generation != historyFetchGeneration) return
         _state.update {
             it.copy(
                 isInitialLoading = false,
                 isLoadingMoreHistory = false,
                 isRefreshing = false,
-                errorMessage = error.message ?: "ডেটা লোড ব্যর্থ হয়েছে"
+                // Keep restored baseline visible if network refresh fails after clearing date filter.
+                errorMessage = if (it.rawList.isEmpty()) {
+                    error.message ?: "ডেটা লোড ব্যর্থ হয়েছে"
+                } else {
+                    null
+                }
             )
         }
     }
@@ -481,10 +555,9 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
                     (item.senderNumber?.lowercase()?.contains(query) == true)
 
             val tag = item.providerTag
-            val matchesProvider = provider.equals("all", ignoreCase = true) ||
-                    tag.equals(provider, ignoreCase = true) ||
-                    tag.contains(provider, ignoreCase = true) ||
-                    provider.contains(tag, ignoreCase = true)
+            val matchesProvider = provider.isEmpty() ||
+                    provider.equals("all", ignoreCase = true) ||
+                    tag.equals(provider, ignoreCase = true)
 
             matchesSearch && matchesProvider
         }
