@@ -34,7 +34,8 @@ class BootReceiver : BroadcastReceiver() {
 
         val isPackageReplaced = action == Intent.ACTION_MY_PACKAGE_REPLACED
         val isBootEvent = action == Intent.ACTION_BOOT_COMPLETED ||
-            action == "android.intent.action.LOCKED_BOOT_COMPLETED"
+            action == "android.intent.action.LOCKED_BOOT_COMPLETED" ||
+            action == Intent.ACTION_USER_UNLOCKED
 
         if (!isBootEvent && !isPackageReplaced) return
 
@@ -69,11 +70,18 @@ class BootReceiver : BroadcastReceiver() {
             return
         }
 
-        // Normal BOOT_COMPLETED / LOCKED_BOOT_COMPLETED
+        // BOOT_COMPLETED / LOCKED_BOOT_COMPLETED / USER_UNLOCKED
         try {
-            SmsServiceGuard.startService(context, NumberHeartbeatEngine.TRIGGER_BOOT_COMPLETED)
+            val trigger = if (action == Intent.ACTION_USER_UNLOCKED) {
+                "user_unlocked"
+            } else {
+                NumberHeartbeatEngine.TRIGGER_BOOT_COMPLETED
+            }
+            SmsServiceGuard.startService(context, trigger)
             SmsServiceGuard.scheduleWatchdog(context)
-            Log.i(TAG, "SMS Monitor Service started on boot (BOOT_COMPLETED heartbeat scheduled)")
+            online.paychek.app.services.foreground.ServiceKeepAliveScheduler.schedule(context)
+            online.paychek.app.services.foreground.ServiceKeepAliveScheduler.scheduleImmediate(context)
+            Log.i(TAG, "SMS Monitor Service started on boot ($action)")
             SmsPollWorker.schedule(context.applicationContext)
             SmsPollWorker.scheduleImmediate(context.applicationContext)
         } catch (e: Exception) {

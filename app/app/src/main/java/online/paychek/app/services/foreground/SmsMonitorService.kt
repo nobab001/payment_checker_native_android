@@ -555,9 +555,16 @@ class SmsMonitorService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
         if (userInitiatedStop || !online.paychek.app.data.local.prefs.PrefsHelper.isSmsServiceActive(this)) return
-        Log.w(TAG, "Task removed — scheduling service recovery")
+        Log.w(TAG, "Task removed — immediate + scheduled service recovery")
         online.paychek.app.services.foreground.SmsServiceGuard.enqueueImmediateRecovery(this)
         ServiceKeepAliveScheduler.schedule(this)
+        ServiceKeepAliveScheduler.scheduleImmediate(this, 1_500L)
+        // Best-effort direct restart before process fully dies (OEM may still kill).
+        try {
+            online.paychek.app.services.foreground.SmsServiceGuard.startService(this)
+        } catch (e: Exception) {
+            Log.w(TAG, "onTaskRemoved direct start failed: ${e.message}")
+        }
     }
 
     override fun onDestroy() {
@@ -582,6 +589,8 @@ class SmsMonitorService : Service() {
         if (!userInitiatedStop && online.paychek.app.data.local.prefs.PrefsHelper.isSmsServiceActive(this)) {
             Log.w(TAG, "Unexpected service death — scheduling recovery")
             online.paychek.app.services.foreground.SmsServiceGuard.enqueueImmediateRecovery(this)
+            ServiceKeepAliveScheduler.schedule(this)
+            ServiceKeepAliveScheduler.scheduleImmediate(this, 2_000L)
         }
         userInitiatedStop = false
     }

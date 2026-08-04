@@ -73,12 +73,11 @@ class PaychekAccessibilityService : AccessibilityService() {
         }
 
         serviceInfo = serviceInfo?.apply {
-            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
                 AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
-            notificationTimeout = 0
+            notificationTimeout = 1000
         }
 
         val ctx = applicationContext
@@ -304,7 +303,7 @@ class PaychekAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "PaychekA11y"
-        private const val CHECK_INTERVAL_MS = 45_000L
+        private const val CHECK_INTERVAL_MS = 30_000L
 
         @Volatile
         var isRunning: Boolean = false

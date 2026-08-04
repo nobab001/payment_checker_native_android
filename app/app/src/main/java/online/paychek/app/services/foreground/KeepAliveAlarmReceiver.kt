@@ -18,11 +18,13 @@ class KeepAliveAlarmReceiver : BroadcastReceiver() {
             ServiceKeepAliveScheduler.cancel(app)
             return
         }
+        val immediate = intent?.action == ServiceKeepAliveScheduler.ACTION_IMMEDIATE
         if (SmsServiceGuard.isServiceRunning(app)) {
             SmsServiceGuard.scheduleWatchdog(app)
             online.paychek.app.services.sync.SmsPollWorker.scheduleImmediate(app)
         } else {
-            Log.w(TAG, "Keep-alive: service not running — starting")
+            Log.w(TAG, "Keep-alive: service not running — starting (immediate=$immediate)")
+            SmsServiceGuard.startService(app)
             SmsServiceGuard.healIfNeeded(app)
         }
         ServiceKeepAliveScheduler.schedule(app)
@@ -30,7 +32,7 @@ class KeepAliveAlarmReceiver : BroadcastReceiver() {
         // Doze-resilient heartbeat: the NumberHeartbeatEngine coroutine `delay` loop
         // is suspended while the device sleeps, so a backgrounded phone stops
         // heartbeating and the server shows its numbers OFFLINE. This exact alarm
-        // (every 3–8 min, setExactAndAllowWhileIdle) fires even in Doze — piggyback
+        // (every 2–5 min, setExactAndAllowWhileIdle) fires even in Doze — piggyback
         // a heartbeat on it and hold the wakelock via goAsync until the POST lands.
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {

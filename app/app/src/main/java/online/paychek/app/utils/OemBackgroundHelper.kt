@@ -85,6 +85,30 @@ object OemBackgroundHelper {
             )
         }
 
+        when (detectVendor()) {
+            OemVendor.HUAWEI -> steps += BackgroundSetupStep(
+                id = "oem_autostart",
+                title = "App Launch = Manual",
+                description = "Phone Manager → App launch → Paychek → Manage manually → Auto-launch + Secondary launch + Run in background ON।"
+            )
+            OemVendor.XIAOMI -> steps += BackgroundSetupStep(
+                id = "oem_autostart",
+                title = "Autostart ON",
+                description = "Security → Autostart → Paychek ON করুন। Lock recent apps (lock icon) রাখুন।"
+            )
+            OemVendor.VIVO -> steps += BackgroundSetupStep(
+                id = "oem_autostart",
+                title = "Autostart / High background",
+                description = "iManager → App manager → Autostart → Paychek ON। Battery → High background power consumption allow।"
+            )
+            OemVendor.SAMSUNG -> steps += BackgroundSetupStep(
+                id = "oem_autostart",
+                title = "Never sleeping apps",
+                description = "Device Care → Battery → Background usage limits → Never sleeping apps-এ Paychek যোগ করুন।"
+            )
+            else -> Unit
+        }
+
         return steps
     }
 
@@ -100,6 +124,7 @@ object OemBackgroundHelper {
             OemVendor.VIVO -> listOf(appDetailsIntent(pkg)) + vivoIntents(pkg)
             OemVendor.XIAOMI -> xiaomiIntents(pkg)
             OemVendor.OPPO, OemVendor.REALME -> oppoIntents(pkg)
+            OemVendor.HUAWEI -> huaweiIntents(pkg)
             else -> listOf(appDetailsIntent(pkg))
         }
         for (intent in intents) {
@@ -130,6 +155,7 @@ object OemBackgroundHelper {
                 true
             }
             "battery_exempt" -> openBatteryUnrestrictedSettings(context)
+            "oem_autostart" -> openBatteryUnrestrictedSettings(context)
             else -> openBatteryUnrestrictedSettings(context)
         }
     }
@@ -208,6 +234,39 @@ object OemBackgroundHelper {
             component = ComponentName(
                 "com.miui.securitycenter",
                 "com.miui.permcenter.autostart.AutoStartManagementActivity"
+            )
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        },
+        appDetailsIntent(pkg)
+    )
+
+    /** Huawei / Honor — App Launch (manual) + Battery optimization screens. */
+    private fun huaweiIntents(pkg: String): List<Intent> = listOf(
+        Intent().apply {
+            component = ComponentName(
+                "com.huawei.systemmanager",
+                "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"
+            )
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        },
+        Intent().apply {
+            component = ComponentName(
+                "com.huawei.systemmanager",
+                "com.huawei.systemmanager.appcontrol.activity.StartupAppControlActivity"
+            )
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        },
+        Intent().apply {
+            component = ComponentName(
+                "com.huawei.systemmanager",
+                "com.huawei.systemmanager.optimize.process.ProtectActivity"
+            )
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        },
+        Intent().apply {
+            component = ComponentName(
+                "com.hihonor.systemmanager",
+                "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"
             )
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         },

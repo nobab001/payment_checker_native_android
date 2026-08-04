@@ -29,7 +29,17 @@ async function bustEntitlementCache(userId) {
 
 async function getTrialEntitlements() {
   const rows = await prisma.global_config.findMany({
-    where: { config_key: { in: ['trial_max_devices', 'trial_max_sites', 'trial_allow_custom_sender'] } },
+    where: {
+      config_key: {
+        in: [
+          'trial_max_devices',
+          'trial_max_sites',
+          'trial_allow_custom_sender',
+          'trial_perm_manual_transaction',
+          'trial_perm_smart_popup',
+        ],
+      },
+    },
   });
   const map = Object.fromEntries(rows.map((r) => [r.config_key, r.config_value]));
   return {
@@ -37,8 +47,8 @@ async function getTrialEntitlements() {
     perm_template: 1,
     perm_website: 1,
     perm_device: 1,
-    perm_smart_popup: 1,
-    perm_manual_transaction: 0,
+    perm_smart_popup: parseInt(map.trial_perm_smart_popup || '1', 10) ? 1 : 0,
+    perm_manual_transaction: parseInt(map.trial_perm_manual_transaction || '0', 10) ? 1 : 0,
     perm_gateway: 1,
     perm_personal: 1,
     perm_personal_business: 1,

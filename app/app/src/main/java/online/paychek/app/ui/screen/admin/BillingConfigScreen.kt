@@ -90,6 +90,9 @@ fun BillingConfigScreen(
     var trialMaxDevices by remember { mutableStateOf("1") }
     var trialMaxSites by remember { mutableStateOf("1") }
     var trialAllowCustomSender by remember { mutableStateOf("0") }
+    var trialPermManualTransaction by remember { mutableStateOf("0") }
+    var trialPermSmartPopup by remember { mutableStateOf("0") }
+    var trialWelcomeExpanded by remember { mutableStateOf(false) }
     var trialWelcomeEnabled by remember { mutableStateOf(true) }
     var trialWelcomeTitle by remember { mutableStateOf("অভিনন্দন!") }
     var trialWelcomeMessage by remember {
@@ -141,6 +144,8 @@ fun BillingConfigScreen(
         trialMaxDevices = uiState.configs["trial_max_devices"] ?: "1"
         trialMaxSites = uiState.configs["trial_max_sites"] ?: "1"
         trialAllowCustomSender = uiState.configs["trial_allow_custom_sender"] ?: "0"
+        trialPermManualTransaction = uiState.configs["trial_perm_manual_transaction"] ?: "0"
+        trialPermSmartPopup = uiState.configs["trial_perm_smart_popup"] ?: "0"
         trialWelcomeEnabled = (uiState.configs["trial_welcome_enabled"] ?: "1") != "0"
         trialWelcomeTitle = uiState.configs["trial_welcome_title"] ?: "অভিনন্দন!"
         trialWelcomeMessage = uiState.configs["trial_welcome_message"]
@@ -810,11 +815,10 @@ fun BillingConfigScreen(
         Text(
             text = "🎁 Welcome Trial Package",
             color = TextPrimary,
-            fontSize = 18.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.Bold
         )
 
-        // Global Free Trial settings card
         Card(
             colors = CardDefaults.cardColors(containerColor = CardBackground),
             shape = RoundedCornerShape(12.dp),
@@ -822,196 +826,152 @@ fun BillingConfigScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // 0. Trial plan display name
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(text = "ট্রায়াল প্যাকেজের নাম (trial_plan_name)", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text(text = "নতুন অ্যাকাউন্টে যে নাম দেখাবে — এডিট করলে সব ইউজারের ওয়েলকাম ট্রায়াল নাম আপডেট হবে।", color = TextSecondary, fontSize = 11.sp)
-                    OutlinedTextField(
-                        value = trialPlanName,
-                        onValueChange = { trialPlanName = it },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                val fieldColors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary,
+                    focusedLabelColor = TextSecondary,
+                    unfocusedLabelColor = TextSecondary.copy(alpha = 0.7f)
+                )
 
-                // 1. Trial Days
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(text = "মেয়াদ দিনসংখ্যা (trial_days)", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text(text = "নতুন নিবন্ধিত ডিভাইসের জন্য ফ্রি ট্রায়াল দিনসংখ্যা (যেমন: 7, 3, 0)।", color = TextSecondary, fontSize = 11.sp)
+                OutlinedTextField(
+                    value = trialPlanName,
+                    onValueChange = { trialPlanName = it },
+                    label = { Text("প্যাকেজ নাম", fontSize = 12.sp) },
+                    singleLine = true,
+                    colors = fieldColors,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     OutlinedTextField(
                         value = trialDays,
                         onValueChange = { trialDays = it },
+                        label = { Text("দিন", fontSize = 12.sp) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
-                        ),
-                        modifier = Modifier.fillMaxWidth()
+                        colors = fieldColors,
+                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
                     )
-                }
-
-                // 2. Max Devices
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(text = "সর্বোচ্চ ডিভাইস (trial_max_devices)", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text(text = "ট্রায়াল প্যাকেজে সর্বোচ্চ কয়টি ডিভাইস যুক্ত করা যাবে।", color = TextSecondary, fontSize = 11.sp)
                     OutlinedTextField(
                         value = trialMaxDevices,
                         onValueChange = { trialMaxDevices = it },
+                        label = { Text("ডিভাইস", fontSize = 12.sp) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
-                        ),
-                        modifier = Modifier.fillMaxWidth()
+                        colors = fieldColors,
+                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
                     )
-                }
-
-                // 3. Max Sites
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(text = "সর্বোচ্চ সাইট (trial_max_sites)", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text(text = "ট্রায়াল প্যাকেজে সর্বোচ্চ কয়টি গেটওয়ে সাইট বা ল্যান্ডিং পেইজ যুক্ত করা যাবে।", color = TextSecondary, fontSize = 11.sp)
                     OutlinedTextField(
                         value = trialMaxSites,
                         onValueChange = { trialMaxSites = it },
+                        label = { Text("সাইট", fontSize = 12.sp) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
-                        ),
-                        modifier = Modifier.fillMaxWidth()
+                        colors = fieldColors,
+                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
                     )
                 }
 
-                // 4. Allow Custom Sender
+                Text("পারমিশন", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+
+                TrialPermSwitchRow(
+                    label = "কাস্টম সেন্ডার আইডি",
+                    checked = trialAllowCustomSender == "1",
+                    onCheckedChange = { trialAllowCustomSender = if (it) "1" else "0" }
+                )
+                TrialPermSwitchRow(
+                    label = "Manual Transaction",
+                    checked = trialPermManualTransaction == "1",
+                    onCheckedChange = { trialPermManualTransaction = if (it) "1" else "0" }
+                )
+                TrialPermSwitchRow(
+                    label = "Smart Pop-up",
+                    checked = trialPermSmartPopup == "1",
+                    onCheckedChange = { trialPermSmartPopup = if (it) "1" else "0" }
+                )
+
+                HorizontalDivider(color = TextSecondary.copy(alpha = 0.2f))
+
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { trialWelcomeExpanded = !trialWelcomeExpanded },
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "কাস্টম সেন্ডার আইডি সাপোর্ট (Custom Sender ID)", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Text(text = "ট্রায়াল প্যাকেজে ইউজারদের কাস্টম সেন্ডার আইডি তৈরি করতে দেওয়া হবে কিনা।", color = TextSecondary, fontSize = 11.sp)
+                    Text("Welcome Popup", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Switch(
+                            checked = trialWelcomeEnabled,
+                            onCheckedChange = { trialWelcomeEnabled = it }
+                        )
+                        Icon(
+                            imageVector = if (trialWelcomeExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = TextSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
-                    Switch(
-                        checked = trialAllowCustomSender == "1",
-                        onCheckedChange = { trialAllowCustomSender = if (it) "1" else "0" }
-                    )
                 }
 
-                HorizontalDivider(color = TextSecondary.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
-
-                Text(
-                    text = "Trial Welcome Message",
-                    color = TextPrimary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                )
-                Text(
-                    text = "নতুন অ্যাকাউন্টে মেয়াদ-সতর্কতার বদলে এই ওয়েলকাম পপআপ দেখাবে। {trial_days} ও {expiry_date} প্লেসহোল্ডার ব্যবহার করা যাবে।",
-                    color = TextSecondary,
-                    fontSize = 11.sp
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("Welcome Popup চালু", color = TextPrimary, fontSize = 14.sp)
-                    Switch(
-                        checked = trialWelcomeEnabled,
-                        onCheckedChange = { trialWelcomeEnabled = it }
+                if (trialWelcomeExpanded) {
+                    OutlinedTextField(
+                        value = trialWelcomeTitle,
+                        onValueChange = { trialWelcomeTitle = it },
+                        label = { Text("Title", fontSize = 12.sp) },
+                        singleLine = true,
+                        colors = fieldColors,
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
                     )
-                }
-
-                OutlinedTextField(
-                    value = trialWelcomeTitle,
-                    onValueChange = { trialWelcomeTitle = it },
-                    label = { Text("Title") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = trialWelcomeMessage,
-                    onValueChange = { trialWelcomeMessage = it },
-                    label = { Text("Message") },
-                    minLines = 3,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = trialWelcomeFeatures,
-                    onValueChange = { trialWelcomeFeatures = it },
-                    label = { Text("Features (প্রতি লাইনে একটি)") },
-                    minLines = 3,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = trialWelcomeButton,
-                    onValueChange = { trialWelcomeButton = it },
-                    label = { Text("Button text") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = TextSecondary.copy(alpha = 0.3f),
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Show Once", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        Text("চেক থাকলে প্রতি ইউজারকে একবারই দেখাবে", color = TextSecondary, fontSize = 11.sp)
-                    }
-                    Checkbox(
+                    OutlinedTextField(
+                        value = trialWelcomeMessage,
+                        onValueChange = { trialWelcomeMessage = it },
+                        label = { Text("Message", fontSize = 12.sp) },
+                        minLines = 2,
+                        colors = fieldColors,
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
+                    )
+                    OutlinedTextField(
+                        value = trialWelcomeFeatures,
+                        onValueChange = { trialWelcomeFeatures = it },
+                        label = { Text("Features (প্রতি লাইন)", fontSize = 12.sp) },
+                        minLines = 2,
+                        colors = fieldColors,
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
+                    )
+                    OutlinedTextField(
+                        value = trialWelcomeButton,
+                        onValueChange = { trialWelcomeButton = it },
+                        label = { Text("Button", fontSize = 12.sp) },
+                        singleLine = true,
+                        colors = fieldColors,
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
+                    )
+                    TrialPermSwitchRow(
+                        label = "একবারই দেখাবে (Show Once)",
                         checked = trialWelcomeShowOnce,
-                        onCheckedChange = { trialWelcomeShowOnce = it }
+                        onCheckedChange = { trialWelcomeShowOnce = it },
+                        useCheckbox = true
                     )
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(4.dp))
 
         Button(
             onClick = {
@@ -1022,6 +982,8 @@ fun BillingConfigScreen(
                         "trial_max_devices" to trialMaxDevices,
                         "trial_max_sites" to trialMaxSites,
                         "trial_allow_custom_sender" to trialAllowCustomSender,
+                        "trial_perm_manual_transaction" to trialPermManualTransaction,
+                        "trial_perm_smart_popup" to trialPermSmartPopup,
                         "trial_welcome_enabled" to if (trialWelcomeEnabled) "1" else "0",
                         "trial_welcome_title" to trialWelcomeTitle,
                         "trial_welcome_message" to trialWelcomeMessage,
@@ -1037,11 +999,13 @@ fun BillingConfigScreen(
             enabled = !uiState.isSaving
         ) {
             if (uiState.isSaving) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    strokeWidth = 2.dp
+                )
             } else {
-                Icon(imageVector = Icons.Default.Save, contentDescription = "Save", tint = MaterialTheme.colorScheme.onPrimary)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("ওয়েলকাম ট্রায়াল সেটিংস সংরক্ষণ করুন", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                Text("ট্রায়াল সেটিংস সেভ", color = MaterialTheme.colorScheme.onPrimary)
             }
         }
 
@@ -1340,5 +1304,31 @@ fun BillingConfigScreen(
                 showCreateAddonDialog = true
             }
         )
+    }
+}
+
+@Composable
+private fun TrialPermSwitchRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    useCheckbox: Boolean = false
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.onBackground,
+            fontSize = 13.sp,
+            modifier = Modifier.weight(1f)
+        )
+        if (useCheckbox) {
+            Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        } else {
+            Switch(checked = checked, onCheckedChange = onCheckedChange)
+        }
     }
 }

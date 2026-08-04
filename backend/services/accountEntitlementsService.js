@@ -138,7 +138,13 @@ function entitlementsFromSubscriptionPlan(plan) {
 }
 
 async function getTrialEntitlements() {
-  const keys = ['trial_max_devices', 'trial_max_sites', 'trial_allow_custom_sender'];
+  const keys = [
+    'trial_max_devices',
+    'trial_max_sites',
+    'trial_allow_custom_sender',
+    'trial_perm_manual_transaction',
+    'trial_perm_smart_popup',
+  ];
   const rows = await prisma.global_config.findMany({
     where: { config_key: { in: keys } },
   });
@@ -148,8 +154,8 @@ async function getTrialEntitlements() {
     perm_template: 1,
     perm_website: 1,
     perm_device: 1,
-    perm_smart_popup: 0,
-    perm_manual_transaction: 0,
+    perm_smart_popup: parseInt(map.trial_perm_smart_popup || '0', 10) === 1 ? 1 : 0,
+    perm_manual_transaction: parseInt(map.trial_perm_manual_transaction || '0', 10) === 1 ? 1 : 0,
     eff_max_devices: parseInt(map.trial_max_devices || '1', 10) || 1,
     eff_max_sites: parseInt(map.trial_max_sites || '1', 10) || 1,
   };

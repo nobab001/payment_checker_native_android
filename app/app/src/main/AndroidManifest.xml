@@ -39,8 +39,9 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- Exact Alarm — WorkManager reliable scheduling on Android 12+ -->
+    <!-- Exact Alarm — keep-alive recovery (Android 12+) -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <application
         android:name=".PaychekApp"
@@ -102,6 +103,7 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.USER_UNLOCKED" />
             </intent-filter>
         </receiver>
 
@@ -114,11 +116,13 @@
              foregroundServiceType:
                dataSync    — backend sync (offline queue upload)
                specialUse  — Android 14+ mandatory for services that read SMS ContentProvider
+             stopWithTask=false — recent-apps swipe must NOT kill FGS with the task
         -->
         <service
             android:name=".services.foreground.SmsMonitorService"
             android:foregroundServiceType="dataSync|specialUse"
-            android:exported="false">
+            android:exported="false"
+            android:stopWithTask="false">
             <property 
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" 
                 android:value="আমাদের পেমেন্ট চেকার অ্যাপের অফলাইন মার্চেন্টদের জন্য ব্যাকগ্রাউন্ডে SMS ContentProvider ইনবক্স স্ক্যানিং সিঙ্ক নিশ্চিত করতে specialUse টাইপটি আবশ্যক।" />

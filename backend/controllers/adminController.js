@@ -94,6 +94,28 @@ async function updateConfig(req, res) {
         } catch (_) { /* ignore */ }
       }
 
+      // Trial permission / limit changes — drop cached entitlements so trial users refresh soon.
+      if (entries.some(([k]) => String(k).startsWith('trial_'))) {
+        try {
+          const { getRedisClient } = require('../services/redisClient');
+          const redis = getRedisClient();
+          const keys = await redis.keys('paychek:entitlements:*');
+          if (keys && keys.length) await redis.del(...keys);
+        } catch (_) { /* ignore */ }
+        try {
+          // Re-sync persisted entitlement rows for active trial users.
+          const { syncUserEntitlements } = require('../services/accountEntitlementsService');
+          const trialUsers = await prisma.$queryRaw`
+            SELECT id FROM users WHERE COALESCE(is_trial, 0) = 1 AND role <> 'admin' LIMIT 500
+          `;
+          for (const u of trialUsers) {
+            try { await syncUserEntitlements(u.id); } catch (_) { /* ignore */ }
+          }
+        } catch (e) {
+          console.warn('[Admin] trial entitlement resync skip:', e.message);
+        }
+      }
+
       return res.json({ success: true, message: 'Configurations updated successfully.' });
     }
 
