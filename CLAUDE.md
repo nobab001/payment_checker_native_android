@@ -59,25 +59,26 @@ Monorepo for **PayChek** (`paycheckbd.com`) — payment verification:
 ## Post-task deploy pipeline (by WHAT CHANGED)
 
 ### App changed (`app/**`)
-1. Build debug APK: `build-apk.bat` (repo root) **or** `gradlew assembleDebug` in `app/`.
-2. Report: `app/app/build/outputs/apk/debug/app-debug.apk`.
-3. `adb devices` — if `device`: `adb install -r ...` then launch `online.paychek.app/.MainActivity`. Else only give APK path.
+1. Build **release** APK: `build-apk.bat` (repo root) **or** `gradlew assembleRelease` in `app/`.
+2. Report: `app/app/build/outputs/apk/release/app-release.apk`.
+3. `adb devices` — if `device`: install release APK + launch MainActivity.
+4. **Always** upload release APK to VPS: `/var/www/payment-checker/shared/downloads/paycheck.apk`.
 
 ### Backend / website / checkout (`backend/**`)
-1. Restart local Node (port 3000) if testing locally.
-2. Per user instruction: auto-deploy website/checkout (`backend/public/**`) to VPS when that task completes.
+1. **Always deploy to VPS** from local changes (SSH `paycheckbd` → sync → `pm2 reload payment-checker-api` → health check). Do not wait for a separate ask. Do **not** require GitHub push first.
+2. Local Node (port 3000): restart when useful for local smoke tests — keep for now; does not replace VPS.
 
 ### Both
-- Restart server + build APK (+ adb if device connected).
+- Release APK (+ adb + VPS APK upload) + VPS backend deploy.
 
 ### GitHub
-- **Never** auto stage/commit/push unless the user **explicitly** asks.
+- **Never** auto stage/commit/push unless the user **explicitly** asks (e.g. end of day).
 
 ---
 
 ## VPS / production
 
-> Website/checkout (`backend/public/**`) → auto-deploy to VPS when that work finishes. Other backend/DB → deploy when asked. VPS hosts multiple projects — touch **only** this one.
+> After every coding task that touches backend/website/app download: **always update VPS**. GitHub push is **not** required for that day-to-day deploy. Push only when the user asks. VPS hosts multiple projects — touch **only** this one.
 
 - SSH: `ssh paycheckbd` (`root@37.60.224.231`)
 - Domain: `paycheckbd.com`

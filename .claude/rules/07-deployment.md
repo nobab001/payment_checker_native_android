@@ -1,7 +1,4 @@
----
-description: Local vs VPS deploy, release APK, always VPS after tasks, no auto git push
-alwaysApply: true
----
+<!-- Synced from .cursor/rules/07-deployment.mdc -->
 
 # Deployment Rules
 

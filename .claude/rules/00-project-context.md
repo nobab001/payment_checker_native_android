@@ -1,0 +1,37 @@
+<!-- Synced from .cursor/rules/00-project-context.mdc -->
+
+# PayChek — Project Context
+
+Product: **Payment Checker** (PayChek) — SMS Payment Verification System for Bangladesh MFS (bKash, Nagad, Rocket, Upay) and related gateways.
+
+## Stack (canonical)
+
+| Layer | Tech |
+|-------|------|
+| Android | Kotlin, Jetpack Compose, Material 3, Navigation3, ViewModel, Retrofit, WorkManager, Foreground Services |
+| Backend | Node.js, Express, Prisma, MySQL, Redis, JWT, HMAC |
+| Checkout | Server-served JS under `backend/public/js/checkout/` |
+| Hosting | VPS `paycheckbd.com`, PM2, Nginx, shared releases under `/var/www/payment-checker/` |
+
+## Repo map
+
+- `app/` — Android client (`online.paychek.app`)
+- `backend/` — API, workers, checkout, official website assets
+- `docs/` — Engineering handbook (source of truth for AI + humans)
+- `.cursor/rules/` — Enforceable AI rules
+
+## Before any non-trivial change
+
+1. Read `docs/project/project-context.md`
+2. If UI: `docs/design/design-system.md` + `01-ui-ux.mdc` / `02-design-system.mdc`
+3. If Android: `docs/android/android-architecture.md`
+4. If API/backend: `docs/backend/backend-architecture.md` + `docs/api/api-guideline.md`
+5. If deploy/secrets: `docs/deployment/*` + `docs/security/*`
+
+## Non-negotiables
+
+- Do **not** invent a second architecture or design language.
+- Prefer extending existing modules over new parallel stacks.
+- Do **not** auto-commit or auto-push unless the user explicitly asks.
+- Local APK build ≠ VPS APK upload. Live download APK is `public/downloads/paycheck.apk` on VPS only when user requests upload.
+- App API base URL is configured in `AppConfig.kt` (`BASE_URL`). Production default: `https://paycheckbd.com/`.

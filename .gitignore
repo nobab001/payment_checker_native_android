@@ -20,8 +20,13 @@ app/.kotlin/
 # Runtime logs (never commit)
 backend/server-err.log
 backend/server-out.log
+backend/.local-server.err
+backend/.local-server.out
 backend/logs/
 *.log
+
+# Agent settings — contains local API keys (never commit)
+.claude/settings.local.json
 
 # Local scratch / design exports / recovered transcripts
 node_modules/

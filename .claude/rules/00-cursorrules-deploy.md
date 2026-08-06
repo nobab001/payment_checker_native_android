@@ -1,3 +1,5 @@
+<!-- Synced from .cursorrules -->
+
 # PayChek — post-task deploy rules (updated)
 
 After completing a coding task, apply **all** of the following that match what changed. Keep the live VPS and local artifacts up to date.

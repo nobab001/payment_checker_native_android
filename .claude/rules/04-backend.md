@@ -1,0 +1,32 @@
+<!-- Synced from .cursor/rules/04-backend.mdc -->
+
+# Backend Engineering Rules
+
+Read: `docs/backend/backend-architecture.md`, `docs/backend/database.md`, `docs/backend/folder-structure.md`
+
+## Stack
+
+Express app entry (`app.js` / server bootstrap), Prisma → MySQL, Redis for cache/presence/queues where used, workers under `backend/workers/` and `services/`.
+
+## Structure
+
+- `routes/` → thin HTTP wiring
+- `controllers/` → request orchestration
+- `services/` → domain logic
+- `payment/` → checkout/payment engines
+- `prisma/schema.prisma` → schema source of truth
+- Prefer `db/ensure-*.js` for additive production-safe schema guards when migrations are staged carefully
+
+## Rules
+
+- Validate all inputs at the edge (controller or middleware).
+- Return consistent JSON error shapes; use correct HTTP status codes.
+- Never log secrets (JWT, HMAC keys, SMTP passwords, API secrets).
+- Rate-limit sensitive endpoints (auth, OTP, public init).
+- Keep payment flow changes isolated under `payment/` + checkout JS; do not break merchant callbacks.
+- Redis/MySQL connection config from env — never hardcode production credentials in source.
+
+## Changes
+
+- Schema change → update Prisma + document in `docs/backend/database.md` when behavior changes.
+- After backend-only tasks: restart local Node per deploy rules; VPS deploy only when user requests.

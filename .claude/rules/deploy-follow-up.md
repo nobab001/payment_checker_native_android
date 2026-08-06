@@ -1,7 +1,4 @@
----
-description: Post-task — release APK, always VPS deploy, no auto git push; local Node optional for now
-alwaysApply: true
----
+<!-- Synced from .cursor/rules/deploy-follow-up.mdc -->
 
 # Deploy follow-up (PayChek)
 

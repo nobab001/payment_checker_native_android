@@ -1,7 +1,4 @@
----
-description: How the AI must plan, read docs, and implement for PayChek
-alwaysApply: true
----
+<!-- Synced from .cursor/rules/10-ai-behaviour.mdc -->
 
 # AI Behaviour
 

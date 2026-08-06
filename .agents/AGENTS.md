@@ -57,35 +57,29 @@ Whenever you make changes to the codebase (add/modify/delete screens, buttons, A
 ## 3. Post-Task Deploy Pipeline (decide by WHAT changed)
 
 ### A. App changed (`app/**`, Android UI/services/DTOs)
-1. Build release APK: run `build-apk.bat` (repo root) **or** `gradlew assembleRelease` inside `app/`.
+1. Build **release** APK: `build-apk.bat` (repo root) **or** `gradlew assembleRelease` inside `app/`.
 2. Report APK path: `app/app/build/outputs/apk/release/app-release.apk`.
 3. **Device check (every build):** run `adb devices`.
-   - If a device shows as `device`: `adb install -r app/app/build/outputs/apk/release/app-release.apk` → then launch `adb shell am start -n online.paychek.app/.MainActivity`.
-   - If no device connected: only give the APK path. Do **not** ask for IP/PORT unless user wants wireless install.
+   - If a device shows as `device`: `adb install -r` the release APK → launch MainActivity.
+   - If no device: only give the APK path.
+4. **Always** upload release APK to VPS: `/var/www/payment-checker/shared/downloads/paycheck.apk` (`chmod 644`).
 
-### B. Backend / Website / Checkout page (`backend/**`, checkout JS, HTML, CSS)
-1. Restart local Node server (port 3000) if testing locally.
-2. **Website & Checkout Auto-Deploy Rule**: As requested by user, whenever website, checkout page (`backend/public/**`), or backend API changes are completed, **ALWAYS automatically deploy to VPS (`paycheckbd.com`)** via git push + `deploy.sh` so changes are immediately live for users without needing a separate ask.
+### B. Backend / Website / Checkout (`backend/**`)
+1. **ALWAYS deploy to VPS (`paycheckbd.com`)** when the task completes — sync from **local** workspace via SSH; do **not** require GitHub push first.
+2. `pm2 reload payment-checker-api` only → health check.
+3. Local Node (port 3000): restart when useful for local tests — keep for now; does not replace VPS.
 
 ### C. Both app + backend
-- Restart local server, build the release APK (with adb device check), and deploy backend/website changes to VPS automatically.
+- Release APK (+ adb + VPS APK upload) and VPS backend deploy.
+
+### GitHub
+- Do **not** auto stage/commit/push. Push **only** when the user explicitly asks (e.g. end of day).
 
 ---
 
-## 4. VPS / Production Deploy — Rules & Pipeline
+## 4. VPS / Production Deploy — Always after relevant tasks
 
-> **User Exception Rule**: Website and checkout page (`backend/public/**`) changes MUST be auto-deployed to VPS (`paycheckbd.com`) upon completion of the task. For other major structural changes, follow standard safety..
-- This overrides any older rule that said "always push after implementation".
-- Commit messages: short, why-focused (fix/add/update).
-- Never force-push `main`; never amend pushed history; no interactive git (`-i`).
-- Never commit secrets (`.env`, keystores, private keys, PII).
-- Feature flow: `feature/<name>` branch → local test → commit → push → merge to `main` → `deploy.sh`.
-
----
-
-## 4. VPS / Production Deploy — ONLY on Explicit Request
-
-**Never deploy to VPS or production unless the user explicitly asks.**
+> **Current policy:** After backend/website/app-download work, deploy to VPS immediately. GitHub push is a separate, user-requested step.
 
 ### VPS Access
 - SSH alias: `ssh paycheckbd` → `root@37.60.224.231` (Contabo VPS `vmi3182621`)
@@ -97,30 +91,24 @@ Whenever you make changes to the codebase (add/modify/delete screens, buttons, A
 ### Other PM2 processes — NEVER touch
 `smartcalc-api`, `telecom-bot`, `telecom-dashboard`. (`payment-otp` — confirm with user before restarting.)
 
-### Live Deploy Steps (when explicitly asked)
-1. Deploy code via `deploy.sh [ref]` (in `backend/scripts/`).
-2. `npm install --production` if deps changed.
-3. Prisma/ensure scripts if schema changed.
-4. `pm2 reload payment-checker-api`.
-5. Health-check `https://paycheckbd.com/` + a known API route + watch PM2 logs.
+### Day-to-day live update (no GitHub push required)
+1. Sync local changed backend/public files to VPS `current/` (or equivalent live path) via SSH/`scp`/`rsync`.
+2. `pm2 reload payment-checker-api`.
+3. Health-check `https://paycheckbd.com/` + a known API route.
 
-### Production APK Upload (when explicitly asked)
+### Scripted release (`deploy.sh`) — when user has pushed / asks
+`deploy.sh [ref]` clones GitHub `main` — use after an explicit push/request, not as a reason to skip local→VPS sync during the day.
+
+### Production APK Upload (when app changed — automatic)
 - Copy to: `/var/www/payment-checker/shared/downloads/paycheck.apk`
 - Run: `chmod 644` on the file.
 - URL: `https://paycheckbd.com/downloads/paycheck.apk`
-- Local APK build does **not** auto-update this download link.
-
-### deploy.sh Pipeline Summary
-`deploy.sh [ref]` → DB backup → clone GitHub `main` → `npm ci` → `prisma generate` → lint → unit tests → cut `releases/<ts>/` → symlink `shared/` → switch `current` → `pm2 reload` → post-health (auto-rollback on failure) → keep 10 releases / 10 backups.
-- `DRY_RUN=1` — builds + tests without switching.
-- `SKIP_TESTS=1` — skips test gate (not recommended).
-- `rollback.sh [release-dir]` — switch `current` to previous + `pm2 reload` (recoverable within 2 min).
 
 ### VPS Never-Do List
 - Restart/redeploy any PM2 process other than `payment-checker-api`.
 - Overwrite VPS `shared/.env` DB credentials with local `.env`.
 - Force-push `main`.
-- Deploy untested payment-flow changes directly to production without confirmation.
+- Skip VPS deploy after backend work because GitHub was not pushed.
 
 ---
 
@@ -241,7 +229,7 @@ Read before UI work: `docs/design/design-system.md`, `.cursor/rules/01-ui-ux.mdc
 - **Do not hallucinate APIs** — only use endpoints documented in the blueprint or existing `routes/` files.
 - If an instruction in this file conflicts with a user message in the same session, **follow the user message** and flag the conflict.
 - For ambiguous requirements: ask one focused clarifying question rather than making assumptions.
-- **Never auto-run `pm2 restart` or `pm2 reload` on VPS without explicit user instruction.**
+- **Never auto-run `pm2 restart`/`pm2 reload` on unrelated VPS apps.** For this project only (`payment-checker-api`), reload after deploying task changes is required by the post-task deploy policy.
 - **Language of Plans**: Always write and present the Implementation Plan (`implementation_plan.md`) in Bengali (বাংলা).
 
 ---
