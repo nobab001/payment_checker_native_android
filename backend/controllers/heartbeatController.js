@@ -6,6 +6,7 @@ const numberHealth = require('../services/numberHealthService');
 const commPolicy = require('../services/commPolicyService');
 const dataSyncCache = require('../services/dataSyncCache');
 const presenceV25 = require('../services/presenceV25');
+const notifications = require('../services/notificationService');
 const {
   STATUS_SUSPENDED,
   getSubscriptionStatus,
@@ -13,6 +14,21 @@ const {
 
 const SUSPENDED_MESSAGE =
   'আপনার প্যাকেজের মেয়াদ শেষ হয়ে গেছে। সেবা সচল করতে অনুগ্রহ করে একটি সাবস্ক্রিপশন প্যাকেজ কিনুন।';
+
+/**
+ * Admin announcements ride along on the heartbeat (Comm Policy v1.2 — no push
+ * channel). Never let a notification failure break liveness reporting: the
+ * heartbeat keeps SIMs active on checkout, so it degrades to an empty list.
+ */
+async function pendingNotifications(userId, profile) {
+  try {
+    const cats = notifications.categoriesFromProfile(profile);
+    return await notifications.listUnreadForUser(userId, cats, { limit: 3 });
+  } catch (err) {
+    console.warn('[Heartbeat] notification fetch failed:', err.message);
+    return [];
+  }
+}
 
 async function postHeartbeat(req, res) {
   try {
@@ -79,6 +95,7 @@ async function postHeartbeat(req, res) {
         message: 'SMS service inactive — offline signal applied',
         forceSync: false,
         templateVersion,
+        notifications: await pendingNotifications(userId, profile),
         ...policy,
       });
     }
@@ -134,6 +151,7 @@ async function postHeartbeat(req, res) {
       forceSync,
       templateVersion: tplVer || templateVersion,
       message: null,
+      notifications: await pendingNotifications(userId, profile),
       ...policy,
       thresholds: {
         ...policy.thresholds,

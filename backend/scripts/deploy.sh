@@ -28,7 +28,6 @@ TMP_BUILD="/tmp/deploy/payment-checker"
 REPO="https://github.com/nobab001/payment_checker_native_android.git"
 PM2_API="payment-checker-api"
 PM2_WORKER="payment-checker-worker"     # reloaded only if it exists
-PM2_SOCKET="payment-checker-socket"     # reloaded only if it exists
 RELEASE="$(date +%Y-%m-%d_%H%M%S)"
 RELEASE_DIR="${APP_ROOT}/releases/${RELEASE}"
 REF="${1:-main}"
@@ -208,7 +207,7 @@ pm2 start app.js --name "${PM2_API}" --cwd "${APP_ROOT}/current" || {
 # in production today. If/when a companion is enabled, migrate it to the same
 # delete+start pattern using a committed pm2 ecosystem config that records each
 # service's script + args, so its cwd can be re-resolved safely.
-for svc in "${PM2_WORKER}" "${PM2_SOCKET}"; do
+for svc in "${PM2_WORKER}"; do
   if pm2 describe "${svc}" >/dev/null 2>&1; then
     log "==> pm2 reload ${svc}"
     pm2 reload "${svc}" --update-env || pm2 reload "${svc}" || log "WARN: reload ${svc} failed"

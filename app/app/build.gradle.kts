@@ -115,9 +115,6 @@ dependencies {
   // Security-Crypto (EncryptedSharedPreferences for secretKey storage)
   implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
-  // Socket.IO for Push-Driven Cache Sync
-  implementation("io.socket:socket.io-client:2.1.0")
-
   // Smart Pop-up crop scan — OCR only the square region (AccessibilityService.takeScreenshot)
   implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.0")
 

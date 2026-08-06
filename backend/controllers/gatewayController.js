@@ -325,13 +325,8 @@ async function applyProfileToSlot(userId, deviceId, simSlot, phoneNumber, profil
   }
 }
 
-async function emitGatewaySync(req, userId, deviceId, data) {
-  const io = req.app.get('io');
-  if (io && deviceId) {
-    io.to(`${userId}:${deviceId}`).emit('sync_gateway_methods', data);
-  }
-}
-
+// Comm Policy v1.2 — no push channel. Devices refetch gateway methods on their next
+// HTTP heartbeat; `touchDeviceSync()` bumps the version that drives that refetch.
 async function touchDeviceSync(userId, deviceId, opts = {}) {
   await dataSyncCache.bumpDeviceSyncVersion(userId, deviceId);
   if (opts.userCustomChanged) {
@@ -445,14 +440,6 @@ async function updatePriority(req, res) {
 
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
     console.log(`[GATEWAY] Priority updated for ${items.length} items | User: ${userId}`);
-    
-    const io = req.app.get('io');
-    const targetDeviceId = req.body.deviceId || req.user.deviceId;
-    if (io && targetDeviceId) {
-        io.to(`${userId}:${targetDeviceId}`).emit("sync_gateway_methods", data);
-    } else if (io) {
-        io.emit("sync_gateway_methods", data);
-    }
 
     await touchDeviceSync(userId, deviceId);
 
@@ -496,11 +483,7 @@ async function toggleMethod(req, res) {
     const status = enabledBool ? 'চালু' : 'বন্ধ';
     console.log(`[GATEWAY] Method ${methodId} ${status} | User: ${userId}`);
 
-    const io = req.app.get('io');
-    const targetDeviceId = req.body.deviceId || req.user.deviceId;
-    if (io && targetDeviceId) {
-        io.to(`${userId}:${targetDeviceId}`).emit("sync_gateway_methods", data);
-    }
+
 
     await touchDeviceSync(userId, deviceId);
 
@@ -552,12 +535,6 @@ async function updateMethod(req, res) {
 
     const updatedData = await fetchGatewayMethodsForUser(userId, deviceId);
     console.log(`[GATEWAY] Method ${methodId} updated | User: ${userId}`);
-
-    const io = req.app.get('io');
-    const targetDeviceId = req.body.deviceId || req.user.deviceId;
-    if (io && targetDeviceId) {
-        io.to(`${userId}:${targetDeviceId}`).emit("sync_gateway_methods", updatedData);
-    }
 
     await touchDeviceSync(userId, deviceId);
 
@@ -693,11 +670,7 @@ async function addGatewayMethod(req, res) {
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
     console.log(`[GATEWAY] Gateway method added | User: ${userId} | Slot: ${sim_slot} | Provider: ${provider}`);
 
-    const io = req.app.get('io');
-    const targetDeviceId = req.body.deviceId || req.user.deviceId;
-    if (io && targetDeviceId) {
-        io.to(`${userId}:${targetDeviceId}`).emit("sync_gateway_methods", data);
-    }
+
 
     await touchDeviceSync(userId, deviceId);
 
@@ -782,11 +755,7 @@ async function addCustomTemplate(req, res) {
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
     console.log(`[GATEWAY] Custom template added to method ${methodId} | User: ${userId}`);
 
-    const io = req.app.get('io');
-    const targetDeviceId = req.body.deviceId || req.user.deviceId;
-    if (io && targetDeviceId) {
-        io.to(`${userId}:${targetDeviceId}`).emit("sync_gateway_methods", data);
-    }
+
 
     await touchDeviceSync(userId, deviceId, { userCustomChanged: true });
 
@@ -949,10 +918,6 @@ async function addCustomSender(req, res) {
       }
 
       const data = await fetchGatewayMethodsForUser(userId, deviceId);
-      const io = req.app.get('io');
-      if (io && deviceId) {
-        io.to(`${userId}:${deviceId}`).emit('sync_gateway_methods', data);
-      }
       await touchDeviceSync(userId, deviceId, { userCustomChanged: true });
       return res.json({
         success: true,
@@ -1086,10 +1051,6 @@ async function addCustomSender(req, res) {
       }
 
       const data = await fetchGatewayMethodsForUser(userId, deviceId);
-      const io = req.app.get('io');
-      if (io && deviceId) {
-        io.to(`${userId}:${deviceId}`).emit('sync_gateway_methods', data);
-      }
       await touchDeviceSync(userId, deviceId, { userCustomChanged: true });
       return res.json({
         success: true,
@@ -1257,12 +1218,8 @@ async function addCustomSender(req, res) {
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
     console.log(`[GATEWAY] Custom sender ${cleanSenderId} added for user ${userId} on slot ${sim_slot} (source=${templateSource}, template=${template.id})`);
 
-    const io = req.app.get('io');
-    if (io && deviceId) {
-      io.to(`${userId}:${deviceId}`).emit("sync_gateway_methods", data);
-    }
-
     await touchDeviceSync(userId, deviceId, { userCustomChanged: true });
+
 
     return res.json({
       success: true,
@@ -1318,11 +1275,6 @@ async function deleteGatewayMethod(req, res) {
 
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
     console.log(`[GATEWAY] Gateway method ${methodId} deleted | User: ${userId}`);
-
-    const io = req.app.get('io');
-    if (io && deviceId) {
-      io.to(`${userId}:${deviceId}`).emit("sync_gateway_methods", data);
-    }
 
     await touchDeviceSync(userId, deviceId, { userCustomChanged: customTemplateDeleted });
 
@@ -1546,12 +1498,11 @@ async function forceShiftSlot(req, res) {
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
     console.log(`[GATEWAY] Force shift: ${cleanNum} → Device ${deviceId} slot ${simSlot} | User: ${userId}`);
 
-    await emitGatewaySync(req, userId, deviceId, data);
     await touchDeviceSync(userId, deviceId);
 
+    // Devices that lost the SIM must also refetch on their next heartbeat.
     for (const binding of otherDeviceBindings) {
-      const oldData = await fetchGatewayMethodsForUser(userId, binding.device_id);
-      await emitGatewaySync(req, userId, binding.device_id, oldData);
+      await touchDeviceSync(userId, binding.device_id);
     }
 
     return res.json({
@@ -1607,7 +1558,6 @@ async function setSlotActive(req, res) {
     await numberHealth.setNumberDisabled(userId, cleanNum, !isActive);
 
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
-    await emitGatewaySync(req, userId, deviceId, data);
     await touchDeviceSync(userId, deviceId);
 
     return res.json({
@@ -1733,7 +1683,6 @@ async function bulkSyncSlotMethods(req, res) {
     await saveDeviceSlotProfile(userId, deviceId, simSlot, cleanNum);
 
     const data = await fetchGatewayMethodsForUser(userId, deviceId);
-    await emitGatewaySync(req, userId, deviceId, data);
     await touchDeviceSync(userId, deviceId);
 
     return res.json({
@@ -1885,17 +1834,12 @@ async function deleteAccountNumber(req, res) {
              OR sim_one_number = ${cleanNum} OR sim_two_number = ${cleanNum})
     `;
 
-    const io = req.app.get('io');
     const requestDeviceId = req.headers['x-device-id'] || req.user.deviceId || '';
     const devicesToSync = new Set(affectedDevices);
     if (requestDeviceId) devicesToSync.add(String(requestDeviceId));
 
     for (const deviceId of devicesToSync) {
-      const data = await fetchGatewayMethodsForUser(userId, deviceId);
       await touchDeviceSync(userId, deviceId, { userCustomChanged: true });
-      if (io && deviceId) {
-        io.to(`${userId}:${deviceId}`).emit('sync_gateway_methods', data);
-      }
     }
 
     console.log(`[GATEWAY] Account number deleted | User: ${userId} | Phone: ${cleanNum}`);

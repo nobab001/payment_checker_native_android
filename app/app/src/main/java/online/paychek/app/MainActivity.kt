@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.api.RetrofitClient
+import online.paychek.app.ui.component.AdminNoticeDialog
 import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.ui.screen.auth.pin.SecurityGateScreen
 import online.paychek.app.ui.screen.device.RemoteLockScreen
@@ -42,6 +43,8 @@ class MainActivity : FragmentActivity() {
     private var isAppLocked by mutableStateOf(false)
     private var isAppDeactivated by mutableStateOf(false)
     private var isMaintenanceBlocked by mutableStateOf(false)
+    /** Bumped after each admin-notice fetch so the popup re-reads its queue. */
+    private var noticeRefreshKey by mutableStateOf(0)
     private var wasStopped = false
 
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
@@ -87,6 +90,9 @@ class MainActivity : FragmentActivity() {
                                 onUnlockSuccess = { isAppLocked = false },
                                 modifier = Modifier.fillMaxSize()
                             )
+                        } else {
+                            // Admin announcements — only once the user is past every gate.
+                            AdminNoticeDialog(refreshKey = noticeRefreshKey)
                         }
                     }
                 }
@@ -228,6 +234,19 @@ class MainActivity : FragmentActivity() {
             }
             healDeviceConfigCache()
             refreshMaintenanceGate()
+            refreshAdminNotices()
+        }
+    }
+
+    /**
+     * Pull admin announcements on app open. The heartbeat also delivers these,
+     * but this path works for suspended packages (heartbeat returns
+     * STOP_MONITORING) and for devices with SMS monitoring off.
+     */
+    private fun refreshAdminNotices() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            online.paychek.app.services.notify.AdminNoticeManager.refreshFromServer(this@MainActivity)
+            withContext(Dispatchers.Main) { noticeRefreshKey++ }
         }
     }
 

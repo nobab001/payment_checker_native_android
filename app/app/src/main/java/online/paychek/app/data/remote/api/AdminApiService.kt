@@ -300,4 +300,23 @@ interface AdminApiService {
         @Body request: UpdateDemoPaymentRefundRequest
     ): Response<DemoPaymentRefundResponse>
 
+    // App notifications — authored here, delivered on each device's heartbeat.
+    @GET("admin/notifications")
+    suspend fun getNotifications(
+        @Header("Authorization") token: String,
+        @Query("limit") limit: Int = 50
+    ): Response<AdminNotificationListResponse>
+
+    @POST("admin/notifications")
+    suspend fun sendNotification(
+        @Header("Authorization") token: String,
+        @Body request: SendNotificationRequest
+    ): Response<SendNotificationResponse>
+
+    @DELETE("admin/notifications/{id}")
+    suspend fun deleteNotification(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int
+    ): Response<AdminGenericResponse>
+
 }

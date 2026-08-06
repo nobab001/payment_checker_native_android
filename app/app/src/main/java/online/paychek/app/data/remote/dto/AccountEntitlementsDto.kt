@@ -14,7 +14,6 @@ data class AccountEntitlementsDto(
     /** Comm Policy v1.0 — welcome|personal|personal_business|gateway */
     @SerializedName("comm_profile") val commProfile: String? = null,
     @SerializedName("heartbeat") val heartbeatSec: Int? = null,
-    @SerializedName("use_socket") val useSocket: Boolean? = null,
     @SerializedName("subscription_status") val subscriptionStatus: String? = null,
     @SerializedName("suspended") val suspended: Boolean? = null,
     @SerializedName("custom_all_chip_label") val customAllChipLabel: String? = null,

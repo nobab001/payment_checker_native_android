@@ -1,5 +1,5 @@
 # Master Blueprint: Payment Checker & API Integration
-This document provides a comprehensive, complete technical blueprint of the Payment Checker monorepo. It details the architecture, database schema, file-by-file roles for the User App, Admin App, and Server, screen UI designs, Socket.io signaling protocols, and background service mechanics. The description is structured to serve as an exact blueprint to rebuild the entire system (User App, Admin App, and Server/Backend) from scratch in any stack.
+This document provides a comprehensive, complete technical blueprint of the Payment Checker monorepo. It details the architecture, database schema, file-by-file roles for the User App, Admin App, and Server, screen UI designs, the HTTP heartbeat (Comm Policy) communication model, and background service mechanics. Socket.io has been removed — all device presence, cache sync, and admin announcements are HTTP-only (Comm Policy v1.2). The description is structured to serve as an exact blueprint to rebuild the entire system (User App, Admin App, and Server/Backend) from scratch in any stack.
 
 ---
 
@@ -14,7 +14,7 @@ The project is structured as a multi-module monorepo containing a main **User Ap
   - **Preferences & Simple States**: SharedPreferences (`shared_preferences`) for session tokens, device settings, and configuration flags.
 - **Background Pipeline**: Native Broadcast Receiver (`telephony` plugin) connected to a persistent Foreground Service (`flutter_foreground_task`) and CPU wake-locks (`wakelock_plus`).
 - **P2P Sync Server**: Local embedded HTTP Server (`shelf` & `shelf_io`) running on the parent device to receive sync packages from child/sub-devices.
-- **Backend API & Real-time Sync**: Express.js REST API with Socket.io real-time signaling.
+- **Backend API & Sync**: Express.js REST API with HTTP heartbeat (Comm Policy v1.2) — Socket.io removed; presence/cache-sync/admin-notifications are pull-based.
 - **Server Persistence**: Primary database is MySQL (via `mysql2` connection pool). PostgreSQL is optionally supported for partitioned, high-volume payment tables.
 
 ---
@@ -183,7 +183,7 @@ admin/lib/
 
 ```
 server/
-├── app.js                          # Core server entry point initializing databases, Socket.io, and mounting routes
+├── app.js                          # Core server entry point initializing databases (incl. app_notifications ensure) and mounting routes — HTTP only, no Socket.io
 ├── ecosystem.config.js             # PM2 configuration file for production
 ├── package.json                    # Package metadata containing Node.js dependencies
 ├── schema.sql                      # Primary DDL schema establishing main users and OTP tables
@@ -215,8 +215,6 @@ server/
 │   ├── merchantService.js          # CRUD management routines for B2B API integrations
 │   ├── merchantVerifyService.js    # Verifies incoming transaction requests against received SMS records
 │   └── paymentSearchService.js     # Internal service managing SMS record and payment ledger queries
-├── socket/
-│   └── deviceSocket.js             # Handles socket room allocations, auth handshakes, and activation events
 └── utils/
     ├── deviceApprovalAuth.js       # Verifies parent credentials or authorization PINs
     ├── deviceAuthPolicy.js         # Checks whether a device requires PIN validation gates
@@ -225,6 +223,9 @@ server/
     ├── pinAuth.js                  # Hashing algorithms and verification logic for 6-digit PINs
     └── smsGatewaySelector.js       # Helper routing SMS notifications through the active gateway
 ```
+
+> **Socket.io removed (Comm Policy v1.2):** the former `socket/` layer no longer exists. All real-time behavior is now HTTP pull-based. The live backend (`backend/`) adds `db/ensure-app-notifications.js`, `services/notificationService.js`, and `controllers/notificationController.js` for the admin announcement system (see section **D. App Notification System**).
+
 
 ---
 
@@ -616,9 +617,9 @@ The server tracks each hardware device under one of three states:
 
 ---
 
-## 5. Server Database Schema & Socket Signaling Details
+## 5. Server Database Schema & Communication Details
 
-To ensure a perfect copy of the database and dynamic features, the DDL definitions and socket contracts are outlined below.
+To ensure a perfect copy of the database and dynamic features, the DDL definitions and the HTTP heartbeat (Comm Policy) contracts are outlined below. Socket.io has been removed — see section **C. Comm Policy v1.2** and **D. App Notification System**.
 
 ### A. MySQL Database DDL Schema
 
@@ -881,31 +882,69 @@ CREATE INDEX idx_payments_verify_lookup ON payments (account_id, trx_id, amount)
 
 ---
 
-### C. Socket.io Signaling Protocol
+### C. Comm Policy v1.2 — HTTP-Only Communication (Socket.io Removed)
 
-The server manages real-time status transitions of child and parent devices using Socket.io.
+**Socket.io has been fully removed** from both the backend and the Android client (Comm Policy v1.2). There is **no socket, no FCM, and no push channel**. All device presence, cache sync, and admin announcements travel over plain HTTP on the existing heartbeat.
 
-#### 1. Authentication Handshake
-Clients connect and pass a JWT token and hardware device ID during the connection handshake:
-```json
-{
-  "auth": {
-    "token": "<JWT_token>",
-    "deviceId": "<hardwareDeviceId>"
-  }
-}
-```
-- The server decodes the JWT and maps the socket to a room based on the user's ID: `user:<userId>`.
-- The server checks if the hardware ID matches a registered device, and joins the socket to a device-specific room: `device:<deviceRowId>`.
+#### 1. Presence & Liveness — HTTP Heartbeat
 
-#### 2. Event Types & Protocols
+- Devices POST `/api/gateway/heartbeat` on a package-tiered interval (Comm Policy profile) with jitter:
+  - `welcome` / `gateway` → 900 s (15 min)
+  - `personal_business` → 1800 s (30 min)
+  - `personal` → 3600 s (60 min)
+- `numberHealthService.recordHeartbeat()` is the **single source of presence truth** — it touches Redis `deviceLastSeen`, flushes to MySQL on a throttle, and cancels the disconnect watchdog.
+- The heartbeat response carries the next `heartbeatSec`, `forceSync` / `templateVersion` (cache-sync signal), and any pending admin `notifications`. A suspended account receives `{ action: "STOP_MONITORING" }` and the client shuts down SMS capture remotely.
 
-| Event Name | Emit Direction | Data Payload Structure | Description / Action |
+#### 2. Cache Sync — Poll on Version Bump
+
+Instead of a server push, every config/gateway/template mutation bumps a sync version (`dataSyncCache.touchDeviceSync()`). On the next heartbeat the device compares its `templateVersion` and, when stale, refetches `/api/gateway/methods` + `/api/gateway/templates`. Semantics are identical to the old push, just pull-based.
+
+#### 3. Admin Announcements — Heartbeat Piggyback
+
+Admin-authored notifications are delivered to devices **riding along on the heartbeat** (and on app-open via `GET /api/notifications`). No push infrastructure. See section **D. App Notification System** below.
+
+---
+
+### D. App Notification System (Admin → Users)
+
+Admin-authored announcements, delivered pull-based (heartbeat piggyback + app-open fetch). **No Firebase/FCM, no socket.**
+
+#### 1. Database (raw SQL, additive — `backend/db/ensure-app-notifications.js`)
+
+| Table | Purpose |
+| :--- | :--- |
+| `app_notifications` | The notice itself: `title`, `body`, `categories` (CSV), `created_by`, `is_active`, `created_at`. |
+| `app_notification_reads` | Per-user read receipts: `(notification_id, user_id)` unique, `read_at`. Cascades on notice delete. |
+
+#### 2. Targeting — three subscription categories
+
+`categories` is a CSV of the subscriptionV3 categories: `gateway`, `personal_business`, `personal`.
+- **All three selected = broadcast** — it also reaches trial and expired accounts that hold no active package.
+- A subset reaches only accounts with an active package in those categories.
+- Targeting is resolved from the Comm Policy profile (`commPolicyService.resolveCommProfile(userId).activeCategories`), so no extra subscription query is needed on the heartbeat hot path.
+
+#### 3. API Endpoints
+
+| Method | Endpoint | Auth | Purpose |
 | :--- | :--- | :--- | :--- |
-| `device:approval_request` | **Server ──> Parent** | `{ "device": { "id": 12, "deviceName": "...", "deviceModel": "..." } }` | Fired when a child device requests authorization. Appears in Parent's approval list. |
-| `device:activated` | **Server ──> Child** | `{ "device": { "id": 12, "status": "active", ... } }` | Fired when parent approves the child. Child updates local state and hides the waiting overlay. |
-| `device:rejected` | **Server ──> Child** | `{ "deviceId": 12 }` | Fired when parent rejects or removes a child. The child app immediately terminates session and logs out. |
-| `device:parent_role_changed` | **Server ──> Room `user:<id>`**| `{}` | Fired when parent role is transferred. All devices refresh their local configuration parameters. |
+| **POST** | `/api/admin/notifications` | Admin | Create + send (validates title ≤180, body ≤4000, ≥1 category). |
+| **GET** | `/api/admin/notifications` | Admin | History with per-notice read counts. |
+| **DELETE** | `/api/admin/notifications/:id` | Admin | Hard delete (cascades read receipts). |
+| **GET** | `/api/notifications` | User JWT | Unread notices for the account (reachable while suspended so expiry notices still land). |
+| **POST** | `/api/notifications/:id/read` | User JWT | Idempotent read receipt. |
+
+Unread resolution only looks back **30 days** (`UNREAD_LOOKBACK_DAYS`) so a fresh install never replays a backlog of stale announcements.
+
+#### 4. Delivery
+
+- **Heartbeat:** the heartbeat response includes the oldest unread notices (limit 3). A notification failure never breaks liveness reporting — it degrades to an empty list.
+- **App open:** `MainActivity.onResume()` pulls `GET /api/notifications`, which also works for suspended packages (heartbeat returns `STOP_MONITORING`) and devices with SMS monitoring off.
+- **Client guards** (`AdminNoticeManager.kt`): `pcu_notification_shown_ids` (already posted to the status bar) + `pcu_notification_pending` (in-app popup queue) prevent repeat heartbeats from re-nagging. The read receipt is sent as soon as the notice reaches the device, so admin-side "read" means **delivered to a device**, not opened by the user.
+- **UI:** status-bar notification (`IMPORTANCE_HIGH`) is the primary channel; an in-app `AlertDialog` popup (`AdminNoticeDialog`) shows queued notices on app open once the user is past the lock/maintenance gates.
+
+#### 5. Admin UI
+
+The composer lives in the Admin panel **অ্যাপ সেটিংস (App Settings) tab** (`AdminDashboardScreen.GlobalSettingsTab` → `NotificationSenderCard`): a headline field, a details field, three category chips, a **Send** button, and a sent-history list with delete + delivered-count.
 
 ---
 
@@ -1319,4 +1358,25 @@ Clients connect and pass a JWT token and hardware device ID during the connectio
 - সব পরিবর্তিত backend ফাইল লোকাল + VPS উভয়ে `node --check` পাস।
 - ২১টি ফাইল লোকাল → VPS sync (`/var/www/payment-checker/current/`), শুধু `pm2 reload payment-checker-api`, হেলথ চেক `https://paycheckbd.com/` HTTP 200।
 - Release APK VPS downloads-এ আপলোড: `/var/www/payment-checker/shared/downloads/paycheck.apk` (chmod 644, URL ভেরিফাইড)।
+- কোনো adb device connected না থাকায় on-device install স্কিপ হয়েছে।
+
+---
+
+### ✅ Session: 2026-08-07 — Socket.io সম্পূর্ণ রিমুভ + এডমিন নোটিফিকেশন সিস্টেম (হার্টবিট-ভিত্তিক)
+
+**১) Socket.io রিমুভ (Comm Policy v1.2):** ইউজারের নির্দেশে সকেট সিস্টেম সম্পূর্ণ ডিলিট করা হয়েছে — বর্তমান প্রজেক্টের কোনো ক্ষতি ছাড়াই।
+- **Backend**: `app.js` থেকে Socket.io bootstrap/handlers বাদ; সব `io.to().emit(...)` সাইট ইতিমধ্যে `dataSyncCache.touchDeviceSync()` (sync-version bump) দিয়ে পেয়ার করা ছিল, তাই sync semantics অপরিবর্তিত। Presence এখন সম্পূর্ণ HTTP — `numberHealthService.recordHeartbeat()`-ই একমাত্র presence truth। `commPolicyService` থেকে `useSocket`/`use_socket` ফিল্ড বাদ, `billingController` entitlements থেকে `use_socket` বাদ, `package.json` থেকে `socket.io` dependency বাদ (`package-lock.json` রিজেনারেট — socket.io purge ভেরিফাইড)। `deploy.sh`/`healthcheck.sh` থেকে `PM2_SOCKET` সার্ভিস লুপ বাদ।
+- **Android**: `build.gradle.kts` থেকে `io.socket:socket.io-client` বাদ; `AppConfig` থেকে `SOCKET_URL` ও `KEY_COMM_USE_SOCKET` বাদ; `AccountEntitlementsDto`/`HeartbeatResponse` থেকে `use_socket` বাদ; অরফান import পরিষ্কার। `ApiErrorMapper`-এর `java.net.SocketTimeoutException` অক্ষত (এটা HTTP টাইমআউট, Socket.io নয়)।
+
+**২) এডমিন নোটিফিকেশন সিস্টেম:** Firebase/FCM বা সকেট ছাড়াই — বিদ্যমান HTTP হার্টবিটের সাথে piggyback করে ডেলিভারি।
+- **Backend**: নতুন raw-SQL টেবিল `app_notifications` + `app_notification_reads` (`db/ensure-app-notifications.js`, additive)। `services/notificationService.js` (টার্গেটিং/আনরিড/রিড-রিসিট), `controllers/notificationController.js`, `routes/adminRoutes.js` (create/list/delete) ও `routes/gatewayRoutes.js` (list/read — suspended অবস্থাতেও পড়া যায়)। হার্টবিট রেসপন্সে `notifications` ফিল্ড যুক্ত (`heartbeatController`) — নোটিফিকেশন ফেইল করলেও liveness কখনো ভাঙে না।
+- **টার্গেটিং**: তিনটি সাবস্ক্রিপশন ক্যাটাগরি (`gateway`/`personal_business`/`personal`)। তিনটিই নির্বাচন = ব্রডকাস্ট (ট্রায়াল/এক্সপায়ার্ড অ্যাকাউন্টসহ সবার কাছে যায়)। আনরিড উইন্ডো ৩০ দিন।
+- **Admin UI**: অ্যাডমিন প্যানেলের **অ্যাপ সেটিংস** ট্যাবে নোটিফিকেশন কার্ড — শিরোনাম, বিস্তারিত, তিন ক্যাটাগরি চিপ, **Send** বাটন + পাঠানো হিস্ট্রি (ডিলিট + ডেলিভারড কাউন্ট)।
+- **User App**: `AdminNoticeManager` (স্ট্যাটাস-বার নোটিফিকেশন + ইন-অ্যাপ পপআপ কিউ, repeat-nag গার্ড) + `MainActivity.onResume()`-এ অ্যাপ-ওপেন পুল + `AdminNoticeDialog` পপআপ (সব লক/মেইনটেনেন্স গেট পেরোনোর পর)।
+
+**Verification & Deployment:**
+- সব পরিবর্তিত/নতুন backend ফাইল `node --check` এবং deploy/healthcheck স্ক্রিপ্ট `bash -n` পাস।
+- Release APK build সফল (`assembleRelease`) → `app/app/build/outputs/apk/release/app-release.apk` (SHA256 লোকাল=VPS মিলেছে)।
+- Backend ফাইল লোকাল → VPS sync (`/var/www/payment-checker/current/`), `pm2 reload payment-checker-api`, স্টার্টআপ লগে `app_notifications tables verified`, হেলথ চেক `https://paycheckbd.com/` HTTP 200; নোটিফিকেশন রুটগুলো 401 (auth-gated, routing ঠিক)।
+- Release APK VPS downloads-এ আপলোড: `/var/www/payment-checker/shared/downloads/paycheck.apk` (chmod 644, ডাউনলোড URL 200)।
 - কোনো adb device connected না থাকায় on-device install স্কিপ হয়েছে।

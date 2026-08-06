@@ -27,7 +27,7 @@ async function isShadowModeEnabled() {
 }
 
 /**
- * Legacy "would show on checkout" — active binding + recent last_seen or socket.
+ * Legacy "would show on checkout" — active binding + recent last_seen.
  */
 async function legacyDeviceAlive(userId, deviceId) {
   try {

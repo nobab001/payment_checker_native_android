@@ -1,7 +1,7 @@
 /**
  * numberHealthService — Number-centric health (ONLINE / GRACE / OFFLINE / DISABLED / STALE).
  *
- * Hot path: Socket.IO connect + SMS ingest touch Redis last_seen.
+ * Hot path: HTTP heartbeat + SMS ingest touch Redis last_seen (no Socket.IO).
  * HTTP heartbeat is package-tiered (Comm Policy v1.1):
  *   Gateway / Trial — every 10 min
  *   Personal / Personal Business — every 30 min
@@ -43,62 +43,7 @@ const KEYS = {
   numberDisabled: (userId, phone) => `paychek:nh:u:${userId}:n:${phone}:dis`,
   deviceLastSeen: (userId, deviceId) => `paychek:nh:u:${userId}:d:${deviceId}:seen`,
   deviceDbFlush: (userId, deviceId) => `paychek:nh:u:${userId}:d:${deviceId}:dbflush`,
-  deviceSocketLive: (userId, deviceId) => `paychek:nh:u:${userId}:d:${deviceId}:socket`,
 };
-
-/** In-memory debounce — brief socket flaps do not push numbers into GRACE. */
-const pendingSocketDisconnect = new Map();
-
-/**
- * Process-local Socket.IO presence (`userId:deviceId`).
- * Redis socket flags alone are not trusted — they survive process kill / uninstall
- * for up to REDIS_TTL and caused infinite DeviceWatch "ONLINE again" loops.
- */
-const liveSocketRooms = new Set();
-/** Socket presence Redis TTL — refreshed on connect/heartbeat; short so ghosts die. */
-const SOCKET_LIVE_TTL_SEC = 15 * 60;
-
-function socketRoomKey(userId, deviceId) {
-  return `${String(userId)}:${String(deviceId)}`;
-}
-
-function markSocketPresent(userId, deviceId) {
-  const uid = String(userId || '');
-  const dev = String(deviceId || '');
-  if (!uid || !dev) return;
-  liveSocketRooms.add(socketRoomKey(uid, dev));
-}
-
-function markSocketAbsent(userId, deviceId) {
-  liveSocketRooms.delete(socketRoomKey(userId, deviceId));
-}
-
-function isSocketPresentInProcess(userId, deviceId) {
-  return liveSocketRooms.has(socketRoomKey(userId, deviceId));
-}
-
-/** On boot: no sockets are connected yet — wipe stale Redis socket flags. */
-async function clearAllSocketLiveFlags() {
-  try {
-    const redis = getRedisClient();
-    let cursor = '0';
-    let cleared = 0;
-    do {
-      const [next, keys] = await redis.scan(cursor, 'MATCH', 'paychek:nh:u:*:d:*:socket', 'COUNT', 200);
-      cursor = next;
-      if (keys.length) {
-        cleared += keys.length;
-        await redis.del(...keys);
-      }
-    } while (cursor !== '0');
-    if (cleared) {
-      console.log(`[NumberHealth] Cleared ${cleared} stale socket-live flag(s) on boot`);
-    }
-  } catch (err) {
-    console.warn('[NumberHealth] clearAllSocketLiveFlags failed:', err.message);
-  }
-}
-const SOCKET_DISCONNECT_DEBOUNCE_MS = 30 * 1000;
 
 const DEVICE_DB_FLUSH_MS = 5 * 60 * 1000;
 const REDIS_TTL_SEC = 48 * 60 * 60; // 48h — STALE still computable
@@ -195,26 +140,6 @@ async function getNumberState(userId, phone, now = Date.now()) {
   };
 }
 
-async function isDeviceSocketLive(userId, deviceId) {
-  const uid = String(userId || '');
-  const dev = String(deviceId || '');
-  if (!uid || !dev) return false;
-
-  // Authoritative: this process currently has the socket
-  if (isSocketPresentInProcess(uid, dev)) return true;
-
-  // Redis flag without a live socket = ghost (restart / hard kill / uninstall)
-  try {
-    const redis = getRedisClient();
-    const key = KEYS.deviceSocketLive(uid, dev);
-    if ((await redis.get(key)) === '1') {
-      await redis.del(key);
-      console.log(`[NumberHealth] Cleared ghost socket flag ${uid}:${dev}`);
-    }
-  } catch (_) { /* ignore */ }
-  return false;
-}
-
 /**
  * Lightweight proof-of-life — call when SMS is successfully ingested.
  */
@@ -239,16 +164,12 @@ async function touchNumberLive(userId, deviceId, phone) {
 }
 
 /**
- * Modal list / admin display — socket-live devices show ONLINE even if HTTP heartbeat lagged.
+ * Modal list / admin display — state derived from the latest HTTP heartbeat / SMS touch.
  */
 async function getNumberStateForDisplay(userId, phone, deviceId, now = Date.now()) {
   const meta = await getNumberMeta(userId, phone);
-  let lastSeenMs = meta.lastSeenMs;
+  const lastSeenMs = meta.lastSeenMs;
   const profile = await getCachedProfile(userId);
-
-  if (deviceId && (await isDeviceSocketLive(userId, deviceId))) {
-    lastSeenMs = now;
-  }
 
   const state = computeState(lastSeenMs, meta.isDisabled, now, profile);
   return {
@@ -281,9 +202,6 @@ async function recordHeartbeat(userId, deviceId, numbers = [], opts = {}) {
 
   await safePipeline((pipe) => {
     pipe.set(KEYS.deviceLastSeen(uid, dev), nowStr, 'EX', REDIS_TTL_SEC);
-    if (dev && isSocketPresentInProcess(uid, dev)) {
-      pipe.set(KEYS.deviceSocketLive(uid, dev), '1', 'EX', SOCKET_LIVE_TTL_SEC);
-    }
     cleaned.forEach(({ phone }) => {
       pipe.set(KEYS.numberLastSeen(uid, phone), nowStr, 'EX', REDIS_TTL_SEC);
       pipe.set(KEYS.numberDevice(uid, phone), dev, 'EX', REDIS_TTL_SEC);
@@ -303,15 +221,6 @@ async function recordHeartbeat(userId, deviceId, numbers = [], opts = {}) {
     states[phone] = computeState(now, false, now);
   }
   return { updated: cleaned.map((n) => n.phone), states, serverTime: now };
-}
-
-function cancelPendingSocketDisconnect(userId, deviceId) {
-  const key = `${userId}:${deviceId}`;
-  const pending = pendingSocketDisconnect.get(key);
-  if (pending) {
-    clearTimeout(pending);
-    pendingSocketDisconnect.delete(key);
-  }
 }
 
 async function fetchActiveNumbersForDevice(userId, deviceId) {
@@ -362,80 +271,6 @@ function normalizeClientNumbers(numbers) {
       phone_number: normalizePhone(n.phone_number || n.phoneNumber || n.number || ''),
     }))
     .filter((n) => n.phone_number.length === 11);
-}
-
-/**
- * Socket.IO connect — mark device + SIM numbers ONLINE; cancel disconnect watch.
- */
-async function onDeviceSocketConnect(userId, deviceId, clientNumbers = null) {
-  const uid = String(userId);
-  const dev = String(deviceId || '');
-  if (!uid || !dev) return { updated: [], states: {} };
-
-  cancelPendingSocketDisconnect(uid, dev);
-  deviceWatchdog().cancelDeviceWatch(uid, dev);
-
-  const fromClient = normalizeClientNumbers(clientNumbers);
-  const numbers = fromClient.length ? fromClient : await fetchActiveNumbersForDevice(uid, dev);
-
-  markSocketPresent(uid, dev);
-  try {
-    const redis = getRedisClient();
-    await redis.set(KEYS.deviceSocketLive(uid, dev), '1', 'EX', SOCKET_LIVE_TTL_SEC);
-  } catch (_) { /* ignore */ }
-
-  if (numbers.length) {
-    await deviceWatchdog().reactivateDeviceBindings(uid, dev, numbers);
-  }
-
-  if (!numbers.length) {
-    return { updated: [], states: {}, serverTime: Date.now() };
-  }
-
-  return recordHeartbeat(uid, dev, numbers);
-}
-
-/**
- * Socket.IO disconnect (debounced) — shift numbers into GRACE; start profile-aware watch.
- */
-async function onDeviceSocketDisconnect(userId, deviceId) {
-  const uid = String(userId);
-  const dev = String(deviceId || '');
-  if (!uid || !dev) return;
-
-  const profile = await getCachedProfile(uid);
-  const numbers = await fetchActiveNumbersForDevice(uid, dev);
-  const graceAnchorMs = Date.now() - profile.onlineMs - 1000;
-  const anchorStr = String(graceAnchorMs);
-
-  markSocketAbsent(uid, dev);
-  await safePipeline((pipe) => {
-    pipe.del(KEYS.deviceSocketLive(uid, dev));
-    numbers.forEach(({ phone_number: phone }) => {
-      pipe.set(KEYS.numberLastSeen(uid, phone), anchorStr, 'EX', REDIS_TTL_SEC);
-      pipe.set(KEYS.numberDevice(uid, phone), dev, 'EX', REDIS_TTL_SEC);
-    });
-  });
-
-  deviceWatchdog().scheduleDeviceWatch(uid, dev, profile);
-
-  console.log(
-    `[NumberHealth] Socket disconnect → GRACE + watchdog (${profile.id}) for device ${dev} (${numbers.length} number(s))`
-  );
-}
-
-function scheduleSocketDisconnect(userId, deviceId) {
-  const uid = String(userId);
-  const dev = String(deviceId || '');
-  const key = `${uid}:${dev}`;
-  cancelPendingSocketDisconnect(uid, dev);
-  const timer = setTimeout(() => {
-    pendingSocketDisconnect.delete(key);
-    onDeviceSocketDisconnect(uid, dev).catch((err) => {
-      console.warn('[NumberHealth] socket disconnect handler failed:', err.message);
-    });
-  }, SOCKET_DISCONNECT_DEBOUNCE_MS);
-  pendingSocketDisconnect.set(key, timer);
 }
 
 async function maybeFlushDeviceToDb(userId, deviceId, nowMs, batteryPercent) {
@@ -527,16 +362,6 @@ async function getDeviceStateForDisplay(userId, deviceId, dbLastSeenAt = null, n
   const dev = String(deviceId || '');
   const profile = await getCachedProfile(uid);
 
-  if (dev && (await isDeviceSocketLive(uid, dev))) {
-    return {
-      deviceId: dev,
-      state: 'ONLINE',
-      lastSeenMs: now,
-      ageMs: 0,
-      profile: profile.id,
-    };
-  }
-
   let lastSeenMs = 0;
   try {
     const redis = getRedisClient();
@@ -579,14 +404,6 @@ async function applyHealthToCheckoutRows(userId, rows) {
   const now = Date.now();
   const profile = await getCachedProfile(uid);
   const phones = [...new Set(rows.map((r) => normalizePhone(r.number)).filter(Boolean))];
-  const deviceIds = [...new Set(
-    rows.map((r) => String(r.device_id || r.deviceId || '')).filter(Boolean),
-  )];
-
-  const socketLiveByDevice = {};
-  for (const d of deviceIds) {
-    socketLiveByDevice[d] = await isDeviceSocketLive(uid, d);
-  }
 
   const metaByPhone = {};
   if (phones.length) {
@@ -614,11 +431,7 @@ async function applyHealthToCheckoutRows(userId, rows) {
   const enriched = rows.map((row) => {
     const phone = normalizePhone(row.number);
     const meta = metaByPhone[phone] || { lastSeenMs: 0, isDisabled: false };
-    const devId = String(row.device_id || row.deviceId || '');
-    let lastSeenMs = meta.lastSeenMs;
-    if (devId && socketLiveByDevice[devId]) {
-      lastSeenMs = now;
-    }
+    const lastSeenMs = meta.lastSeenMs;
     const state = computeState(lastSeenMs, meta.isDisabled, now, profile);
     return {
       ...row,
@@ -643,18 +456,10 @@ module.exports = {
   computeState,
   isCheckoutEligible,
   recordHeartbeat,
-  onDeviceSocketConnect,
-  onDeviceSocketDisconnect,
-  scheduleSocketDisconnect,
-  cancelPendingSocketDisconnect,
   fetchActiveNumbersForDevice,
   getNumberState,
   getNumberStateForDisplay,
   touchNumberLive,
-  isDeviceSocketLive,
-  markSocketPresent,
-  markSocketAbsent,
-  clearAllSocketLiveFlags,
   getNumberMeta,
   setNumberDisabled,
   purgeNumber,

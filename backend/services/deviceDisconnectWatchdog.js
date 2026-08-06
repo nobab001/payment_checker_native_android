@@ -30,7 +30,7 @@ function hasActiveWatch(userId, deviceId) {
 }
 
 /**
- * True only with fresh proof-of-life (socket or last_seen within online window).
+ * True only with fresh proof-of-life (HTTP heartbeat / SMS last_seen within online window).
  * Zero/missing last_seen is NOT active (avoids GRACE-migration false positives).
  */
 async function isDeviceCurrentlyActive(userId, deviceId) {
@@ -38,8 +38,6 @@ async function isDeviceCurrentlyActive(userId, deviceId) {
   const dev = String(deviceId);
   const profile = await numberHealth.getCachedProfile(uid);
   const onlineMs = Math.max(60_000, Number(profile.onlineMs || profile.heartbeatSec * 1000 || 600_000));
-
-  if (await numberHealth.isDeviceSocketLive(uid, dev)) return true;
 
   const now = Date.now();
   const deviceHealth = await numberHealth.getDeviceHealth(uid, dev);
@@ -152,7 +150,7 @@ async function runMissProbe(userId, deviceId, attempt, maxAttempts) {
 }
 
 /**
- * Arm after successful heartbeat / socket connect.
+ * Arm after a successful HTTP heartbeat.
  * Waits remaining time in heartbeat window; if silent → miss probes.
  * v2.5 packages: no-op (presence worker owns offline).
  */
@@ -285,7 +283,7 @@ async function sweepStaleActiveBindings() {
         beginMissProbes(uid, dev, profile);
         armed += 1;
       }
-      // Inside window + no watch: leave alone until heartbeat/socket arms it
+      // Inside window + no watch: leave alone until the next heartbeat arms it
     } catch (err) {
       console.warn(`[DeviceWatch] sweep item failed ${uid}:${dev}:`, err.message);
     }

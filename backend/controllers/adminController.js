@@ -295,10 +295,7 @@ async function saveSmsTemplate(req, res) {
     // New/edited template may introduce a new provider — refresh branding cache.
     layoutHelper.invalidateProviderCache();
 
-    const io = req.app.get('io');
-    if (io) {
-      dataSyncCache.scheduleTemplateSyncBroadcast(io, version);
-    }
+    dataSyncCache.logTemplateVersionBump(version);
 
     return res.json({ success: true, message: 'SMS Template saved successfully.', data_version: version });
   } catch (err) {
@@ -318,10 +315,7 @@ async function deleteSmsTemplate(req, res) {
     const version = await dataSyncCache.bumpGlobalTemplateVersion();
     layoutHelper.invalidateProviderCache();
 
-    const io = req.app.get('io');
-    if (io) {
-      dataSyncCache.scheduleTemplateSyncBroadcast(io, version);
-    }
+    dataSyncCache.logTemplateVersionBump(version);
 
     return res.json({ success: true, message: 'Official SMS Template deleted successfully.', data_version: version });
   } catch (err) {
@@ -1019,11 +1013,10 @@ async function saveCheckoutDesignConfig(req, res) {
     await layoutHelper.saveGlobalCheckoutDefaults(tabs, providerBranding, { tab_order: tabOrder, provider_order: providerOrder });
 
     // Uploaded logos are attached to the templates payload — bump the sync version
-    // and broadcast so connected devices refetch templates and show the new logos.
+    // so devices refetch templates and show the new logos on their next heartbeat.
     const version = await dataSyncCache.bumpGlobalTemplateVersion();
     layoutHelper.invalidateProviderCache();
-    const io = req.app.get('io');
-    if (io) dataSyncCache.scheduleTemplateSyncBroadcast(io, version);
+    dataSyncCache.logTemplateVersionBump(version);
 
     return res.json({
       success: true,

@@ -13,7 +13,6 @@ set -uo pipefail   # deliberately NOT -e: run every check, then summarize
 APP_ROOT="/var/www/payment-checker"
 PM2_API="payment-checker-api"
 PM2_WORKER="payment-checker-worker"
-PM2_SOCKET="payment-checker-socket"
 DOMAIN="paycheckbd.com"
 ENV_FILE="${APP_ROOT}/shared/.env"
 PM2_LOG_DIR="${PM2_HOME:-${HOME}/.pm2}/logs"
@@ -61,7 +60,7 @@ R1="${R1:-0}"; R2="${R2:-0}"; DELTA=$((R2 - R1))
 [ "${DELTA}" -lt 3 ] && report "pm2:no-crashloop" 0 "restarts ${R1}->${R2} (delta ${DELTA})" || report "pm2:no-crashloop" 1 "restarts climbing ${R1}->${R2}"
 
 # --- companion services (only if they exist) -----------------------
-for svc in "${PM2_WORKER}" "${PM2_SOCKET}"; do
+for svc in "${PM2_WORKER}"; do
   read -r S_STATUS _ <<<"$(pm2_field "${svc}")"
   if [ "${S_STATUS}" != "ABSENT" ]; then
     [ "${S_STATUS}" = "online" ] && report "pm2:${svc}" 0 "online" || report "pm2:${svc}" 1 "status=${S_STATUS}"

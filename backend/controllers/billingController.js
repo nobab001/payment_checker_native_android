@@ -1088,7 +1088,6 @@ async function getAccountEntitlements(req, res) {
         subscription_status: subscriptionStatus,
         comm_profile: profile.id,
         heartbeat: policy.heartbeat,
-        use_socket: policy.use_socket,
         custom_all_chip_label: customAllUi.chip_label,
         custom_all_popup_title: customAllUi.popup_title,
         custom_all_popup_notice: customAllUi.popup_notice,

@@ -14,8 +14,6 @@ import online.paychek.app.data.remote.dto.HeartbeatRequest
 import online.paychek.app.utils.DeviceIdHelper
 import online.paychek.app.utils.GsonUtils
 import online.paychek.app.utils.SecurePreferences
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * Comm Policy v1.0 — package-tiered heartbeat while SMS monitoring is ON.
@@ -34,7 +32,6 @@ object NumberHeartbeatEngine {
     private const val NETWORK_RESTORE_DEBOUNCE_MS = 7_000L
 
     private var networkRestorePulseJob: Job? = null
-    @Volatile private var socketConnected = false
     /** After SMS upload success, skip the next scheduled heartbeat (server already marked alive). */
     @Volatile private var skipNextScheduled = false
     @Volatile private var cacheSyncInFlight = false
@@ -44,19 +41,6 @@ object NumberHeartbeatEngine {
     fun noteSmsUploadSuccess(context: Context) {
         skipNextScheduled = true
         Log.i(TAG, "SMS upload success — next scheduled heartbeat will skip")
-    }
-
-    fun onSocketConnected(context: Context, socket: io.socket.client.Socket?) {
-        socketConnected = true
-        emitSocketDeviceNumbers(socket, context)
-        ensureRunning(context.applicationContext)
-        Log.i(TAG, "Socket up — policy heartbeat continues via WorkManager")
-    }
-
-    fun onSocketDisconnected(context: Context) {
-        socketConnected = false
-        ensureRunning(context.applicationContext)
-        Log.i(TAG, "Socket down — HTTP heartbeat via WorkManager")
     }
 
     /**
@@ -138,27 +122,6 @@ object NumberHeartbeatEngine {
         }
     }
 
-    /** Push active SIM numbers over Socket.IO so server can mark ONLINE instantly. */
-    fun emitSocketDeviceNumbers(socket: io.socket.client.Socket?, context: Context) {
-        if (socket == null || !socket.connected()) return
-        val numbers = collectActiveNumbers(context)
-        if (numbers.isEmpty()) return
-        try {
-            val arr = JSONArray()
-            numbers.forEach { n ->
-                arr.put(
-                    JSONObject()
-                        .put("sim_slot", n.simSlot)
-                        .put("phone_number", n.phoneNumber)
-                )
-            }
-            socket.emit("device_numbers", JSONObject().put("numbers", arr))
-            Log.d(TAG, "Emitted device_numbers over socket (${numbers.size})")
-        } catch (e: Exception) {
-            Log.w(TAG, "emitSocketDeviceNumbers failed: ${e.message}")
-        }
-    }
-
     /** @deprecated Prefer [start] / [stop]. */
     fun startFallback(context: Context) = start(context)
 
@@ -209,6 +172,9 @@ object NumberHeartbeatEngine {
                         return
                     }
                     CommPolicyStore.applyHeartbeatResponse(context, body)
+                    // Admin announcements piggyback on the heartbeat (no push channel).
+                    online.paychek.app.services.notify.AdminNoticeManager
+                        .handleIncoming(context, body.notifications)
                     if (smsActive) {
                         HeartbeatWorker.schedule(context)
                     }
@@ -228,7 +194,7 @@ object NumberHeartbeatEngine {
                 Log.i(
                     TAG,
                     "Heartbeat OK — numbers=${numbers.size} trigger=${presenceTrigger ?: "scheduled"} "
-                        + "next=${CommPolicyStore.heartbeatIntervalMs(context)}ms socketConnected=$socketConnected"
+                        + "next=${CommPolicyStore.heartbeatIntervalMs(context)}ms"
                 )
                 // Server reachable again (even after long outage) — flush queued SMS without
                 // waiting for the user to open the app. Connectivity alone is not enough:

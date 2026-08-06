@@ -157,21 +157,6 @@ async function fetchDeviceRowForSync(userId, deviceId) {
   return rows[0] || null;
 }
 
-function emitDeviceConfig(io, userId, deviceId, row) {
-  if (!io || !row) return;
-  io.to(`${userId}:${deviceId}`).emit('sync_device_config', {
-    device_id: row.device_id,
-    custom_device_name: row.custom_device_name,
-    device_role: row.device_role,
-    is_app_active: row.is_app_active,
-    device_specific_pin: row.device_specific_pin || '',
-    sim_one_number: row.sim_one_number,
-    sim_one_active: row.sim_one_active,
-    sim_two_number: row.sim_two_number,
-    sim_two_active: row.sim_two_active,
-  });
-}
-
 function isApprovedDevice(device) {
   const v = device?.is_approved;
   return v === 1 || v === true || v === '1';
@@ -201,11 +186,14 @@ async function reopenRejectedDeviceAsPending(deviceId) {
   );
 }
 
-/** Notify approved devices on the account that a child device needs PIN approval. */
+/**
+ * Log that a child device is waiting for PIN approval.
+ * Approved devices discover the pending request on their next HTTP heartbeat /
+ * pending-approval poll — there is no push channel (Comm Policy v1.2, HTTP only).
+ */
 async function notifyOwnersPendingDevice(app, userId, pendingDevice) {
   try {
-    const io = app?.get?.('io');
-    if (!io || !pendingDevice?.device_id) return;
+    if (!pendingDevice?.device_id) return;
 
     const approvers = await query(
       `SELECT device_id FROM registered_devices
@@ -214,22 +202,10 @@ async function notifyOwnersPendingDevice(app, userId, pendingDevice) {
       [userId, pendingDevice.device_id]
     );
 
-    const payload = {
-      device_id: pendingDevice.device_id,
-      device_model: pendingDevice.device_model || pendingDevice.device_name || '',
-      custom_device_name: pendingDevice.custom_device_name || pendingDevice.device_name || '',
-      created_at: pendingDevice.created_at || null,
-    };
-
-    for (const row of approvers || []) {
-      const room = `${userId}:${row.device_id}`;
-      io.to(room).emit('pending_device_approval', payload);
-    }
-
     if (approvers?.length) {
       console.log(
-        `[AUTH] pending_device_approval pushed user=${userId} pending=${String(pendingDevice.device_id).slice(0, 12)}… `
-        + `notified=${approvers.length}`
+        `[AUTH] pending device awaiting approval user=${userId} pending=${String(pendingDevice.device_id).slice(0, 12)}… `
+        + `approvers=${approvers.length}`
       );
     }
   } catch (err) {
@@ -2257,16 +2233,7 @@ async function remoteUpdateDevice(req, res) {
       return res.status(404).json({ success: false, error: 'Device not found or unauthorized' });
     }
 
-    const updatedRows = await query(
-      `SELECT device_id, custom_device_name, device_role, is_app_active, device_specific_pin,
-              sim_one_number, sim_one_active, sim_two_number, sim_two_active
-       FROM registered_devices
-       WHERE user_id = ? AND device_id = ? LIMIT 1`,
-      [userId, deviceId]
-    );
-    const io = req.app.get('io');
-    emitDeviceConfig(io, userId, deviceId, updatedRows[0]);
-
+    // Device picks up the new config on its next HTTP heartbeat / device-config fetch.
     return res.json({ success: true, message: 'Device configuration updated successfully' });
   } catch (error) {
     console.error('Error updating child device:', error);
@@ -2513,17 +2480,7 @@ async function approveByPin(req, res) {
       return res.status(404).json({ success: false, error: 'Device not found or already approved' });
     }
 
-    const io = req.app.get('io');
-    const row = await fetchDeviceRowForSync(userId, deviceId);
-    emitDeviceConfig(io, userId, deviceId, row);
-    if (io) {
-      io.to(`${userId}:${deviceId}`).emit('device_approved', {
-        device_id: deviceId,
-        device_role: role,
-        is_approved: 1,
-        device_specific_pin: role === 'owner' ? '' : (staffPin || ''),
-      });
-    }
+    // Approved device receives its new role/PIN on the next HTTP heartbeat sync.
 
     return res.json({ success: true, message: 'ডিভাইসটি সফলভাবে অনুমোদন করা হয়েছে।' });
   } catch (error) {
@@ -2662,9 +2619,8 @@ async function toggleRemoteRole(req, res) {
       return res.status(404).json({ success: false, error: 'Device not found' });
     }
 
-    const io = req.app.get('io');
-    const row = await fetchDeviceRowForSync(userId, remoteDeviceId);
-    emitDeviceConfig(io, userId, remoteDeviceId, row);
+    // Remote device picks up the new role on its next HTTP heartbeat sync.
+
 
     return res.json({ success: true, message: 'রিমোট ডিভাইসের রোল সফলভাবে পরিবর্তন করা হয়েছে।' });
   } catch (error) {
@@ -2748,10 +2704,8 @@ async function deleteDevice(req, res) {
       await numberHealth.purgeNumber(userId, phone);
     }
 
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`${userId}:${deviceId}`).emit('device_revoked', { reason: 'deleted' });
-    }
+    // Deleted device is force-logged-out by the next heartbeat (device row is gone).
+
 
     return res.json({ success: true, message: 'ডিভাইস সফলভাবে মুছে ফেলা হয়েছে।' });
   } catch (error) {

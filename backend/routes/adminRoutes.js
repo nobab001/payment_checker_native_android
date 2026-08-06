@@ -99,6 +99,12 @@ router.get('/users', admin.listUsers);
 router.post('/users/:id/block', admin.toggleUserBlock);
 router.post('/devices/:id/trial', admin.updateDeviceTrial);
 
+// 7. App notifications — admin authored, delivered over the device heartbeat
+const notify = require('../controllers/notificationController');
+router.get('/notifications', notify.adminListNotifications);
+router.post('/notifications', notify.adminCreateNotification);
+router.delete('/notifications/:id', notify.adminDeleteNotification);
+
 // Presence v2.5 metrics (Phase 3)
 router.get('/presence-v25/metrics', async (req, res) => {
   try {

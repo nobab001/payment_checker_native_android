@@ -46,6 +46,8 @@ data class AdminUiState(
     val v3AddonCatalog: List<V3AdminAddonCatalogDto> = emptyList(),
     val pendingRefunds: List<V3PendingRefundDto> = emptyList(),
     val globalBlockedSenders: List<String> = emptyList(),
+    /** Admin-authored announcements, newest first. Delivered over the heartbeat. */
+    val notifications: List<AdminNotificationDto> = emptyList(),
     val customAllChipLabel: String = "কাস্টম অল",
     val customAllPopupTitle: String = "কাস্টম অল এসএমএস লকড",
     val customAllPopupNotice: String =
@@ -301,11 +303,22 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 }
             }
 
+            val jobNotifications = launch {
+                try {
+                    val res = api.getNotifications(token)
+                    if (res.isSuccessful) {
+                        _state.update { it.copy(notifications = res.body()?.notifications.orEmpty()) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
             kotlinx.coroutines.joinAll(
                 jobConfigs, jobTemplates, jobGlobalBlocked, jobCheckouts, jobEmails, jobSmsSettings,
                 jobUsers, jobOtpFormat, jobPlans, jobAddonPlans, jobV3Settings, jobV3AddonCatalog,
                 jobPendingRefunds, jobCheckoutDesign,
-                jobOfficialWebsite, jobDemoPayments
+                jobOfficialWebsite, jobDemoPayments, jobNotifications
             )
             _state.update { it.copy(isLoading = false) }
         }
@@ -467,6 +480,60 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(isSaving = false, errorMessage = "নেটওয়ার্ক এরর: ${e.localizedMessage}") }
+            }
+        }
+    }
+
+    // App Notifications — no push channel; devices pick these up on their next heartbeat.
+    fun sendNotification(title: String, body: String, categories: List<String>) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, errorMessage = null, successMessage = null) }
+            try {
+                val res = api.sendNotification(
+                    "Bearer ${getToken()}",
+                    SendNotificationRequest(title = title.trim(), body = body.trim(), categories = categories)
+                )
+                val created = res.body()?.notification
+                if (res.isSuccessful && res.body()?.success == true && created != null) {
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            notifications = listOf(created) + it.notifications,
+                            successMessage = "নোটিফিকেশন পাঠানো হয়েছে। ডিভাইসগুলো পরবর্তী হার্টবিটে পেয়ে যাবে।"
+                        )
+                    }
+                } else {
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            errorMessage = res.body()?.error ?: "নোটিফিকেশন পাঠানো ব্যর্থ হয়েছে।"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isSaving = false, errorMessage = "নেটওয়ার্ক এরর: ${e.localizedMessage}") }
+            }
+        }
+    }
+
+    fun deleteNotification(id: Int) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true, errorMessage = null, successMessage = null) }
+            try {
+                val res = api.deleteNotification("Bearer ${getToken()}", id)
+                if (res.isSuccessful && res.body()?.success == true) {
+                    _state.update {
+                        it.copy(
+                            isSaving = false,
+                            notifications = it.notifications.filterNot { n -> n.id == id },
+                            successMessage = "নোটিফিকেশন মুছে ফেলা হয়েছে।"
+                        )
+                    }
+                } else {
+                    _state.update { it.copy(isSaving = false, errorMessage = "নোটিফিকেশন মুছতে ব্যর্থ হয়েছে।") }
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isSaving = false, errorMessage = "নেটওয়ার্ক এরর: ${e.localizedMessage}") }
             }
         }
     }

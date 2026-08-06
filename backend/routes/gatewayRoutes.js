@@ -13,6 +13,11 @@ router.post('/gateway/heartbeat',              auth, attachBillingStatus, hb.pos
 // GET  /api/gateway/numbers/health?numbers=017..,018..
 router.get('/gateway/numbers/health',          auth, checkBillingStatus, hb.getNumbersHealth);
 
+// App notifications — readable while suspended so expiry notices still land.
+const notify = require('../controllers/notificationController');
+router.get('/notifications',                   auth, notify.listMyNotifications);
+router.post('/notifications/:id/read',         auth, notify.markNotificationRead);
+
 // GET  /api/gateway/methods           → সব মেথড লোড (priority অনুযায়ী)
 router.get('/gateway/methods',               auth, checkBillingStatus, gw.getGatewayMethods);
 

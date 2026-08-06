@@ -257,11 +257,10 @@ async function getOfficialTemplatesForAdmin() {
   return rows;
 }
 
-function scheduleTemplateSyncBroadcast(io, version) {
-  // Devices are HTTP-heartbeat only (CommPolicy useSocket=false). Socket broadcast
-  // never reaches production clients — template sync is heartbeat forceSync driven.
+function logTemplateVersionBump(version) {
+  // Devices are HTTP-heartbeat only — template sync is heartbeat forceSync driven.
   console.log(
-    `[DataSyncCache] Template version=${version} bumped — devices will sync on next heartbeat (no socket broadcast)`,
+    `[DataSyncCache] Template version=${version} bumped — devices will sync on next heartbeat`,
   );
 }
 
@@ -289,6 +288,6 @@ module.exports = {
   getActiveTemplatesForParsing,
   getOfficialTemplatesForAdmin,
   invalidateTemplateListCaches,
-  scheduleTemplateSyncBroadcast,
+  logTemplateVersionBump,
   isClientSyncCurrent,
 };

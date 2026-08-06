@@ -260,7 +260,11 @@ fun AdminDashboardScreen(
                     )
                     3 -> GlobalSettingsTab(
                         uiState = uiState,
-                        onUpdateConfig = { key, valStr -> viewModel.updateConfig(key, valStr) }
+                        onUpdateConfig = { key, valStr -> viewModel.updateConfig(key, valStr) },
+                        onSendNotification = { title, body, cats ->
+                            viewModel.sendNotification(title, body, cats)
+                        },
+                        onDeleteNotification = { viewModel.deleteNotification(it) }
                     )
                     4 -> BillingConfigScreen(
                         viewModel = viewModel,
@@ -863,7 +867,9 @@ private fun UsersAndDevicesTab(
 @Composable
 private fun GlobalSettingsTab(
     uiState: AdminUiState,
-    onUpdateConfig: (String, String) -> Unit
+    onUpdateConfig: (String, String) -> Unit,
+    onSendNotification: (String, String, List<String>) -> Unit,
+    onDeleteNotification: (Int) -> Unit
 ) {
     val scrollState = rememberScrollState()
 
@@ -976,6 +982,148 @@ private fun GlobalSettingsTab(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("সংরক্ষণ করুন (Save Links)", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        NotificationSenderCard(
+            notifications = uiState.notifications,
+            isSaving = uiState.isSaving,
+            onSend = onSendNotification,
+            onDelete = onDeleteNotification
+        )
+    }
+}
+
+/**
+ * Admin announcement composer.
+ *
+ * Delivery is pull-based: devices pick a notice up on their next heartbeat
+ * (15–60 min by package) or instantly when the user opens the app. There is no
+ * push channel, so "sent" here means queued for pickup, not delivered.
+ *
+ * Selecting all three categories makes the notice a broadcast — it also reaches
+ * trial and expired accounts that hold no package.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NotificationSenderCard(
+    notifications: List<AdminNotificationDto>,
+    isSaving: Boolean,
+    onSend: (String, String, List<String>) -> Unit,
+    onDelete: (Int) -> Unit
+) {
+    var title by remember { mutableStateOf("") }
+    var body by remember { mutableStateOf("") }
+    var selectedCats by remember { mutableStateOf(NotificationCategories.ALL.toSet()) }
+
+    val canSend = title.isNotBlank() && body.isNotBlank() && selectedCats.isNotEmpty() && !isSaving
+    val isBroadcast = selectedCats.size == NotificationCategories.ALL.size
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+        shape = RoundedCornerShape(12.dp),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("নোটিফিকেশন পাঠান", fontWeight = FontWeight.Bold, color = AccentTitle, fontSize = 16.sp)
+
+            OutlinedTextField(
+                value = title,
+                onValueChange = { if (it.length <= 180) title = it },
+                label = { Text("শিরোনাম (Headline)") },
+                singleLine = true,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = body,
+                onValueChange = { if (it.length <= 4000) body = it },
+                label = { Text("বিস্তারিত (Details)") },
+                minLines = 4,
+                maxLines = 8,
+                shape = RoundedCornerShape(8.dp),
+                supportingText = { Text("${body.length} / 4000", fontSize = 11.sp, color = TextSecondary) },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("কাদের পাঠানো হবে", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    NotificationCategories.ALL.forEach { cat ->
+                        val selected = cat in selectedCats
+                        FilterChip(
+                            selected = selected,
+                            onClick = {
+                                selectedCats = if (selected) selectedCats - cat else selectedCats + cat
+                            },
+                            label = {
+                                Text(
+                                    NotificationCategories.labelOf(cat),
+                                    fontSize = 11.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+                Text(
+                    text = if (isBroadcast) {
+                        "তিনটিই নির্বাচিত — সবাই পাবে (ট্রায়াল ও এক্সপায়ার্ড অ্যাকাউন্টসহ)।"
+                    } else {
+                        "শুধু নির্বাচিত ক্যাটাগরির অ্যাক্টিভ প্যাকেজধারীরা পাবে।"
+                    },
+                    fontSize = 11.sp,
+                    color = TextSecondary
+                )
+            }
+
+            Button(
+                onClick = { onSend(title, body, selectedCats.toList()); title = ""; body = "" },
+                enabled = canSend,
+                colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                } else {
+                    Text("Send", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Text(
+                "ডিভাইসগুলো পরবর্তী হার্টবিটে (প্যাকেজ অনুযায়ী ১৫–৬০ মিনিট) অথবা অ্যাপ খোলার সাথে সাথেই নোটিফিকেশন পাবে।",
+                fontSize = 11.sp,
+                color = TextSecondary
+            )
+
+            if (notifications.isNotEmpty()) {
+                HorizontalDivider()
+                Text("পাঠানো নোটিফিকেশন", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                notifications.take(10).forEach { notice ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(notice.title, fontWeight = FontWeight.Medium, fontSize = 13.sp, maxLines = 1)
+                            Text(
+                                notice.categories.joinToString(", ") { NotificationCategories.labelOf(it) } +
+                                    " • পৌঁছেছে ${notice.readCount} ডিভাইসে",
+                                fontSize = 11.sp,
+                                color = TextSecondary,
+                                maxLines = 1
+                            )
+                        }
+                        IconButton(onClick = { onDelete(notice.id) }, enabled = !isSaving) {
+                            Icon(Icons.Default.Delete, contentDescription = "মুছুন", tint = StatusRed)
+                        }
+                    }
                 }
             }
         }

@@ -349,7 +349,7 @@ fun HomeScreen(
         pendingDevices = fresh
 
         // Poll fast only while a pending request exists (server TTL ~12 min).
-        // When empty: rely on socket push / resume / tab — rare safety poll every 3 min.
+        // When empty: rely on screen resume / tab switch — rare safety poll every 3 min.
         while (true) {
             if (fresh.isNotEmpty()) {
                 kotlinx.coroutines.delay(5_000L)

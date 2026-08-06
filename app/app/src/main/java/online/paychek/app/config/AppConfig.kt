@@ -24,7 +24,6 @@ object AppConfig {
     /** Production VPS */
     const val BASE_URL = "https://paycheckbd.com/"
     const val API_BASE_URL = "${BASE_URL}api/"
-    const val SOCKET_URL = BASE_URL
 
     // -----------------------------------------------------------------------
     // SharedPreferences keys
@@ -57,8 +56,11 @@ object AppConfig {
     const val KEY_CUSTOM_ALL_POPUP_NOTICE = "pcu_custom_all_popup_notice"
     const val KEY_COMM_PROFILE          = "pcu_comm_profile"
     const val KEY_COMM_HEARTBEAT_SEC    = "pcu_comm_heartbeat_sec"
-    const val KEY_COMM_USE_SOCKET       = "pcu_comm_use_socket"
     const val KEY_DASHBOARD_STATS_CACHE   = "pcu_dashboard_stats_cache_v1"
+    /** JSON queue of admin notices already shown as a status-bar notification. */
+    const val KEY_NOTIFICATION_SHOWN_IDS  = "pcu_notification_shown_ids"
+    /** JSON queue of notices waiting to be shown as an in-app popup. */
+    const val KEY_NOTIFICATION_PENDING    = "pcu_notification_pending"
 
     // -----------------------------------------------------------------------
     // P2P Sync defaults

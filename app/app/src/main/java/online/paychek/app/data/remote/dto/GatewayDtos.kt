@@ -332,7 +332,8 @@ data class HeartbeatResponse(
     @SerializedName("templateVersion") val templateVersion: Any? = null,
     @SerializedName("message") val message: String? = null,
     @SerializedName("profile") val profile: String? = null,
-    @SerializedName("use_socket") val useSocket: Boolean? = null
+    /** Unread admin announcements riding along on this heartbeat. */
+    @SerializedName("notifications") val notifications: List<AppNotificationDto>? = null
 )
 
 data class AccountNumberDto(

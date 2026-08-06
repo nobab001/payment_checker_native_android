@@ -16,25 +16,18 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
 import online.paychek.app.config.AppConfig
 import online.paychek.app.data.local.AppDatabase
-import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.services.connectivity.ConnectivityService
 import online.paychek.app.services.sms.SmsReceiver
 import online.paychek.app.services.sync.NumberHeartbeatEngine
-import online.paychek.app.services.sync.CommPolicyStore
 import online.paychek.app.services.sync.PingEngine
 import online.paychek.app.services.sync.ServerProbeWorker
 import online.paychek.app.services.sync.SmsPollWorker
 import online.paychek.app.services.sync.SyncWorker
 import online.paychek.app.utils.OemBackgroundHelper
-import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.utils.SmsParser
-import org.json.JSONArray
-import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import io.socket.client.IO
-import io.socket.client.Socket
 
 /**
  * SmsMonitorService — lightweight Foreground Service (UX + soft sync helpers).
@@ -50,8 +43,6 @@ class SmsMonitorService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var screenReceiver: BroadcastReceiver? = null
-    private var socket: Socket? = null
-    @Volatile private var socketListenersRegistered = false
     private var connectivityJob: Job? = null
     private var pendingFlushJob: Job? = null
 
@@ -138,12 +129,6 @@ class SmsMonitorService : Service() {
             online.paychek.app.utils.AccountEntitlementsStore.refresh(this@SmsMonitorService)
             // Arms WorkManager HeartbeatWorker + one immediate pulse (no in-process delay loop).
             NumberHeartbeatEngine.start(this@SmsMonitorService, presenceTrigger)
-            if (CommPolicyStore.useSocket(this@SmsMonitorService)) {
-                startSocketConnection()
-            } else {
-                Log.i(TAG, "Comm Policy — Socket.IO skipped (HTTP HeartbeatWorker only)")
-                teardownSocket()
-            }
             SmsServiceGuard.scheduleWatchdog(this@SmsMonitorService)
             ServiceKeepAliveScheduler.cancel(this@SmsMonitorService)
         }
@@ -270,172 +255,6 @@ class SmsMonitorService : Service() {
         }
     }
 
-    private fun getUserIdFromToken(token: String): String? {
-        try {
-            val parts = token.split(".")
-            if (parts.size == 3) {
-                val payload = String(android.util.Base64.decode(parts[1], android.util.Base64.URL_SAFE))
-                val json = JSONObject(payload)
-                return json.optString("userId")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse JWT: ${e.message}")
-        }
-        return null
-    }
-
-    private fun teardownSocket() {
-        try {
-            socket?.off()
-            socket?.disconnect()
-        } catch (e: Exception) {
-            Log.w(TAG, "Socket teardown error: ${e.message}")
-        }
-        socket = null
-        socketListenersRegistered = false
-    }
-
-    private fun startSocketConnection() {
-        synchronized(this) {
-            if (socket?.connected() == true) {
-                Log.d(TAG, "Socket already connected — skip duplicate connect")
-                return
-            }
-            teardownSocket()
-        }
-
-        try {
-            val token = SecurePreferences.decrypt(this, AppConfig.KEY_AUTH_TOKEN)
-            if (token.isEmpty()) return
-            
-            val userId = getUserIdFromToken(token) ?: return
-            val deviceId = online.paychek.app.utils.DeviceIdHelper.getHashedAndroidId(this)
-            
-            // Server io.use() requires JWT (handshake.auth.token or query.token).
-            // Without it every connect fails with AUTH_REQUIRED / connect_error.
-            val options = IO.Options.builder()
-                .setAuth(mapOf("token" to token))
-                .setQuery(
-                    "userId=${java.net.URLEncoder.encode(userId, "UTF-8")}" +
-                        "&deviceId=${java.net.URLEncoder.encode(deviceId, "UTF-8")}" +
-                        "&token=${java.net.URLEncoder.encode(token, "UTF-8")}"
-                )
-                .setTransports(arrayOf("websocket", "polling"))
-                .setReconnection(true)
-                .setReconnectionAttempts(Int.MAX_VALUE)
-                .setReconnectionDelay(2_000)
-                .setReconnectionDelayMax(15_000)
-                .setExtraHeaders(
-                    mapOf(
-                        "ngrok-skip-browser-warning" to listOf("true")
-                    )
-                )
-                .build()
-
-            socket = IO.socket(AppConfig.SOCKET_URL, options)
-            
-            socket?.on(Socket.EVENT_CONNECT) {
-                Log.i(TAG, "Socket.IO Connected to Room: $userId:$deviceId")
-                SmsReceiver.syncPendingQueue(this@SmsMonitorService)
-                NumberHeartbeatEngine.onSocketConnected(this@SmsMonitorService, socket)
-            }
-
-            socket?.on(Socket.EVENT_DISCONNECT) {
-                Log.w(TAG, "Socket.IO Disconnected")
-                NumberHeartbeatEngine.onSocketDisconnected(this@SmsMonitorService)
-            }
-
-            socket?.on(Socket.EVENT_CONNECT_ERROR) { args ->
-                Log.w(TAG, "Socket.IO connect error: ${args.firstOrNull()}")
-                NumberHeartbeatEngine.onSocketDisconnected(this@SmsMonitorService)
-            }
-            
-            socket?.on("sync_gateway_methods") { args ->
-                if (args.isNotEmpty()) {
-                    try {
-                        val dataArray = args[0]
-                        val jsonStr = dataArray.toString()
-                        online.paychek.app.data.local.prefs.PrefsHelper.setGatewayMethodsCache(this@SmsMonitorService, jsonStr)
-                        Log.i(TAG, "✅ Push-Driven Cache Sync: Gateway methods updated via Socket.IO")
-                        NumberHeartbeatEngine.pulse(this@SmsMonitorService)
-                        NumberHeartbeatEngine.emitSocketDeviceNumbers(socket, this@SmsMonitorService)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error parsing socket push data: ${e.message}")
-                    }
-                }
-            }
-            
-            socket?.on("sync_device_config") { args ->
-                if (args.isEmpty()) return@on
-                try {
-                    val raw = args[0]
-                    val json = when (raw) {
-                        is org.json.JSONObject -> raw
-                        else -> org.json.JSONObject(raw.toString())
-                    }
-                    val pin = json.optString("device_specific_pin", "")
-                    val role = json.optString("device_role", "")
-                    if (role.isNotEmpty()) {
-                        online.paychek.app.utils.DeviceSecurityCache.applyRoleAndPin(
-                            this@SmsMonitorService,
-                            role,
-                            if (pin.isNotEmpty() && pin != "null") pin else null
-                        )
-                    } else if (pin.isNotEmpty() && pin != "null") {
-                        SecurePreferences.encrypt(
-                            this@SmsMonitorService,
-                            AppConfig.KEY_DEVICE_SPECIFIC_PIN,
-                            pin
-                        )
-                    } else {
-                        SecurePreferences.remove(
-                            this@SmsMonitorService,
-                            AppConfig.KEY_DEVICE_SPECIFIC_PIN
-                        )
-                    }
-                    Log.i(TAG, "✅ Push-Driven Cache Sync: Device config updated via Socket.IO")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error parsing sync_device_config: ${e.message}")
-                }
-            }
-
-            socket?.on("pending_device_approval") { args ->
-                try {
-                    val raw = args.firstOrNull()
-                    val deviceId = when (raw) {
-                        is org.json.JSONObject -> raw.optString("device_id", "")
-                        else -> org.json.JSONObject(raw.toString()).optString("device_id", "")
-                    }
-                    Log.i(TAG, "pending_device_approval push device=$deviceId")
-                    SecurePreferences.encrypt(
-                        this@SmsMonitorService,
-                        "pcu_pending_approval_ping",
-                        System.currentTimeMillis().toString()
-                    )
-                } catch (e: Exception) {
-                    Log.w(TAG, "pending_device_approval parse failed: ${e.message}")
-                }
-            }
-
-            socket?.on("device_revoked") { _ ->
-                try {
-                    SecurePreferences.remove(this@SmsMonitorService, AppConfig.KEY_AUTH_TOKEN)
-                    SecurePreferences.remove(this@SmsMonitorService, "pcu_is_approved")
-                    Log.w(TAG, "Device revoked by server — session cleared")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error handling device_revoked: ${e.message}")
-                }
-            }
-
-            // force_template_sync not registered — Comm Policy is HTTP-heartbeat only;
-            // template propagation uses heartbeat forceSync → refreshGatewayCaches.
-
-            socket?.connect()
-        } catch (e: Exception) {
-            Log.w(TAG, "Socket connection failed: ${e.message}")
-        }
-    }
-
     // ─────────────────────────────────────────────────────────────────────────
     // Notification helpers
     // ─────────────────────────────────────────────────────────────────────────
@@ -521,9 +340,6 @@ class SmsMonitorService : Service() {
         connectivityJob = null
         pendingFlushJob?.cancel()
         pendingFlushJob = null
-        socket?.disconnect()
-        socket?.off()
-        teardownSocket()
         serviceScope.cancel()
 
         if (!userInitiatedStop && online.paychek.app.data.local.prefs.PrefsHelper.isSmsServiceActive(this)) {

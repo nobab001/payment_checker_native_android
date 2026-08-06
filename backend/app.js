@@ -13,8 +13,6 @@ if (typeof BigInt !== 'undefined' && !BigInt.prototype.toJSON) {
 const express = require('express');
 const http = require('http');
 const path = require('path');
-const jwt = require('jsonwebtoken');
-const { Server } = require('socket.io');
 const cors = require('cors');
 const cron = require('node-cron');
 const prisma = require('./db/prisma');
@@ -26,7 +24,7 @@ if (!JWT_SECRET) {
   throw new Error('[app] JWT_SECRET is not set. Refusing to start.');
 }
 
-// SECURITY: restrict CORS/socket origins. Comma-separated list in CORS_ORIGINS,
+// SECURITY: restrict CORS origins. Comma-separated list in CORS_ORIGINS,
 // e.g. "https://paychek.app,https://admin.paychek.app". Falls back to same-origin
 // only (no wildcard) when unset.
 const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || '')
@@ -51,98 +49,10 @@ const app = express();
 // Without this, rate-limit throws ValidationError and browsers show "Failed to fetch".
 app.set('trust proxy', 1);
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: corsOrigin }
-});
 
-// One live socket per device room — duplicate connects from service restarts are dropped.
-const deviceSocketIds = new Map();
-
-// SECURITY: authenticate every socket handshake with a JWT before it can join a
-// device room. Previously any client that knew a userId:deviceId pair could join
-// that room and receive its private device_config events. The token is passed as
-// handshake.auth.token (preferred) or handshake.query.token, and its claims MUST
-// match the userId/deviceId the client is asking to bind to.
-io.use((socket, next) => {
-  try {
-    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
-    const userId = String(socket.handshake.query.userId || '');
-    const deviceId = String(socket.handshake.query.deviceId || '');
-
-    if (!token) {
-      console.warn(`[Socket.IO] AUTH_REQUIRED from ${socket.handshake.address}`);
-      return next(new Error('AUTH_REQUIRED'));
-    }
-    if (!userId || !deviceId) {
-      console.warn('[Socket.IO] DEVICE_CONTEXT_MISSING');
-      return next(new Error('DEVICE_CONTEXT_MISSING'));
-    }
-
-    const claims = jwt.verify(token, JWT_SECRET);
-    if (String(claims.userId) !== userId || (claims.deviceId && String(claims.deviceId) !== deviceId)) {
-      console.warn(`[Socket.IO] AUTH_MISMATCH userId=${userId} deviceId=${deviceId}`);
-      return next(new Error('AUTH_MISMATCH'));
-    }
-
-    socket.data.userId = userId;
-    socket.data.deviceId = deviceId;
-    return next();
-  } catch (err) {
-    console.warn(`[Socket.IO] AUTH_INVALID: ${err.message}`);
-    return next(new Error('AUTH_INVALID'));
-  }
-});
-
-// Setup Socket.IO Multi-Device Isolation + number health (ONLINE on connect, GRACE on disconnect)
-io.on('connection', (socket) => {
-  const userId = socket.data.userId;
-  const deviceId = socket.data.deviceId;
-
-  if (!userId || !deviceId) {
-    console.log('[Socket.IO] Anonymous connection dropped (missing userId or deviceId)');
-    socket.disconnect();
-    return;
-  }
-
-  const roomName = `${userId}:${deviceId}`;
-
-  const previousSocketId = deviceSocketIds.get(roomName);
-  if (previousSocketId && previousSocketId !== socket.id) {
-    const stale = io.sockets.sockets.get(previousSocketId);
-    if (stale) {
-      console.log(`[Socket.IO] Replacing stale socket for ${roomName}`);
-      stale.disconnect(true);
-    }
-  }
-  deviceSocketIds.set(roomName, socket.id);
-  numberHealth.markSocketPresent(userId, deviceId);
-
-  socket.join(roomName);
-  console.log(`[Socket.IO] Device connected and locked to room: ${roomName} (socket=${socket.id})`);
-
-  numberHealth.onDeviceSocketConnect(userId, deviceId).catch((err) => {
-    console.warn('[Socket.IO] connect health update failed:', err.message);
-  });
-
-  socket.on('device_numbers', (payload) => {
-    const numbers = payload?.numbers || payload;
-    numberHealth.onDeviceSocketConnect(userId, deviceId, numbers).catch((err) => {
-      console.warn('[Socket.IO] device_numbers health update failed:', err.message);
-    });
-  });
-
-  socket.on('disconnect', () => {
-    if (deviceSocketIds.get(roomName) === socket.id) {
-      deviceSocketIds.delete(roomName);
-      numberHealth.markSocketAbsent(userId, deviceId);
-    }
-    console.log(`[Socket.IO] Device disconnected from room: ${roomName} (socket=${socket.id})`);
-    numberHealth.scheduleSocketDisconnect(userId, deviceId);
-  });
-});
-
-// Make io accessible globally via app
-app.set('io', io);
+// Comm Policy v1.2 — Socket.IO removed. All device presence/sync is HTTP-only:
+// devices poll via the heartbeat endpoint (profile-tiered interval + jitter), which
+// keeps `numberHealthService.recordHeartbeat()` as the single source of presence truth.
 
 const PORT = process.env.PORT || 3000;
 
@@ -403,12 +313,6 @@ server.listen(PORT, async () => {
   console.log(`=============================================`);
 
   try {
-    await numberHealth.clearAllSocketLiveFlags();
-  } catch (sockErr) {
-    console.warn('[NumberHealth] boot socket cleanup skipped:', sockErr.message);
-  }
-
-  try {
     // ─────────────────────────────────────────────────────────────────────────
     // Check if gateway_methods table exists, if not, wait for prisma db push
     // We assume Prisma schema handles all DDL migrations from now on
@@ -484,6 +388,14 @@ server.listen(PORT, async () => {
       console.log('[DB] ✅ website_purpose + lock + settlements + official tables verified.');
     } catch (purposeErr) {
       console.warn('[DB] website_purpose / official tables ensure failed:', purposeErr.message);
+    }
+
+    try {
+      const { ensureAppNotifications } = require('./db/ensure-app-notifications');
+      await ensureAppNotifications();
+      console.log('[DB] ✅ app_notifications tables verified.');
+    } catch (notifErr) {
+      console.warn('[DB] app_notifications ensure failed:', notifErr.message);
     }
 
     try {

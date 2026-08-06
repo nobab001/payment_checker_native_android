@@ -24,11 +24,6 @@ object CommPolicyStore {
         return PROFILE_PERSONAL
     }
 
-    fun useSocket(context: Context): Boolean {
-        // Comm Policy v1.2: all packages are HTTP-heartbeat only (no Socket.IO presence).
-        return false
-    }
-
     /** Base interval (no jitter) — for tests / diagnostics. */
     fun heartbeatBaseIntervalMs(context: Context): Long {
         val sec = SecurePreferences.decrypt(context, AppConfig.KEY_COMM_HEARTBEAT_SEC).toIntOrNull()
@@ -56,7 +51,6 @@ object CommPolicyStore {
         ent.heartbeatSec?.takeIf { it in 30..7200 }?.let {
             SecurePreferences.encrypt(context, AppConfig.KEY_COMM_HEARTBEAT_SEC, it.toString())
         }
-        SecurePreferences.encrypt(context, AppConfig.KEY_COMM_USE_SOCKET, "0")
         if (ent.commProfile.isNullOrBlank()) {
             val inferred = if (ent.hasWebsite) PROFILE_GATEWAY else PROFILE_PERSONAL
             SecurePreferences.encrypt(context, AppConfig.KEY_COMM_PROFILE, inferred)
@@ -75,6 +69,5 @@ object CommPolicyStore {
         body.heartbeatSec?.takeIf { it in 30..7200 }?.let {
             SecurePreferences.encrypt(context, AppConfig.KEY_COMM_HEARTBEAT_SEC, it.toString())
         }
-        SecurePreferences.encrypt(context, AppConfig.KEY_COMM_USE_SOCKET, "0")
     }
 }

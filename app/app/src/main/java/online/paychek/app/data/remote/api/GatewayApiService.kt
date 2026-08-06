@@ -181,6 +181,21 @@ interface GatewayApiService {
         @Header("X-Gateway-Last-Sync") lastSync: Long = 0L
     ): Response<HeartbeatResponse>
 
+    /**
+     * Unread admin notices. The heartbeat already piggybacks these; this is the
+     * app-open path (and the only one that works while a package is suspended).
+     */
+    @GET("notifications")
+    suspend fun getMyNotifications(
+        @Header("Authorization") token: String
+    ): Response<MyNotificationsResponse>
+
+    @POST("notifications/{id}/read")
+    suspend fun markNotificationRead(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int
+    ): Response<AdminGenericResponse>
+
     /** All active SIM numbers under this account */
     @GET("gateway/account-numbers")
     suspend fun getAccountNumbers(
