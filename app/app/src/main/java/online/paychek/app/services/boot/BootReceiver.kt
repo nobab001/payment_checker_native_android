@@ -79,8 +79,6 @@ class BootReceiver : BroadcastReceiver() {
             }
             SmsServiceGuard.startService(context, trigger)
             SmsServiceGuard.scheduleWatchdog(context)
-            online.paychek.app.services.foreground.ServiceKeepAliveScheduler.schedule(context)
-            online.paychek.app.services.foreground.ServiceKeepAliveScheduler.scheduleImmediate(context)
             Log.i(TAG, "SMS Monitor Service started on boot ($action)")
             SmsPollWorker.schedule(context.applicationContext)
             SmsPollWorker.scheduleImmediate(context.applicationContext)

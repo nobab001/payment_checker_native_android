@@ -319,6 +319,9 @@ async function applySubscriptionPurchase(userId, planName) {
     replacedPurchaseId,
   });
 
+  const { reactivateUser } = require('./subscriptionStatusService');
+  await reactivateUser(userId);
+
   return quoteResult;
 }
 

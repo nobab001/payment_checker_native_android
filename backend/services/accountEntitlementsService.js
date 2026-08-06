@@ -1,5 +1,9 @@
 const prisma = require('../db/prisma');
 const { isUserOnTrial } = require('./subscriptionV3/trialFlagService');
+const {
+  STATUS_SUSPENDED,
+  getSubscriptionStatus,
+} = require('./subscriptionStatusService');
 
 const USER_PERM_COLUMNS = [
   'perm_custom_sender',
@@ -192,6 +196,21 @@ function mergeEntitlements(snapshots) {
   return base;
 }
 
+function zeroEntitlementsLegacy() {
+  return {
+    perm_custom_sender: 0,
+    perm_template: 0,
+    perm_website: 0,
+    perm_device: 0,
+    perm_smart_popup: 0,
+    perm_manual_transaction: 0,
+    eff_max_devices: 0,
+    eff_max_sites: 0,
+    subscription_status: STATUS_SUSPENDED,
+    suspended: true,
+  };
+}
+
 async function computeEntitlementsForUser(userId) {
   await ensureEntitlementSchema();
 
@@ -219,6 +238,11 @@ async function computeEntitlementsForUser(userId) {
       eff_max_devices: 999,
       eff_max_sites: 999,
     };
+  }
+
+  // Hard cut: suspended overrides trial/plan/addon perm_* columns.
+  if ((await getSubscriptionStatus(userId)) === STATUS_SUSPENDED) {
+    return zeroEntitlementsLegacy();
   }
 
   const snapshots = [];
@@ -327,6 +351,12 @@ async function getUserEntitlements(userId, { refresh = false } = {}) {
   } catch (e) {
     console.warn('[Entitlements] schema ensure skipped:', e.message);
   }
+
+  // Suspension short-circuits stale perm_* columns in users table.
+  if ((await getSubscriptionStatus(userId)) === STATUS_SUSPENDED) {
+    return zeroEntitlementsLegacy();
+  }
+
   if (refresh) {
     return syncUserEntitlements(userId);
   }
@@ -383,6 +413,13 @@ function permissionDenied(res, code, message) {
 }
 
 async function requirePermission(userId, permissionKey) {
+  if ((await getSubscriptionStatus(userId)) === STATUS_SUSPENDED) {
+    return {
+      ok: false,
+      message: 'আপনার প্যাকেজের মেয়াদ শেষ হয়ে গেছে। সেবা সচল করতে অনুগ্রহ করে একটি সাবস্ক্রিপশন প্যাকেজ কিনুন।',
+      suspended: true,
+    };
+  }
   const ent = await getUserEntitlements(userId);
   if (!ent) return { ok: false, message: 'User not found' };
   if (Number(ent[permissionKey] || 0) !== 1) {

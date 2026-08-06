@@ -92,6 +92,8 @@ async function extendSubscription(userId, days, { adminId, ipAddress, reason } =
     };
   }
 
+  const { reactivateUser } = require('../subscriptionStatusService');
+  await reactivateUser(userId);
   await bustEntitlementCache(userId);
   await ensureSubscriptionFresh(userId);
 

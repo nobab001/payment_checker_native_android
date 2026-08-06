@@ -303,10 +303,13 @@ async function runTests() {
   // Complete profile so standard operations work
   await query('UPDATE users SET profile_complete = 1 WHERE id = ?', [testUserId]);
 
-  // Set user to expired/unpaid
+  // Set user to expired/unpaid — preserve expiry_date for audit; use subscription_status.
+  const pastExpiry = new Date();
+  pastExpiry.setDate(pastExpiry.getDate() - 1);
+  const ymd = pastExpiry.toISOString().slice(0, 10);
   await query(
-    "UPDATE users SET is_paid = 0, expiry_date = NULL, active_plan_name = 'FREE_LEVEL' WHERE id = ?",
-    [testUserId]
+    "UPDATE users SET is_paid = 0, is_trial = 0, expiry_date = ?, active_plan_name = 'FREE_LEVEL', subscription_status = 'suspended' WHERE id = ?",
+    [ymd, testUserId]
   );
 
   // Call stats route (guarded by billing status check)

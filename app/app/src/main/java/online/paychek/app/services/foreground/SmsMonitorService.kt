@@ -10,7 +10,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.os.IBinder
-import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
@@ -38,23 +37,18 @@ import io.socket.client.IO
 import io.socket.client.Socket
 
 /**
- * SmsMonitorService — প্রোডাকশন-রেডি Foreground Service
+ * SmsMonitorService — lightweight Foreground Service (UX + soft sync helpers).
  *
- * ডুয়েল-গার্ড আর্কিটেকচার:
- *  বার্ড-১ (প্রাইমারি): SmsReceiver — OS BroadcastReceiver (real-time, immediate)
- *  বার্ড-২ (ফলব্যাক): SmsPollWorker — ContentProvider inbox polling (15-min WorkManager)
+ * SMS ingest is NOT owned here — Guard-1 static [SmsReceiver] is primary.
+ * Guard-2 [SmsPollWorker] recovers missed inbox rows.
+ * HTTP presence is [online.paychek.app.services.sync.HeartbeatWorker] (WorkManager).
  *
- *  উভয় গার্ড সর্বদা সাথে সক্রিয় থাকে। Android 14/15-এ OEM battery kill
- *  বা broadcast throttle হলেও Guard-2 পেমেন্ট SMS miss হতে দেয় না।
- *
- *  Dedup: rawBodyHash UNIQUE index দুটি guard থেকে একই SMS duplicate
- *  process হতে দেয় না।
+ * This FGS only shows "Monitoring Active", flushes offline queue when network returns,
+ * and arms recovery workers. No exact-alarm keep-alive / panic restart loops.
  */
 class SmsMonitorService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var wakeLock: PowerManager.WakeLock? = null
-    private var wakeLockRenewJob: Job? = null
     private var screenReceiver: BroadcastReceiver? = null
     private var socket: Socket? = null
     @Volatile private var socketListenersRegistered = false
@@ -135,28 +129,26 @@ class SmsMonitorService : Service() {
             updateNotification("✅ সর্বশেষ: ${parsedPayment.providerTag} ${parsedPayment.amount}৳ — $lastPaymentTime")
         }
         registerScreenReceiver()
-        acquireWakeLock()
-        startWakeLockRenewal()
         // Missed-SMS recovery when FGS starts after process death.
         SmsPollWorker.scheduleImmediate(this)
 
         serviceScope.launch {
             startOfflineRecovery()
             val presenceTrigger = intent?.getStringExtra(SmsServiceGuard.EXTRA_PRESENCE_TRIGGER)
-            // Comm Policy: refresh profile, start package-tiered heartbeat, socket only if needed
             online.paychek.app.utils.AccountEntitlementsStore.refresh(this@SmsMonitorService)
+            // Arms WorkManager HeartbeatWorker + one immediate pulse (no in-process delay loop).
             NumberHeartbeatEngine.start(this@SmsMonitorService, presenceTrigger)
             if (CommPolicyStore.useSocket(this@SmsMonitorService)) {
                 startSocketConnection()
             } else {
-                Log.i(TAG, "Comm Policy sparse tier — Socket.IO skipped (HTTP heartbeat only)")
+                Log.i(TAG, "Comm Policy — Socket.IO skipped (HTTP HeartbeatWorker only)")
                 teardownSocket()
             }
-            online.paychek.app.services.foreground.SmsServiceGuard.scheduleWatchdog(this@SmsMonitorService)
-            ServiceKeepAliveScheduler.schedule(this@SmsMonitorService)
+            SmsServiceGuard.scheduleWatchdog(this@SmsMonitorService)
+            ServiceKeepAliveScheduler.cancel(this@SmsMonitorService)
         }
 
-        return START_STICKY // সিস্টেম kill করলে নিজে পুনরায় চালু হবে
+        return START_STICKY
     }
 
     /**
@@ -172,7 +164,6 @@ class SmsMonitorService : Service() {
                     Intent.ACTION_SCREEN_OFF, Intent.ACTION_USER_PRESENT -> {
                         Log.i(TAG, "Screen event (${intent.action}) — triggering immediate inbox poll")
                         SmsPollWorker.scheduleImmediate(ctx)
-                        acquireWakeLock()
                     }
                 }
             }
@@ -200,16 +191,6 @@ class SmsMonitorService : Service() {
             }
         }
         screenReceiver = null
-    }
-
-    private fun startWakeLockRenewal() {
-        wakeLockRenewJob?.cancel()
-        wakeLockRenewJob = serviceScope.launch {
-            while (isActive) {
-                delay(8 * 60 * 1000L)
-                acquireWakeLock()
-            }
-        }
     }
 
     private fun startOfflineRecovery() {
@@ -504,40 +485,8 @@ class SmsMonitorService : Service() {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // WakeLock helpers
+    // Lifecycle helpers
     // ─────────────────────────────────────────────────────────────────────────
-    private fun acquireWakeLock() {
-        try {
-            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-            if (wakeLock == null) {
-                wakeLock = pm.newWakeLock(
-                    PowerManager.PARTIAL_WAKE_LOCK,
-                    "Paychek::SmsMonitorWakeLock"
-                ).apply { setReferenceCounted(false) }
-            }
-            if (wakeLock?.isHeld == true) {
-                @Suppress("DEPRECATION")
-                wakeLock?.release()
-            }
-            wakeLock?.acquire(
-                if (OemBackgroundHelper.isAggressiveOem()) 15 * 60 * 1000L else 10 * 60 * 1000L
-            )
-            Log.d(TAG, "WakeLock acquired/renewed ✅")
-        } catch (e: Exception) {
-            Log.e(TAG, "WakeLock acquire failed: ${e.message}")
-        }
-    }
-
-    private fun releaseWakeLock() {
-        try {
-            if (wakeLock?.isHeld == true) wakeLock?.release()
-            wakeLock = null
-            Log.d(TAG, "WakeLock released")
-        } catch (e: Exception) {
-            Log.w(TAG, "WakeLock release error: ${e.message}")
-        }
-    }
-
     private fun stopMonitoring() {
         Log.i(TAG, "SMS Monitoring সার্ভিস বন্ধ হচ্ছে")
         NumberHeartbeatEngine.signalOffline(this)
@@ -555,16 +504,10 @@ class SmsMonitorService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
         if (userInitiatedStop || !online.paychek.app.data.local.prefs.PrefsHelper.isSmsServiceActive(this)) return
-        Log.w(TAG, "Task removed — immediate + scheduled service recovery")
-        online.paychek.app.services.foreground.SmsServiceGuard.enqueueImmediateRecovery(this)
-        ServiceKeepAliveScheduler.schedule(this)
-        ServiceKeepAliveScheduler.scheduleImmediate(this, 1_500L)
-        // Best-effort direct restart before process fully dies (OEM may still kill).
-        try {
-            online.paychek.app.services.foreground.SmsServiceGuard.startService(this)
-        } catch (e: Exception) {
-            Log.w(TAG, "onTaskRemoved direct start failed: ${e.message}")
-        }
+        // No panic FGS restart / exact alarm — re-arm WorkManager recovery only.
+        Log.w(TAG, "Task removed — re-arming poll + heartbeat workers (no panic restart)")
+        SmsServiceGuard.enqueueImmediateRecovery(this)
+        SmsServiceGuard.scheduleWatchdog(this)
     }
 
     override fun onDestroy() {
@@ -573,9 +516,6 @@ class SmsMonitorService : Service() {
         isAlive = false
         paymentStatusListener = null
         NumberHeartbeatEngine.stop()
-        wakeLockRenewJob?.cancel()
-        wakeLockRenewJob = null
-        releaseWakeLock()
         unregisterScreenReceiver()
         connectivityJob?.cancel()
         connectivityJob = null
@@ -587,10 +527,10 @@ class SmsMonitorService : Service() {
         serviceScope.cancel()
 
         if (!userInitiatedStop && online.paychek.app.data.local.prefs.PrefsHelper.isSmsServiceActive(this)) {
-            Log.w(TAG, "Unexpected service death — scheduling recovery")
-            online.paychek.app.services.foreground.SmsServiceGuard.enqueueImmediateRecovery(this)
-            ServiceKeepAliveScheduler.schedule(this)
-            ServiceKeepAliveScheduler.scheduleImmediate(this, 2_000L)
+            // Soft recovery: workers only — SMS ingest does not need this FGS.
+            Log.w(TAG, "FGS destroyed while monitoring ON — re-arming WorkManager workers")
+            SmsServiceGuard.enqueueImmediateRecovery(this)
+            SmsServiceGuard.scheduleWatchdog(this)
         }
         userInitiatedStop = false
     }

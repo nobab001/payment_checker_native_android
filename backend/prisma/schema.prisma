@@ -540,6 +540,7 @@ model users {
   is_trial           Int       @default(0) @db.TinyInt
   active_plan_name   String?              @default("FREE_LEVEL") @db.VarChar(50)
   expiry_date        DateTime?            @db.Date
+  subscription_status String              @default("active") @db.VarChar(20)
   profile_complete   Int       @default(0) @db.TinyInt
   sms_enabled             Int                  @default(1) @db.TinyInt
   gmail_enabled           Int                  @default(0) @db.TinyInt

@@ -6,6 +6,13 @@ const numberHealth = require('../services/numberHealthService');
 const commPolicy = require('../services/commPolicyService');
 const dataSyncCache = require('../services/dataSyncCache');
 const presenceV25 = require('../services/presenceV25');
+const {
+  STATUS_SUSPENDED,
+  getSubscriptionStatus,
+} = require('../services/subscriptionStatusService');
+
+const SUSPENDED_MESSAGE =
+  'আপনার প্যাকেজের মেয়াদ শেষ হয়ে গেছে। সেবা সচল করতে অনুগ্রহ করে একটি সাবস্ক্রিপশন প্যাকেজ কিনুন।';
 
 async function postHeartbeat(req, res) {
   try {
@@ -14,6 +21,28 @@ async function postHeartbeat(req, res) {
 
     if (!deviceId) {
       return res.status(400).json({ success: false, error: 'X-Device-Id header আবশ্যক' });
+    }
+
+    // Remote shutdown: a suspended account must stop the device's foreground
+    // capture immediately, and its numbers must disappear from checkout.
+    // 200 (not 402) so the client parses the body and acts on `action`.
+    if ((await getSubscriptionStatus(userId)) === STATUS_SUSPENDED) {
+      const watchdog = require('../services/deviceDisconnectWatchdog');
+      try {
+        await presenceV25.markDeviceOffline(userId, deviceId, { reason: 'SUBSCRIPTION_SUSPENDED' });
+      } catch (_) {
+        await watchdog.deactivateDeviceBindings(userId, deviceId).catch(() => {});
+      }
+      watchdog.cancelDeviceWatch(userId, deviceId);
+
+      return res.json({
+        success: false,
+        action: 'STOP_MONITORING',
+        subscription_status: STATUS_SUSPENDED,
+        error: 'ACCOUNT_SUSPENDED',
+        message: SUSPENDED_MESSAGE,
+        forceSync: false,
+      });
     }
 
     const profile = await numberHealth.getCachedProfile(userId);

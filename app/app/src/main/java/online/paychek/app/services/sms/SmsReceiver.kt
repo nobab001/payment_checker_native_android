@@ -193,7 +193,7 @@ class SmsReceiver(
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Paychek::SmsReceiveWakeLock")
             .apply {
                 setReferenceCounted(false)
-                acquire(60_000L)
+                acquire(30_000L)
             }
 
         CoroutineScope(Dispatchers.IO).launch {

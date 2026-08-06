@@ -10,6 +10,10 @@ const { getEffectiveExpiry, getUserSubscriptions, formatYmd, dateOnly } = requir
 const { isUserOnTrial } = require('./subscriptionV3/trialFlagService');
 const { getUserEntitlements: legacyGetEntitlements, syncUserEntitlements: legacySync } = require('./accountEntitlementsService');
 const { getRedisClient } = require('./redisClient');
+const {
+  STATUS_SUSPENDED,
+  getSubscriptionStatus,
+} = require('./subscriptionStatusService');
 
 const CACHE_PREFIX = 'paychek:entitlements:';
 const CACHE_TTL = 300;
@@ -75,6 +79,15 @@ function zeroEntitlements() {
   };
 }
 
+/** Entitlements for a suspended account: everything off, flagged for the client. */
+function suspendedEntitlements() {
+  return {
+    ...zeroEntitlements(),
+    subscription_status: STATUS_SUSPENDED,
+    suspended: true,
+  };
+}
+
 async function computeV3Entitlements(userId) {
   await ensureSubscriptionV3Schema();
 
@@ -100,10 +113,16 @@ async function computeV3Entitlements(userId) {
     };
   }
 
+  // Hard cut: a suspended account overrides every trial/plan/addon grant below.
+  if ((await getSubscriptionStatus(userId)) === STATUS_SUSPENDED) {
+    return suspendedEntitlements();
+  }
+
   if (await isUserOnTrial(userId)) {
+    // A missing expiry_date must never read as "unlimited trial" — treat it as expired.
     const trialExp = user.expiry_date ? dateOnly(user.expiry_date) : null;
     const today = dateOnly();
-    if (!trialExp || today <= trialExp) {
+    if (trialExp && today <= trialExp) {
       return getTrialEntitlements();
     }
     return zeroEntitlements();
@@ -192,7 +211,28 @@ async function computeV3Entitlements(userId) {
   return ent;
 }
 
+/** Admins are never suspended — support staff must keep access to fix accounts. */
+async function isSuspendedNonAdmin(userId) {
+  if ((await getSubscriptionStatus(userId)) !== STATUS_SUSPENDED) return false;
+  const row = await prisma.users.findUnique({
+    where: { id: Number(userId) },
+    select: { role: true },
+  });
+  return row?.role !== 'admin';
+}
+
 async function ensureSubscriptionFresh(userId) {
+  if (await isSuspendedNonAdmin(userId)) {
+    // Persist the zeroed columns so stale perm_* reads elsewhere cannot re-grant access.
+    await prisma.$executeRaw`
+      UPDATE users SET
+        perm_custom_sender = 0, perm_template = 0, perm_website = 0,
+        perm_device = 0, perm_smart_popup = 0, perm_manual_transaction = 0,
+        eff_max_devices = 0, eff_max_sites = 0
+      WHERE id = ${Number(userId)}
+    `;
+    return suspendedEntitlements();
+  }
   if (!(await isV3Enabled())) {
     return legacySync(userId);
   }
@@ -214,6 +254,10 @@ async function ensureSubscriptionFresh(userId) {
 }
 
 async function getEntitlements(userId, { refresh = false } = {}) {
+  // Suspension short-circuits both engines (V3 and legacy) and the Redis cache.
+  if (await isSuspendedNonAdmin(userId)) {
+    return suspendedEntitlements();
+  }
   if (!(await isV3Enabled())) {
     return legacyGetEntitlements(userId, { refresh });
   }
@@ -234,9 +278,20 @@ async function getEntitlements(userId, { refresh = false } = {}) {
   return ent;
 }
 
+async function hasPermission(userId, permissionKey) {
+  if (await isSuspendedNonAdmin(userId)) return false;
+  const ent = await getEntitlements(userId);
+  if (!ent) return false;
+  return Number(ent[permissionKey] || 0) === 1;
+}
+
 module.exports = {
   computeV3Entitlements,
   ensureSubscriptionFresh,
   getEntitlements,
+  hasPermission,
   bustEntitlementCache,
+  isSuspendedNonAdmin,
+  suspendedEntitlements,
+  zeroEntitlements,
 };

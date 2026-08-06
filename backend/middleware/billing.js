@@ -1,5 +1,12 @@
 const prisma = require('../db/prisma');
 const { getUserEntitlements } = require('../services/accountEntitlementsService');
+const {
+  STATUS_SUSPENDED,
+  getSubscriptionStatus,
+} = require('../services/subscriptionStatusService');
+
+const SUSPENDED_MESSAGE =
+  'আপনার প্যাকেজের মেয়াদ শেষ হয়ে গেছে। সেবা সচল করতে অনুগ্রহ করে একটি সাবস্ক্রিপশন প্যাকেজ কিনুন।';
 
 function isActiveSubscription(user) {
   if (!user.is_paid || user.active_plan_name === 'FREE_LEVEL') return false;
@@ -53,19 +60,21 @@ async function checkBillingStatus(req, res, next) {
       return next();
     }
 
+    // Suspended accounts are cut off regardless of any stale perm_* columns.
+    if ((await getSubscriptionStatus(userId)) === STATUS_SUSPENDED) {
+      return res.status(402).json({
+        success: false,
+        error: 'ACCOUNT_SUSPENDED',
+        subscription_status: STATUS_SUSPENDED,
+        message: SUSPENDED_MESSAGE,
+      });
+    }
+
     const ent = await getUserEntitlements(userId);
     const hasSub = isActiveSubscription(user);
     const hasAddon = isActiveCustomSenderAddon(user);
-    const hasAnyPermission = ent && (
-      ent.perm_custom_sender === 1 ||
-      ent.perm_template === 1 ||
-      ent.perm_website === 1 ||
-      ent.perm_device === 1 ||
-      Number(ent.perm_smart_popup || 0) === 1 ||
-      Number(ent.perm_manual_transaction || 0) === 1
-    );
 
-    if (hasSub || hasAddon || hasAnyPermission) {
+    if (hasSub || hasAddon) {
       req.accountEntitlements = ent;
       return next();
     }
@@ -73,7 +82,8 @@ async function checkBillingStatus(req, res, next) {
     return res.status(402).json({
       success: false,
       error: 'ACCOUNT_SUSPENDED',
-      message: 'অনুগ্রহ করে যেকোনো একটি সাবস্ক্রিপশন প্যাকেজ কিনে আপনার সেবা সচল করুন।',
+      subscription_status: STATUS_SUSPENDED,
+      message: SUSPENDED_MESSAGE,
     });
   } catch (err) {
     console.error('[Billing Middleware] Error:', err);
@@ -81,4 +91,28 @@ async function checkBillingStatus(req, res, next) {
   }
 }
 
+/**
+ * Middleware: attachBillingStatus (non-blocking)
+ *
+ * For read-only endpoints that must stay reachable so the app can render its
+ * "buy a package" state — blocking these would leave the client with a generic
+ * network error instead of the lock screen. Sets req.subscriptionSuspended and
+ * req.subscriptionStatus for controllers to surface in their payload.
+ */
+async function attachBillingStatus(req, res, next) {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) return next();
+    const status = await getSubscriptionStatus(userId);
+    req.subscriptionStatus = status;
+    req.subscriptionSuspended = status === STATUS_SUSPENDED;
+  } catch (err) {
+    console.warn('[Billing Middleware] status attach failed:', err.message);
+  }
+  return next();
+}
+
 module.exports = checkBillingStatus;
+module.exports.checkBillingStatus = checkBillingStatus;
+module.exports.attachBillingStatus = attachBillingStatus;
+module.exports.SUSPENDED_MESSAGE = SUSPENDED_MESSAGE;

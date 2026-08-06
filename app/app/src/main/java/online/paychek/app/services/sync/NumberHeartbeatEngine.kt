@@ -20,6 +20,10 @@ import org.json.JSONObject
 /**
  * Comm Policy v1.0 — package-tiered heartbeat while SMS monitoring is ON.
  *
+ * Primary clock: [HeartbeatWorker] (WorkManager, 15/30/60 min).
+ * This engine performs the HTTP POST; in-process delay loops are not used
+ * (they die with the process / suspend under Doze).
+ *
  * SMS upload is independent (never waits for this timer).
  * Heartbeat response can update next interval / forceSync / templateVersion.
  */
@@ -29,7 +33,6 @@ object NumberHeartbeatEngine {
     const val TRIGGER_NETWORK_RESTORED = "network_restored"
     private const val NETWORK_RESTORE_DEBOUNCE_MS = 7_000L
 
-    private var loopJob: Job? = null
     private var networkRestorePulseJob: Job? = null
     @Volatile private var socketConnected = false
     /** After SMS upload success, skip the next scheduled heartbeat (server already marked alive). */
@@ -41,24 +44,25 @@ object NumberHeartbeatEngine {
     fun noteSmsUploadSuccess(context: Context) {
         skipNextScheduled = true
         Log.i(TAG, "SMS upload success — next scheduled heartbeat will skip")
-        // Immediate pulse optional: server already got SMS_SUCCESS alive; no need to POST again.
     }
 
     fun onSocketConnected(context: Context, socket: io.socket.client.Socket?) {
         socketConnected = true
         emitSocketDeviceNumbers(socket, context)
-        // Still keep HTTP heartbeat for Policy Sync (forceSync / interval).
         ensureRunning(context.applicationContext)
-        Log.i(TAG, "Socket up — policy heartbeat continues")
+        Log.i(TAG, "Socket up — policy heartbeat continues via WorkManager")
     }
 
     fun onSocketDisconnected(context: Context) {
         socketConnected = false
         ensureRunning(context.applicationContext)
-        Log.i(TAG, "Socket down — HTTP heartbeat active")
+        Log.i(TAG, "Socket down — HTTP heartbeat via WorkManager")
     }
 
-    /** Start / restart periodic heartbeat for monitoring session. */
+    /**
+     * Arm WorkManager heartbeat + send one immediate presence pulse.
+     * No in-process delay loop (process death / Doze would kill it).
+     */
     @Synchronized
     fun start(context: Context, initialPresenceTrigger: String? = null) {
         ensureRunning(context.applicationContext, initialPresenceTrigger)
@@ -68,36 +72,23 @@ object NumberHeartbeatEngine {
     fun ensureRunning(context: Context, initialPresenceTrigger: String? = null) {
         if (!PrefsHelper.isSmsServiceActive(context)) {
             stop()
+            HeartbeatWorker.cancel(context)
             return
         }
-        if (loopJob?.isActive == true) return
         val app = context.applicationContext
-        loopJob = scope.launch {
+        HeartbeatWorker.schedule(app)
+        scope.launch {
             sendHeartbeat(app, smsActive = true, presenceTrigger = initialPresenceTrigger)
-            while (isActive && PrefsHelper.isSmsServiceActive(app)) {
-                val delayMs = CommPolicyStore.heartbeatIntervalMs(app)
-                Log.d(TAG, "Next heartbeat in ${delayMs / 1000}s (profile=${CommPolicyStore.profile(app)})")
-                delay(delayMs)
-                if (PrefsHelper.isSmsServiceActive(app)) {
-                    if (skipNextScheduled) {
-                        skipNextScheduled = false
-                        Log.i(TAG, "Skipped scheduled heartbeat (SMS already counted as alive)")
-                    } else {
-                        sendHeartbeat(app, smsActive = true, presenceTrigger = null)
-                    }
-                }
-            }
         }
         Log.i(
             TAG,
-            "Heartbeat loop started — interval=${CommPolicyStore.heartbeatIntervalMs(app)}ms profile=${CommPolicyStore.profile(app)}"
+            "Heartbeat armed — WorkManager interval=${CommPolicyStore.heartbeatBaseIntervalMs(app)}ms " +
+                "profile=${CommPolicyStore.profile(app)}"
         )
     }
 
     @Synchronized
     fun stop() {
-        loopJob?.cancel()
-        loopJob = null
         networkRestorePulseJob?.cancel()
         networkRestorePulseJob = null
     }
@@ -108,18 +99,19 @@ object NumberHeartbeatEngine {
     }
 
     /**
-     * Suspending one-shot heartbeat — for callers that must keep a wakelock alive
-     * until the POST finishes (AlarmManager BroadcastReceiver.goAsync, CoroutineWorker).
-     * The coroutine `delay` loop is suspended under Android Doze, so these Doze-safe
-     * triggers are what actually keep a backgrounded device ONLINE.
+     * Suspending one-shot heartbeat — for WorkManager / brief wakelock holders.
      */
     suspend fun sendHeartbeatBlocking(context: Context) {
+        if (skipNextScheduled && PrefsHelper.isSmsServiceActive(context)) {
+            skipNextScheduled = false
+            Log.i(TAG, "Skipped scheduled heartbeat (SMS already counted as alive)")
+            return
+        }
         sendHeartbeat(context.applicationContext, smsActive = PrefsHelper.isSmsServiceActive(context))
     }
 
     /**
      * Internet restored (offline → online only). Debounced to avoid heartbeat storms.
-     * WiFi ↔ mobile handoff does not trigger this — caller must gate on offline→online.
      */
     @Synchronized
     fun pulseNetworkRestored(context: Context) {
@@ -136,10 +128,12 @@ object NumberHeartbeatEngine {
         }
     }
 
-    /** Monitoring Stop → Offline Signal */
+    /** Monitoring Stop → Offline Signal + cancel WorkManager heartbeat. */
     fun signalOffline(context: Context) {
+        val app = context.applicationContext
+        HeartbeatWorker.cancel(app)
         scope.launch {
-            sendHeartbeat(context.applicationContext, smsActive = false)
+            sendHeartbeat(app, smsActive = false)
             stop()
         }
     }
@@ -206,7 +200,18 @@ object NumberHeartbeatEngine {
             if (res.isSuccessful) {
                 val body = res.body()
                 if (body != null) {
+                    if (body.action == "STOP_MONITORING") {
+                        Log.w(TAG, "Server requested STOP_MONITORING (subscription suspended)")
+                        SubscriptionLifecycleHelper.stopMonitoringRemote(
+                            context,
+                            body.message ?: body.error
+                        )
+                        return
+                    }
                     CommPolicyStore.applyHeartbeatResponse(context, body)
+                    if (smsActive) {
+                        HeartbeatWorker.schedule(context)
+                    }
                     val serverTpl = parseTemplateVersion(body.templateVersion)
                     val localSync = PrefsHelper.getGatewayMethodsLastSync(context)
                     val needsSync = body.forceSync == true ||

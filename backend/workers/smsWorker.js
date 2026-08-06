@@ -8,6 +8,10 @@ const { verifyHmac } = require('../utils/verifyHmac');
 const { parseRawSms } = require('../utils/parseRawSms');
 const checkoutController = require('../controllers/checkoutController');
 const presenceV25 = require('../services/presenceV25');
+const {
+  STATUS_SUSPENDED,
+  getSubscriptionStatus,
+} = require('../services/subscriptionStatusService');
 
 function sha256(data) {
   return crypto.createHash('sha256').update(data, 'utf8').digest('hex');
@@ -20,6 +24,14 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
 
   if (!rawBody || typeof rawBody !== 'string' || !hmacSignature || !smsTimestamp) {
     throw new Error('Missing basic validation fields');
+  }
+
+  // Billing gate — drop payloads for suspended accounts before any DB write.
+  // HTTP ingest returns 402 via checkBillingStatus; the queue worker completes
+  // without retry so BullMQ does not re-process suspended payloads.
+  if ((await getSubscriptionStatus(userId)) === STATUS_SUSPENDED) {
+    console.warn(`[SMS Worker] Dropped SMS for suspended user ${userId} (device ${deviceId}) — ACCOUNT_SUSPENDED`);
+    return { status: 'dropped', reason: 'ACCOUNT_SUSPENDED', httpEquivalent: 402, userId };
   }
 
   // Fetch user secret key

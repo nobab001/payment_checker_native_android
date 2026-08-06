@@ -1,38 +1,95 @@
 const cron = require('node-cron');
+const { Prisma } = require('@prisma/client');
 const prisma = require('../db/prisma');
 const { runSmsRetentionCleanup } = require('./smsRetentionCleanup');
+const {
+  STATUS_SUSPENDED,
+  ensureSubscriptionStatusSchema,
+} = require('../services/subscriptionStatusService');
+
+/**
+ * Suspend every account whose paid/trial term has ended.
+ *
+ * expiry_date is deliberately preserved (previously nulled): the permission engine
+ * treats a NULL expiry as "no expiry set" and would hand back full trial
+ * entitlements forever, so nulling it turned expiry into an unlimited upgrade.
+ *
+ * is_trial is cleared here too — nothing else ever reset it, so expired trial
+ * users kept matching the trial branch of the permission engine.
+ */
+async function runSubscriptionExpiryGuard() {
+  await ensureSubscriptionStatusSchema();
+
+  // Date-only comparison in SQL so DATE columns and server TZ cannot drift a day.
+  // `< CURDATE()` keeps the final day of the term usable, matching checkBillingStatus.
+  const expiredRows = await prisma.$queryRaw`
+    SELECT id FROM users
+    WHERE expiry_date IS NOT NULL
+      AND DATE(expiry_date) < CURDATE()
+      AND (
+        is_paid = 1
+        OR COALESCE(is_trial, 0) = 1
+        OR COALESCE(subscription_status, 'active') <> ${STATUS_SUSPENDED}
+      )
+  `;
+  const userIds = expiredRows.map((r) => Number(r.id));
+  if (!userIds.length) {
+    console.log('[Subscription Guard] ✅ No expired subscriptions found. All clear.');
+    return 0;
+  }
+
+  await prisma.$executeRaw`
+    UPDATE users
+    SET is_paid = 0,
+        is_trial = 0,
+        active_plan_name = 'FREE_LEVEL',
+        subscription_status = ${STATUS_SUSPENDED},
+        perm_custom_sender = 0,
+        perm_template = 0,
+        perm_website = 0,
+        perm_device = 0,
+        perm_smart_popup = 0,
+        perm_manual_transaction = 0,
+        eff_max_devices = 0,
+        eff_max_sites = 0
+    WHERE id IN (${Prisma.join(userIds)})
+  `;
+
+  // Retire V3 subscription/addon rows so getUserSubscriptions() stops returning them.
+  await prisma.$executeRaw`
+    UPDATE user_subscriptions SET status = 'expired', updated_at = NOW()
+    WHERE user_id IN (${Prisma.join(userIds)})
+      AND status = 'active' AND DATE(expires_at) < CURDATE()
+  `.catch(() => {});
+  await prisma.$executeRaw`
+    UPDATE user_subscription_addons SET status = 'expired', updated_at = NOW()
+    WHERE user_id IN (${Prisma.join(userIds)})
+      AND status = 'active' AND DATE(expires_at) < CURDATE()
+  `.catch(() => {});
+
+  // Drop cached entitlements so the suspension takes effect before the 5-min TTL.
+  const { bustEntitlementCache } = require('../services/permissionEngineService');
+  for (const id of userIds) {
+    await bustEntitlementCache(id).catch(() => {});
+    await prisma.$executeRaw`
+      INSERT INTO subscription_audit_log (user_id, action, reason, meta_json)
+      VALUES (${id}, 'auto_suspend_expiry', 'Subscription term ended', ${JSON.stringify({ by: 'billingScheduler' })})
+    `.catch(() => {});
+  }
+
+  console.log(`[Subscription Guard] ✅ ${userIds.length} expired subscription(s) suspended.`);
+  return userIds.length;
+}
 
 // =============================================================================
 // Cron 1: Subscription Expiry Guard — প্রতিদিন রাত ১২:০১ মিনিটে রান হবে
-// যাদের মেয়াদ শেষ → is_paid = 0, active_plan_name = 'FREE_LEVEL', expiry_date = NULL
+// মেয়াদ শেষ → subscription_status='suspended', is_paid=0, is_trial=0,
+// সব perm_* = 0। expiry_date অডিটের জন্য রেখে দেওয়া হয়।
 // =============================================================================
 cron.schedule('1 0 * * *', async () => {
   console.log('[Subscription Guard] Running midnight expiry check...');
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const result = await prisma.users.updateMany({
-      where: {
-        is_paid: 1,
-        expiry_date: {
-          not: null,
-          lte: today
-        }
-      },
-      data: {
-        is_paid: 0,
-        active_plan_name: 'FREE_LEVEL',
-        expiry_date: null
-      }
-    });
-
-    const affected = result.count || 0;
-    if (affected > 0) {
-      console.log(`[Subscription Guard] ✅ ${affected} expired subscription(s) reset to FREE_LEVEL.`);
-    } else {
-      console.log('[Subscription Guard] ✅ No expired subscriptions found. All clear.');
-    }
+    await runSubscriptionExpiryGuard();
   } catch (err) {
     console.error('[Subscription Guard] ❌ Cron Expiry Error:', err);
   }
@@ -95,4 +152,4 @@ console.log(
   '[Cron] ✅ Subscription Expiry Guard (12:01 AM), FCM Reminder (10:00 AM) & SMS Retention (2:00 AM) scheduled.'
 );
 
-module.exports = {};
+module.exports = { runSubscriptionExpiryGuard };

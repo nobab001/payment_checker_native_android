@@ -1062,10 +1062,14 @@ async function getAccountEntitlements(req, res) {
     }
     const profile = await require('../services/commPolicyService').resolveCommProfile(userId);
     const policy = require('../services/commPolicyService').toClientPolicy(profile);
+    const { getSubscriptionStatus } = require('../services/subscriptionStatusService');
+    const subscriptionStatus = await getSubscriptionStatus(userId);
     return res.json({
       success: true,
+      subscription_status: subscriptionStatus,
       entitlements: {
         ...ent,
+        subscription_status: subscriptionStatus,
         comm_profile: profile.id,
         heartbeat: policy.heartbeat,
         use_socket: policy.use_socket,

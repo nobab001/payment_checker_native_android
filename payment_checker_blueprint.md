@@ -536,13 +536,16 @@ Sub-Device [Mode: sub]                  Parent Device [Mode: main]
 
 ## 4. Background Services & Hardware ID Tracking
 
-### A. Android Foreground Service & Wakelocks
+### A. Android Background SMS & Presence (Native)
 
-To ensure the Android OS does not suspend the background SMS broadcast listeners:
-1. **Persistent Notification**: Uses `flutter_foreground_task` to run a foreground service displaying a persistent notification to the user ("SMS monitoring is running in the background.").
-2. **Wake Lock**: Wakelock is requested via the `wakelock_plus` plugin immediately upon service startup, ensuring the CPU remains active.
-3. **Ignored Battery Optimizations**: At registration, the app prompts the user to exempt the application from Android Doze Mode battery optimizations.
-4. **Boot Start Hook**: Configures the foreground service with the `autoRunOnBoot: true` flag. An Android boot receiver catches device startup events, checking SharedPreferences `SmsServiceStatePrefs.shouldResumeService()`. If it returns true, it triggers `SmsPersistenceBootstrap.resumeBackgroundPipeline()` to re-initialize the telephony listener and restart the foreground notifications automatically.
+Event-driven architecture (not process keep-alive):
+
+1. **Guard-1 SMS ingest**: Static `SmsReceiver` (`SMS_RECEIVED`, `directBootAware`) → `goAsync` + brief WakeLock (≤30s) → Room queue. Independent of FGS health.
+2. **Guard-2 recovery**: `SmsPollWorker` (WorkManager ~15 min) inbox scan via `SmsInboxScanner`.
+3. **HTTP presence**: `HeartbeatWorker` (WorkManager) at Comm Policy intervals — Gateway/Welcome **15 min**, Personal Business **30 min**, Personal **60 min**. Network-connected constraint. No 2–5 min exact AlarmManager keep-alive.
+4. **Light FGS**: `SmsMonitorService` shows "Monitoring Active" notification + soft queue flush helpers. No panic restart / accessibility heal / WakeLock renewal loops.
+5. **Accessibility**: Smart Popup OCR only — not used as a process anchor.
+6. **Boot**: `BootReceiver` (`BOOT_COMPLETED` / `USER_UNLOCKED` / `MY_PACKAGE_REPLACED`) re-arms FGS (when prefs ON) + WorkManager workers.
 
 ---
 
@@ -1197,13 +1200,17 @@ Clients connect and pass a JWT token and hardware device ID during the connectio
 
 ### Offline SMS Queue & Server Recovery (Native Android)
 
-**Capture:** Guard-1 `SmsReceiver` (real-time broadcast) → `ProcessIncomingSmsUseCase` → Room `pending_sms_queue` (HMAC + `rawBodyHash` dedup). Guard-2 `SmsPollWorker` (15-min WorkManager inbox scan via `SmsInboxScanner`).
+**Capture:** Guard-1 `SmsReceiver` (real-time broadcast, FGS-independent) → `ProcessIncomingSmsUseCase` → Room `pending_sms_queue` (HMAC + `rawBodyHash` dedup). Guard-2 `SmsPollWorker` (15-min WorkManager inbox scan via `SmsInboxScanner`).
 
 **Online path:** After Room insert, if `ConnectivityService.isOnline()` → `SmsReceiver.syncPendingQueue()` → `POST /api/payment-sms-ingest/bulk` (202 Accepted).
 
 **Offline path:** Room insert → `PingEngine.start()` → `GET /api/ping` immediately, then every 15s until HTTP 200 → `syncPendingQueueAndAwait()` → stop only when queue flush succeeds.
 
-**Recovery triggers (all call `SmsReceiver.syncPendingQueue()`):**
+**Presence (HTTP heartbeat):** `HeartbeatWorker` (WorkManager, CONNECTED) → `NumberHeartbeatEngine.sendHeartbeatBlocking()` at package interval 15/30/60 min. SMS upload success may skip the next beat. Monitoring OFF → cancel worker + offline payload. **Suspended account:** heartbeat returns `{ action: "STOP_MONITORING" }` → client stops FGS via `SubscriptionLifecycleHelper`.
+
+**Subscription lifecycle:** `users.subscription_status` ENUM (`active` | `grace` | `suspended`). Midnight `billingScheduler` sets `suspended` + `is_paid=0` when `expiry_date < today` — **never nulls expiry_date** (audit + prevents unlimited trial bug). `permissionEngineService` / `checkBillingStatus` hard-cut suspended accounts. SMS ingest HTTP → 402; queue worker drops suspended payloads.
+
+**Key files:** `SmsReceiver.kt`, `ProcessIncomingSmsUseCase.kt`, `HeartbeatWorker.kt`, `NumberHeartbeatEngine.kt`, `SubscriptionLifecycleHelper.kt`, `SmsPollWorker.kt`, `SyncWorker.kt`, `SmsMonitorService.kt` (light FGS), `BootReceiver.kt`, `PendingSmsDao.kt`, `subscriptionStatusService.js`, `billingScheduler.js`, `heartbeatController.js`.
 - `ConnectivityService.observe()` in `SmsMonitorService` (network restored)
 - Service startup flush (`flushPendingOnStartup`) when pending items exist
 - `Socket.EVENT_CONNECT` (server reconnect safety net)
@@ -1212,9 +1219,9 @@ Clients connect and pass a JWT token and hardware device ID during the connectio
 
 **Retry policy:** HTTP 2xx → `markAsSynced`; HTTP 422 → `markPermanentlyFailed`; other errors → exponential backoff (30s→6h cap); `retryCount >= 10` → `markPermanentlyFailed`.
 
-**Socket.IO role:** Push-driven gateway/template cache sync only (`sync_gateway_methods`, `force_template_sync`) — not server health check (that is `PingEngine`).
+**Socket.IO role:** Push-driven gateway/template cache sync only (`sync_gateway_methods`, `force_template_sync`) — not server health check (that is `PingEngine`). Presence is HTTP-only (`CommPolicyStore.useSocket()` = false).
 
-**Key files:** `SmsMonitorService.kt`, `SmsReceiver.kt`, `ProcessIncomingSmsUseCase.kt`, `PingEngine.kt`, `SyncWorker.kt`, `SmsPollWorker.kt`, `ConnectivityService.kt`, `PendingSmsDao.kt`.
+**Key files:** `SmsReceiver.kt`, `ProcessIncomingSmsUseCase.kt`, `HeartbeatWorker.kt`, `NumberHeartbeatEngine.kt`, `SmsPollWorker.kt`, `SyncWorker.kt`, `SmsMonitorService.kt` (light FGS), `BootReceiver.kt`, `PendingSmsDao.kt`.
 
 ---
 

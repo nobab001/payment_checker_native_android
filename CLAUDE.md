@@ -1,123 +1,144 @@
 # CLAUDE.md — PayChek (payment-checker)
 
-Project-specific rules for Claude Code. Read this every session. For deeper detail
-see `payment_checker_blueprint.md` and `docs/`.
+Project rules for **Claude Code**. These must match Cursor Agent behaviour.
+
+**Authoritative rule set (same as Cursor):** read and obey every file in:
+
+- `.claude/rules/`  ← synced copy of Cursor rules (use these)
+- `.cursor/rules/`  ← same content (Cursor native format)
+
+If anything conflicts, prefer the more specific file (e.g. checkout / security / deploy) over this overview.
+
+---
+
+## Same-system contract (Cursor chat ↔ Claude Code)
+
+| Surface | Rules source | Code folder |
+|---------|--------------|-------------|
+| Cursor Agent chat | `.cursor/rules/*.mdc` + `.cursorrules` | Open workspace on **D:** (this repo) |
+| Claude Code extension | **this file** + `.claude/rules/*.md` | Same open workspace |
+
+Do **not** invent a second architecture. Work only in this repo path — not a copy under `C:\Users\...` unless that path *is* the opened project.
+
+---
+
+## Always-on rules (quick index)
+
+Read these from `.claude/rules/` every session (or when relevant):
+
+| File | When |
+|------|------|
+| `00-project-context.md` | Always — stack, repo map, non-negotiables |
+| `00-cursorrules-deploy.md` | Always — post-task APK / server / no auto-push |
+| `10-ai-behaviour.md` | Always — how to plan and implement |
+| `06-security.md` | Always — secrets, HMAC, JWT |
+| `07-deployment.md` | Always — local vs VPS |
+| `08-git-workflow.md` | Always — git discipline |
+| `09-code-quality.md` | Always — clean code |
+| `01-ui-ux.md` / `02-design-system.md` | Android UI |
+| `03-android.md` | `app/**` |
+| `04-backend.md` / `05-api.md` | `backend/**` |
+| `checkout-ux-requirements.md` | Checkout HTML/JS |
+| `deploy-follow-up.md` | After every coding task |
+
+Also pre-read docs as listed in `00-project-context.md` (`docs/design/*`, `docs/android/*`, `docs/backend/*`, `docs/api/*`, `docs/deployment/*`, `docs/security/*`).
+
+---
 
 ## What this project is
 
-A monorepo for **PayChek** (`paycheckbd.com`) — a payment-verification system:
+Monorepo for **PayChek** (`paycheckbd.com`) — payment verification:
 
-- `app/` — **native Android app** (Kotlin, Gradle, package `online.paychek.app`). User + Admin flavors.
-- `backend/` — **Node.js / Express** API (Prisma → MySQL, Redis), checkout/payment engines, workers.
-- `docs/` — architecture + deployment documentation.
-- `payment_checker_blueprint.md` — master technical blueprint (living document).
+- `app/` — native Android (Kotlin, package `online.paychek.app`), User + Admin flavors
+- `backend/` — Node.js / Express, Prisma → MySQL, Redis, checkout engines, workers
+- `docs/` — architecture + deployment handbook
+- `payment_checker_blueprint.md` — living blueprint (Flutter sections may be outdated; **`app/` is source of truth**)
 
-> Note: the blueprint still describes an older **Flutter** architecture. The shipped
-> app is **native Android (Kotlin)**. Treat on-device code under `app/` as the source
-> of truth; update the blueprint when you reconcile a section.
+---
 
-## Post-task deploy pipeline (decide by WHAT CHANGED)
+## Post-task deploy pipeline (by WHAT CHANGED)
 
-After finishing a coding task, pick the action by the files touched:
+### App changed (`app/**`)
+1. Build debug APK: `build-apk.bat` (repo root) **or** `gradlew assembleDebug` in `app/`.
+2. Report: `app/app/build/outputs/apk/debug/app-debug.apk`.
+3. `adb devices` — if `device`: `adb install -r ...` then launch `online.paychek.app/.MainActivity`. Else only give APK path.
 
-### App changed (`app/**`, Android UI/services/DTOs)
-1. Build debug APK: run `build-apk.bat` (repo root) **or** `gradlew assembleDebug` inside `app/`.
-2. Report the APK path: `app/app/build/outputs/apk/debug/app-debug.apk`.
-3. **Device check (every build):** run `adb devices`.
-   - If a device shows as `device` (USB/wireless): `adb install -r app/app/build/outputs/apk/debug/app-debug.apk`
-     then launch `adb shell am start -n online.paychek.app/.MainActivity`.
-   - If no device: only give the APK path. Do **not** ask for IP/PORT unless the user wants wireless install.
+### Backend / website / checkout (`backend/**`)
+1. Restart local Node (port 3000) if testing locally.
+2. Per user instruction: auto-deploy website/checkout (`backend/public/**`) to VPS when that task completes.
 
-### Backend / Website / Checkout page (`backend/**`, npm, env, DB, server-served checkout JS)
-1. Restart local Node server (port 3000) if testing locally.
-2. **Auto-Deploy Rule (Per User Instruction)**: Always auto-deploy website and checkout page (`backend/public/**`) changes to VPS (`paycheckbd.com`) upon task completion so updates are instantly live.
+### Both
+- Restart server + build APK (+ adb if device connected).
 
-### Both app + backend
-- Restart local server, build APK, and deploy website/backend changes to VPS automatically.
+### GitHub
+- **Never** auto stage/commit/push unless the user **explicitly** asks.
 
-## VPS / production deploy
+---
 
-> **User Rule**: Website and checkout page (`backend/public/**`) changes are AUTO-DEPLOYED to VPS upon completion. For other backend/DB migrations, deploy to VPS when requested. The VPS hosts multiple projects — touch only this one.
+## VPS / production
 
-- SSH: `ssh paycheckbd` (alias for `root@37.60.224.231`, Contabo VPS `vmi3182621`,
-  CloudPanel on `:8443`). Key auth via `~/.ssh/id_ed25519` — config in `~/.ssh/config`.
+> Website/checkout (`backend/public/**`) → auto-deploy to VPS when that work finishes. Other backend/DB → deploy when asked. VPS hosts multiple projects — touch **only** this one.
+
+- SSH: `ssh paycheckbd` (`root@37.60.224.231`)
 - Domain: `paycheckbd.com`
-- App root: `/var/www/payment-checker/` → live code at `current/` (symlink to `releases/<ts>/`);
-  also `shared/` (env, uploads, downloads), `backups/`, `logs/`, `scripts/`.
-- Shared env: `/var/www/payment-checker/shared/.env`
-- PM2 process (this project only): **`payment-checker-api`**
-- Production APK: `/var/www/payment-checker/shared/downloads/paycheck.apk` → `https://paycheckbd.com/downloads/paycheck.apk`
+- App root: `/var/www/payment-checker/` → `current/` symlink, `shared/` (.env, uploads, downloads)
+- PM2 for this project: **`payment-checker-api`** only
+- Production APK: `/var/www/payment-checker/shared/downloads/paycheck.apk`
 
-**Other PM2 processes on this VPS — NEVER touch:** `smartcalc-api`, `telecom-bot`,
-`telecom-dashboard`. (`payment-otp` also runs here — confirm with the user whether it
-belongs to PayChek before ever restarting it.)
+**Never touch other PM2 apps:** `smartcalc-api`, `telecom-bot`, `telecom-dashboard` (confirm before touching `payment-otp`).
 
-Backend live deploy (only when asked): deploy code → `npm install --production` if deps
-changed → run Prisma/ensure scripts if schema changed → `pm2 reload payment-checker-api`
-→ health-check `https://paycheckbd.com/` + a known API route → watch PM2 logs.
-See `docs/deployment/vps.md` and `docs/deployment/production.md` for the full checklist.
+**Never on VPS:** overwrite `shared/.env` DB creds with local `.env`; force-push `main`.
 
-Building a local APK does **not** update the website download button — publishing the
-production APK is a separate explicit step (copy to the shared path, `chmod 644`).
+Local APK build ≠ website download APK. Publishing production APK is a separate explicit step.
 
-### Never on the VPS
-- Restart/redeploy any PM2 process other than `payment-checker-api`.
-- Overwrite VPS `shared/.env` DB credentials with local `.env`.
-- Force-push `main`.
+Deploy scripts: `backend/scripts/deploy.sh`, `rollback.sh`, `healthcheck.sh`, `backup.sh`. Details: `docs/deployment/*`.
 
-## Deployment pipeline (repeatable, gated)
+---
 
-Production deploys run through versioned scripts in `backend/scripts/` (runner copies
-live on the VPS at `/var/www/payment-checker/scripts/`, kept in sync by `deploy.sh`):
+## Git
 
-- `deploy.sh [ref]` — backup DB → clone GitHub `main` into `/tmp/deploy/payment-checker`
-  → `npm ci` → `prisma generate` → lint (`node --check`) → unit tests
-  (`test:payment-unit`, DB-free) → cut `releases/<ts>/` → symlink `shared/`
-  (.env/uploads/downloads) → switch `current` → `pm2 reload payment-checker-api`
-  → post-health (auto-rollback on failure) → retention (10 releases / 10 backups)
-  → cleanup temp. **STOP-on-fail before the symlink switch.** `DRY_RUN=1` builds+tests
-  without switching; `SKIP_TESTS=1` skips the test gate (not recommended).
-- `rollback.sh [release-dir]` — switch `current` to a previous release + `pm2 reload`.
-  Never uses git checkout; recoverable within 2 minutes.
-- `healthcheck.sh` — PM2 online + crash-loop check, HTTPS site, local API, an API route,
-  Redis PING, MySQL `SELECT 1`, and a recent-fatal scan of the PM2 error log.
-- `backup.sh` — `mysqldump` to `backups/db_<ts>.sql.gz`, keeps the latest 10.
+- No commit/push unless asked; no force-push `main`; no interactive git (`-i`).
+- Never commit secrets (`.env`, keystores, private keys, PII).
+- Prefer `feature/<name>` → test → merge → deploy.
 
-Pipeline rules: GitHub `main` is the only production source (never hand-edit production
-files); build only in `/tmp/deploy/payment-checker`; reload **only** `payment-checker-api`
-(plus `payment-checker-worker` / `payment-checker-socket` if they exist); schema changes
-go through additive runtime ensure-guards — never `prisma db push` in the pipeline;
-every deploy/rollback/backup writes a timestamped log under `/var/www/payment-checker/logs/`.
-
-## Git — NEVER auto push
-
-- Do **not** stage / commit / push unless the user **explicitly asks**.
-- Never force-push `main`; never amend pushed history; no interactive git (`-i`).
-- Never commit secrets (`.env`, keystores, private keys, uploaded PII).
-- Commit messages: short why-focused (fix/add/update).
-- Recommended feature flow: `feature/<name>` branch → local test → commit → push →
-  merge to `main` → run `deploy.sh`. Avoid committing substantial work directly to `main`.
-- Bug fixes: analyze logs → find root cause → fix locally → test → push → deploy.
-  Emergency production hotfix is allowed only if production is down, and the same fix
-  must be committed to GitHub immediately afterward.
-
-## Blueprint maintenance
-
-When you add/modify/remove screens, UI elements, API routes, DB fields, or config keys,
-update the matching section of `payment_checker_blueprint.md` to reflect the current state.
-Keep it a clean current-state blueprint — no changelog summaries at the end.
+---
 
 ## Backend conventions
 
-- `routes/` thin wiring → `controllers/` orchestration → `services/` domain logic → `payment/` checkout engines.
-- `prisma/schema.prisma` is the schema source of truth; prefer additive `db/ensure-*.js` guards for staged prod schema changes.
-- Validate inputs at the edge; consistent JSON error shapes; correct HTTP status codes.
-- Never log secrets; never hardcode prod credentials — config from env.
-- Keep payment-flow changes isolated under `payment/` + checkout JS; don't break merchant callbacks.
+- `routes/` → `controllers/` → `services/` → `payment/`
+- Prisma schema is source of truth; prefer additive `db/ensure-*.js` for staged prod schema
+- Validate at edge; consistent JSON errors; never log secrets
+
+## Android conventions
+
+- Compose UI under `ui/screen/...`; ViewModel + StateFlow; Repository → Retrofit
+- Config: `AppConfig.kt` (`BASE_URL`) — production default `https://paycheckbd.com/`
+- Extend existing SMS/heartbeat/services; do not invent parallel stacks
+
+## Blueprint
+
+When screens/API/DB/config change, update matching sections of `payment_checker_blueprint.md` (current-state only).
+
+---
+
+## Multi-editor / multi-agent safety (why phone builds miss features)
+
+If several editors/agents edit the same project:
+
+1. **Save everything** before build — unsaved buffers are not in the APK.
+2. **One workspace path** — always `D:\payment_checker_native_android`, not a second copy.
+3. **Same branch** — check `git status` / branch; uncommitted work in another window is not in your build.
+4. **Rebuild + reinstall** — after changes: clean assemble if needed, then `adb install -r` (old APK otherwise).
+5. **Correct flavor** — User vs Admin; wrong flavor looks like “missing features”.
+6. **Backend running** — app-only install will not show API-dependent features if server was not restarted/deployed.
+7. Prefer **one agent finishing a feature** before another starts overlapping files, or merge carefully.
+
+---
 
 ## Pointers
 
-- Deploy detail: `docs/deployment/{vps,staging,production,github-workflow}.md`
-- Backend detail: `docs/backend/`
-- VPS bootstrap (one-time setup): `backend/scripts/bootstrap-paycheckbd-vps.sh`
-- Cursor-era rules (reference only; this file is authoritative for Claude Code): `.cursor/rules/`, `.cursorrules`
+- Rules (Claude): `.claude/rules/`
+- Rules (Cursor): `.cursor/rules/`, `.cursorrules`
+- Deploy docs: `docs/deployment/`
+- Backend docs: `docs/backend/`
+- Design: `docs/design/`

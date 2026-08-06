@@ -8,8 +8,8 @@ import online.paychek.app.data.local.prefs.PrefsHelper
 import online.paychek.app.services.foreground.SmsServiceGuard
 
 /**
- * Background watchdog — if user left SMS service ON but OEM killed the foreground service,
- * start it (check-only) and keep Guard-2 inbox polling scheduled.
+ * Lightweight recovery tick — ensures Guard-2 poll + HeartbeatWorker stay scheduled.
+ * Does NOT heal/restart the Foreground Service (SMS ingest is event-driven via SmsReceiver).
  */
 class SmsServiceWatchWorker(
     context: Context,
@@ -23,20 +23,9 @@ class SmsServiceWatchWorker(
             return Result.success()
         }
 
-        if (SmsServiceGuard.isServiceRunning(app)) {
-            SmsServiceGuard.scheduleWatchdog(app)
-            SmsPollWorker.scheduleImmediate(app)
-        } else {
-            Log.w(TAG, "SMS service not running while prefs ON — starting")
-            SmsServiceGuard.healIfNeeded(app)
-        }
         SmsPollWorker.schedule(app)
-
-        try {
-            NumberHeartbeatEngine.sendHeartbeatBlocking(app)
-        } catch (e: Exception) {
-            Log.w(TAG, "Watchdog heartbeat failed: ${e.message}")
-        }
+        HeartbeatWorker.schedule(app)
+        Log.d(TAG, "Recovery tick — poll + heartbeat workers ensured (no FGS heal)")
         return Result.success()
     }
 

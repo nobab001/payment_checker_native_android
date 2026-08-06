@@ -487,6 +487,14 @@ server.listen(PORT, async () => {
     }
 
     try {
+      const { ensureSubscriptionStatusColumn } = require('./db/ensure-subscription-status');
+      await ensureSubscriptionStatusColumn();
+      console.log('[DB] ✅ users.subscription_status verified.');
+    } catch (subStatusErr) {
+      console.warn('[DB] subscription_status ensure failed:', subStatusErr.message);
+    }
+
+    try {
       const { migrateAllUserEntitlements } = require('./scripts/migrateUserEntitlements');
       await migrateAllUserEntitlements();
     } catch (entErr) {

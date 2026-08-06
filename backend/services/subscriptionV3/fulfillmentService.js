@@ -153,6 +153,8 @@ async function fulfillSubscription({
   });
 
   await mirrorUserBilling(userId);
+  const { reactivateUser } = require('../subscriptionStatusService');
+  await reactivateUser(userId);
   await bustEntitlementCache(userId);
 
   await logAudit({

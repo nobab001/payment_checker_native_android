@@ -22,27 +22,16 @@ import androidx.annotation.RequiresApi
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import online.paychek.app.data.local.prefs.PrefsHelper
-import online.paychek.app.services.foreground.ServiceKeepAliveScheduler
-import online.paychek.app.services.foreground.SmsServiceGuard
 import online.paychek.app.services.smartpopup.SmartPopupScanHelper
 import online.paychek.app.services.smartpopup.SmartPopupService
 
 /**
- * Accessibility anchor — SMS সার্ভিস জীবিত রাখে + Smart Pop-up স্ক্যান।
- *
- * Crop scan: screenshot → crop to square → ML Kit OCR → TrxID only.
- * Falls back to tight accessibility node scan if OCR unavailable.
+ * Accessibility — Smart Pop-up OCR / region scan only.
+ * Not used for process keep-alive or FGS healing (SMS ingest is SmsReceiver).
  */
 class PaychekAccessibilityService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
-    private val keepAliveRunnable = object : Runnable {
-        override fun run() {
-            runKeepAliveCheck()
-            handler.postDelayed(this, CHECK_INTERVAL_MS)
-        }
-    }
 
     private val scanReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
@@ -62,7 +51,7 @@ class PaychekAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         isRunning = true
-        Log.i(TAG, "Accessibility connected — keep-alive + smart popup scan")
+        Log.i(TAG, "Accessibility connected — Smart Popup scan only")
 
         val filter = IntentFilter(SmartPopupService.ACTION_SCAN_BOUNDS)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -79,22 +68,10 @@ class PaychekAccessibilityService : AccessibilityService() {
                 AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
             notificationTimeout = 1000
         }
-
-        val ctx = applicationContext
-        if (PrefsHelper.isSmsServiceActive(ctx)) {
-            SmsServiceGuard.startService(ctx)
-            SmsServiceGuard.scheduleWatchdog(ctx)
-            ServiceKeepAliveScheduler.schedule(ctx)
-        }
-        // Never open Battery/Settings from here — that kicked the user out of the app
-        // ~1–2s after Accessibility was enabled. Battery setup stays user-driven (Home card).
-
-        handler.removeCallbacks(keepAliveRunnable)
-        handler.postDelayed(keepAliveRunnable, 5_000L)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Keep-alive binding only; scan is broadcast-driven.
+        // Scan is broadcast-driven (Smart Popup).
     }
 
     override fun onInterrupt() {
@@ -103,14 +80,8 @@ class PaychekAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         isRunning = false
-        handler.removeCallbacks(keepAliveRunnable)
+        handler.removeCallbacksAndMessages(null)
         runCatching { unregisterReceiver(scanReceiver) }
-        val ctx = applicationContext
-        if (PrefsHelper.isSmsServiceActive(ctx)) {
-            Log.w(TAG, "Accessibility destroyed while SMS ON — scheduling recovery")
-            SmsServiceGuard.enqueueImmediateRecovery(ctx)
-            ServiceKeepAliveScheduler.schedule(ctx)
-        }
         super.onDestroy()
     }
 
@@ -287,23 +258,8 @@ class PaychekAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun runKeepAliveCheck() {
-        val ctx = applicationContext
-        if (!PrefsHelper.isSmsServiceActive(ctx)) return
-
-        if (SmsServiceGuard.isServiceRunning(ctx)) {
-            SmsServiceGuard.scheduleWatchdog(ctx)
-            online.paychek.app.services.sync.SmsPollWorker.scheduleImmediate(ctx)
-        } else {
-            Log.w(TAG, "Watchdog: SMS service not running — starting via accessibility anchor")
-            SmsServiceGuard.healIfNeeded(ctx)
-        }
-        ServiceKeepAliveScheduler.schedule(ctx)
-    }
-
     companion object {
         private const val TAG = "PaychekA11y"
-        private const val CHECK_INTERVAL_MS = 30_000L
 
         @Volatile
         var isRunning: Boolean = false

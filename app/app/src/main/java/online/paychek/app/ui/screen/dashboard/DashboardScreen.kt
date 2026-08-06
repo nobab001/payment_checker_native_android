@@ -2552,12 +2552,11 @@ private fun ManualTransactionDialog(
 ) {
     var amountText by remember { mutableStateOf("") }
     var selectedTemplate by remember { mutableStateOf(templates.firstOrNull()?.templateName.orEmpty()) }
-    var trxId by remember {
-        mutableStateOf(
-            "MNL" + System.currentTimeMillis().toString(36).uppercase(Locale.US)
-        )
-    }
+    var trxId by remember { mutableStateOf("") }
     var templateExpanded by remember { mutableStateOf(false) }
+    var trxIdError by remember { mutableStateOf<String?>(null) }
+    var amountError by remember { mutableStateOf<String?>(null) }
+    var templateError by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2566,16 +2565,29 @@ private fun ManualTransactionDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = trxId,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Transaction ID (Auto)") },
+                    onValueChange = {
+                        trxId = it.trimStart().take(64)
+                        if (trxIdError != null && it.trim().isNotEmpty()) trxIdError = null
+                    },
+                    label = { Text("Transaction ID") },
+                    placeholder = { Text("ট্রান্সেকশন আইডি লিখুন বা পেস্ট করুন") },
+                    isError = trxIdError != null,
+                    supportingText = trxIdError?.let { { Text(it) } },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
                 OutlinedTextField(
                     value = amountText,
-                    onValueChange = { amountText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                    onValueChange = {
+                        amountText = it.filter { ch -> ch.isDigit() || ch == '.' }
+                        if (amountError != null && amountText.toDoubleOrNull()?.let { v -> v > 0 } == true) {
+                            amountError = null
+                        }
+                    },
                     label = { Text("Amount") },
+                    placeholder = { Text("পরিমাণ লিখুন") },
+                    isError = amountError != null,
+                    supportingText = amountError?.let { { Text(it) } },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
@@ -2588,7 +2600,9 @@ private fun ManualTransactionDialog(
                         value = selectedTemplate.ifBlank { "Template নির্বাচন করুন" },
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Template") },
+                        label = { Text("Provider / Template") },
+                        isError = templateError != null,
+                        supportingText = templateError?.let { { Text(it) } },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = templateExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2609,6 +2623,7 @@ private fun ManualTransactionDialog(
                                     text = { Text(tpl.templateName) },
                                     onClick = {
                                         selectedTemplate = tpl.templateName
+                                        templateError = null
                                         templateExpanded = false
                                     }
                                 )
@@ -2621,10 +2636,29 @@ private fun ManualTransactionDialog(
         confirmButton = {
             Button(
                 onClick = {
+                    val trimmedTrx = trxId.trim()
                     val amount = amountText.toDoubleOrNull()
-                    if (amount == null || amount <= 0.0) return@Button
-                    if (selectedTemplate.isBlank()) return@Button
-                    onCreate(amount, selectedTemplate, trxId.ifBlank { null })
+                    var ok = true
+                    if (trimmedTrx.isEmpty()) {
+                        trxIdError = "ট্রান্সেকশন আইডি পূরণ করুন"
+                        ok = false
+                    } else {
+                        trxIdError = null
+                    }
+                    if (amount == null || amount <= 0.0) {
+                        amountError = "সঠিক অ্যামাউন্ট পূরণ করুন"
+                        ok = false
+                    } else {
+                        amountError = null
+                    }
+                    if (selectedTemplate.isBlank()) {
+                        templateError = "প্রোভাইডার সিলেক্ট করুন"
+                        ok = false
+                    } else {
+                        templateError = null
+                    }
+                    if (!ok) return@Button
+                    onCreate(amount!!, selectedTemplate, trimmedTrx)
                 },
                 enabled = templates.isNotEmpty(),
                 colors = ButtonDefaults.buttonColors(containerColor = AccentCyan)

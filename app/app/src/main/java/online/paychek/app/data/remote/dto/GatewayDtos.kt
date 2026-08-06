@@ -319,6 +319,10 @@ data class HeartbeatRequest(
 data class HeartbeatResponse(
     @SerializedName("success") val success: Boolean,
     @SerializedName("skipped") val skipped: Boolean? = null,
+    /** Remote lifecycle: STOP_MONITORING when subscription suspended. */
+    @SerializedName("action") val action: String? = null,
+    @SerializedName("subscription_status") val subscriptionStatus: String? = null,
+    @SerializedName("error") val error: String? = null,
     @SerializedName("server_time") val serverTime: Long? = null,
     @SerializedName("numbers") val numbers: List<String>? = null,
     @SerializedName("states") val states: Map<String, String>? = null,

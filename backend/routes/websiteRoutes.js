@@ -8,6 +8,8 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
+const checkBillingStatus = require('../middleware/billing');
+const { attachBillingStatus } = require('../middleware/billing');
 const websiteController = require('../controllers/websiteController');
 const manualAccountController = require('../controllers/checkoutManualAccountController');
 const { logoUpload } = require('../middleware/websiteUploadMiddleware');
@@ -15,6 +17,15 @@ const { logoUpload } = require('../middleware/websiteUploadMiddleware');
 const authenticateToken = auth.authenticateToken || auth;
 
 router.use(authenticateToken);
+
+/**
+ * Billing gate: every mutation on this router requires an active subscription.
+ * GETs stay reachable (attachBillingStatus only tags the request) so a suspended
+ * merchant can still view their existing config behind the app's upsell screen.
+ */
+router.use((req, res, next) =>
+  (req.method === 'GET' ? attachBillingStatus : checkBillingStatus)(req, res, next)
+);
 
 // Global checkout (must be before /:id)
 router.get('/global-checkout', websiteController.getGlobalCheckout);

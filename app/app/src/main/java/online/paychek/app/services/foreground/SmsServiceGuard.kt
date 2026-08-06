@@ -5,19 +5,20 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.OutOfQuotaPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import online.paychek.app.data.local.prefs.PrefsHelper
+import online.paychek.app.services.sync.HeartbeatWorker
 import online.paychek.app.services.sync.SmsPollWorker
 import online.paychek.app.services.sync.SmsServiceWatchWorker
 import java.util.concurrent.TimeUnit
 
 /**
- * Keeps [SmsMonitorService] alive when the user left it ON but Android/OEM killed it.
- * Check-only: if already running, do not stop/restart.
+ * Starts/stops the optional monitoring FGS and schedules recovery workers
+ * (Guard-2 poll + HeartbeatWorker). Does not use AlarmManager keep-alive.
+ *
+ * SMS ingest is independent of FGS health ([online.paychek.app.services.sms.SmsReceiver]).
+ * [healIfNeeded] is for user-visible FGS UX when the app is opened — not a background loop.
  */
 object SmsServiceGuard {
     private const val TAG = "SmsServiceGuard"
@@ -45,8 +46,8 @@ object SmsServiceGuard {
     }
 
     /**
-     * When user left SMS ON but the foreground service is not running, start it.
-     * If already running, do nothing except schedule watchdog + immediate inbox poll.
+     * When user left SMS ON but the foreground service is not running, start it (UX).
+     * Always (re)arms Guard-2 poll + HeartbeatWorker — SMS ingest does not need FGS.
      */
     @Volatile private var lastHealAtMs: Long = 0L
     private const val HEAL_COOLDOWN_MS = 10_000L
@@ -55,11 +56,11 @@ object SmsServiceGuard {
         val app = context.applicationContext
         if (!PrefsHelper.isSmsServiceActive(app)) return false
 
+        scheduleWatchdog(app)
+        SmsPollWorker.scheduleImmediate(app)
+
         SmsServiceHealth.syncAliveFlag(app)
         if (isServiceRunning(app)) {
-            scheduleWatchdog(app)
-            // FGS alive ≠ every SMS was received — always arm Guard-2 recovery.
-            SmsPollWorker.scheduleImmediate(app)
             return true
         }
 
@@ -69,10 +70,8 @@ object SmsServiceGuard {
             return false
         }
         lastHealAtMs = now
-        Log.w(TAG, "SMS service not running while prefs ON — starting")
+        Log.w(TAG, "SMS FGS not running while prefs ON — starting UX monitor (SMS ingest independent)")
         startService(app, online.paychek.app.services.sync.NumberHeartbeatEngine.TRIGGER_BOOT_COMPLETED)
-        scheduleWatchdog(app)
-        SmsPollWorker.scheduleImmediate(app)
         return true
     }
 
@@ -122,30 +121,28 @@ object SmsServiceGuard {
             request
         )
         SmsPollWorker.schedule(context)
-        ServiceKeepAliveScheduler.schedule(context)
-        Log.d(TAG, "Service watchdog scheduled (${minutes}min) + keep-alive alarm")
+        HeartbeatWorker.schedule(context)
+        ServiceKeepAliveScheduler.cancel(context)
+        Log.d(TAG, "Recovery workers scheduled (${minutes}min poll tick + heartbeat) — no alarm keep-alive")
     }
 
     fun cancelWatchdog(context: Context) {
         WorkManager.getInstance(context).cancelUniqueWork(WATCH_WORK_NAME)
         WorkManager.getInstance(context).cancelUniqueWork(RECOVER_WORK_NAME)
         ServiceKeepAliveScheduler.cancel(context)
+        HeartbeatWorker.cancel(context)
         // Toggle OFF must also stop Guard-2 inbox recovery (periodic + immediate).
         SmsPollWorker.cancel(context)
     }
 
+    /**
+     * Soft recovery: re-arm poll + heartbeat workers only (no FGS heal, no exact alarm).
+     */
     fun enqueueImmediateRecovery(context: Context) {
         if (!PrefsHelper.isSmsServiceActive(context)) return
-        val request = OneTimeWorkRequestBuilder<SmsServiceWatchWorker>()
-            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-            .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            RECOVER_WORK_NAME,
-            ExistingWorkPolicy.REPLACE,
-            request
-        )
         SmsPollWorker.scheduleImmediate(context)
-        Log.i(TAG, "Immediate service recovery enqueued")
+        HeartbeatWorker.schedule(context)
+        Log.i(TAG, "Immediate worker recovery — poll + heartbeat (no FGS heal)")
     }
 
     fun ensureRunningAndSync(context: Context): Boolean {

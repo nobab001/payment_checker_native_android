@@ -84,10 +84,11 @@
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:windowSoftInputMode="adjustResize" />
 
-        <!-- SMS BroadcastReceiver — receives incoming SMS intents -->
+        <!-- SMS BroadcastReceiver — receives incoming SMS intents (event-driven ingest) -->
         <receiver
             android:name=".services.sms.SmsReceiver"
             android:exported="true"
+            android:directBootAware="true"
             android:permission="android.permission.BROADCAST_SMS">
             <intent-filter android:priority="999">
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
@@ -107,7 +108,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- Keep-alive alarm — Samsung/Vivo OEM kill-এর পর দ্রুত service restart -->
+        <!-- Obsolete keep-alive alarm receiver — deliveries are cancelled/ignored -->
         <receiver
             android:name=".services.foreground.KeepAliveAlarmReceiver"
             android:exported="false" />
