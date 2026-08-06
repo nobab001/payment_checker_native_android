@@ -74,11 +74,13 @@ import online.paychek.app.utils.AccessibilityHelper
 import online.paychek.app.utils.BanglaDateTimeFormat
 import online.paychek.app.utils.BatteryOptimizationHelper
 import online.paychek.app.utils.OemBackgroundHelper
+import online.paychek.app.utils.SearchInputLimits
 import online.paychek.app.utils.adaptivePadding
 import online.paychek.app.utils.adaptiveTextSize
 import online.paychek.app.utils.screenWidth
 import online.paychek.app.ui.common.HistoryLoadTier
 import online.paychek.app.ui.common.historyLoadMoreLabelBn
+import online.paychek.app.ui.common.nextArchiveHistoryDays
 import online.paychek.app.ui.common.nextHistoryDays
 import online.paychek.app.ui.theme.*
 import java.text.DecimalFormat
@@ -279,16 +281,12 @@ fun DashboardScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedProvider by remember { mutableStateOf<String?>(null) }
     var selectedProviderName by remember { mutableStateOf<String?>(null) }
-    var selectedDate by remember { mutableStateOf<String?>(null) }
-    var showDateRangePicker by remember { mutableStateOf(false) }
     var showManualTxnDialog by remember { mutableStateOf(false) }
-    var customStartDate by remember { mutableStateOf<Long?>(null) }
-    var customEndDate by remember { mutableStateOf<Long?>(null) }
+    var archiveSearchQuery by remember { mutableStateOf("") }
 
     // Template chip: if no matches in current 20, auto-expand to 7-day history (Search parity)
     LaunchedEffect(
         selectedProviderName,
-        selectedDate,
         screenState.historyTier,
         screenState.isLoadingMoreHistory,
         screenState.isFilterLoading,
@@ -296,11 +294,9 @@ fun DashboardScreen(
         (screenState.uiState as? DashboardUiState.Success)?.stats?.recentTransactions?.size
     ) {
         val name = selectedProviderName ?: return@LaunchedEffect
-        if (selectedDate == "custom") return@LaunchedEffect
         if (screenState.historyTier != HistoryLoadTier.INITIAL_20) return@LaunchedEffect
         if (screenState.isLoadingMoreHistory || screenState.isFilterLoading) return@LaunchedEffect
         val base = when {
-            screenState.dateFilteredTransactions.isNotEmpty() -> screenState.dateFilteredTransactions
             screenState.extendedTransactions.isNotEmpty() -> screenState.extendedTransactions
             else -> (screenState.uiState as? DashboardUiState.Success)?.stats?.recentTransactions.orEmpty()
         }
@@ -308,6 +304,17 @@ fun DashboardScreen(
         if (!hasMatch) {
             viewModel.ensureHistoryForProviderFilter(hasLocalMatches = false)
         }
+    }
+
+    // Archive tab: debounce server search so full-SMS paste can find older rows
+    LaunchedEffect(archiveSearchQuery, screenState.selectedTab) {
+        if (screenState.selectedTab != 1) return@LaunchedEffect
+        kotlinx.coroutines.delay(350)
+        viewModel.loadCustomArchives(archiveSearchQuery)
+    }
+
+    val filteredArchives = remember(screenState.customArchives, archiveSearchQuery) {
+        screenState.customArchives.filter { matchesCustomArchiveSearch(it, archiveSearchQuery) }
     }
 
     val successStats = (screenState.uiState as? DashboardUiState.Success)?.stats
@@ -486,65 +493,6 @@ fun DashboardScreen(
         )
     }
 
-    if (showDateRangePicker) {
-        val datePickerState = rememberDateRangePickerState()
-        DatePickerDialog(
-            onDismissRequest = { showDateRangePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDateRangePicker = false
-                        val startMillis = datePickerState.selectedStartDateMillis
-                        val endMillis = datePickerState.selectedEndDateMillis
-                        if (startMillis != null && endMillis != null) {
-                            customStartDate = startMillis
-                            customEndDate = endMillis
-                            selectedDate = "custom"
-                            val startStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(startMillis))
-                            val endStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(endMillis))
-                            viewModel.fetchDateFilteredTransactions(startStr, endStr)
-                        }
-                    }
-                ) { Text("OK", color = AccentCyan, fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDateRangePicker = false }) { Text("Cancel", color = TextMuted) }
-            },
-            colors = DatePickerDefaults.colors(containerColor = DashCard),
-            shape = RoundedCornerShape(20.dp)
-        ) {
-            DateRangePicker(
-                state = datePickerState,
-                modifier = Modifier.weight(1f),
-                colors = DatePickerDefaults.colors(
-                    containerColor = DashCard,
-                    titleContentColor = TextWhite,
-                    headlineContentColor = TextWhite,
-                    weekdayContentColor = TextMuted,
-                    subheadContentColor = TextWhite,
-                    navigationContentColor = TextWhite,
-                    yearContentColor = TextWhite,
-                    disabledYearContentColor = TextMuted,
-                    currentYearContentColor = AccentCyan,
-                    selectedYearContentColor = Color.White,
-                    disabledSelectedYearContentColor = Color.White.copy(alpha = 0.5f),
-                    selectedYearContainerColor = AccentCyan,
-                    disabledSelectedYearContainerColor = AccentCyan.copy(alpha = 0.5f),
-                    dayContentColor = TextWhite,
-                    disabledDayContentColor = TextMuted,
-                    selectedDayContentColor = Color.White,
-                    disabledSelectedDayContentColor = Color.White.copy(alpha = 0.5f),
-                    selectedDayContainerColor = AccentCyan,
-                    disabledSelectedDayContainerColor = AccentCyan.copy(alpha = 0.5f),
-                    todayContentColor = AccentCyan,
-                    todayDateBorderColor = AccentCyan,
-                    dayInSelectionRangeContentColor = TextWhite,
-                    dayInSelectionRangeContainerColor = AccentCyan.copy(alpha = 0.2f)
-                )
-            )
-        }
-    }
-
     if (showManualTxnDialog) {
         ManualTransactionDialog(
             templates = screenState.globalTemplates.filter {
@@ -697,7 +645,7 @@ fun DashboardScreen(
                     ) {
                         OutlinedTextField(
                             value = searchQuery,
-                            onValueChange = { searchQuery = it },
+                            onValueChange = { searchQuery = SearchInputLimits.clamp(it) },
                             placeholder = {
                                 Text(
                                     text = "ট্রানজেকশন খুঁজুন...",
@@ -724,29 +672,6 @@ fun DashboardScreen(
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
-                                    }
-                                    if (selectedDate == "custom") {
-                                        IconButton(onClick = {
-                                            selectedDate = "today"
-                                            customStartDate = null
-                                            customEndDate = null
-                                            viewModel.clearDateFilter()
-                                        }) {
-                                            Icon(
-                                                imageVector = Icons.Default.Close,
-                                                contentDescription = "Clear Date Filter",
-                                                tint = AccentRed,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                    }
-                                    IconButton(onClick = { showDateRangePicker = true }) {
-                                        Icon(
-                                            imageVector = Icons.Default.DateRange,
-                                            contentDescription = "Date Filter",
-                                            tint = if (selectedDate == "custom") AccentCyan else TextMuted,
-                                            modifier = Modifier.size(20.dp)
-                                        )
                                     }
                                     if (hasSmartPopup) {
                                         IconButton(onClick = {
@@ -929,7 +854,6 @@ fun DashboardScreen(
 
                 // ৬. আজকের ট্রানজেকশন list + progressive history (Search-এর মতো)
                 val recentList = when {
-                    screenState.dateFilteredTransactions.isNotEmpty() -> screenState.dateFilteredTransactions
                     screenState.extendedTransactions.isNotEmpty() -> screenState.extendedTransactions
                     else -> (screenState.uiState as? DashboardUiState.Success)
                         ?.stats?.recentTransactions ?: emptyList()
@@ -944,9 +868,7 @@ fun DashboardScreen(
                     val matchesProvider = selectedProviderName == null ||
                         trx.providerTag.equals(selectedProviderName, ignoreCase = true)
 
-                    val matchesDate = isDateMatching(trx.smsTimestamp, selectedDate, customStartDate, customEndDate)
-
-                    matchesQuery && matchesProvider && matchesDate
+                    matchesQuery && matchesProvider
                 }
 
                 if (screenState.uiState is DashboardUiState.Success && !screenState.isFilterLoading) {
@@ -983,7 +905,7 @@ fun DashboardScreen(
                             }
                         )
                     }
-                } else if (searchQuery.isNotEmpty() || selectedProvider != null || selectedDate != null) {
+                } else if (searchQuery.isNotEmpty() || selectedProvider != null) {
                     item {
                         Box(
                             modifier = Modifier
@@ -1004,7 +926,6 @@ fun DashboardScreen(
                 if (
                     screenState.uiState is DashboardUiState.Success &&
                     !screenState.isFilterLoading &&
-                    selectedDate != "custom" &&
                     nextDays != null &&
                     (filteredList.isNotEmpty() || selectedProviderName != null)
                 ) {
@@ -1038,6 +959,54 @@ fun DashboardScreen(
             }
 
             if (screenState.selectedTab == 1) {
+                item {
+                    OutlinedTextField(
+                        value = archiveSearchQuery,
+                        onValueChange = { archiveSearchQuery = SearchInputLimits.clamp(it) },
+                        placeholder = {
+                            Text(
+                                text = "এসএমএস খুঁজুন...",
+                                color = TextMuted,
+                                fontSize = 13.sp
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search Archive",
+                                tint = AccentCyan,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            if (archiveSearchQuery.isNotEmpty()) {
+                                IconButton(onClick = { archiveSearchQuery = "" }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Clear Search",
+                                        tint = TextMuted,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = AccentCyan,
+                            unfocusedBorderColor = TextMuted.copy(alpha = 0.3f),
+                            focusedTextColor = TextWhite,
+                            unfocusedTextColor = TextWhite,
+                            cursorColor = AccentCyan,
+                            focusedContainerColor = DashCard,
+                            unfocusedContainerColor = DashCard
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
+
                 if (screenState.isCustomArchivesLoading) {
                     items(5) {
                         Box(
@@ -1060,10 +1029,10 @@ fun DashboardScreen(
                     item {
                         ErrorCard(
                             message = screenState.customArchivesError!!,
-                            onRetry = { viewModel.loadCustomArchives() }
+                            onRetry = { viewModel.loadCustomArchives(archiveSearchQuery) }
                         )
                     }
-                } else if (screenState.customArchives.isEmpty()) {
+                } else if (filteredArchives.isEmpty()) {
                     item {
                         Column(
                             modifier = Modifier
@@ -1079,7 +1048,11 @@ fun DashboardScreen(
                                 modifier = Modifier.size(56.dp)
                             )
                             Text(
-                                text = "কাস্টম আর্কাইভে কোনো বার্তা নেই",
+                                text = if (archiveSearchQuery.isNotBlank()) {
+                                    "কোনো ম্যাচিং আর্কাইভ এসএমএস পাওয়া যায়নি"
+                                } else {
+                                    "কাস্টম আর্কাইভে কোনো বার্তা নেই"
+                                },
                                 color = TextMuted,
                                 fontSize = 14.sp,
                                 textAlign = TextAlign.Center
@@ -1088,7 +1061,7 @@ fun DashboardScreen(
                     }
                 } else {
                     items(
-                        items = screenState.customArchives,
+                        items = filteredArchives,
                         key = { it.id }
                     ) { archive ->
                         CustomArchiveRow(
@@ -1096,54 +1069,40 @@ fun DashboardScreen(
                             modifier = Modifier.padding(horizontal = 16.dp)
                         )
                     }
-                }
-            }
-        }
-    }
 
-    if (screenState.uiState is DashboardUiState.Success && !isPaid) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xE60B0E14)) // Semi-transparent dark overlay
-                .padding(24.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = DashCard),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
-                modifier = Modifier.fillMaxWidth().padding(16.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = "Expired",
-                        tint = StatusRed,
-                        modifier = Modifier.size(56.dp)
-                    )
-                    Text(
-                        text = "প্যাকেজের মেয়াদ শেষ",
-                        color = TextWhite,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    )
-                    Text(
-                        text = "আপনার সাবস্ক্রিপশন বা ফ্রি ট্রায়াল প্যাকেজের মেয়াদ শেষ হয়ে গেছে। এসএমএস মনিটরিং সচল করতে অনুগ্রহ করে একটি প্যাকেজ কিনুন বা রিনিউ করুন।",
-                        color = TextMuted,
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.Center
-                    )
-                    Button(
-                        onClick = onNavigateToSubscription,
-                        colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo),
-                        modifier = Modifier.fillMaxWidth()
+                    val nextArchiveDays = screenState.archiveHistoryTier.nextArchiveHistoryDays()
+                    if (
+                        archiveSearchQuery.isBlank() &&
+                        !screenState.isCustomArchivesLoading &&
+                        filteredArchives.isNotEmpty() &&
+                        nextArchiveDays != null
                     ) {
-                        Text("প্যাকেজ কিনুন (Buy Package)", color = Color.White, fontWeight = FontWeight.Bold)
+                        item {
+                            OutlinedButton(
+                                onClick = { viewModel.loadMoreArchives() },
+                                enabled = !screenState.isLoadingMoreArchives,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, AccentCyan.copy(alpha = 0.5f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentCyan)
+                            ) {
+                                if (screenState.isLoadingMoreArchives) {
+                                    CircularProgressIndicator(
+                                        color = AccentCyan,
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Text(
+                                    text = historyLoadMoreLabelBn(nextArchiveDays),
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -2315,83 +2274,38 @@ fun SubscriptionPurchaseDialog(
     )
 }
 
-private fun isDateMatching(
-    rawTimestamp: String,
-    filter: String?,
-    customStartDate: Long? = null,
-    customEndDate: Long? = null
-): Boolean {
-    if (filter == null || filter == "all") return true
-    return try {
-        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
-        val date = sdf.parse(rawTimestamp) ?: return false
-
-        val todayCal = java.util.Calendar.getInstance().apply {
-            set(java.util.Calendar.HOUR_OF_DAY, 0)
-            set(java.util.Calendar.MINUTE, 0)
-            set(java.util.Calendar.SECOND, 0)
-            set(java.util.Calendar.MILLISECOND, 0)
-        }
-        val todayMidnight = todayCal.timeInMillis
-
-        val trxCal = java.util.Calendar.getInstance().apply {
-            time = date
-            set(java.util.Calendar.HOUR_OF_DAY, 0)
-            set(java.util.Calendar.MINUTE, 0)
-            set(java.util.Calendar.SECOND, 0)
-            set(java.util.Calendar.MILLISECOND, 0)
-        }
-        val trxMidnight = trxCal.timeInMillis
-
-        when (filter) {
-            "today" -> trxMidnight == todayMidnight
-            "last_2_days" -> {
-                val limit = todayMidnight - 1 * 24L * 60 * 60 * 1000
-                trxMidnight >= limit
-            }
-            "last_7_days" -> {
-                val limit = todayMidnight - 6 * 24L * 60 * 60 * 1000
-                trxMidnight >= limit
-            }
-            "last_15_days" -> {
-                val limit = todayMidnight - 14 * 24L * 60 * 60 * 1000
-                trxMidnight >= limit
-            }
-            "last_21_days" -> {
-                val limit = todayMidnight - 20 * 24L * 60 * 60 * 1000
-                trxMidnight >= limit
-            }
-            "last_30_days" -> {
-                val limit = todayMidnight - 29 * 24L * 60 * 60 * 1000
-                trxMidnight >= limit
-            }
-            "custom" -> {
-                val localStart = customStartDate?.let { utcMidnightToLocalMidnight(it) }
-                val localEnd = customEndDate?.let { utcMidnightToLocalMidnight(it) }
-                val matchesStart = localStart == null || trxMidnight >= localStart
-                val matchesEnd = localEnd == null || trxMidnight <= localEnd
-                matchesStart && matchesEnd
-            }
-            else -> true
-        }
-    } catch (e: Exception) {
-        false
-    }
+private fun normalizeSmsSearchText(raw: String): String {
+    return raw
+        .replace('\u00A0', ' ')
+        .replace(Regex("[\\r\\n\\t]+"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+        .lowercase(Locale.US)
 }
 
-private fun utcMidnightToLocalMidnight(utcMs: Long): Long {
-    val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply {
-        timeInMillis = utcMs
+/** Match archive rows for keyword or full-SMS paste (whitespace-tolerant). */
+private fun matchesCustomArchiveSearch(
+    item: online.paychek.app.data.remote.dto.CustomArchiveItem,
+    query: String
+): Boolean {
+    val q = normalizeSmsSearchText(query)
+    if (q.isEmpty()) return true
+
+    val fullSms = normalizeSmsSearchText(item.fullSms)
+    val sender = normalizeSmsSearchText(item.senderId.orEmpty())
+    val provider = normalizeSmsSearchText(item.providerTag)
+    val haystack = listOf(fullSms, sender, provider).filter { it.isNotEmpty() }.joinToString(" ")
+
+    if (haystack.contains(q) || fullSms.contains(q)) return true
+    // Pasted SMS may wrap the stored body (or vice versa)
+    if (q.length >= 24 && (q.contains(fullSms) || fullSms.contains(q.take(120)))) return true
+
+    val tokens = q.split(' ').filter { it.length >= 4 }
+    if (tokens.size >= 3) {
+        val hit = tokens.count { token -> fullSms.contains(token) || haystack.contains(token) }
+        if (hit >= ((tokens.size * 2) + 2) / 3) return true
     }
-    return java.util.Calendar.getInstance().apply {
-        set(
-            utcCal.get(java.util.Calendar.YEAR),
-            utcCal.get(java.util.Calendar.MONTH),
-            utcCal.get(java.util.Calendar.DAY_OF_MONTH),
-            0, 0, 0
-        )
-        set(java.util.Calendar.MILLISECOND, 0)
-    }.timeInMillis
+    return sender.contains(q) || provider.contains(q)
 }
 
 @Composable

@@ -45,12 +45,18 @@ data class SmsTemplatesResponse(
 data class GlobalBlockedSendersResponse(
     @SerializedName("success") val success: Boolean,
     @SerializedName("senders") val senders: List<String>? = null,
+    @SerializedName("chip_label") val chipLabel: String? = null,
+    @SerializedName("popup_title") val popupTitle: String? = null,
+    @SerializedName("popup_notice") val popupNotice: String? = null,
     @SerializedName("message") val message: String? = null,
     @SerializedName("error") val error: String? = null
 )
 
 data class SaveGlobalBlockedSendersRequest(
-    @SerializedName("senders") val senders: List<String>
+    @SerializedName("senders") val senders: List<String>,
+    @SerializedName("chip_label") val chipLabel: String? = null,
+    @SerializedName("popup_title") val popupTitle: String? = null,
+    @SerializedName("popup_notice") val popupNotice: String? = null
 )
 
 data class SmsTemplateReorderItem(

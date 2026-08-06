@@ -41,6 +41,9 @@ import online.paychek.app.ui.components.plan.addonPermissionLines
 import online.paychek.app.ui.components.plan.subscriptionPermissionLines
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
+import online.paychek.app.data.remote.dto.V3AdminAddonCatalogDto
+import online.paychek.app.data.remote.dto.V3AdminAddonUpdateRequest
+import androidx.compose.material.icons.filled.Info
 import online.paychek.app.ui.screen.admin.AdminDashboardViewModel.Companion.billingTabLabel
 import online.paychek.app.ui.screen.admin.AdminDashboardViewModel.Companion.normalizePlanCategory
 
@@ -124,6 +127,13 @@ fun BillingConfigScreen(
     var adminPlanTab by remember { mutableStateOf(0) }
     var previewSubscriptionPlan by remember { mutableStateOf<SubscriptionPlanDto?>(null) }
     var previewAddonPlan by remember { mutableStateOf<AddonPlanDto?>(null) }
+
+    var editingV3Addon by remember { mutableStateOf<V3AdminAddonCatalogDto?>(null) }
+    var v3AddonDisplayName by remember { mutableStateOf("") }
+    var v3AddonPrice1m by remember { mutableStateOf("") }
+    var v3AddonPrice6m by remember { mutableStateOf("") }
+    var v3AddonPrice12m by remember { mutableStateOf("") }
+    var v3AddonInfoText by remember { mutableStateOf("") }
 
     val tabOrder = remember(uiState.billingTabOrder) {
         AdminDashboardViewModel.normalizeBillingTabOrder(uiState.billingTabOrder)
@@ -804,6 +814,97 @@ fun BillingConfigScreen(
         )
     }
 
+    editingV3Addon?.let { addon ->
+        AlertDialog(
+            onDismissRequest = { if (!uiState.isSaving) editingV3Addon = null },
+            title = {
+                Text(
+                    text = "${v3AddonFallbackLabel(addon.addonKey)} — এডিট",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = v3AddonDisplayName,
+                        onValueChange = { v3AddonDisplayName = it },
+                        label = { Text("ডিসপ্লে নাম") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = v3AddonPrice1m,
+                            onValueChange = { v3AddonPrice1m = it.filter { c -> c.isDigit() } },
+                            label = { Text("১ মাস") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = v3AddonPrice6m,
+                            onValueChange = { v3AddonPrice6m = it.filter { c -> c.isDigit() } },
+                            label = { Text("৬ মাস") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = v3AddonPrice12m,
+                            onValueChange = { v3AddonPrice12m = it.filter { c -> c.isDigit() } },
+                            label = { Text("১ বছর") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    OutlinedTextField(
+                        value = v3AddonInfoText,
+                        onValueChange = { v3AddonInfoText = it },
+                        label = { Text("ইনফো টেক্সট (ℹ️ পপআপ)") },
+                        minLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.saveV3AddonCatalog(
+                            addonKey = addon.addonKey,
+                            request = V3AdminAddonUpdateRequest(
+                                displayName = v3AddonDisplayName.trim(),
+                                price1m = v3AddonPrice1m.toDoubleOrNull() ?: 0.0,
+                                price6m = v3AddonPrice6m.toDoubleOrNull() ?: 0.0,
+                                price12m = v3AddonPrice12m.toDoubleOrNull() ?: 0.0,
+                                infoText = v3AddonInfoText.trim().ifBlank { null },
+                                isActive = addon.isActive
+                            )
+                        ) { ok ->
+                            if (ok) {
+                                editingV3Addon = null
+                                Toast.makeText(context, "অ্যাড-অন সেভ হয়েছে", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    enabled = !uiState.isSaving && v3AddonDisplayName.isNotBlank()
+                ) {
+                    if (uiState.isSaving) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("সেভ")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingV3Addon = null }, enabled = !uiState.isSaving) {
+                    Text("বাতিল")
+                }
+            }
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -1006,6 +1107,78 @@ fun BillingConfigScreen(
                 )
             } else {
                 Text("ট্রায়াল সেটিংস সেভ", color = MaterialTheme.colorScheme.onPrimary)
+            }
+        }
+
+        HorizontalDivider(color = TextSecondary.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
+
+        Text(
+            text = "🔌 অ্যাড-অন সুবিধা (V3)",
+            color = TextPrimary,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = "চেকআউটে অ্যাড-অন হিসেবে দেখানো হবে — দাম ও ইনফো টেক্সট এখান থেকে নিয়ন্ত্রণ করুন।",
+            color = TextSecondary,
+            fontSize = 12.sp,
+            lineHeight = 16.sp
+        )
+
+        val v3AddonOrder = listOf("gateway_permission", "custom_sender", "smart_popup")
+        v3AddonOrder.forEach { addonKey ->
+            val addon = uiState.v3AddonCatalog.firstOrNull { it.addonKey == addonKey }
+                ?: V3AdminAddonCatalogDto(
+                    addonKey = addonKey,
+                    displayName = v3AddonFallbackLabel(addonKey),
+                    price1m = 0.0,
+                    price6m = 0.0,
+                    price12m = 0.0,
+                    infoText = null,
+                    isActive = true
+                )
+            Card(
+                colors = CardDefaults.cardColors(containerColor = CardBackground),
+                shape = RoundedCornerShape(10.dp),
+                border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = addon.displayName,
+                            color = TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "১ম: ৳${addon.price1m.toInt()} · ৬ম: ৳${addon.price6m.toInt()} · ১২ম: ৳${addon.price12m.toInt()}",
+                            color = TextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            editingV3Addon = addon
+                            v3AddonDisplayName = addon.displayName
+                            v3AddonPrice1m = addon.price1m.toInt().toString()
+                            v3AddonPrice6m = addon.price6m.toInt().toString()
+                            v3AddonPrice12m = addon.price12m.toInt().toString()
+                            v3AddonInfoText = addon.infoText.orEmpty()
+                        },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("এডিট", fontSize = 12.sp)
+                    }
+                }
             }
         }
 
@@ -1331,4 +1504,11 @@ private fun TrialPermSwitchRow(
             Switch(checked = checked, onCheckedChange = onCheckedChange)
         }
     }
+}
+
+private fun v3AddonFallbackLabel(addonKey: String): String = when (addonKey) {
+    "gateway_permission" -> "গেটওয়ে পারমিশন"
+    "custom_sender" -> "কাস্টম সেন্ডার আইডি"
+    "smart_popup" -> "স্মার্ট পপআপ"
+    else -> addonKey
 }

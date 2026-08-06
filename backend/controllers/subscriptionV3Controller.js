@@ -231,6 +231,38 @@ async function adminGetSettings(req, res) {
   }
 }
 
+async function adminListAddonCatalog(req, res) {
+  try {
+    const { listAllAddonCatalogAdmin } = require('../services/subscriptionV3/addonCatalogAdminService');
+    const addons = await listAllAddonCatalogAdmin();
+    return res.json({ success: true, addons });
+  } catch (err) {
+    console.error('[V3] adminListAddonCatalog', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function adminUpdateAddonCatalog(req, res) {
+  try {
+    const { updateAddonCatalog } = require('../services/subscriptionV3/addonCatalogAdminService');
+    const { addonKey } = req.params;
+    const result = await updateAddonCatalog(addonKey, req.body || {});
+    if (result.error === 'NOT_FOUND') {
+      return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'অ্যাড-অন পাওয়া যায়নি।' });
+    }
+    if (result.error === 'DISPLAY_NAME_REQUIRED') {
+      return res.status(400).json({ success: false, error: result.error, message: 'ডিসপ্লে নাম প্রয়োজন।' });
+    }
+    if (result.error) {
+      return res.status(400).json({ success: false, error: result.error });
+    }
+    return res.json({ success: true, addon: result.addon });
+  } catch (err) {
+    console.error('[V3] adminUpdateAddonCatalog', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 module.exports = {
   getCatalog,
   postQuote,
@@ -243,4 +275,6 @@ module.exports = {
   adminReorderPackages,
   adminUpdateSettings,
   adminGetSettings,
+  adminListAddonCatalog,
+  adminUpdateAddonCatalog,
 };

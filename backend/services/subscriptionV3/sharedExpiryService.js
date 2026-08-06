@@ -32,7 +32,8 @@ async function getUserSubscriptions(userId) {
   await ensureSubscriptionV3Schema();
   const rows = await prisma.$queryRaw`
     SELECT id, user_id, category, package_sku, package_full_name, website_limit_internal,
-           device_limit_internal, duration_key, starts_at, expires_at, status
+           device_limit_internal, duration_key, starts_at, expires_at, status,
+           amount_paid, paid_duration_days, list_price_paid
     FROM user_subscriptions
     WHERE user_id = ${Number(userId)} AND status = 'active'
   `;

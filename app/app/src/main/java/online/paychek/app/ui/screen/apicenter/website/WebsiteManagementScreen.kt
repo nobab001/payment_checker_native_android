@@ -71,6 +71,7 @@ fun WebsiteManagementScreen(
     val bg = MaterialTheme.colorScheme.background
     val card = MaterialTheme.colorScheme.surface
     val isDark = bg == Color(0xFF0B0E14)
+    val maxSites = online.paychek.app.utils.AccountEntitlementsStore.readCached(context).effMaxSites
 
     Scaffold(
         containerColor = bg,
@@ -87,7 +88,17 @@ fun WebsiteManagementScreen(
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { showWizard = true },
+                onClick = {
+                    if (maxSites > 0 && state.websites.size >= maxSites) {
+                        Toast.makeText(
+                            context,
+                            "👑 লিমিট শেষ! আরও ওয়েবসাইট যুক্ত করতে প্যাকেজ আপগ্রেড করুন।",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        showWizard = true
+                    }
+                },
                 containerColor = AccentCyan,
                 contentColor = Color(0xFF0B0E14),
                 icon = { Icon(Icons.Default.Add, "Add Website") },

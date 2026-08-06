@@ -90,6 +90,9 @@ cron.schedule('1 0 * * *', async () => {
   console.log('[Subscription Guard] Running midnight expiry check...');
   try {
     await runSubscriptionExpiryGuard();
+    const { applyDueDeferredSubscriptions } = require('../services/subscriptionV3/fulfillmentService');
+    const n = await applyDueDeferredSubscriptions();
+    if (n > 0) console.log(`[Subscription Guard] ✅ Applied ${n} deferred downgrade(s).`);
   } catch (err) {
     console.error('[Subscription Guard] ❌ Cron Expiry Error:', err);
   }

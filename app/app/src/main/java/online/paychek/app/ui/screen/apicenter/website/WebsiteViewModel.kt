@@ -114,7 +114,19 @@ class WebsiteViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     loadWebsites()
                 }
-                .onFailure { e -> _state.update { it.copy(isCreating = false, error = e.message) } }
+                .onFailure { e ->
+                    val msg = e.message.orEmpty()
+                    // Limit is gated on the + button; don't toast LIMIT again on "লক করে তৈরি".
+                    val isLimit =
+                        msg.contains("লিমিট") ||
+                            msg.contains("LIMIT_EXCEEDED", ignoreCase = true)
+                    _state.update {
+                        it.copy(
+                            isCreating = false,
+                            error = if (isLimit) null else e.message
+                        )
+                    }
+                }
         }
     }
 

@@ -8,8 +8,8 @@
  *   (prefer used_at, else sms_timestamp, else created_at).
  *
  * custom_sms_archives:
- *   1) Delete rows older than ARCHIVE_MAX_AGE_DAYS
- *   2) Keep at most ARCHIVE_MAX_PER_USER newest rows per user; delete older surplus
+ *   Delete rows older than ARCHIVE_MAX_AGE_DAYS (rolling 15-day window).
+ *   No per-user row cap.
  *
  * Load control: small delete batches + short sleep between users / batches.
  */
@@ -17,8 +17,8 @@
 const prisma = require('../db/prisma');
 
 const HISTORY_SOLD_OUT_DAYS = 30;
-const ARCHIVE_MAX_AGE_DAYS = 45;
-const ARCHIVE_MAX_PER_USER = 1000;
+/** Rolling window: keep last 15 days of custom archives; day 16+ cut nightly. */
+const ARCHIVE_MAX_AGE_DAYS = 15;
 
 /** Rows deleted per DELETE statement — keeps locks short */
 const DELETE_BATCH_SIZE = 400;
@@ -89,6 +89,7 @@ async function cleanupSoldOutSmsHistory(stats) {
 
 /**
  * Delete archive rows older than ARCHIVE_MAX_AGE_DAYS (all users, batched).
+ * No per-user row cap — retention is time-based (rolling 15 days) only.
  */
 async function cleanupArchiveByAge(stats) {
   const cutoff = daysAgo(ARCHIVE_MAX_AGE_DAYS);
@@ -132,81 +133,6 @@ async function cleanupArchiveByAge(stats) {
 }
 
 /**
- * Per-user: keep newest ARCHIVE_MAX_PER_USER archives; delete older surplus.
- */
-async function cleanupArchiveOverCap(stats) {
-  const userGroups = await prisma.custom_sms_archives.groupBy({
-    by: ['user_id'],
-    _count: { _all: true },
-  });
-
-  const oversized = userGroups.filter(
-    (g) => (g._count?._all || 0) > ARCHIVE_MAX_PER_USER
-  );
-
-  for (const group of oversized) {
-    if (MAX_DELETES_PER_RUN > 0 && stats.totalDeleted >= MAX_DELETES_PER_RUN) {
-      stats.capped = true;
-      break;
-    }
-
-    const userId = group.user_id;
-
-    // Newest N kept → first row after skip is the oldest among those to delete boundary
-    const cutoff = await prisma.custom_sms_archives.findMany({
-      where: { user_id: userId },
-      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
-      skip: ARCHIVE_MAX_PER_USER,
-      take: 1,
-      select: { id: true, created_at: true },
-    });
-
-    if (!cutoff.length) {
-      await sleep(COOLDOWN_MS);
-      continue;
-    }
-
-    // Delete older than the Nth newest: created_at < cutoff OR same time with smaller id
-    // Simpler & safe: delete by id list in batches using id ASC among surplus
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      if (MAX_DELETES_PER_RUN > 0 && stats.totalDeleted >= MAX_DELETES_PER_RUN) {
-        stats.capped = true;
-        break;
-      }
-
-      const remainingBudget =
-        MAX_DELETES_PER_RUN > 0
-          ? Math.min(DELETE_BATCH_SIZE, MAX_DELETES_PER_RUN - stats.totalDeleted)
-          : DELETE_BATCH_SIZE;
-
-      const surplus = await prisma.custom_sms_archives.findMany({
-        where: { user_id: userId },
-        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
-        skip: ARCHIVE_MAX_PER_USER,
-        take: remainingBudget,
-        select: { id: true },
-      });
-
-      if (!surplus.length) break;
-
-      const ids = surplus.map((r) => r.id);
-      const result = await prisma.custom_sms_archives.deleteMany({
-        where: { user_id: userId, id: { in: ids } },
-      });
-      const n = result.count || 0;
-      stats.archiveCapDeleted += n;
-      stats.totalDeleted += n;
-
-      await sleep(COOLDOWN_MS);
-      if (n < remainingBudget) break;
-    }
-
-    await sleep(COOLDOWN_MS);
-  }
-}
-
-/**
  * Full nightly retention run.
  */
 async function runSmsRetentionCleanup() {
@@ -221,16 +147,13 @@ async function runSmsRetentionCleanup() {
 
   console.log(
     `[SMS Retention] Start | history sold-out ≥${HISTORY_SOLD_OUT_DAYS}d | ` +
-      `archive age ≥${ARCHIVE_MAX_AGE_DAYS}d | archive max ${ARCHIVE_MAX_PER_USER}/user | ` +
+      `archive age ≥${ARCHIVE_MAX_AGE_DAYS}d (rolling window, no row cap) | ` +
       `batch=${DELETE_BATCH_SIZE} cooldown=${COOLDOWN_MS}ms`
   );
 
   await cleanupSoldOutSmsHistory(stats);
   if (!stats.capped) {
     await cleanupArchiveByAge(stats);
-  }
-  if (!stats.capped) {
-    await cleanupArchiveOverCap(stats);
   }
 
   const ms = Date.now() - startedAt;
@@ -248,5 +171,4 @@ module.exports = {
   runSmsRetentionCleanup,
   HISTORY_SOLD_OUT_DAYS,
   ARCHIVE_MAX_AGE_DAYS,
-  ARCHIVE_MAX_PER_USER,
 };

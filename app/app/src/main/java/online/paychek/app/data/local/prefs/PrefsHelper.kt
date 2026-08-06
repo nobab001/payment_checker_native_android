@@ -180,6 +180,21 @@ object PrefsHelper {
         prefs(context).edit().putLong("sms_history_last_sync_v1", timestamp).apply()
     }
 
+    fun getArchiveLastSync(context: Context): Long {
+        return prefs(context).getLong("custom_archive_last_sync_v1", 0L)
+    }
+
+    fun setArchiveLastSync(context: Context, timestamp: Long) {
+        prefs(context).edit().putLong("custom_archive_last_sync_v1", timestamp).apply()
+    }
+
+    fun getCustomArchiveBundle(context: Context): String =
+        prefs(context).getString("custom_archive_bundle_v1", "").orEmpty()
+
+    fun setCustomArchiveBundle(context: Context, json: String) {
+        prefs(context).edit().putString("custom_archive_bundle_v1", json).apply()
+    }
+
     fun getTransactionHistoryBundle(context: Context): String =
         prefs(context).getString("txn_history_bundle_v1", "").orEmpty()
 
@@ -232,6 +247,8 @@ object PrefsHelper {
             .remove(AppConfig.KEY_SMS_TEMPLATES_CACHE)
             .remove(KEY_LAST_WORKER_SYNC_MS)
             .remove("sms_history_last_sync_v1")
+            .remove("custom_archive_last_sync_v1")
+            .remove("custom_archive_bundle_v1")
             .remove("txn_history_bundle_v1")
             .remove(AppConfig.KEY_DASHBOARD_STATS_CACHE)
             .remove("gateway_methods_last_sync_v2")

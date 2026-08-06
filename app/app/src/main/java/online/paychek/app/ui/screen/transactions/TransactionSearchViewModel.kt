@@ -15,6 +15,7 @@ import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.services.connectivity.ConnectionEngine
 import online.paychek.app.utils.RefreshCooldown
 import online.paychek.app.utils.BangladeshTimeUtil
+import online.paychek.app.utils.SearchInputLimits
 import online.paychek.app.data.remote.api.RetrofitClient
 import online.paychek.app.data.remote.dto.SmsTemplateDto
 import online.paychek.app.data.local.prefs.PrefsHelper
@@ -217,8 +218,9 @@ class TransactionSearchViewModel(application: Application) : AndroidViewModel(ap
     }
 
     fun onSearchQueryChanged(query: String) {
-        _state.update { it.copy(searchQuery = query) }
-        _searchQuery.value = query
+        val clamped = SearchInputLimits.clamp(query)
+        _state.update { it.copy(searchQuery = clamped) }
+        _searchQuery.value = clamped
     }
 
     fun onProviderFilterChanged(filter: String) {

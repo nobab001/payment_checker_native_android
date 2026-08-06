@@ -75,6 +75,9 @@ data class DeviceUiState(
     val hasDevicePermission: Boolean          = true,
     val showPermissionDialog: Boolean         = false,
     val permissionDialogMessage: String?      = null,
+    val customAllChipLabel: String            = online.paychek.app.utils.AccountEntitlementsStore.DEFAULT_CUSTOM_ALL_CHIP,
+    val customAllPopupTitle: String           = online.paychek.app.utils.AccountEntitlementsStore.DEFAULT_CUSTOM_ALL_TITLE,
+    val customAllPopupNotice: String          = online.paychek.app.utils.AccountEntitlementsStore.DEFAULT_CUSTOM_ALL_NOTICE,
     val pendingSimConflict: SimConflictUi?      = null,
 
     // Account-wide active numbers modal
@@ -184,7 +187,13 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 isLoading = cachedList.isEmpty(),
                 hasCustomSenderPermission = cachedEnt.hasCustomSender,
                 hasTemplatePermission = cachedEnt.hasTemplate,
-                hasDevicePermission = cachedEnt.hasDevice
+                hasDevicePermission = cachedEnt.hasDevice,
+                customAllChipLabel = cachedEnt.customAllChipLabel?.takeIf { s -> s.isNotBlank() }
+                    ?: online.paychek.app.utils.AccountEntitlementsStore.DEFAULT_CUSTOM_ALL_CHIP,
+                customAllPopupTitle = cachedEnt.customAllPopupTitle?.takeIf { s -> s.isNotBlank() }
+                    ?: online.paychek.app.utils.AccountEntitlementsStore.DEFAULT_CUSTOM_ALL_TITLE,
+                customAllPopupNotice = cachedEnt.customAllPopupNotice?.takeIf { s -> s.isNotBlank() }
+                    ?: online.paychek.app.utils.AccountEntitlementsStore.DEFAULT_CUSTOM_ALL_NOTICE
             ) 
         }
         lastConfirmedLookupNumber[1] = cachedSim1Num
@@ -381,6 +390,26 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
     fun toggleMethod(method: GatewayMethod) {
         val newEnabled = if (method.isEnabled == 1) 0 else 1
+        if (newEnabled == 1) {
+            val isArchive =
+                (method.isParseable ?: 1) == 0 ||
+                    online.paychek.app.services.sms.SmsRoutingEngine.isAllSenderPolicy(method)
+            val isOfficialTemplate =
+                method.templateId != null && (method.isParseable ?: 1) == 1
+            if (isArchive && !_state.value.hasCustomSenderPermission) {
+                _state.update { it.copy(showPremiumUpgradeDialog = true) }
+                return
+            }
+            if (isOfficialTemplate && !_state.value.hasTemplatePermission) {
+                _state.update {
+                    it.copy(
+                        showPermissionDialog = true,
+                        permissionDialogMessage = "আপনার প্যাকেজে টেমপ্লেট সিলেক্ট করার পারমিশন নেই। গেটওয়ে বা বিজনেস প্যাকেজ কিনুন।"
+                    )
+                }
+                return
+            }
+        }
 
         _state.update { current ->
             val updated = current.methods.map {
@@ -942,6 +971,26 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     fun remoteToggleMethod(method: GatewayMethod) {
         val deviceId = activeRemoteDeviceId() ?: return
         val newEnabled = if (method.isEnabled == 1) 0 else 1
+        if (newEnabled == 1) {
+            val isArchive =
+                (method.isParseable ?: 1) == 0 ||
+                    online.paychek.app.services.sms.SmsRoutingEngine.isAllSenderPolicy(method)
+            val isOfficialTemplate =
+                method.templateId != null && (method.isParseable ?: 1) == 1
+            if (isArchive && !_state.value.hasCustomSenderPermission) {
+                _state.update { it.copy(showPremiumUpgradeDialog = true) }
+                return
+            }
+            if (isOfficialTemplate && !_state.value.hasTemplatePermission) {
+                _state.update {
+                    it.copy(
+                        showPermissionDialog = true,
+                        permissionDialogMessage = "আপনার প্যাকেজে টেমপ্লেট সিলেক্ট করার পারমিশন নেই।"
+                    )
+                }
+                return
+            }
+        }
         _state.update { current ->
             val updated = current.remoteGatewayMethods.map {
                 if (it.id == method.id) it.copy(isEnabled = newEnabled) else it
@@ -2022,13 +2071,111 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
                 it.copy(
                     hasCustomSenderPermission = ent.hasCustomSender,
                     hasTemplatePermission = ent.hasTemplate,
-                    hasDevicePermission = ent.hasDevice
+                    hasDevicePermission = ent.hasDevice,
+                    customAllChipLabel = ent.customAllChipLabel?.takeIf { s -> s.isNotBlank() }
+                        ?: online.paychek.app.utils.AccountEntitlementsStore.DEFAULT_CUSTOM_ALL_CHIP,
+                    customAllPopupTitle = ent.customAllPopupTitle?.takeIf { s -> s.isNotBlank() }
+                        ?: online.paychek.app.utils.AccountEntitlementsStore.DEFAULT_CUSTOM_ALL_TITLE,
+                    customAllPopupNotice = ent.customAllPopupNotice?.takeIf { s -> s.isNotBlank() }
+                        ?: online.paychek.app.utils.AccountEntitlementsStore.DEFAULT_CUSTOM_ALL_NOTICE
                 )
+            }
+            applyLocalEntitlementRevoke(
+                allowCustom = ent.hasCustomSender,
+                allowTemplate = ent.hasTemplate
+            )
+        }
+    }
+
+    /**
+     * Trial/paid downgrade: keep method rows but unmark (disable) features the plan no longer allows.
+     * Server reconcile does the same; this keeps the local SMS cache honest immediately.
+     */
+    private fun applyLocalEntitlementRevoke(allowCustom: Boolean, allowTemplate: Boolean) {
+        val current = _state.value.methods
+        if (current.isEmpty()) return
+        var changed = false
+        val updated = current.map { method ->
+            val isArchive =
+                (method.isParseable ?: 1) == 0 ||
+                    online.paychek.app.services.sms.SmsRoutingEngine.isAllSenderPolicy(method)
+            val isOfficialTemplate =
+                method.templateId != null && (method.isParseable ?: 1) == 1
+            val shouldDisable =
+                method.isEnabled == 1 && (
+                    (!allowCustom && isArchive) ||
+                        (!allowTemplate && isOfficialTemplate)
+                    )
+            if (shouldDisable) {
+                changed = true
+                method.copy(isEnabled = 0)
+            } else {
+                method
+            }
+        }
+        if (!changed) return
+        saveMethodsToCache(updated)
+        _state.update { it.copy(methods = updated) }
+        // Best-effort server sync for enabled→disabled flips
+        val token = getToken() ?: return
+        viewModelScope.launch {
+            updated.zip(current).forEach { (newM, oldM) ->
+                if (oldM.isEnabled == 1 && newM.isEnabled == 0 && newM.id > 0) {
+                    runCatching {
+                        api.toggleMethod("Bearer $token", newM.id, ToggleRequest(0))
+                    }
+                }
             }
         }
     }
 
     fun refreshAccountEntitlements() = loadAccountEntitlements()
+
+    /** Toggle per-SIM Custom ALL archive chip. */
+    fun toggleCustomAll(simSlot: Int) {
+        if (!_state.value.hasCustomSenderPermission) {
+            // UI expands chip first; second click calls showCustomAllDeniedDialog().
+            return
+        }
+        val existing = _state.value.methods.find {
+            it.simSlot == simSlot &&
+                online.paychek.app.services.sms.SmsRoutingEngine.isAllSenderPolicy(it)
+        }
+        if (existing != null) {
+            toggleMethod(existing)
+            return
+        }
+        // Create ALL policy via existing API
+        addCustomSender(
+            simSlot = simSlot,
+            senderId = online.paychek.app.services.sms.SmsRoutingEngine.ALL_SENDER_ID,
+            onSuccess = {}
+        )
+    }
+
+    fun showCustomAllDeniedDialog() {
+        _state.update { it.copy(showPremiumUpgradeDialog = true) }
+    }
+
+    /** Toggle remote device per-SIM Custom ALL archive chip. */
+    fun remoteToggleCustomAll(simSlot: Int) {
+        if (!_state.value.hasCustomSenderPermission) {
+            return
+        }
+        val existing = _state.value.remoteGatewayMethods.find {
+            it.simSlot == simSlot &&
+                online.paychek.app.services.sms.SmsRoutingEngine.isAllSenderPolicy(it)
+        }
+        if (existing != null) {
+            remoteToggleMethod(existing)
+            return
+        }
+        remoteAddCustomSender(
+            simSlot = simSlot,
+            senderId = online.paychek.app.services.sms.SmsRoutingEngine.ALL_SENDER_ID,
+            onSuccess = {}
+        )
+    }
 
     fun addCustomSender(
         simSlot: Int,

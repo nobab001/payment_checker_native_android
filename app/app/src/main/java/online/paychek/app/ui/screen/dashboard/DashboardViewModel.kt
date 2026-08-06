@@ -27,8 +27,12 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.stateIn
 import online.paychek.app.ui.common.HistoryLoadTier
+import online.paychek.app.ui.common.nextArchiveHistoryDays
 import online.paychek.app.ui.common.nextHistoryDays
 import online.paychek.app.ui.common.tierForHistoryDays
+import online.paychek.app.data.local.prefs.PrefsHelper
+import online.paychek.app.utils.GsonUtils
+import com.google.gson.reflect.TypeToken
 
 // =============================================================================
 // UI State — Dashboard স্ক্রিনের সম্পূর্ণ অবস্থা
@@ -66,6 +70,9 @@ data class DashboardScreenState(
     val customArchives: List<CustomArchiveItem> = emptyList(),
     val isCustomArchivesLoading: Boolean = false,
     val customArchivesError: String?   = null,
+    /** Progressive archive: INITIAL_20 → 7d → 15d */
+    val archiveHistoryTier: HistoryLoadTier = HistoryLoadTier.INITIAL_20,
+    val isLoadingMoreArchives: Boolean = false,
     val lastUpdatedAtMs: Long?         = null
 )
 
@@ -355,15 +362,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         return RefreshCooldown.tryRefresh {
             _state.update { it.copy(isRefreshing = true) }
             if (_state.value.selectedTab == 1) {
-                viewModelScope.launch {
-                    loadCustomArchives()
-                    _state.update {
-                        it.copy(
-                            isRefreshing = false,
-                            lastUpdatedAtMs = System.currentTimeMillis()
-                        )
-                    }
-                }
+                loadCustomArchives(forceNetwork = true)
             } else {
                 loadDashboardStats()
             }
@@ -515,23 +514,155 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         prefs.edit().putInt("pcu_default_dashboard_tab", tabIndex).apply()
     }
 
-    fun loadCustomArchives() {
+    fun loadCustomArchives(query: String = "", forceNetwork: Boolean = false) {
         viewModelScope.launch {
-            _state.update { it.copy(isCustomArchivesLoading = true, customArchivesError = null) }
+            _state.update {
+                it.copy(
+                    isCustomArchivesLoading = true,
+                    customArchivesError = null,
+                    archiveHistoryTier = if (query.isBlank()) {
+                        if (forceNetwork) HistoryLoadTier.INITIAL_20 else it.archiveHistoryTier
+                    } else {
+                        HistoryLoadTier.INITIAL_20
+                    }
+                )
+            }
             val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
             if (token.isEmpty()) {
                 _state.update { it.copy(isCustomArchivesLoading = false, customArchivesError = "লগইন সেশন পাওয়া যায়নি।") }
                 return@launch
             }
-            val result = repository.fetchCustomArchives(token, 1, 20)
+            val trimmed = query.trim()
+            val isBaseline = trimmed.isEmpty()
+            val archiveLastSync = if (!forceNetwork && isBaseline) {
+                PrefsHelper.getArchiveLastSync(getApplication()).takeIf { it > 0L }
+            } else {
+                null
+            }
+            val result = repository.fetchCustomArchives(
+                token = token,
+                page = 1,
+                limit = 20,
+                query = trimmed.ifEmpty { null },
+                archiveLastSync = archiveLastSync
+            )
             result.fold(
-                onSuccess = { archives ->
-                    _state.update { it.copy(customArchives = archives, isCustomArchivesLoading = false) }
+                onSuccess = { pageResult ->
+                    if (pageResult.cacheHit && isBaseline) {
+                        if (_state.value.customArchives.isEmpty()) {
+                            restoreArchivesFromLocalCache()
+                        }
+                        pageResult.archiveVersion?.let {
+                            PrefsHelper.setArchiveLastSync(getApplication(), it)
+                        }
+                        _state.update {
+                            it.copy(
+                                isCustomArchivesLoading = false,
+                                isRefreshing = false,
+                                lastUpdatedAtMs = System.currentTimeMillis(),
+                                archiveHistoryTier = HistoryLoadTier.INITIAL_20
+                            )
+                        }
+                        return@fold
+                    }
+                    pageResult.archiveVersion?.let {
+                        PrefsHelper.setArchiveLastSync(getApplication(), it)
+                    }
+                    if (isBaseline) {
+                        saveArchivesToLocalCache(pageResult.items)
+                    }
+                    _state.update {
+                        it.copy(
+                            customArchives = pageResult.items,
+                            isCustomArchivesLoading = false,
+                            isRefreshing = false,
+                            lastUpdatedAtMs = System.currentTimeMillis(),
+                            archiveHistoryTier = HistoryLoadTier.INITIAL_20
+                        )
+                    }
                 },
                 onFailure = { error ->
-                    _state.update { it.copy(customArchivesError = error.message ?: "আর্কাইভ লোড ব্যর্থ হয়েছে", isCustomArchivesLoading = false) }
+                    if (_state.value.customArchives.isEmpty()) {
+                        restoreArchivesFromLocalCache()
+                    }
+                    _state.update {
+                        it.copy(
+                            customArchivesError = if (it.customArchives.isEmpty()) {
+                                error.message ?: "আর্কাইভ লোড ব্যর্থ হয়েছে"
+                            } else {
+                                null
+                            },
+                            isCustomArchivesLoading = false,
+                            isRefreshing = false
+                        )
+                    }
                 }
             )
+        }
+    }
+
+    /** Progressive archive history: 20 → 7d → 15d (matches rolling retention). */
+    fun loadMoreArchives() {
+        val current = _state.value
+        if (current.isLoadingMoreArchives || current.isCustomArchivesLoading) return
+        val nextDays = current.archiveHistoryTier.nextArchiveHistoryDays() ?: return
+
+        viewModelScope.launch {
+            _state.update { it.copy(isLoadingMoreArchives = true) }
+            val token = SecurePreferences.decrypt(getApplication(), AppConfig.KEY_AUTH_TOKEN)
+            if (token.isEmpty()) {
+                _state.update { it.copy(isLoadingMoreArchives = false) }
+                return@launch
+            }
+            val range = quickDateRange(nextDays)
+            val result = repository.fetchCustomArchives(
+                token = token,
+                page = 1,
+                limit = 50,
+                startDate = range.first,
+                endDate = range.second,
+                archiveLastSync = null
+            )
+            result.fold(
+                onSuccess = { pageResult ->
+                    _state.update {
+                        it.copy(
+                            customArchives = pageResult.items,
+                            archiveHistoryTier = tierForHistoryDays(nextDays),
+                            isLoadingMoreArchives = false
+                        )
+                    }
+                },
+                onFailure = {
+                    _state.update { it.copy(isLoadingMoreArchives = false) }
+                }
+            )
+        }
+    }
+
+    private fun saveArchivesToLocalCache(items: List<CustomArchiveItem>) {
+        try {
+            PrefsHelper.setCustomArchiveBundle(getApplication(), GsonUtils.gson.toJson(items))
+        } catch (_: Exception) { /* ignore */ }
+    }
+
+    private fun restoreArchivesFromLocalCache(): Boolean {
+        return try {
+            val json = PrefsHelper.getCustomArchiveBundle(getApplication())
+            if (json.isBlank()) return false
+            val type = object : TypeToken<List<CustomArchiveItem>>() {}.type
+            val items = GsonUtils.gson.fromJson<List<CustomArchiveItem>>(json, type) ?: return false
+            if (items.isEmpty()) return false
+            _state.update {
+                it.copy(
+                    customArchives = items,
+                    archiveHistoryTier = HistoryLoadTier.INITIAL_20,
+                    customArchivesError = null
+                )
+            }
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 

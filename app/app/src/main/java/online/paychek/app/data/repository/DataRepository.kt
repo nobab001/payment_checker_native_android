@@ -336,13 +336,35 @@ class PaymentRepository {
         }
     }
 
-    suspend fun fetchCustomArchives(token: String, page: Int = 1, limit: Int = 20): Result<List<CustomArchiveItem>> {
+    suspend fun fetchCustomArchives(
+        token: String,
+        page: Int = 1,
+        limit: Int = 20,
+        query: String? = null,
+        startDate: String? = null,
+        endDate: String? = null,
+        archiveLastSync: Long? = null
+    ): Result<CustomArchiveFetchResult> {
         return try {
-            val response = api.getCustomArchives("Bearer $token", page, limit)
+            val response = api.getCustomArchives(
+                token = "Bearer $token",
+                archiveLastSync = archiveLastSync,
+                page = page,
+                limit = limit,
+                query = query,
+                startDate = startDate,
+                endDate = endDate
+            )
             if (response.isSuccessful) {
                 val body = response.body()
                 if (body?.success == true) {
-                    Result.success(body.data)
+                    Result.success(
+                        CustomArchiveFetchResult(
+                            items = body.data,
+                            cacheHit = body.cacheHit == true,
+                            archiveVersion = body.archiveVersion
+                        )
+                    )
                 } else {
                     Result.failure(Exception("কাস্টম আর্কাইভ লোড ব্যর্থ"))
                 }

@@ -58,7 +58,40 @@ data class V3AddonCatalogDto(
     @SerializedName("display_name") val displayName: String,
     @SerializedName("price_1m") val price1m: Double = 0.0,
     @SerializedName("price_6m") val price6m: Double = 0.0,
-    @SerializedName("price_12m") val price12m: Double = 0.0
+    @SerializedName("price_12m") val price12m: Double = 0.0,
+    @SerializedName("info_text") val infoText: String? = null
+)
+
+data class V3AdminAddonCatalogDto(
+    @SerializedName("id") val id: Int? = null,
+    @SerializedName("addon_key") val addonKey: String,
+    @SerializedName("display_name") val displayName: String,
+    @SerializedName("price_1m") val price1m: Double = 0.0,
+    @SerializedName("price_6m") val price6m: Double = 0.0,
+    @SerializedName("price_12m") val price12m: Double = 0.0,
+    @SerializedName("info_text") val infoText: String? = null,
+    @SerializedName("is_active") val isActive: Boolean = true,
+    @SerializedName("sort_order") val sortOrder: Int = 0
+)
+
+data class V3AdminAddonCatalogResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("addons") val addons: List<V3AdminAddonCatalogDto>? = null
+)
+
+data class V3AdminAddonUpdateRequest(
+    @SerializedName("display_name") val displayName: String,
+    @SerializedName("price_1m") val price1m: Double,
+    @SerializedName("price_6m") val price6m: Double,
+    @SerializedName("price_12m") val price12m: Double,
+    @SerializedName("info_text") val infoText: String? = null,
+    @SerializedName("is_active") val isActive: Boolean = true
+)
+
+data class V3AdminAddonUpdateResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("addon") val addon: V3AdminAddonCatalogDto? = null,
+    @SerializedName("message") val message: String? = null
 )
 
 data class V3ActiveSubscriptionDto(
@@ -117,15 +150,21 @@ data class V3QuoteDto(
     @SerializedName("purchase_type") val purchaseType: String,
     @SerializedName("category") val category: String,
     @SerializedName("package_sku") val packageSku: String,
+    @SerializedName("package_code") val packageCode: String? = null,
     @SerializedName("package_full_name") val packageFullName: String,
     @SerializedName("duration_key") val durationKey: String,
     @SerializedName("duration_days") val durationDays: Int,
     @SerializedName("list_price") val listPrice: Double,
     @SerializedName("addon_total") val addonTotal: Double = 0.0,
+    @SerializedName("credit_applied") val creditApplied: Double = 0.0,
     @SerializedName("payable_amount") val payableAmount: Double,
     @SerializedName("remaining_days") val remainingDays: Int = 0,
     @SerializedName("shared_expiry") val sharedExpiry: String? = null,
     @SerializedName("final_expiry") val finalExpiry: String,
+    @SerializedName("deferred") val deferred: Boolean = false,
+    @SerializedName("deferred_starts_at") val deferredStartsAt: String? = null,
+    @SerializedName("old_package_sku") val oldPackageSku: String? = null,
+    @SerializedName("old_package_name") val oldPackageName: String? = null,
     @SerializedName("addons") val addons: List<String>? = null,
     @SerializedName("line_items") val lineItems: List<V3QuoteLineItemDto>? = null,
     @SerializedName("peer_upgrade_lines") val peerUpgradeLines: List<V3PeerUpgradeLineDto>? = null

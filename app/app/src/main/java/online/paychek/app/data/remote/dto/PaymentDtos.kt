@@ -316,7 +316,15 @@ data class CustomArchiveItem(
 
 data class CustomArchiveListResponse(
     val success: Boolean,
-    val data: List<CustomArchiveItem>
+    val data: List<CustomArchiveItem>,
+    @SerializedName("cache_hit") val cacheHit: Boolean? = false,
+    @SerializedName("archive_version") val archiveVersion: Long? = null
+)
+
+data class CustomArchiveFetchResult(
+    val items: List<CustomArchiveItem>,
+    val cacheHit: Boolean = false,
+    val archiveVersion: Long? = null
 )
 
 data class PurchaseAddonResponse(

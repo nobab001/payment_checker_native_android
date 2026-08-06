@@ -328,10 +328,13 @@ fun AdminDashboardScreen(
     if (showGlobalBlockDialog) {
         AdminGlobalAllBlockDialog(
             initialSenders = uiState.globalBlockedSenders,
+            initialChipLabel = uiState.customAllChipLabel,
+            initialPopupTitle = uiState.customAllPopupTitle,
+            initialPopupNotice = uiState.customAllPopupNotice,
             isSaving = uiState.isSaving,
             onDismiss = { showGlobalBlockDialog = false },
-            onSave = { senders ->
-                viewModel.saveGlobalBlockedSenders(senders)
+            onSave = { senders, chipLabel, popupTitle, popupNotice ->
+                viewModel.saveGlobalBlockedSenders(senders, chipLabel, popupTitle, popupNotice)
                 showGlobalBlockDialog = false
             }
         )
@@ -983,12 +986,19 @@ private fun GlobalSettingsTab(
 @Composable
 private fun AdminGlobalAllBlockDialog(
     initialSenders: List<String>,
+    initialChipLabel: String,
+    initialPopupTitle: String,
+    initialPopupNotice: String,
     isSaving: Boolean,
     onDismiss: () -> Unit,
-    onSave: (List<String>) -> Unit
+    onSave: (senders: List<String>, chipLabel: String, popupTitle: String, popupNotice: String) -> Unit
 ) {
     var blocked by remember { mutableStateOf(initialSenders.map { it.trim() }.filter { it.isNotEmpty() }) }
     var draft by remember { mutableStateOf("") }
+    var chipLabel by remember { mutableStateOf(initialChipLabel) }
+    var popupTitle by remember { mutableStateOf(initialPopupTitle) }
+    var popupNotice by remember { mutableStateOf(initialPopupNotice) }
+    var showPopupNoticeEditor by remember { mutableStateOf(false) }
 
     fun addDraft() {
         val value = draft.trim()
@@ -1015,11 +1025,33 @@ private fun AdminGlobalAllBlockDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(
-                    text = "ALL + Block Sender (Global)",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp,
-                    color = TextPrimary
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "ALL + Block Sender (Global)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        color = TextPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(
+                        onClick = { showPopupNoticeEditor = true },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text("পপ আপ নোটিস", fontSize = 12.sp, color = RoyalIndigo, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                OutlinedTextField(
+                    value = chipLabel,
+                    onValueChange = { chipLabel = it },
+                    label = { Text("ডিভাইস চিপ নাম (কাস্টম অল)") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
                 )
 
                 Row(
@@ -1032,7 +1064,12 @@ private fun AdminGlobalAllBlockDialog(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("ALL", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = AccentCyan)
+                        Text(
+                            chipLabel.ifBlank { "কাস্টম অল" },
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = AccentCyan
+                        )
                         Text(
                             text = "সকল এসএমএস আর্কাইভ বক্সে রিসিভ",
                             fontSize = 12.sp,
@@ -1116,7 +1153,12 @@ private fun AdminGlobalAllBlockDialog(
                     Button(
                         onClick = {
                             addDraft()
-                            onSave(blocked)
+                            onSave(
+                                blocked,
+                                chipLabel.trim().ifBlank { "কাস্টম অল" },
+                                popupTitle.trim().ifBlank { initialPopupTitle },
+                                popupNotice.trim().ifBlank { initialPopupNotice }
+                            )
                         },
                         enabled = !isSaving,
                         colors = ButtonDefaults.buttonColors(containerColor = RoyalIndigo)
@@ -1134,6 +1176,46 @@ private fun AdminGlobalAllBlockDialog(
                 }
             }
         }
+    }
+
+    if (showPopupNoticeEditor) {
+        AlertDialog(
+            onDismissRequest = { showPopupNoticeEditor = false },
+            title = { Text("পপ আপ নোটিস", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = popupTitle,
+                        onValueChange = { popupTitle = it },
+                        label = { Text("টাইটেল") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = popupNotice,
+                        onValueChange = { popupNotice = it },
+                        label = { Text("পপআপ বডি (পারমিশন নেই)") },
+                        minLines = 4,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        "যাদের কাস্টম অল পারমিশন নেই, তারা ডিভাইস পেজে এই লেখা দেখবে।",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPopupNoticeEditor = false }) {
+                    Text("ঠিক আছে")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPopupNoticeEditor = false }) {
+                    Text("বন্ধ")
+                }
+            }
+        )
     }
 }
 

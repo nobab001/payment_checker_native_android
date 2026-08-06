@@ -3,6 +3,7 @@ package online.paychek.app.ui.screen.device
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -16,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -104,13 +106,11 @@ fun DeviceScreen(
     viewModel: DeviceViewModel = viewModel()
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var isAccessibilityEnabled by remember { mutableStateOf(true) }
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
             if (state == androidx.lifecycle.Lifecycle.State.RESUMED) {
-                isAccessibilityEnabled = online.paychek.app.utils.AccessibilityHelper.isAccessibilityServiceEnabled(context)
                 viewModel.refreshAccountEntitlements()
                 val remoteOpen = viewModel.state.value.activeRemoteDevice != null
                 if (remoteOpen) {
@@ -155,6 +155,22 @@ fun DeviceScreen(
     var allBlockTargetDeviceId by remember { mutableStateOf<String?>(null) }
     var remoteMethodToDelete by remember { mutableStateOf<GatewayMethod?>(null) }
     var methodToDelete by remember { mutableStateOf<GatewayMethod?>(null) }
+    /** Which SIM's locked Custom-All chip is expanded; null = collapsed. */
+    var expandedCustomAllSim by remember { mutableStateOf<Int?>(null) }
+    val deviceListState = rememberLazyListState()
+
+    LaunchedEffect(state.showPremiumUpgradeDialog) {
+        if (state.showPremiumUpgradeDialog) expandedCustomAllSim = null
+    }
+    LaunchedEffect(deviceListState.isScrollInProgress) {
+        if (deviceListState.isScrollInProgress) expandedCustomAllSim = null
+    }
+    LaunchedEffect(state.selectedSubTab) {
+        expandedCustomAllSim = null
+    }
+    LaunchedEffect(state.activeRemoteDevice?.deviceId) {
+        expandedCustomAllSim = null
+    }
 
     val prefs = remember(context) {
         context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
@@ -267,52 +283,6 @@ fun DeviceScreen(
             ConnectionStatusBanner(banner = banner)
         }
 
-        if (!isAccessibilityEnabled) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFF59E0B)),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .clickable {
-                        online.paychek.app.utils.AccessibilityHelper.openAccessibilitySettings(context)
-                    }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = "Warning",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Text(
-                            text = "এক্সেসিবিলিটি পারমিশন দিন",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-        }
-
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -336,7 +306,19 @@ fun DeviceScreen(
                 )
             } else {
             LazyColumn(
-                modifier            = Modifier.fillMaxSize(),
+                state = deviceListState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (expandedCustomAllSim != null) {
+                            Modifier.clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) { expandedCustomAllSim = null }
+                        } else {
+                            Modifier
+                        }
+                    ),
                 contentPadding      = PaddingValues(bottom = 40.dp),
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
@@ -416,22 +398,41 @@ fun DeviceScreen(
                             simSlot = 1,
                             simNumber = state.sim1Number,
                             simEnabled = state.sim1Enabled,
-                            onSimNumberChange = { viewModel.onSimNumberChanged(1, it) },
-                            onToggleSim = { viewModel.toggleSim(1) },
+                            onSimNumberChange = {
+                                expandedCustomAllSim = null
+                                viewModel.onSimNumberChanged(1, it)
+                            },
+                            onToggleSim = {
+                                expandedCustomAllSim = null
+                                viewModel.toggleSim(1)
+                            },
                             templates = state.templates,
                             methods = state.methods,
-                            onToggleTemplate = { viewModel.toggleTemplate(1, it) },
-                            onAddCustomSenderClick = { slot ->
-                                viewModel.onAddCustomSenderClick(slot) { allowedSlot ->
-                                    activeSimSlotForCustomSender = allowedSlot
-                                    allBlockTargetDeviceId = null
-                                    showAllBlockDialog = true
-                                }
+                            onToggleTemplate = {
+                                expandedCustomAllSim = null
+                                viewModel.toggleTemplate(1, it)
                             },
+                            onToggleCustomAll = { viewModel.toggleCustomAll(1) },
+                            onCustomAllDeniedDetail = {
+                                expandedCustomAllSim = null
+                                viewModel.showCustomAllDeniedDialog()
+                            },
+                            hasCustomSenderPermission = state.hasCustomSenderPermission,
+                            customAllChipLabel = state.customAllChipLabel,
+                            customAllDeniedExpanded = expandedCustomAllSim == 1,
+                            onCustomAllDeniedExpandedChange = { open ->
+                                expandedCustomAllSim = if (open) 1 else null
+                            },
+                            collapseDeniedHintOnBackground = expandedCustomAllSim != null,
+                            onCollapseDeniedHint = { expandedCustomAllSim = null },
                             onDeleteCustomSenderClick = { method ->
+                                expandedCustomAllSim = null
                                 methodToDelete = method
                             },
-                            onToggleMethod = { viewModel.toggleMethod(it) }
+                            onToggleMethod = {
+                                expandedCustomAllSim = null
+                                viewModel.toggleMethod(it)
+                            }
                         )
                     }
 
@@ -441,22 +442,41 @@ fun DeviceScreen(
                             simSlot = 2,
                             simNumber = state.sim2Number,
                             simEnabled = state.sim2Enabled,
-                            onSimNumberChange = { viewModel.onSimNumberChanged(2, it) },
-                            onToggleSim = { viewModel.toggleSim(2) },
+                            onSimNumberChange = {
+                                expandedCustomAllSim = null
+                                viewModel.onSimNumberChanged(2, it)
+                            },
+                            onToggleSim = {
+                                expandedCustomAllSim = null
+                                viewModel.toggleSim(2)
+                            },
                             templates = state.templates,
                             methods = state.methods,
-                            onToggleTemplate = { viewModel.toggleTemplate(2, it) },
-                            onAddCustomSenderClick = { slot ->
-                                viewModel.onAddCustomSenderClick(slot) { allowedSlot ->
-                                    activeSimSlotForCustomSender = allowedSlot
-                                    allBlockTargetDeviceId = null
-                                    showAllBlockDialog = true
-                                }
+                            onToggleTemplate = {
+                                expandedCustomAllSim = null
+                                viewModel.toggleTemplate(2, it)
                             },
+                            onToggleCustomAll = { viewModel.toggleCustomAll(2) },
+                            onCustomAllDeniedDetail = {
+                                expandedCustomAllSim = null
+                                viewModel.showCustomAllDeniedDialog()
+                            },
+                            hasCustomSenderPermission = state.hasCustomSenderPermission,
+                            customAllChipLabel = state.customAllChipLabel,
+                            customAllDeniedExpanded = expandedCustomAllSim == 2,
+                            onCustomAllDeniedExpandedChange = { open ->
+                                expandedCustomAllSim = if (open) 2 else null
+                            },
+                            collapseDeniedHintOnBackground = expandedCustomAllSim != null,
+                            onCollapseDeniedHint = { expandedCustomAllSim = null },
                             onDeleteCustomSenderClick = { method ->
+                                expandedCustomAllSim = null
                                 methodToDelete = method
                             },
-                            onToggleMethod = { viewModel.toggleMethod(it) }
+                            onToggleMethod = {
+                                expandedCustomAllSim = null
+                                viewModel.toggleMethod(it)
+                            }
                         )
                     }
                 }
@@ -960,23 +980,27 @@ fun DeviceScreen(
                             )
                         }
                         Text(
-                            text = "প্রিমিয়াম ফিচার লকড",
+                            text = state.customAllPopupTitle,
                             fontWeight = FontWeight.Bold,
                             color = TextWhite,
-                            fontSize = 18.sp
+                            fontSize = 18.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
                         )
                         Text(
-                            text = "কাস্টম সেন্ডার আইডি ব্যবহার করতে হলে আপনার প্যাকেজ আপগ্রেড করুন অথবা অ্যাড-অন ক্রয় করুন।",
+                            text = state.customAllPopupNotice,
                             color = TextMuted,
                             fontSize = 13.sp,
-                            textAlign = TextAlign.Center,
-                            lineHeight = 18.sp
+                            textAlign = TextAlign.Start,
+                            lineHeight = 18.sp,
+                            modifier = Modifier.fillMaxWidth()
                         )
 
                         Button(
                             onClick = {
                                 viewModel.setShowPremiumUpgradeDialog(false)
-                                onNavigateToSubscription(1)
+                                // V3 tab order: gateway=0, personal_business=1, personal=2
+                                onNavigateToSubscription(2)
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
                             modifier = Modifier.fillMaxWidth(),
@@ -1465,10 +1489,24 @@ private fun RemoteDeviceSettingsFullScreen(
 ) {
     val activeDevice = state.activeRemoteDevice ?: device
     val isOwnerRole = activeDevice.deviceRole == "owner"
+    var expandedCustomAllSim by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(state.showPremiumUpgradeDialog) {
+        if (state.showPremiumUpgradeDialog) expandedCustomAllSim = null
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(GwBg)
+            .then(
+                if (expandedCustomAllSim != null) {
+                    Modifier.clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { expandedCustomAllSim = null }
+                } else {
+                    Modifier
+                }
+            )
     ) {
         Row(
             modifier = Modifier
@@ -1663,10 +1701,29 @@ private fun RemoteDeviceSettingsFullScreen(
                         simActive = if (simSlot == 1) state.remoteDeviceEditSim1Active else state.remoteDeviceEditSim2Active,
                         templates = state.remoteTemplates,
                         methods = state.remoteGatewayMethods,
-                        onToggleTemplate = { viewModel.remoteToggleTemplate(simSlot, it) },
-                        onToggleMethod = { viewModel.remoteToggleMethod(it) },
-                        onDeleteCustomSender = onRemoteDeleteSender,
-                        onAddCustomSenderClick = { onRemoteAddSender(simSlot) }
+                        onToggleTemplate = {
+                            expandedCustomAllSim = null
+                            viewModel.remoteToggleTemplate(simSlot, it)
+                        },
+                        onToggleMethod = {
+                            expandedCustomAllSim = null
+                            viewModel.remoteToggleMethod(it)
+                        },
+                        onDeleteCustomSender = {
+                            expandedCustomAllSim = null
+                            onRemoteDeleteSender(it)
+                        },
+                        onToggleCustomAll = { viewModel.remoteToggleCustomAll(simSlot) },
+                        onCustomAllDeniedDetail = {
+                            expandedCustomAllSim = null
+                            viewModel.showCustomAllDeniedDialog()
+                        },
+                        hasCustomSenderPermission = state.hasCustomSenderPermission,
+                        customAllChipLabel = state.customAllChipLabel,
+                        customAllDeniedExpanded = expandedCustomAllSim == simSlot,
+                        onCustomAllDeniedExpandedChange = { open ->
+                            expandedCustomAllSim = if (open) simSlot else null
+                        }
                     )
                 }
             }
@@ -1868,7 +1925,14 @@ private fun SimCard(
     templates: List<SmsTemplateDto>,
     methods: List<GatewayMethod>,
     onToggleTemplate: (SmsTemplateDto) -> Unit,
-    onAddCustomSenderClick: (Int) -> Unit,
+    onToggleCustomAll: () -> Unit,
+    onCustomAllDeniedDetail: () -> Unit,
+    hasCustomSenderPermission: Boolean,
+    customAllChipLabel: String,
+    customAllDeniedExpanded: Boolean,
+    onCustomAllDeniedExpandedChange: (Boolean) -> Unit,
+    collapseDeniedHintOnBackground: Boolean = false,
+    onCollapseDeniedHint: () -> Unit = {},
     onDeleteCustomSenderClick: (GatewayMethod) -> Unit,
     onToggleMethod: (GatewayMethod) -> Unit,
     modifier: Modifier = Modifier
@@ -1892,6 +1956,16 @@ private fun SimCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = adaptivePadding(10.dp, 16.dp), vertical = 8.dp)
+            .then(
+                if (collapseDeniedHintOnBackground) {
+                    Modifier.clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { onCollapseDeniedHint() }
+                } else {
+                    Modifier
+                }
+            )
     ) {
         Column(
             modifier = Modifier
@@ -2010,17 +2084,15 @@ private fun SimCard(
                     )
                 }
 
-                // Render archive/custom senders on this device (is_parseable = 0)
+                // Render archive/custom senders on this device (is_parseable = 0), excluding ALL (dedicated chip)
                 methods.filter {
                     it.simSlot == simSlot &&
                         (it.isParseable ?: 1) == 0 &&
-                        !online.paychek.app.services.sms.SmsRoutingEngine.isBlockSenderMethod(it)
+                        !online.paychek.app.services.sms.SmsRoutingEngine.isBlockSenderMethod(it) &&
+                        !online.paychek.app.services.sms.SmsRoutingEngine.isAllSenderPolicy(it)
                 }.forEach { method ->
                     val isSelected = method.isEnabled == 1
-                    val displayName = when {
-                        online.paychek.app.services.sms.SmsRoutingEngine.isAllSenderPolicy(method) -> "ALL"
-                        else -> method.senderId ?: method.provider.removePrefix("Custom-")
-                    }
+                    val displayName = method.senderId ?: method.provider.removePrefix("Custom-")
 
                     TemplateChip(
                         name = displayName,
@@ -2056,31 +2128,95 @@ private fun SimCard(
                         )
                     }
 
-                // Render Add Custom Sender Plus Chip
-                Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color.Transparent)
-                            .border(BorderStroke(1.dp, AccentCyan.copy(alpha = 0.5f)), RoundedCornerShape(16.dp))
-                            .clickable { onAddCustomSenderClick(simSlot) }
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "কাস্টম সেন্ডার যোগ করুন",
-                            tint = AccentCyan,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text(
-                            text = "যোগ করুন",
-                            color = AccentCyan,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                // Dedicated Custom ALL chip — expands with hint when locked, then popup
+                val allMethod = methods.find {
+                    it.simSlot == simSlot &&
+                        online.paychek.app.services.sms.SmsRoutingEngine.isAllSenderPolicy(it)
+                }
+                CustomAllTemplateChip(
+                    label = customAllChipLabel,
+                    isSelected = allMethod != null && allMethod.isEnabled == 1,
+                    hasPermission = hasCustomSenderPermission,
+                    deniedExpanded = customAllDeniedExpanded,
+                    onClick = {
+                        if (hasCustomSenderPermission) {
+                            onCustomAllDeniedExpandedChange(false)
+                            onToggleCustomAll()
+                        } else if (!customAllDeniedExpanded) {
+                            onCustomAllDeniedExpandedChange(true)
+                        } else {
+                            onCustomAllDeniedDetail()
+                        }
                     }
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun CustomAllTemplateChip(
+    label: String,
+    isSelected: Boolean,
+    hasPermission: Boolean,
+    deniedExpanded: Boolean,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    val showDeniedHint = !hasPermission && deniedExpanded
+    val borderStroke = when {
+        showDeniedHint -> BorderStroke(1.dp, Color(0xFFF59E0B))
+        isSelected -> BorderStroke(1.dp, AccentCyan)
+        else -> BorderStroke(1.dp, TextMuted.copy(alpha = 0.3f))
+    }
+    val bg = when {
+        showDeniedHint -> Color(0xFFF59E0B).copy(alpha = 0.12f)
+        isSelected -> AccentCyan.copy(alpha = 0.12f)
+        else -> Color.Transparent
+    }
+    val textColor = when {
+        !enabled -> TextMuted.copy(alpha = 0.45f)
+        showDeniedHint -> Color(0xFFF59E0B)
+        isSelected -> AccentCyan
+        else -> TextMuted
+    }
+
+    Row(
+        modifier = modifier
+            .animateContentSize(animationSpec = tween(220))
+            .clip(RoundedCornerShape(16.dp))
+            .background(bg)
+            .border(borderStroke, RoundedCornerShape(16.dp))
+            .then(
+                if (enabled) Modifier.clickable(onClick = onClick) else Modifier
+            )
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(if (showDeniedHint) Color(0xFFF59E0B) else Color(0xFFF59E0B))
+        )
+        if (showDeniedHint) {
+            Text(
+                text = "পারমিশন নেই, বিস্তারিত জানতে ক্লিক করুন",
+                color = textColor,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        } else {
+            Text(
+                text = label.ifBlank { "কাস্টম অল" },
+                color = textColor,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }
@@ -2180,11 +2316,27 @@ private fun RemoteSimTemplateSection(
     onToggleTemplate: (SmsTemplateDto) -> Unit,
     onToggleMethod: (GatewayMethod) -> Unit,
     onDeleteCustomSender: (GatewayMethod) -> Unit,
-    onAddCustomSenderClick: () -> Unit,
+    onToggleCustomAll: () -> Unit,
+    onCustomAllDeniedDetail: () -> Unit,
+    hasCustomSenderPermission: Boolean,
+    customAllChipLabel: String,
+    customAllDeniedExpanded: Boolean,
+    onCustomAllDeniedExpandedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .then(
+                if (customAllDeniedExpanded) {
+                    Modifier.clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { onCustomAllDeniedExpandedChange(false) }
+                } else {
+                    Modifier
+                }
+            ),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
@@ -2207,26 +2359,33 @@ private fun RemoteSimTemplateSection(
                     isSelected = isSelected,
                     enabled = simActive,
                     logoUrl = template.logoUrl,
-                    onClick = { if (simActive) onToggleTemplate(template) }
+                    onClick = {
+                        onCustomAllDeniedExpandedChange(false)
+                        if (simActive) onToggleTemplate(template)
+                    }
                 )
             }
             methods.filter {
                 it.simSlot == simSlot &&
                     (it.isParseable ?: 1) == 0 &&
-                    !online.paychek.app.services.sms.SmsRoutingEngine.isBlockSenderMethod(it)
+                    !online.paychek.app.services.sms.SmsRoutingEngine.isBlockSenderMethod(it) &&
+                    !online.paychek.app.services.sms.SmsRoutingEngine.isAllSenderPolicy(it)
             }.forEach { method ->
                 val isSelected = method.isEnabled == 1
-                val displayName = when {
-                    online.paychek.app.services.sms.SmsRoutingEngine.isAllSenderPolicy(method) -> "ALL"
-                    else -> method.senderId ?: method.provider.removePrefix("Custom-")
-                }
+                val displayName = method.senderId ?: method.provider.removePrefix("Custom-")
                 TemplateChip(
                     name = displayName,
                     dotColor = Color(0xFF94A3B8),
                     isSelected = isSelected,
                     enabled = simActive,
-                    onClick = { if (simActive) onToggleMethod(method) },
-                    onLongClick = { if (simActive) onDeleteCustomSender(method) }
+                    onClick = {
+                        onCustomAllDeniedExpandedChange(false)
+                        if (simActive) onToggleMethod(method)
+                    },
+                    onLongClick = {
+                        onCustomAllDeniedExpandedChange(false)
+                        if (simActive) onDeleteCustomSender(method)
+                    }
                 )
             }
             val localArchiveSenderIds = methods
@@ -2252,20 +2411,28 @@ private fun RemoteSimTemplateSection(
                         onClick = {}
                     )
                 }
-            if (simActive) {
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
-                        .border(BorderStroke(1.dp, AccentCyan.copy(alpha = 0.5f)), RoundedCornerShape(16.dp))
-                        .clickable { onAddCustomSenderClick() }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(Icons.Default.Add, null, tint = AccentCyan, modifier = Modifier.size(14.dp))
-                    Text("যোগ করুন", color = AccentCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
+            val allMethod = methods.find {
+                it.simSlot == simSlot &&
+                    online.paychek.app.services.sms.SmsRoutingEngine.isAllSenderPolicy(it)
             }
+            CustomAllTemplateChip(
+                label = customAllChipLabel,
+                isSelected = allMethod != null && allMethod.isEnabled == 1,
+                hasPermission = hasCustomSenderPermission,
+                deniedExpanded = customAllDeniedExpanded,
+                enabled = simActive,
+                onClick = {
+                    if (!simActive) return@CustomAllTemplateChip
+                    if (hasCustomSenderPermission) {
+                        onCustomAllDeniedExpandedChange(false)
+                        onToggleCustomAll()
+                    } else if (!customAllDeniedExpanded) {
+                        onCustomAllDeniedExpandedChange(true)
+                    } else {
+                        onCustomAllDeniedDetail()
+                    }
+                }
+            )
         }
         if (!simActive) {
             Text(

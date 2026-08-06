@@ -23,6 +23,9 @@ import online.paychek.app.ui.screen.sync.SyncSettingsScreen
 import online.paychek.app.utils.AccountEntitlementsStore
 import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.utils.SessionFlags
+import online.paychek.app.utils.SubscriptionLockState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun MainNavigation() {
@@ -48,10 +51,15 @@ fun MainNavigation() {
     val billingSuccess by MainActivity.pendingBillingSuccess
     LaunchedEffect(billingSuccess) {
         if (!billingSuccess) return@LaunchedEffect
+        // Refresh lock BEFORE clearing the flag / popping — Home may miss a one-shot true.
+        withContext(Dispatchers.IO) {
+            AccountEntitlementsStore.refresh(context)
+            SubscriptionLockState.refresh(context)
+        }
+        SubscriptionLockState.notifyBillingRefresh(context)
         MainActivity.pendingBillingSuccess.value = false
         MainActivity.pendingBillingOrderId = null
         if (SessionFlags.hasAuth(context)) {
-            AccountEntitlementsStore.refresh(context)
             // Pop back to Home (or land on Home)
             while (backStack.size > 1) {
                 val last = backStack.lastOrNull()

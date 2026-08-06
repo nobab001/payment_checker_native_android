@@ -41,6 +41,7 @@ import online.paychek.app.ui.common.historyLoadMoreLabelBn
 import online.paychek.app.ui.components.ConnectionStatusBanner
 import online.paychek.app.ui.components.LastUpdateRow
 import online.paychek.app.utils.BanglaDateTimeFormat
+import online.paychek.app.utils.SearchInputLimits
 import online.paychek.app.utils.adaptivePadding
 import online.paychek.app.utils.adaptiveTextSize
 import online.paychek.app.utils.screenWidth
@@ -354,7 +355,7 @@ private fun SearchBox(
 ) {
     OutlinedTextField(
         value         = query,
-        onValueChange = onQueryChange,
+        onValueChange = { onQueryChange(SearchInputLimits.clamp(it)) },
         placeholder   = {
             Text(
                 text     = "ট্রানজেকশন আইডি বা নম্বর...",

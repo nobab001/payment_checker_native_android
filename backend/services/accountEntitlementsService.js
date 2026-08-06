@@ -346,6 +346,18 @@ async function syncUserEntitlements(userId) {
 }
 
 async function getUserEntitlements(userId, { refresh = false } = {}) {
+  // V3 is source of truth — avoid legacy has_custom_sender_addon merging overwriting truth.
+  try {
+    const { isV3Enabled } = require('./subscriptionV3/configService');
+    if (await isV3Enabled()) {
+      const pe = require('./permissionEngineService');
+      if (refresh) return pe.ensureSubscriptionFresh(userId);
+      return pe.getEntitlements(userId, { refresh: false });
+    }
+  } catch (e) {
+    console.warn('[Entitlements] V3 delegate skipped:', e.message);
+  }
+
   try {
     await ensureEntitlementSchema();
   } catch (e) {
@@ -419,6 +431,21 @@ async function requirePermission(userId, permissionKey) {
       message: 'আপনার প্যাকেজের মেয়াদ শেষ হয়ে গেছে। সেবা সচল করতে অনুগ্রহ করে একটি সাবস্ক্রিপশন প্যাকেজ কিনুন।',
       suspended: true,
     };
+  }
+  // Prefer V3 engine for gateway/website gates (same truth as app entitlements API).
+  try {
+    const { isV3Enabled } = require('./subscriptionV3/configService');
+    if (await isV3Enabled()) {
+      const { hasPermission, getEntitlements } = require('./permissionEngineService');
+      const ok = await hasPermission(userId, permissionKey);
+      if (!ok) {
+        return { ok: false, message: 'এই ফিচারের জন্য আপনার প্যাকেজে পারমিশন নেই।' };
+      }
+      const entitlements = await getEntitlements(userId);
+      return { ok: true, entitlements };
+    }
+  } catch (e) {
+    console.warn('[Entitlements] V3 requirePermission fallback:', e.message);
   }
   const ent = await getUserEntitlements(userId);
   if (!ent) return { ok: false, message: 'User not found' };

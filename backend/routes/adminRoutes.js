@@ -22,6 +22,8 @@ router.get('/subscription/refunds/pending', require('../controllers/subscription
 router.post('/subscription/refunds/:id/resolve', require('../controllers/subscriptionV3Controller').adminResolveRefund);
 router.get('/subscription/v3/settings', require('../controllers/subscriptionV3Controller').adminGetSettings);
 router.post('/subscription/v3/settings', require('../controllers/subscriptionV3Controller').adminUpdateSettings);
+router.get('/subscription/v3/addon-catalog', require('../controllers/subscriptionV3Controller').adminListAddonCatalog);
+router.put('/subscription/v3/addon-catalog/:addonKey', require('../controllers/subscriptionV3Controller').adminUpdateAddonCatalog);
 
 router.delete('/plans/:id', billingController.deletePlan);
 router.post('/plans/reorder', billingController.reorderSubscriptionPlans);

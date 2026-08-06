@@ -1177,8 +1177,16 @@ async function updateDemoPaymentRefund(req, res) {
 async function getGlobalBlockedSendersAdmin(req, res) {
   try {
     const { getGlobalBlockedSenders } = require('../services/globalBlockedSenders');
+    const { getCustomAllUiConfig } = require('../services/customAllUiConfig');
     const senders = await getGlobalBlockedSenders();
-    return res.json({ success: true, senders });
+    const ui = await getCustomAllUiConfig();
+    return res.json({
+      success: true,
+      senders,
+      chip_label: ui.chip_label,
+      popup_title: ui.popup_title,
+      popup_notice: ui.popup_notice,
+    });
   } catch (err) {
     console.error('getGlobalBlockedSendersAdmin error:', err);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
@@ -1188,12 +1196,25 @@ async function getGlobalBlockedSendersAdmin(req, res) {
 async function saveGlobalBlockedSendersAdmin(req, res) {
   try {
     const { setGlobalBlockedSenders } = require('../services/globalBlockedSenders');
+    const { setCustomAllUiConfig } = require('../services/customAllUiConfig');
     const senders = await setGlobalBlockedSenders(req.body?.senders || []);
+    const ui = await setCustomAllUiConfig({
+      chip_label: req.body?.chip_label ?? req.body?.chipLabel,
+      popup_title: req.body?.popup_title ?? req.body?.popupTitle,
+      popup_notice: req.body?.popup_notice ?? req.body?.popupNotice,
+    });
     try {
       const dataSyncCache = require('../services/dataSyncCache');
       await dataSyncCache.bumpGlobalTemplateVersion();
     } catch (_) { /* optional */ }
-    return res.json({ success: true, senders, message: 'গ্লোবাল ব্লক সেন্ডার সংরক্ষিত হয়েছে।' });
+    return res.json({
+      success: true,
+      senders,
+      chip_label: ui.chip_label,
+      popup_title: ui.popup_title,
+      popup_notice: ui.popup_notice,
+      message: 'গ্লোবাল ব্লক সেন্ডার ও কাস্টম অল UI কনফিগ সংরক্ষিত হয়েছে।',
+    });
   } catch (err) {
     console.error('saveGlobalBlockedSendersAdmin error:', err);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });

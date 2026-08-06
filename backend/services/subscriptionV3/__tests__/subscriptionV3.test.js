@@ -43,6 +43,16 @@ function run() {
   assert.strictEqual(DURATION_DAYS['12m'], 365);
   passed++;
 
+  const { unusedCredit, compareTier } = require('../quoteService');
+  // ৳300 for 30 days, 15 remaining → ৳150 credit
+  assert.strictEqual(unusedCredit(300, 30, 15), 150);
+  assert.strictEqual(unusedCredit(600, 180, 0), 0);
+  passed++;
+
+  assert.ok(compareTier({ price_1m: 300, price_12m: 3000 }, { price_1m: 600, price_12m: 6000 }) > 0);
+  assert.ok(compareTier({ price_1m: 600, price_12m: 6000 }, { price_1m: 300, price_12m: 3000 }) < 0);
+  passed++;
+
   console.log(`subscriptionV3 tests passed: ${passed}`);
 }
 

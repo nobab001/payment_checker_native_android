@@ -871,6 +871,7 @@ async function createPlan(req, res) {
         UPDATE subscription_plans
         SET features_json = ${featuresJson},
             plan_category = ${category},
+            display_name = ${plan_name},
             price_1m = ${p1},
             price_6m = ${p6},
             price_12m = ${p12},
@@ -880,6 +881,11 @@ async function createPlan(req, res) {
             perm_smart_popup = ${permSmart},
             perm_manual_transaction = ${permManual}
         WHERE id = ${planId}
+      `;
+      await prisma.$executeRaw`
+        UPDATE subscription_plans
+        SET sku_key = COALESCE(NULLIF(sku_key, ''), ${`plan_${planId}`})
+        WHERE id = ${planId} AND (sku_key IS NULL OR sku_key = '')
       `;
     } else {
       const existingName = await prisma.subscription_plans.findUnique({
@@ -895,6 +901,7 @@ async function createPlan(req, res) {
         UPDATE subscription_plans
         SET features_json = ${featuresJson},
             plan_category = ${category},
+            display_name = ${plan_name},
             price_1m = ${p1},
             price_6m = ${p6},
             price_12m = ${p12},
@@ -907,6 +914,11 @@ async function createPlan(req, res) {
             catalog_status = 'active',
             is_visible = 1
         WHERE id = ${planId}
+      `;
+      await prisma.$executeRaw`
+        UPDATE subscription_plans
+        SET sku_key = COALESCE(NULLIF(sku_key, ''), ${`plan_${planId}`})
+        WHERE id = ${planId} AND (sku_key IS NULL OR sku_key = '')
       `;
     }
 
@@ -1064,6 +1076,10 @@ async function getAccountEntitlements(req, res) {
     const policy = require('../services/commPolicyService').toClientPolicy(profile);
     const { getSubscriptionStatus } = require('../services/subscriptionStatusService');
     const subscriptionStatus = await getSubscriptionStatus(userId);
+    let customAllUi = {};
+    try {
+      customAllUi = await require('../services/customAllUiConfig').getCustomAllUiConfig();
+    } catch (_) { /* optional */ }
     return res.json({
       success: true,
       subscription_status: subscriptionStatus,
@@ -1073,6 +1089,9 @@ async function getAccountEntitlements(req, res) {
         comm_profile: profile.id,
         heartbeat: policy.heartbeat,
         use_socket: policy.use_socket,
+        custom_all_chip_label: customAllUi.chip_label,
+        custom_all_popup_title: customAllUi.popup_title,
+        custom_all_popup_notice: customAllUi.popup_notice,
       },
       policy,
     });

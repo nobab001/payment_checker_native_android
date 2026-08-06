@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -74,8 +75,9 @@ private fun v3TabInfo(key: String): String = when (key) {
 }
 
 private fun purchaseTypeLabel(type: String): String = when (type) {
-    "renew"          -> "রিনিউ"
+    "renew"          -> "রিনিউ / এক্সটেন্ড"
     "upgrade"        -> "আপগ্রেড"
+    "downgrade"      -> "ডাউনগ্রেড (পরবর্তী মেয়াদ)"
     "cross_category" -> "ক্রস-ক্যাটাগরি"
     else             -> "নতুন ক্রয়"
 }
@@ -104,6 +106,7 @@ private fun durationMonths(durationKey: String): Int = when (durationKey) {
 
 @Composable
 fun SubscriptionV3PackagesScreen(
+    initialTab: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -113,7 +116,7 @@ fun SubscriptionV3PackagesScreen(
     var isLoading      by remember { mutableStateOf(true) }
     var errorMessage   by remember { mutableStateOf<String?>(null) }
     var catalog        by remember { mutableStateOf<SubscriptionV3CatalogResponse?>(null) }
-    var selectedTab    by remember { mutableIntStateOf(0) }
+    var selectedTab    by remember { mutableIntStateOf(initialTab.coerceAtLeast(0)) }
     var durationIndex  by remember { mutableIntStateOf(2) }
     var selectedPkg    by remember { mutableStateOf<V3PackageDto?>(null) }
     var selectedAddons by remember { mutableStateOf(setOf<String>()) }
@@ -127,6 +130,7 @@ fun SubscriptionV3PackagesScreen(
     var refundTarget   by remember { mutableStateOf<V3PurchaseHistoryDto?>(null) }
     var isRefunding    by remember { mutableStateOf(false) }
     var historyExpanded by remember { mutableStateOf(false) }
+    var addonInfoPopup by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -150,6 +154,8 @@ fun SubscriptionV3PackagesScreen(
                     onSuccess = { st ->
                         if (st.activated || st.status == "activated") {
                             AccountEntitlementsStore.refresh(context)
+                            online.paychek.app.utils.SubscriptionLockState.refresh(context)
+                            online.paychek.app.utils.SubscriptionLockState.notifyBillingRefresh(context)
                             pendingOrderId = null; showSummary = false; quoteResponse = null
                             reload()
                             Toast.makeText(context, st.message ?: "প্যাকেজ সক্রিয় হয়েছে।", Toast.LENGTH_LONG).show()
@@ -461,6 +467,26 @@ fun SubscriptionV3PackagesScreen(
         )
     }
 
+    // ─── Addon info popup ───────────────────────────────────────────────────
+
+    addonInfoPopup?.let { (title, body) ->
+        AlertDialog(
+            onDismissRequest = { addonInfoPopup = null },
+            title = { Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+            text = {
+                Text(
+                    body,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { addonInfoPopup = null }) { Text("বুঝেছি") }
+            }
+        )
+    }
+
     // ─── Checkout Summary Dialog ────────────────────────────────────────────
 
     if (showSummary && quoteResponse != null) {
@@ -471,7 +497,7 @@ fun SubscriptionV3PackagesScreen(
             ?: when (currentTabKey) {
                 "gateway"           -> listOf("smart_popup", "custom_sender")
                 "personal_business" -> listOf("custom_sender", "gateway_permission")
-                else                -> listOf("smart_popup", "custom_sender", "gateway_permission")
+                else                -> listOf("gateway_permission", "smart_popup")
             }
 
         Dialog(onDismissRequest = { if (!isCheckingOut && !isQuoting) showSummary = false }) {
@@ -501,7 +527,21 @@ fun SubscriptionV3PackagesScreen(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
                     CheckoutSummaryRow("প্যাকেজ মূল্য", MoneyFormat.taka(q.listPrice))
-                    if (q.addonTotal > 0) CheckoutSummaryRow("অ্যাড-অন", MoneyFormat.taka(q.addonTotal))
+                    CheckoutSummaryRow("অ্যাড-অন", MoneyFormat.taka(q.addonTotal))
+                    if (q.creditApplied > 0) {
+                        CheckoutSummaryRow("অবশিষ্ট ক্রেডিট (−)", "−${MoneyFormat.taka(q.creditApplied)}")
+                    }
+                    if (!q.packageCode.isNullOrBlank() || q.packageSku.isNotBlank()) {
+                        CheckoutSummaryRow("প্যাকেজ কোড", q.packageCode ?: q.packageSku)
+                    }
+                    if (q.deferred && !q.deferredStartsAt.isNullOrBlank()) {
+                        Text(
+                            "ডাউনগ্রেড ${formatExpiryDate(q.deferredStartsAt)} থেকে সক্রিয় হবে। ততদিন বর্তমান প্যাকেজ চলবে।",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            lineHeight = 16.sp
+                        )
+                    }
 
                     // Highlighted payable amount
                     Surface(
@@ -536,25 +576,21 @@ fun SubscriptionV3PackagesScreen(
                         Text("অ্যাড-অন সুবিধা", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                         allowedAddons.forEach { addonKey ->
                             val addon = addonCatalog.find { it.addonKey == addonKey } ?: return@forEach
-                            val addonLabel = when (addonKey) {
-                                "custom_sender" -> "আলাদা এসএমএস কাস্টম সেন্ডার আইডি"
-                                "smart_popup"   -> "স্মার্ট পপআপ স্ক্যান ও সোল্ড আউট"
-                                "gateway_permission" -> "গেটওয়ে পারমিশন"
-                                else            -> addon.displayName
-                            }
+                            val addonLabel = addon.displayName.ifBlank { addonKey }
                             val addonPrice = priceForAddon(addon, durationKey)
+                            val isChecked = selectedAddons.contains(addonKey)
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.fillMaxWidth()
                                     .clickable(enabled = !isCheckingOut) {
-                                        val newAddons = if (selectedAddons.contains(addonKey)) selectedAddons - addonKey else selectedAddons + addonKey
+                                        val newAddons = if (isChecked) selectedAddons - addonKey else selectedAddons + addonKey
                                         selectedAddons = newAddons
                                         selectedPkg?.let { silentQuoteUpdate(it, newAddons, currentTabKey, durationKey) }
                                     }
                                     .padding(vertical = 4.dp)
                             ) {
                                 Checkbox(
-                                    checked = selectedAddons.contains(addonKey),
+                                    checked = isChecked,
                                     onCheckedChange = { checked ->
                                         val newAddons = if (checked) selectedAddons + addonKey else selectedAddons - addonKey
                                         selectedAddons = newAddons
@@ -565,9 +601,23 @@ fun SubscriptionV3PackagesScreen(
                                 Spacer(Modifier.width(8.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(addonLabel, fontSize = 13.sp)
-                                    if (addonPrice > 0) {
-                                        Text("+${MoneyFormat.taka(addonPrice)}", fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        text = "+${MoneyFormat.taka(addonPrice)}",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (!addon.infoText.isNullOrBlank()) {
+                                    IconButton(
+                                        onClick = { addonInfoPopup = addonLabel to addon.infoText!! },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Info,
+                                            contentDescription = "অ্যাড-অন তথ্য",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                     }
                                 }
                             }
@@ -599,6 +649,8 @@ fun SubscriptionV3PackagesScreen(
                                             isCheckingOut = false
                                             if (res.activated) {
                                                 AccountEntitlementsStore.refresh(context)
+                                                online.paychek.app.utils.SubscriptionLockState.refresh(context)
+                                                online.paychek.app.utils.SubscriptionLockState.notifyBillingRefresh(context)
                                                 showSummary = false; reload()
                                                 Toast.makeText(context, res.message ?: "সক্রিয় হয়েছে", Toast.LENGTH_LONG).show()
                                             } else {

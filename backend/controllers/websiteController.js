@@ -86,10 +86,16 @@ function toWebsiteDto(row) {
   };
 }
 
-/** Resolve max sites from cached account entitlements. */
+/** Resolve max sites from V3 permission engine (falls back to users.perm columns). */
 async function resolveMaxSites(userId) {
-  const ent = await getUserEntitlements(userId);
-  return ent?.eff_max_sites || 0;
+  try {
+    const { getEntitlements } = require('../services/permissionEngineService');
+    const ent = await getEntitlements(userId);
+    return ent?.eff_max_sites || 0;
+  } catch (_) {
+    const ent = await getUserEntitlements(userId);
+    return ent?.eff_max_sites || 0;
+  }
 }
 
 const GLOBAL_CHECKOUT_KEY_PREFIX = 'merchant_global_checkout_';
@@ -519,6 +525,28 @@ async function updateWebsiteSettings(req, res) {
     }
 
     if (b.is_active !== undefined) data.is_active = b.is_active ? 1 : 0;
+
+    // Downgrade hold: cannot re-activate beyond plan website limit.
+    if (data.is_active === 1 && !row.is_active) {
+      const user = await prisma.users.findUnique({
+        where: { id: userId },
+        select: { role: true },
+      });
+      if (user?.role !== 'admin') {
+        const maxSites = await resolveMaxSites(userId);
+        const activeCount = await prisma.gateway_layouts.count({
+          where: { user_id: userId, is_active: 1 },
+        });
+        if (activeCount >= maxSites) {
+          return res.status(403).json({
+            success: false,
+            error: 'SITE_LIMIT_HOLD',
+            message:
+              'আপনার প্যাকেজের ওয়েবসাইট লিমিট পূর্ণ। অন্য ওয়েবসাইট বন্ধ/মুছে নতুনটি চালু করুন, অথবা প্যাকেজ আপগ্রেড করুন।',
+          });
+        }
+      }
+    }
 
     if (Object.keys(data).length === 0) {
       return res.status(400).json({ success: false, error: 'NO_FIELDS_TO_UPDATE' });

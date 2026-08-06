@@ -131,7 +131,9 @@ async function computeV3Entitlements(userId) {
   const subs = await getUserSubscriptions(userId);
   const addonRows = await prisma.$queryRaw`
     SELECT addon_key FROM user_subscription_addons
-    WHERE user_id = ${Number(userId)} AND status = 'active'
+    WHERE user_id = ${Number(userId)}
+      AND status = 'active'
+      AND DATE(expires_at) >= CURDATE()
   `;
   const addonSet = new Set(addonRows.map((r) => r.addon_key));
 
@@ -167,15 +169,19 @@ async function computeV3Entitlements(userId) {
     ent.eff_max_devices = Math.max(ent.eff_max_devices, Number(s.device_limit_internal || 50));
     ent.eff_max_sites = Math.max(ent.eff_max_sites, Number(s.website_limit_internal || 0));
     ent.perm_device = 1;
-    ent.perm_template = 1;
 
+    // Category matrix (product rule):
+    //  gateway / personal_business → official SMS templates (NOT custom ALL archive)
+    //  personal → custom ALL / archive only (NOT official templates)
     if (s.category === 'gateway') {
       ent.perm_gateway = 1;
       ent.perm_website = 1;
+      ent.perm_template = 1;
     }
     if (s.category === 'personal_business') {
       ent.perm_personal_business = 1;
       ent.perm_smart_popup = 1;
+      ent.perm_template = 1;
     }
     if (s.category === 'personal') {
       ent.perm_personal = 1;
@@ -200,11 +206,13 @@ async function computeV3Entitlements(userId) {
   }
 
   if (addonSet.has('smart_popup')) ent.perm_smart_popup = 1;
+  // Addon grants custom ALL only — does not unlock official templates.
   if (addonSet.has('custom_sender')) ent.perm_custom_sender = 1;
   if (addonSet.has('manual_transaction')) ent.perm_manual_transaction = 1;
   if (addonSet.has('gateway_permission')) {
     ent.perm_gateway = 1;
     ent.perm_website = 1;
+    ent.perm_template = 1;
   }
 
   if (ent.eff_max_devices < 1 && ent.perm_device) ent.eff_max_devices = 50;
@@ -228,7 +236,8 @@ async function ensureSubscriptionFresh(userId) {
       UPDATE users SET
         perm_custom_sender = 0, perm_template = 0, perm_website = 0,
         perm_device = 0, perm_smart_popup = 0, perm_manual_transaction = 0,
-        eff_max_devices = 0, eff_max_sites = 0
+        eff_max_devices = 0, eff_max_sites = 0,
+        has_custom_sender_addon = 0, custom_sender_ends_at = NULL
       WHERE id = ${Number(userId)}
     `;
     return suspendedEntitlements();
@@ -238,6 +247,20 @@ async function ensureSubscriptionFresh(userId) {
   }
   const ent = await computeV3Entitlements(userId);
   if (!ent) return null;
+
+  // Keep legacy addon flags in sync with V3 — trial leftovers must not re-grant custom sender
+  // via accountEntitlementsService.merge of has_custom_sender_addon.
+  const customOn = Number(ent.perm_custom_sender || 0) === 1 ? 1 : 0;
+  let customEnds = null;
+  if (customOn) {
+    try {
+      const shared = await getEffectiveExpiry(userId);
+      customEnds = shared ? formatYmd(shared) : null;
+    } catch (_) {
+      customEnds = null;
+    }
+  }
+
   await prisma.$executeRaw`
     UPDATE users SET
       perm_custom_sender = ${ent.perm_custom_sender},
@@ -247,9 +270,17 @@ async function ensureSubscriptionFresh(userId) {
       perm_smart_popup = ${ent.perm_smart_popup},
       perm_manual_transaction = ${ent.perm_manual_transaction || 0},
       eff_max_devices = ${ent.eff_max_devices},
-      eff_max_sites = ${ent.eff_max_sites}
+      eff_max_sites = ${ent.eff_max_sites},
+      has_custom_sender_addon = ${customOn},
+      custom_sender_ends_at = ${customEnds}
     WHERE id = ${Number(userId)}
   `;
+  try {
+    const { reconcileEntitlementResources } = require('./entitlementReconcileService');
+    await reconcileEntitlementResources(userId, ent);
+  } catch (e) {
+    console.warn('[PermissionEngine] reconcile skipped:', e.message);
+  }
   return ent;
 }
 

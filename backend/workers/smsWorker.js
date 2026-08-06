@@ -53,6 +53,25 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
 
   const isParseable = job.data.isParseable !== undefined ? parseInt(job.data.isParseable, 10) : 1;
   if (isParseable === 0) {
+    // Custom ALL / archive requires active custom-sender entitlement — never trust client alone.
+    try {
+      const { hasPermission } = require('../services/permissionEngineService');
+      const allowed = await hasPermission(userId, 'perm_custom_sender');
+      if (!allowed) {
+        console.warn(
+          `[SMS Worker] Dropped archive SMS for user ${userId} — NO_CUSTOM_SENDER_PERMISSION`
+        );
+        return {
+          status: 'dropped',
+          reason: 'NO_CUSTOM_SENDER_PERMISSION',
+          httpEquivalent: 403,
+          userId,
+        };
+      }
+    } catch (permErr) {
+      console.error('[SMS Worker] custom-sender permission check failed:', permErr.message);
+      throw permErr;
+    }
     try {
       const slotNum = simSlot != null && simSlot !== '' ? parseInt(simSlot, 10) : null;
       let providerTag = (job.data.providerTag || 'Custom').toString().trim() || 'Custom';
@@ -107,6 +126,7 @@ const smsWorker = new Worker('smsIngestQueue', async (job) => {
         }
       });
       await dataSyncCache.bumpUserHistoryVersion(userId);
+      await dataSyncCache.bumpUserArchiveVersion(userId);
       try {
         await presenceV25.markDeviceAlive(userId, deviceId, { source: 'SMS_SUCCESS' });
       } catch (e) {

@@ -43,8 +43,13 @@ data class AdminUiState(
     val errorMessage: String? = null,
     val successMessage: String? = null,
     val v3Settings: SubscriptionV3SettingsDto? = null,
+    val v3AddonCatalog: List<V3AdminAddonCatalogDto> = emptyList(),
     val pendingRefunds: List<V3PendingRefundDto> = emptyList(),
-    val globalBlockedSenders: List<String> = emptyList()
+    val globalBlockedSenders: List<String> = emptyList(),
+    val customAllChipLabel: String = "কাস্টম অল",
+    val customAllPopupTitle: String = "কাস্টম অল এসএমএস লকড",
+    val customAllPopupNotice: String =
+        "আপনার এরকম প্যাকেজ অ্যাক্টিভ নেই যার কারণে আপনি কাস্টম অল এসএমএস মার্ক করতে পারছেন না। এটি ব্যবহার করতে পার্সোনাল / কাস্টম সেন্ডার প্যাকেজ কিনুন।"
 )
 
 class AdminDashboardViewModel(application: Application) : AndroidViewModel(application) {
@@ -96,8 +101,17 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 try {
                     val res = api.getGlobalBlockedSenders(token)
                     if (res.isSuccessful) {
+                        val body = res.body()
                         _state.update {
-                            it.copy(globalBlockedSenders = res.body()?.senders.orEmpty())
+                            it.copy(
+                                globalBlockedSenders = body?.senders.orEmpty(),
+                                customAllChipLabel = body?.chipLabel?.takeIf { s -> s.isNotBlank() }
+                                    ?: it.customAllChipLabel,
+                                customAllPopupTitle = body?.popupTitle?.takeIf { s -> s.isNotBlank() }
+                                    ?: it.customAllPopupTitle,
+                                customAllPopupNotice = body?.popupNotice?.takeIf { s -> s.isNotBlank() }
+                                    ?: it.customAllPopupNotice
+                            )
                         }
                     }
                 } catch (e: Exception) {
@@ -214,6 +228,17 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
                 }
             }
 
+            val jobV3AddonCatalog = launch {
+                try {
+                    val res = api.getV3AddonCatalog(token)
+                    if (res.isSuccessful) {
+                        _state.update { it.copy(v3AddonCatalog = res.body()?.addons ?: emptyList()) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
             val jobPendingRefunds = launch {
                 try {
                     val res = api.getPendingRefunds(token)
@@ -278,7 +303,8 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
 
             kotlinx.coroutines.joinAll(
                 jobConfigs, jobTemplates, jobGlobalBlocked, jobCheckouts, jobEmails, jobSmsSettings,
-                jobUsers, jobOtpFormat, jobPlans, jobAddonPlans, jobV3Settings, jobPendingRefunds, jobCheckoutDesign,
+                jobUsers, jobOtpFormat, jobPlans, jobAddonPlans, jobV3Settings, jobV3AddonCatalog,
+                jobPendingRefunds, jobCheckoutDesign,
                 jobOfficialWebsite, jobDemoPayments
             )
             _state.update { it.copy(isLoading = false) }
@@ -446,22 +472,42 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
     }
 
     // SMS Template Mutations
-    fun saveGlobalBlockedSenders(senders: List<String>) {
+    fun saveGlobalBlockedSenders(
+        senders: List<String>,
+        chipLabel: String? = null,
+        popupTitle: String? = null,
+        popupNotice: String? = null
+    ) {
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true, errorMessage = null) }
             try {
                 val token = "Bearer ${getToken()}"
                 val response = api.saveGlobalBlockedSenders(
                     token,
-                    SaveGlobalBlockedSendersRequest(senders)
+                    SaveGlobalBlockedSendersRequest(
+                        senders = senders,
+                        chipLabel = chipLabel,
+                        popupTitle = popupTitle,
+                        popupNotice = popupNotice
+                    )
                 )
                 if (response.isSuccessful && response.body()?.success == true) {
-                    val saved = response.body()?.senders.orEmpty()
+                    val body = response.body()!!
+                    val saved = body.senders.orEmpty()
                     _state.update {
                         it.copy(
                             isSaving = false,
                             globalBlockedSenders = saved,
-                            successMessage = response.body()?.message
+                            customAllChipLabel = body.chipLabel?.takeIf { s -> s.isNotBlank() }
+                                ?: chipLabel
+                                ?: it.customAllChipLabel,
+                            customAllPopupTitle = body.popupTitle?.takeIf { s -> s.isNotBlank() }
+                                ?: popupTitle
+                                ?: it.customAllPopupTitle,
+                            customAllPopupNotice = body.popupNotice?.takeIf { s -> s.isNotBlank() }
+                                ?: popupNotice
+                                ?: it.customAllPopupNotice,
+                            successMessage = body.message
                                 ?: "গ্লোবাল ব্লক সেন্ডার সংরক্ষিত হয়েছে।"
                         )
                     }
@@ -1048,6 +1094,59 @@ class AdminDashboardViewModel(application: Application) : AndroidViewModel(appli
             } catch (e: Exception) {
                 onError("নেটওয়ার্ক ত্রুটি: ${e.localizedMessage}")
             }
+        }
+    }
+
+    fun saveV3AddonCatalog(
+        addonKey: String,
+        request: V3AdminAddonUpdateRequest,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val response = api.updateV3AddonCatalog(token, addonKey, request)
+                if (response.isSuccessful && response.body()?.success == true) {
+                    val updated = response.body()?.addon
+                    if (updated != null) {
+                        _state.update { state ->
+                            state.copy(
+                                v3AddonCatalog = state.v3AddonCatalog.map {
+                                    if (it.addonKey == addonKey) updated else it
+                                },
+                                successMessage = "অ্যাড-অন সেটিংস সংরক্ষিত হয়েছে।",
+                                isSaving = false
+                            )
+                        }
+                    } else {
+                        refreshV3AddonCatalog()
+                        _state.update { it.copy(successMessage = "অ্যাড-অন সেটিংস সংরক্ষিত হয়েছে।", isSaving = false) }
+                    }
+                    onComplete?.invoke(true)
+                } else {
+                    val msg = parseApiErrorMessage(response.errorBody()?.string()) ?: "অ্যাড-অন সেভ ব্যর্থ হয়েছে।"
+                    _state.update { it.copy(isSaving = false, errorMessage = msg) }
+                    onComplete?.invoke(false)
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }
+                onComplete?.invoke(false)
+            }
+        }
+    }
+
+    private suspend fun refreshV3AddonCatalog() {
+        try {
+            val token = "Bearer ${getToken()}"
+            val res = api.getV3AddonCatalog(token)
+            if (res.isSuccessful) {
+                _state.update { it.copy(v3AddonCatalog = res.body()?.addons ?: emptyList(), isSaving = false) }
+            } else {
+                _state.update { it.copy(isSaving = false) }
+            }
+        } catch (_: Exception) {
+            _state.update { it.copy(isSaving = false) }
         }
     }
 

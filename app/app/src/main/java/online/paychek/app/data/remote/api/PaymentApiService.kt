@@ -162,7 +162,11 @@ interface PaymentApiService {
     @GET("custom-archives")
     suspend fun getCustomArchives(
         @Header("Authorization") token: String,
+        @Header("X-Archive-Last-Sync") archiveLastSync: Long? = null,
         @Query("page") page: Int = 1,
-        @Query("limit") limit: Int = 20
+        @Query("limit") limit: Int = 20,
+        @Query("q") query: String? = null,
+        @Query("startDate") startDate: String? = null,
+        @Query("endDate") endDate: String? = null
     ): Response<CustomArchiveListResponse>
 }

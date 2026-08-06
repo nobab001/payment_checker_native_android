@@ -292,6 +292,30 @@ async function getSmsHistory(req, res) {
 
     const providerQuery = (provider || 'all').trim();
     const useFilter = providerQuery && providerQuery.toLowerCase() !== 'all';
+    const hasDateFilter = !trxIdQuery && req.query.startDate && req.query.endDate;
+    const canUseRedisPayload =
+      !trxIdQuery &&
+      !useFilter &&
+      !hasDateFilter &&
+      page === 1;
+
+    if (canUseRedisPayload) {
+      const cachedRows = await dataSyncCache.getCachedHistoryLatest20(userId);
+      if (Array.isArray(cachedRows)) {
+        console.log(`[HISTORY] User ${userId} | Redis payload HIT | rows=${cachedRows.length}`);
+        return res.json({
+          success: true,
+          cache_hit: false,
+          redis_payload: true,
+          history_version: historyVersion,
+          data: cachedRows.slice(0, limit),
+          page,
+          limit,
+          total_count: cachedRows.length,
+          has_more: cachedRows.length >= limit,
+        });
+      }
+    }
 
     const whereClause = { user_id: userId };
     if (useFilter) {
@@ -306,7 +330,6 @@ async function getSmsHistory(req, res) {
       whereClause.trx_id = { in: variants };
     }
 
-    const hasDateFilter = !trxIdQuery && req.query.startDate && req.query.endDate;
     if (hasDateFilter) {
       whereClause.sms_date = {
         gte: new Date(req.query.startDate),
@@ -356,6 +379,10 @@ async function getSmsHistory(req, res) {
     });
 
     const mappedRows = rows.map(row => mapSmsHistoryRow(row, deviceMap));
+
+    if (canUseRedisPayload) {
+      await dataSyncCache.setCachedHistoryLatest20(userId, mappedRows);
+    }
 
     console.log(`[HISTORY] User ${userId} | cache MISS | client=${lastSync} server=${historyVersion} | Page ${page} | Provider: ${provider} | Found: ${rows.length}`);
 
@@ -461,36 +488,44 @@ async function getDashboardStats(req, res) {
       trial_plan_name: trialPlanDisplay
     };
 
-    const recentRows = await prisma.sms_history.findMany({
-      where: { user_id: userId },
-      select: {
-        id: true,
-        provider_tag: true,
-        amount: true,
-        trx_id: true,
-        sender_number: true,
-        sim_slot: true,
-        sim_number: true,
-        device_id: true,
-        sms_timestamp: true,
-        is_used: true,
-        created_at: true,
-        full_sms: true
-      },
-      orderBy: { sms_timestamp: 'desc' },
-      take: 20
-    });
+    let mappedRecentRows;
+    const cachedRecent = await dataSyncCache.getCachedHistoryLatest20(userId);
+    if (Array.isArray(cachedRecent) && cachedRecent.length > 0) {
+      mappedRecentRows = cachedRecent.slice(0, 20);
+      console.log(`[STATS] User ${userId} | Redis recent HIT | rows=${mappedRecentRows.length}`);
+    } else {
+      const recentRows = await prisma.sms_history.findMany({
+        where: { user_id: userId },
+        select: {
+          id: true,
+          provider_tag: true,
+          amount: true,
+          trx_id: true,
+          sender_number: true,
+          sim_slot: true,
+          sim_number: true,
+          device_id: true,
+          sms_timestamp: true,
+          is_used: true,
+          created_at: true,
+          full_sms: true
+        },
+        orderBy: { sms_timestamp: 'desc' },
+        take: 20
+      });
 
-    const userDevices = await prisma.registered_devices.findMany({
-      where: { user_id: userId },
-      select: { device_id: true, device_model: true, custom_device_name: true }
-    });
-    const deviceMap = {};
-    userDevices.forEach(d => {
-      deviceMap[d.device_id] = d.custom_device_name || d.device_model || 'Unknown Device';
-    });
+      const userDevices = await prisma.registered_devices.findMany({
+        where: { user_id: userId },
+        select: { device_id: true, device_model: true, custom_device_name: true }
+      });
+      const deviceMap = {};
+      userDevices.forEach(d => {
+        deviceMap[d.device_id] = d.custom_device_name || d.device_model || 'Unknown Device';
+      });
 
-    const mappedRecentRows = recentRows.map(row => mapSmsHistoryRow(row, deviceMap));
+      mappedRecentRows = recentRows.map(row => mapSmsHistoryRow(row, deviceMap));
+      await dataSyncCache.setCachedHistoryLatest20(userId, mappedRecentRows);
+    }
 
     console.log(`[STATS] Dashboard loaded for user: ${userId} | Today: ${todayDate} | Paid: ${isPaid} | Plan: ${activePlanName}`);
 
@@ -581,13 +616,75 @@ async function getCustomArchives(req, res) {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(50, parseInt(req.query.limit, 10) || 20);
     const offset = (page - 1) * limit;
+    const rawQ = typeof req.query.q === 'string' ? req.query.q : '';
+    // Client search boxes clamp to 15 chars; keep server aligned
+    const q = String(rawQ).replace(/\s+/g, ' ').trim().slice(0, 15);
+    const hasDateFilter = !!(req.query.startDate && req.query.endDate);
+    const lastSync = req.headers['x-archive-last-sync']
+      ? parseInt(req.headers['x-archive-last-sync'], 10)
+      : 0;
+    const archiveVersion = await dataSyncCache.getUserArchiveVersion(userId);
+    const isBaselineList = !q && !hasDateFilter && page === 1;
 
-    const rows = await prisma.custom_sms_archives.findMany({
-      where: { user_id: userId },
+    // Client already has current baseline → empty payload (same pattern as sms-history)
+    if (
+      isBaselineList &&
+      lastSync > 0 &&
+      dataSyncCache.isClientSyncCurrent(lastSync, archiveVersion)
+    ) {
+      console.log(
+        `[ARCHIVE] User ${userId} | sync HIT | client=${lastSync} server=${archiveVersion}`
+      );
+      return res.json({
+        success: true,
+        cache_hit: true,
+        archive_version: archiveVersion,
+        data: [],
+      });
+    }
+
+    if (isBaselineList) {
+      const cachedRows = await dataSyncCache.getCachedArchiveLatest20(userId);
+      if (Array.isArray(cachedRows)) {
+        console.log(`[ARCHIVE] User ${userId} | Redis payload HIT | rows=${cachedRows.length}`);
+        return res.json({
+          success: true,
+          cache_hit: false,
+          redis_payload: true,
+          archive_version: archiveVersion,
+          data: cachedRows.slice(0, limit),
+        });
+      }
+    }
+
+    const where = { user_id: userId };
+    if (q) {
+      where.OR = [
+        { full_sms: { contains: q } },
+        { sender_id: { contains: q } },
+        { provider_tag: { contains: q } },
+      ];
+    }
+    if (hasDateFilter) {
+      // Asia/Dhaka day bounds so progressive 7d/15d windows match client calendars
+      const start = new Date(`${req.query.startDate}T00:00:00+06:00`);
+      const end = new Date(`${req.query.endDate}T23:59:59.999+06:00`);
+      where.created_at = { gte: start, lte: end };
+    }
+
+    const queryOptions = {
+      where,
       orderBy: { created_at: 'desc' },
-      skip: offset,
-      take: limit
-    });
+    };
+    if (!hasDateFilter) {
+      queryOptions.skip = offset;
+      queryOptions.take = limit;
+    } else {
+      // Progressive windows (7d / 15d): return all matches in range (cap for safety)
+      queryOptions.take = 500;
+    }
+
+    const rows = await prisma.custom_sms_archives.findMany(queryOptions);
 
     const userDevices = await prisma.registered_devices.findMany({
       where: { user_id: userId },
@@ -678,7 +775,20 @@ async function getCustomArchives(req, res) {
       };
     });
 
-    return res.json({ success: true, data: mappedRows });
+    if (isBaselineList) {
+      await dataSyncCache.setCachedArchiveLatest20(userId, mappedRows);
+    }
+
+    console.log(
+      `[ARCHIVE] User ${userId} | MISS | q=${q ? 'yes' : 'no'} date=${hasDateFilter} rows=${mappedRows.length}`
+    );
+
+    return res.json({
+      success: true,
+      cache_hit: false,
+      archive_version: archiveVersion,
+      data: mappedRows,
+    });
   } catch (error) {
     console.error('[ARCHIVE] getCustomArchives error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });

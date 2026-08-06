@@ -56,7 +56,10 @@ fun SubscriptionPackagesScreen(
         null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = Color(0xFF22D3EE))
         }
-        true -> SubscriptionV3PackagesScreen(modifier = modifier)
+        true -> SubscriptionV3PackagesScreen(
+            initialTab = initialTab,
+            modifier = modifier
+        )
         false -> LegacySubscriptionPackagesScreen(
             onNavigateToPaymentMock = onNavigateToPaymentMock,
             onNavigateBack = onNavigateBack,

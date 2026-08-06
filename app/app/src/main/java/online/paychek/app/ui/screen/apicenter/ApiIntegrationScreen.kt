@@ -117,7 +117,18 @@ fun ApiIntegrationScreen(
         floatingActionButton = {
             if (entitlements.hasWebsite) {
                 FloatingActionButton(
-                    onClick = { showWizard = true },
+                    onClick = {
+                        val maxSites = entitlements.effMaxSites
+                        if (maxSites > 0 && state.websites.size >= maxSites) {
+                            Toast.makeText(
+                                context,
+                                "👑 লিমিট শেষ! আরও ওয়েবসাইট যুক্ত করতে প্যাকেজ আপগ্রেড করুন।",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } else {
+                            showWizard = true
+                        }
+                    },
                     containerColor = AccentCyan,
                     contentColor = Color(0xFF0B0E14)
                 ) { Icon(Icons.Default.Add, "Add Website") }

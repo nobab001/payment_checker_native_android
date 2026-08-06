@@ -269,12 +269,15 @@ class SmsReceiver(
             // Stage-3: Build Payload (isParseable=1/0 translate হয় server payload-এ)
             val globalBlocked = online.paychek.app.data.local.prefs.PrefsHelper
                 .getGlobalBlockedSenders(context)
+            val entitlements = online.paychek.app.utils.AccountEntitlementsStore.readCached(context)
             val routeResult = SmsRoutingEngine.resolve(
                 sender        = sender,
                 body          = body,
                 simSlot       = simSlot,
                 cachedMethods = cachedMethods,
-                globalBlockedSenders = globalBlocked
+                globalBlockedSenders = globalBlocked,
+                allowCustomArchive = entitlements.hasCustomSender,
+                allowTemplates = entitlements.hasTemplate
             ) ?: run {
                 Log.d(TAG, "[Guard-1] No route for sender='$sender' → DROP")
                 return

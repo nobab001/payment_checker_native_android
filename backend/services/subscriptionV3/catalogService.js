@@ -13,7 +13,8 @@ function mapPlanCategory(row) {
 function mapPlanRow(row) {
   const category = mapPlanCategory(row);
   const sku = row.sku_key || `legacy_${row.id}`;
-  const displayName = row.display_name || row.plan_name;
+  // Admin edits `plan_name` — prefer it so renames show immediately even if display_name lagged.
+  const displayName = row.plan_name || row.display_name || sku;
   return {
     id: Number(row.id),
     sku_key: sku,
@@ -100,7 +101,7 @@ async function listAddonCatalog() {
   await ensureSubscriptionV3Schema();
   const rows = await prisma.$queryRaw`
     SELECT id, addon_key, display_name, allowed_categories, price_1m, price_6m, price_12m,
-           is_active, sort_order
+           info_text, is_active, sort_order
     FROM subscription_addon_catalog
     WHERE is_active = 1
     ORDER BY sort_order ASC, id ASC
@@ -114,6 +115,7 @@ async function listAddonCatalog() {
     price_1m: Number(r.price_1m),
     price_6m: Number(r.price_6m),
     price_12m: Number(r.price_12m),
+    info_text: r.info_text || null,
   }));
 }
 

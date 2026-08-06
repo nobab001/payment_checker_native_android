@@ -46,7 +46,9 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ArrowBackIosNew
+import online.paychek.app.ui.components.subscription.SubscriptionLockOverlay
 import online.paychek.app.utils.SecurePreferences
+import online.paychek.app.utils.SubscriptionLockState
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -159,12 +161,37 @@ fun HomeScreen(
     }
     var showWebsitePermissionDialog by remember { mutableStateOf(false) }
 
+    var subscriptionIsPaid by remember {
+        mutableStateOf(SubscriptionLockState.readCachedIsPaid(context) ?: true)
+    }
+    var subscriptionStatus by remember {
+        mutableStateOf(SubscriptionLockState.readCachedSubscriptionStatus(context))
+    }
+    val subscriptionLocked = SubscriptionLockState.isLocked(subscriptionIsPaid, subscriptionStatus)
+
+    val billingSuccess by online.paychek.app.MainActivity.pendingBillingSuccess
+
+    suspend fun refreshSubscriptionLock() {
+        val (paid, status) = SubscriptionLockState.refresh(context)
+        subscriptionIsPaid = paid
+        subscriptionStatus = status
+    }
+
+    LaunchedEffect(billingSuccess) {
+        if (billingSuccess) refreshSubscriptionLock()
+    }
+
+    LaunchedEffect(entitlements.subscriptionStatus) {
+        entitlements.subscriptionStatus?.let { subscriptionStatus = it }
+    }
+
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
             if (state == androidx.lifecycle.Lifecycle.State.RESUMED) {
                 isAccessibilityEnabled = online.paychek.app.utils.AccessibilityHelper.isAccessibilityServiceEnabled(context)
                 val refreshed = online.paychek.app.utils.AccountEntitlementsStore.refresh(context)
                 if (refreshed != null) entitlements = refreshed
+                refreshSubscriptionLock()
             }
         }
     }
@@ -216,6 +243,7 @@ fun HomeScreen(
 
     DisposableEffect(context) {
         val sharedPrefs = context.getSharedPreferences("paychek_secure_prefs", android.content.Context.MODE_PRIVATE)
+        val appPrefs = context.getSharedPreferences(online.paychek.app.config.AppConfig.PREF_NAME, android.content.Context.MODE_PRIVATE)
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == "pcu_is_approved" || key == "pcu_device_role") {
                 isApproved = SecurePreferences.decrypt(context, "pcu_is_approved") == "true"
@@ -228,10 +256,17 @@ fun HomeScreen(
                 // Child: force immediate approval-status check after owner approves.
                 approvalPollTick += 1
             }
+            if (key == SubscriptionLockState.KEY_BILLING_REFRESH_PING) {
+                coroutineScope.launch {
+                    refreshSubscriptionLock()
+                }
+            }
         }
         sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
+        appPrefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose {
             sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener)
+            appPrefs.unregisterOnSharedPreferenceChangeListener(listener)
         }
     }
 
@@ -967,6 +1002,13 @@ fun HomeScreen(
                         onNavigateBack = { selectTab(HomeTab.HOME) },
                         onNavigateToSubscription = { onNavigate(AppNavKey.SubscriptionPackages()) },
                         modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                if (subscriptionLocked) {
+                    SubscriptionLockOverlay(
+                        onRenewClick = { onNavigate(AppNavKey.SubscriptionPackages()) },
+                        modifier = Modifier.matchParentSize()
                     )
                 }
             }

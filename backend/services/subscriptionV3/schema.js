@@ -57,6 +57,8 @@ async function ensureSubscriptionV3Schema() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
+  await ensureColumn('subscription_addon_catalog', 'info_text', '`info_text` TEXT NULL');
+
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS user_subscriptions (
       id INT NOT NULL AUTO_INCREMENT,
@@ -76,6 +78,51 @@ async function ensureSubscriptionV3Schema() {
       PRIMARY KEY (id),
       UNIQUE KEY uniq_user_category (user_id, category),
       KEY idx_user_sub_expires (user_id, expires_at, status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await ensureColumn('user_subscriptions', 'amount_paid', '`amount_paid` DECIMAL(10,2) NULL');
+  await ensureColumn('user_subscriptions', 'paid_duration_days', '`paid_duration_days` INT NULL');
+  await ensureColumn('user_subscriptions', 'list_price_paid', '`list_price_paid` DECIMAL(10,2) NULL');
+
+  // Stable package codes — backfill empty sku_key once; never rewrite existing codes.
+  await prisma.$executeRawUnsafe(`
+    UPDATE subscription_plans
+    SET sku_key = CONCAT('plan_', id)
+    WHERE sku_key IS NULL OR sku_key = ''
+  `).catch(() => {});
+  const skuIdx = await prisma.$queryRawUnsafe(
+    `SHOW INDEX FROM subscription_plans WHERE Key_name = 'uniq_plan_sku_key'`
+  ).catch(() => []);
+  if (!skuIdx.length) {
+    await prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX uniq_plan_sku_key ON subscription_plans (sku_key)
+    `).catch(() => {});
+  }
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS subscription_deferred (
+      id INT NOT NULL AUTO_INCREMENT,
+      user_id INT NOT NULL,
+      category VARCHAR(32) NOT NULL,
+      package_sku VARCHAR(64) NOT NULL,
+      package_full_name VARCHAR(160) NOT NULL,
+      duration_key VARCHAR(8) NOT NULL,
+      duration_days INT NOT NULL,
+      website_limit_internal INT NOT NULL DEFAULT 0,
+      device_limit_internal INT NOT NULL DEFAULT 50,
+      starts_at DATE NOT NULL,
+      expires_at DATE NOT NULL,
+      amount_paid DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      list_price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      addons_json TEXT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'pending',
+      purchase_invoice VARCHAR(32) NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      applied_at DATETIME NULL,
+      PRIMARY KEY (id),
+      KEY idx_deferred_pending (status, starts_at),
+      KEY idx_deferred_user_cat (user_id, category, status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 

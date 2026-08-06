@@ -10,6 +10,9 @@ const KEYS = {
   deviceSync: (userId, deviceId) => `paychek:sync:device:${userId}:${deviceId}`,
   userCustomVersion: (userId) => `paychek:sync:user_custom:${userId}`,
   userHistoryVersion: (userId) => `paychek:sync:history:${userId}`,
+  userArchiveVersion: (userId) => `paychek:sync:archive:${userId}`,
+  historyLatest20: (userId) => `paychek:cache:history:${userId}:latest20`,
+  archiveLatest20: (userId) => `paychek:cache:archives:${userId}:latest20`,
 };
 
 async function safeRedisGet(key) {
@@ -96,7 +99,64 @@ async function bumpUserHistoryVersion(userId) {
   if (!userId) return Date.now();
   const version = Date.now();
   await safeRedisSet(KEYS.userHistoryVersion(String(userId)), String(version), 0);
+  await safeRedisDel(KEYS.historyLatest20(String(userId)));
   return version;
+}
+
+async function bumpUserArchiveVersion(userId) {
+  if (!userId) return Date.now();
+  const version = Date.now();
+  await safeRedisSet(KEYS.userArchiveVersion(String(userId)), String(version), 0);
+  await safeRedisDel(KEYS.archiveLatest20(String(userId)));
+  return version;
+}
+
+async function getUserArchiveVersion(userId) {
+  if (!userId) return 0;
+
+  const cached = await safeRedisGet(KEYS.userArchiveVersion(String(userId)));
+  if (cached) {
+    return parseInt(cached, 10) || 0;
+  }
+
+  const latest = await prisma.custom_sms_archives.findFirst({
+    where: { user_id: Number(userId) },
+    orderBy: { created_at: 'desc' },
+    select: { created_at: true },
+  });
+  const version = latest?.created_at ? new Date(latest.created_at).getTime() : 0;
+  if (version > 0) {
+    await safeRedisSet(KEYS.userArchiveVersion(String(userId)), String(version), TTL_SECONDS);
+  }
+  return version;
+}
+
+async function getCachedHistoryLatest20(userId) {
+  const raw = await safeRedisGet(KEYS.historyLatest20(String(userId)));
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
+async function setCachedHistoryLatest20(userId, rows) {
+  await safeRedisSet(KEYS.historyLatest20(String(userId)), JSON.stringify(rows || []), TTL_SECONDS);
+}
+
+async function getCachedArchiveLatest20(userId) {
+  const raw = await safeRedisGet(KEYS.archiveLatest20(String(userId)));
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
+async function setCachedArchiveLatest20(userId, rows) {
+  await safeRedisSet(KEYS.archiveLatest20(String(userId)), JSON.stringify(rows || []), TTL_SECONDS);
 }
 
 async function getUserHistoryVersion(userId) {
@@ -216,9 +276,15 @@ module.exports = {
   bumpDeviceSyncVersion,
   bumpUserCustomTemplateVersion,
   bumpUserHistoryVersion,
+  bumpUserArchiveVersion,
   getGlobalTemplateVersion,
   getDeviceSyncVersion,
   getUserHistoryVersion,
+  getUserArchiveVersion,
+  getCachedHistoryLatest20,
+  setCachedHistoryLatest20,
+  getCachedArchiveLatest20,
+  setCachedArchiveLatest20,
   getActiveTemplatesForDashboard,
   getActiveTemplatesForParsing,
   getOfficialTemplatesForAdmin,

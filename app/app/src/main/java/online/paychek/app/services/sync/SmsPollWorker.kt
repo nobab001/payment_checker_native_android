@@ -204,12 +204,15 @@ class SmsPollWorker(
                         // ── SmsRoutingEngine: 3-Stage decision ────────────────────
                         // Worker শুধু SMS সংগ্রহ করে। সব routing decision engine নেয়।
                         val globalBlocked = PrefsHelper.getGlobalBlockedSenders(context)
+                        val entitlements = online.paychek.app.utils.AccountEntitlementsStore.readCached(context)
                         val routeResult = SmsRoutingEngine.resolve(
                             sender        = candidate.sender,
                             body          = candidate.body,
                             simSlot       = simSlot,
                             cachedMethods = cachedMethods,
-                            globalBlockedSenders = globalBlocked
+                            globalBlockedSenders = globalBlocked,
+                            allowCustomArchive = entitlements.hasCustomSender,
+                            allowTemplates = entitlements.hasTemplate
                         )
 
                         if (routeResult == null) {

@@ -179,16 +179,28 @@ object SmsRoutingEngine {
         body: String,
         simSlot: Int?,
         cachedMethods: List<GatewayMethod>,
-        globalBlockedSenders: List<String> = emptyList()
+        globalBlockedSenders: List<String> = emptyList(),
+        allowCustomArchive: Boolean = true,
+        allowTemplates: Boolean = true
     ): SmsRouteResult? {
         val cleanSender = sender.trim().lowercase(Locale.US)
+
+        // Entitlement filter — stale ALL/template methods must not route after downgrade.
+        val gatedMethods = cachedMethods.filter { method ->
+            val isArchive = (method.isParseable ?: 1) == 0 || isAllSenderPolicy(method)
+            when {
+                isArchive && !allowCustomArchive -> false
+                !isArchive && method.templateId != null && !allowTemplates -> false
+                else -> true
+            }
+        }
 
         // ── Stage 1: Collect Candidates ───────────────────────────────────────
         val candidates = collectCandidates(
             cleanSender   = cleanSender,
             body          = body,
             simSlot       = simSlot,
-            cachedMethods = cachedMethods
+            cachedMethods = gatedMethods
         )
 
         if (candidates.isEmpty()) {

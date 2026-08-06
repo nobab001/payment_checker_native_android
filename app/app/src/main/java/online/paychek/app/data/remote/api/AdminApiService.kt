@@ -209,6 +209,18 @@ interface AdminApiService {
         @Body request: V3SettingsUpdateRequest
     ): Response<V3SettingsResponse>
 
+    @GET("admin/subscription/v3/addon-catalog")
+    suspend fun getV3AddonCatalog(
+        @Header("Authorization") token: String
+    ): Response<V3AdminAddonCatalogResponse>
+
+    @PUT("admin/subscription/v3/addon-catalog/{addonKey}")
+    suspend fun updateV3AddonCatalog(
+        @Header("Authorization") token: String,
+        @Path("addonKey") addonKey: String,
+        @Body request: V3AdminAddonUpdateRequest
+    ): Response<V3AdminAddonUpdateResponse>
+
     @GET("admin/subscription/refunds/pending")
     suspend fun getPendingRefunds(
         @Header("Authorization") token: String

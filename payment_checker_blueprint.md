@@ -1292,3 +1292,31 @@ Clients connect and pass a JWT token and hardware device ID during the connectio
 - **VPS Deployment**: সমস্ত পরিবর্তন গিটহাবে পুশ করে স্বয়ংক্রিয়ভাবে লাইভ ভিপিএস-এ ডেপ্লয় করা হয়েছে এবং ৯/৯টি হেলথ চেক সফলভাবে পাস হয়েছে।
 
 
+---
+
+### ✅ Session: 2026-08-06 — Subscription V3 Quote Engine (Upgrade/Downgrade/Deferred), Addon Catalog Admin, Entitlement Reconcile + App Rework
+
+> নোট: এই কাজটি আগের session-এ কোড করা হয়েছিল কিন্তু uncommitted অবস্থায় ছিল। এই session-এ পুরো সেটটি verify (release build + syntax check), VPS-এ deploy এবং blueprint-এ ডকুমেন্ট করা হয়েছে। Git commit ইউজারের নির্দেশের অপেক্ষায়।
+
+**Backend — Subscription V3 Quote Engine:**
+- **Upgrade/Downgrade Logic**: `quoteService.js`-এ `unusedCredit()` (অব্যবহৃত দিনের ক্রেডিট হিসাব) ও `compareTier()` (প্যাকেজ টিয়ার তুলনা) যুক্ত হয়েছে।
+- **Deferred Downgrade**: ডাউনগ্রেড করলে নতুন প্যাকেজ তাৎক্ষণিক চালু না হয়ে বর্তমান প্যাকেজ মেয়াদ শেষ হওয়ার পরদিন থেকে চালু হয় — নতুন `subscription_deferred` টেবিলে pending রেকর্ড থাকে (status, starts_at, expires_at, addons_json)।
+- **Schema (additive)**: `user_subscriptions`-এ `amount_paid` / `paid_duration_days` / `list_price_paid` কলাম; `subscription_plans.sku_key` backfill (`plan_<id>`) + `uniq_plan_sku_key` ইনডেক্স; `subscription_addon_catalog.info_text` কলাম।
+
+**Backend — Admin & Entitlements:**
+- **Addon Catalog Admin**: `GET/PUT /api/admin/subscription/v3/addon-catalog[/:addonKey]` — ডিফল্ট অ্যাড-অন: গেটওয়ে পারমিশন, কাস্টম সেন্ডার আইডি, স্মার্ট পপআপ (`addonCatalogAdminService.js`)।
+- **Entitlement Reconcile** (`entitlementReconcileService.js`): প্যাকেজ পরিবর্তনের পর নতুন entitlement-এর বাইরের রিসোর্স disable হয় — পারমিশন ছাড়া custom/ALL gateway methods বন্ধ, লিমিটের বেশি website hold (ডেটা ডিলিট হয় না)।
+- **Custom ALL UI Copy** (`customAllUiConfig.js`): "কাস্টম অল" চিপ লেবেল ও লকড পপআপ টেক্সট এডমিন-এডিটেবল (`global_config` কী)।
+- `smsRetentionCleanup.js` সরলীকৃত; `smsWorker`, `billingScheduler`, `permissionEngineService`, `accountEntitlementsService`, `dataSyncCache` আপডেট।
+
+**App (Android):**
+- **Dashboard**: কাস্টম আর্কাইভ হিস্ট্রি লোড-মোর পেজিনেশন (`HistoryLoadTier`) + কুইক ডেট রেঞ্জ।
+- **Device Screen**: Custom ALL টেমপ্লেট চিপ + entitlement না থাকলে লকড পপআপ (`SubscriptionLockState`, admin-editable কপি)।
+- **Billing/Admin**: `SubscriptionV3PackagesScreen`, `BillingConfigScreen`-এ অ্যাড-অন কনফিগ সেকশন; নতুন `ui/components/subscription/` কম্পোনেন্ট সেট; `SearchInputLimits` ইউটিলিটি।
+
+**Verification & Deployment:**
+- Release APK build সফল (`assembleRelease`, শুধু warning, কোনো error নেই) → `app/app/build/outputs/apk/release/app-release.apk`।
+- সব পরিবর্তিত backend ফাইল লোকাল + VPS উভয়ে `node --check` পাস।
+- ২১টি ফাইল লোকাল → VPS sync (`/var/www/payment-checker/current/`), শুধু `pm2 reload payment-checker-api`, হেলথ চেক `https://paycheckbd.com/` HTTP 200।
+- Release APK VPS downloads-এ আপলোড: `/var/www/payment-checker/shared/downloads/paycheck.apk` (chmod 644, URL ভেরিফাইড)।
+- কোনো adb device connected না থাকায় on-device install স্কিপ হয়েছে।
