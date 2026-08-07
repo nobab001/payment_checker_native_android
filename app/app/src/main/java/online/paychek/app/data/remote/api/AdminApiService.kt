@@ -120,6 +120,20 @@ interface AdminApiService {
         @Body request: BlockUserRequest
     ): Response<AdminGenericResponse>
 
+    @GET("admin/users/{id}/purchase-history")
+    suspend fun getUserPurchaseHistory(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int
+    ): Response<AdminPurchaseHistoryResponse>
+
+    @POST("admin/users/{id}/purchases/{purchaseId}/mark")
+    suspend fun markUserPurchase(
+        @Header("Authorization") token: String,
+        @Path("id") id: Int,
+        @Path("purchaseId") purchaseId: Int,
+        @Body request: MarkPurchaseRequest
+    ): Response<AdminGenericResponse>
+
     @POST("admin/devices/{id}/trial")
     suspend fun updateDeviceTrial(
         @Header("Authorization") token: String,

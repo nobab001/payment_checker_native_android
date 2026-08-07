@@ -13,7 +13,7 @@ const numberHealth = require('../services/numberHealthService');
 
 const { smsQueue } = require('../services/smsQueue');
 const { getRedisClient } = require('../services/redisClient');
-const { requirePermission, ensureEntitlementSchema } = require('../services/accountEntitlementsService');
+const { requirePermission, ensureEntitlementSchema, permissionDenied } = require('../services/accountEntitlementsService');
 
 const MANUAL_DEVICE_ID = 'ADMIN';
 
@@ -546,6 +546,14 @@ async function getDashboardStats(req, res) {
 
     const globalBlockedSenders = await require('../services/globalBlockedSenders').getGlobalBlockedSenders();
 
+    let activeSubscriptions = [];
+    try {
+      const { getUserSubscriptions } = require('../services/subscriptionV3/sharedExpiryService');
+      activeSubscriptions = await getUserSubscriptions(userId);
+    } catch (e) {
+      console.warn('[STATS] active_subscriptions skip:', e.message);
+    }
+
     return res.json({
       success: true,
       data: {
@@ -559,6 +567,7 @@ async function getDashboardStats(req, res) {
         is_paid:             !!isPaid,
         is_trial:            isTrial,
         active_plan_name:    activePlanName,
+        active_subscriptions: activeSubscriptions,
         expiry_date:         expiryDate,
         created_at:          createdAt,
         trial_welcome:       trialWelcome,
@@ -613,6 +622,10 @@ async function markTransactionSoldOut(req, res) {
 async function getCustomArchives(req, res) {
   try {
     const userId = req.user.userId;
+    const perm = await requirePermission(userId, 'perm_custom_sender');
+    if (!perm.ok) {
+      return permissionDenied(res, 'PERM_CUSTOM_SENDER', perm.message);
+    }
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(50, parseInt(req.query.limit, 10) || 20);
     const offset = (page - 1) * limit;

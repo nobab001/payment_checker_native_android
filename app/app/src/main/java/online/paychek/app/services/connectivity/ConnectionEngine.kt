@@ -84,6 +84,18 @@ class ConnectionEngine private constructor(context: Context) {
     private var lastBanner: ConnectionBanner? = null
     private var lastBannerAtMs = 0L
 
+    /** When true, connection banners (esp. ServerError) are suppressed — maintenance popup owns UX. */
+    @Volatile
+    private var maintenanceMode = false
+
+    fun setMaintenanceMode(active: Boolean) {
+        maintenanceMode = active
+        if (active) {
+            _banner.value = null
+            lastBanner = null
+        }
+    }
+
     fun startMonitoring(scope: CoroutineScope) {
         if (monitoringJob?.isActive == true) return
 
@@ -152,6 +164,12 @@ class ConnectionEngine private constructor(context: Context) {
     }
 
     fun reportApiSyncFailure(message: String = ConnectionBanner.MSG_SERVER_ERROR, isRetrying: Boolean = false) {
+        if (maintenanceMode) {
+            // Maintenance popup replaces the negative "সাময়িক সমস্যা" app-bar message.
+            _banner.value = null
+            lastBanner = null
+            return
+        }
         val current = _status.value
         if (!current.hasServer) return
         // 🔄 retrying sync → Reconnecting; final failure → Server Error
@@ -173,6 +191,11 @@ class ConnectionEngine private constructor(context: Context) {
     }
 
     private fun emitBannerDebounced(banner: ConnectionBanner) {
+        if (maintenanceMode) {
+            _banner.value = null
+            lastBanner = null
+            return
+        }
         val now = System.currentTimeMillis()
         val sameType = lastBanner?.javaClass == banner.javaClass
         if (sameType && now - lastBannerAtMs < DEBOUNCE_MS) {

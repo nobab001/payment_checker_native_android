@@ -1,7 +1,6 @@
-import { ToastController } from './toast-controller.js';
-import { t } from '../i18n.js';
-
 let bound = false;
+
+const COPY_ICON_SVG = `<svg class="btn-copy-ico" width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" stroke-width="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
 
 function hapticLight() {
   try {
@@ -25,15 +24,22 @@ async function writeClipboard(text) {
   ta.remove();
 }
 
-/** Design 1/3: after copy, show pay hint if this provider has charge/commission. */
 function hintFromCopyButton(btn) {
   const block = btn.closest('[data-pay-hint], [data-provider-id]');
   const hint = block?.getAttribute('data-pay-hint')?.trim();
   return hint || null;
 }
 
+function setCopyLabel(btn, text) {
+  const lbl = btn.querySelector('.btn-copy-lbl');
+  if (lbl) {
+    lbl.textContent = text;
+    return;
+  }
+  btn.innerHTML = `${COPY_ICON_SVG}<span class="btn-copy-lbl">${text}</span>`;
+}
+
 export const CopyController = {
-  /** Document-level delegation — works in #pay-content and bottom sheet portal. */
   bind() {
     if (bound) return;
     bound = true;
@@ -52,30 +58,26 @@ export const CopyController = {
     try {
       await writeClipboard(text);
       hapticLight();
-      const original = btn.getAttribute('data-copy-label') || btn.textContent;
+      const original = btn.getAttribute('data-copy-label') || 'কপি করুন';
       btn.setAttribute('data-copy-label', original);
-      btn.textContent = 'Copied';
+      setCopyLabel(btn, 'কপি হয়েছে');
       btn.classList.add('copied');
-      btn.setAttribute('aria-label', `Copied ${text}`);
+      btn.setAttribute('aria-label', `কপি হয়েছে ${text}`);
 
       const payHint = hintFromCopyButton(btn);
-      if (payHint) {
-        // Small popup: copy ack + how much to send (charge/commission only).
-        ToastController.show(`${t('copied')} · ${payHint}`, { duration: 3200 });
-      } else {
-        ToastController.show(t('copied'));
-      }
-
       document.dispatchEvent(new CustomEvent('checkout:number-copied', {
         detail: { number: text, payHint },
       }));
       setTimeout(() => {
-        btn.textContent = original;
+        setCopyLabel(btn, original);
         btn.classList.remove('copied');
         btn.setAttribute('aria-label', `Copy ${text}`);
       }, 1000);
     } catch (_) {
-      ToastController.show(t('copy_failed'));
+      setCopyLabel(btn, 'ব্যর্থ');
+      setTimeout(() => {
+        setCopyLabel(btn, btn.getAttribute('data-copy-label') || 'কপি করুন');
+      }, 1000);
     }
   },
 };

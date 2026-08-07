@@ -86,31 +86,44 @@ document.addEventListener('checkout:provider-focus', (e) => {
 });
 
 window.__checkoutIconFail = function (img) {
-  const s = document.createElement('span');
-  s.textContent = img.getAttribute('data-emoji') || '💳';
-  img.replaceWith(s);
+  const fb = img.getAttribute('data-fallback-src');
+  if (fb && img.getAttribute('data-fallback-used') !== '1') {
+    img.setAttribute('data-fallback-used', '1');
+    img.src = fb;
+    return;
+  }
+  const tab = img.getAttribute('data-tab') || '';
+  const builtins = {
+    send_money: '/assets/checkout/tabs/send_money.png',
+    cash_out: '/assets/checkout/tabs/cash_out.png',
+    payment: '/assets/checkout/tabs/payment.png',
+    bank: '/assets/checkout/tabs/bank.png',
+    card: '/assets/checkout/tabs/card.png',
+  };
+  const next = builtins[tab];
+  if (next && img.getAttribute('src') !== next) {
+    img.removeAttribute('data-fallback-src');
+    img.setAttribute('data-fallback-used', '1');
+    img.src = next;
+  }
 };
 
 window.__checkoutLogoFail = function (img) {
-  const px = parseInt(img.getAttribute('data-px') || '28', 10);
-  const s = document.createElement('span');
-  s.className = 'prov-avatar';
-  s.style.width = px + 'px';
-  s.style.height = px + 'px';
-  s.style.borderRadius = Math.round(px * 0.28) + 'px';
-  s.style.background = img.getAttribute('data-color') || '#94a3b8';
-  s.style.fontSize = Math.round(px * 0.42) + 'px';
-  s.style.flex = '0 0 auto';
-  s.textContent = img.getAttribute('data-initial') || '?';
-  img.replaceWith(s);
+  const fb = img.getAttribute('data-fallback-src');
+  if (fb && img.getAttribute('data-fallback-used') !== '1') {
+    img.setAttribute('data-fallback-used', '1');
+    img.src = fb;
+  }
 };
 
 window.__checkoutCardLogoFail = function (img) {
-  const d = document.createElement('div');
-  d.className = 'logo';
-  d.style.background = img.getAttribute('data-color') || '#94a3b8';
-  d.textContent = img.getAttribute('data-initial') || '?';
-  img.replaceWith(d);
+  const fb = img.getAttribute('data-fallback-src');
+  if (fb && img.getAttribute('data-fallback-used') !== '1') {
+    img.setAttribute('data-fallback-used', '1');
+    img.src = fb;
+    return;
+  }
+  img.style.visibility = 'hidden';
 };
 
 function onTabChange(tabId) {
@@ -554,7 +567,13 @@ window.triggerVerification = async function triggerVerification() {
   try {
     const r = await fetch('/api/checkout/verify', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey, trxId: trx, amount: resolveCheckoutPayAmount(), session: sessionToken }),
+      body: JSON.stringify({
+        apiKey,
+        trxId: trx,
+        amount: resolveCheckoutPayAmount(),
+        expectedPayable: resolveCheckoutPayAmount(),
+        session: sessionToken,
+      }),
     });
     const res = await r.json();
     if (res.success) {
@@ -647,5 +666,16 @@ window.addEventListener('load', () => {
 });
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(() => {});
+  // In-app WebView (?native=1 / PayChekApp UA): skip SW so checkout shell
+  // always matches the live site (avoids stale cached HTML/JS in WebView).
+  const isNative =
+    /(?:\?|&)(?:native|embed)=1(?:&|$)/.test(location.search || '') ||
+    /PayChekApp/i.test(navigator.userAgent || '');
+  if (isNative) {
+    navigator.serviceWorker.getRegistrations()
+      .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+      .catch(() => {});
+  } else {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
 }

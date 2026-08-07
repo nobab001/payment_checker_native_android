@@ -191,6 +191,10 @@ data class DashboardStats(
     @SerializedName("active_plan_name")
     val activePlanName: String,
 
+    /** V3 multi-category active packages (for rotating home title). */
+    @SerializedName("active_subscriptions")
+    val activeSubscriptions: List<V3ActiveSubscriptionDto>? = null,
+
     @SerializedName("expiry_date")
     val expiryDate: String?,
 

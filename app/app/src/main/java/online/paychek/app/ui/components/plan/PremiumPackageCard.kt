@@ -3,10 +3,8 @@ package online.paychek.app.ui.components.plan
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -17,11 +15,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -53,7 +48,7 @@ fun cardAccentColor(index: Int): Color = CardColorPalette[index % CardColorPalet
  * Premium Package Card — v3.
  *
  * - Multi-color: each card gets a unique accent via [accentColor]
- * - Keychain/medal badge inside card (top-right) for discounted packages
+ * - Offer badge (top-right) for discounted / recommended packages
  * - Strikethrough original price + savings
  * - Per-month equivalent
  * - Rich feature list
@@ -271,120 +266,74 @@ fun PremiumPackageCard(
                 }
             }
 
-            // ── Keychain Badge (top-right, inside card) ──────────────────────
+            // ── Discount badge (top-right) ────────────────────────────────────
             if (!badgeTagText.isNullOrBlank() || !discountBadge.isNullOrBlank()) {
-                KeychainBadge(
+                DiscountOfferBadge(
                     tagText = badgeTagText,
                     percentText = discountBadge,
                     color = accentColor,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(top = 8.dp, end = 10.dp)
+                        .padding(top = 10.dp, end = 10.dp)
                 )
             }
         }
     }
 }
 
-// ─── Keychain / Medal Badge ──────────────────────────────────────────────────
+// ─── Discount offer badge ────────────────────────────────────────────────────
 
 /**
- * A keychain-style badge: square tag → ring → medal circle with percentage.
- * Resembles a price-tag/key-tag with a medal ribbon below.
+ * Compact offer pill: optional tag chip above a bold percent capsule.
  */
 @Composable
-private fun KeychainBadge(
+private fun DiscountOfferBadge(
     tagText: String?,
     percentText: String?,
     color: Color,
     modifier: Modifier = Modifier
 ) {
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = modifier
     ) {
-        // ── Tag (square with text) ───────────────────────────────────────────
         if (!tagText.isNullOrBlank()) {
             Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = color,
-                shadowElevation = 2.dp
+                shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 8.dp, bottomEnd = 2.dp),
+                color = color.copy(alpha = 0.14f),
+                border = BorderStroke(1.dp, color.copy(alpha = 0.35f))
             ) {
                 Text(
                     text = tagText,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = color,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                     maxLines = 1
                 )
             }
         }
-
-        // ── Ring connector ───────────────────────────────────────────────────
-        Canvas(modifier = Modifier.size(width = 12.dp, height = 10.dp)) {
-            val cx = size.width / 2
-            // Draw a small ring/circle connector
-            drawCircle(
-                color = color,
-                radius = 3.dp.toPx(),
-                center = Offset(cx, 3.dp.toPx()),
-                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx())
-            )
-            // Short line from ring to medal
-            drawLine(
-                color = color,
-                start = Offset(cx, 6.dp.toPx()),
-                end = Offset(cx, size.height),
-                strokeWidth = 1.5.dp.toPx()
-            )
-        }
-
-        // ── Medal circle with percentage ─────────────────────────────────────
         if (!percentText.isNullOrBlank()) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(30.dp)
-                    .clip(CircleShape)
-                    .background(color)
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = color,
+                shadowElevation = 3.dp
             ) {
-                Text(
-                    text = percentText,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White,
-                    textAlign = TextAlign.Center
-                )
-            }
-
-            // ── Ribbon tails ─────────────────────────────────────────────────
-            Canvas(modifier = Modifier.size(width = 24.dp, height = 8.dp)) {
-                val w = size.width
-                val h = size.height
-                // Left ribbon
-                drawPath(
-                    path = Path().apply {
-                        moveTo(w * 0.25f, 0f)
-                        lineTo(w * 0.45f, 0f)
-                        lineTo(w * 0.35f, h)
-                        lineTo(w * 0.15f, h)
-                        close()
-                    },
-                    color = color.copy(alpha = 0.7f)
-                )
-                // Right ribbon
-                drawPath(
-                    path = Path().apply {
-                        moveTo(w * 0.55f, 0f)
-                        lineTo(w * 0.75f, 0f)
-                        lineTo(w * 0.85f, h)
-                        lineTo(w * 0.65f, h)
-                        close()
-                    },
-                    color = color.copy(alpha = 0.7f)
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = percentText,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1
+                    )
+                }
             }
         }
     }

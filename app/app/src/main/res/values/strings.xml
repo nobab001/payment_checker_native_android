@@ -1,11 +1,11 @@
 <resources>
     <!-- Home screen / launcher icon name -->
-    <string name="app_name">Paychek</string>
+    <string name="app_name">Paycheck</string>
     <!-- Accessibility + Display-over-apps lists (A prefix = sorts to top) -->
-    <string name="app_name_permission">A Paychek</string>
+    <string name="app_name_permission">A Paycheck</string>
     <string name="app_description">Payment Checker &amp; Gateway</string>
-    <string name="accessibility_service_desc">Paychek ব্যাকগ্রাউন্ডে SMS ট্র্যাকিং চালু রাখতে এই সার্ভিস প্রয়োজন। অন্যান্য পেমেন্ট অ্যাপের মতো Accessibility + Battery Unrestricted দিলে ২৪ ঘণ্টা চালু থাকবে।</string>
-    <string name="accessibility_service_label">A Paychek</string>
+    <string name="accessibility_service_desc">Paycheck ব্যাকগ্রাউন্ডে SMS ট্র্যাকিং চালু রাখতে এই সার্ভিস প্রয়োজন। অন্যান্য পেমেন্ট অ্যাপের মতো Accessibility + Battery Unrestricted দিলে ২৪ ঘণ্টা চালু থাকবে।</string>
+    <string name="accessibility_service_label">A Paycheck</string>
     <string name="smart_popup_title">স্মার্ট পপ-আপ</string>
     <string name="smart_popup_scan">স্ক্যান</string>
     <string name="smart_popup_minimize">মিনিমাইজ</string>
@@ -18,6 +18,12 @@
     <string name="smart_popup_soldout">SOLDOUT</string>
     <string name="smart_popup_notif_title">স্মার্ট পপ-আপ চালু</string>
     <string name="smart_popup_notif_text">অন্যান্য অ্যাপে থাকাকালীন ট্রানজেকশন স্ক্যান করুন</string>
+    <string name="admin_notice_badge">ঘোষণা</string>
+    <string name="admin_notice_see_all">See All</string>
+    <string name="admin_notice_dismiss">বুঝেছি</string>
+    <string name="admin_notice_all_title">সব ঘোষণা</string>
+    <string name="admin_notice_inbox_title">নোটিফিকেশন</string>
+    <string name="admin_notice_inbox_empty">কোনো নোটিফিকেশন নেই</string>
     <string name="smart_popup_mode_sms">এসএমএস</string>
     <string name="smart_popup_mode_card">কার্ড</string>
 </resources>

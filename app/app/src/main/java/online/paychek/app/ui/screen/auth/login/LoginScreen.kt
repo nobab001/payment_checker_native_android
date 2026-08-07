@@ -51,7 +51,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import online.paychek.app.ui.screen.maintenance.MaintenanceScreen
+import androidx.activity.ComponentActivity
+import online.paychek.app.ui.screen.maintenance.MaintenanceDialog
 import online.paychek.app.ui.theme.*
 import online.paychek.app.utils.adaptivePadding
 import online.paychek.app.utils.adaptiveTextSize
@@ -120,7 +121,11 @@ fun LoginScreen(
     var adminBypassOpenedAt by remember { mutableStateOf<Long?>(null) }
 
     if (uiState.isMaintenanceMode && !isBypass) {
-        MaintenanceScreen(modifier = modifier.fillMaxSize())
+        MaintenanceDialog(
+            onUnderstood = {
+                (context as? ComponentActivity)?.finish()
+            }
+        )
         return
     }
 
@@ -458,7 +463,7 @@ fun LoginScreen(
         contentAlignment = Alignment.TopCenter
     ) {
         val topPad = if (maxHeight < 640.dp) 40.dp else 64.dp
-        val logoSize = if (maxWidth < 360.dp) 68.dp else 76.dp
+        val logoSize = if (maxWidth < 360.dp) 64.dp else 72.dp
 
         Box(
             modifier = Modifier
@@ -640,22 +645,17 @@ fun LoginScreen(
                 ) {
                     Image(
                         painter = androidx.compose.ui.res.painterResource(id = R.drawable.logo_app),
-                        contentDescription = "Paychek Logo",
-                        modifier = Modifier.size(logoSize * 0.58f)
+                        contentDescription = "Paycheck Logo",
+                        modifier = Modifier.size(logoSize * 0.50f)
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Text(
-                text = "Payment Checker",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
+            AnimatedBrandTitle(
                 color = titleColor,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                fontSize = 28.sp,
                 modifier = Modifier.graphicsLayer(alpha = logoAlpha)
             )
 

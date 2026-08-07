@@ -155,4 +155,30 @@ module.exports = {
       LIMIT 50
     `;
   },
+
+  /** Admin user-settings: full purchase rows + mark flag */
+  getAdminPurchaseHistory: async (userId) => {
+    await ensureSubscriptionV3Schema();
+    return prisma.$queryRaw`
+      SELECT id, invoice_no, package_full_name, package_sku, category, duration_key,
+             purchase_type, list_price, credit_applied, amount_paid AS paid_amount,
+             duration_days, started_at, ends_at, transaction_id,
+             created_at AS purchased_at, refund_status,
+             COALESCE(admin_marked, 0) AS admin_marked
+      FROM subscription_purchases
+      WHERE user_id = ${Number(userId)}
+      ORDER BY created_at DESC
+      LIMIT 100
+    `;
+  },
+
+  markAdminPurchase: async (userId, purchaseId, marked) => {
+    await ensureSubscriptionV3Schema();
+    const result = await prisma.$executeRaw`
+      UPDATE subscription_purchases
+      SET admin_marked = ${marked ? 1 : 0}
+      WHERE id = ${Number(purchaseId)} AND user_id = ${Number(userId)}
+    `;
+    return Number(result) > 0;
+  },
 };

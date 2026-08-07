@@ -27,6 +27,7 @@ data class ProfileSettingsState(
     val subscriptionPlan: String   = "",   // e.g., "Free", "Premium", "Basic"
     val isPaid: Boolean            = false,
     val activePlanName: String   = "",   // raw plan name (for pack card)
+    val activeSubscriptions: List<V3ActiveSubscriptionDto> = emptyList(),
     val expiryDate: String?        = null, // yyyy-MM-dd
 
     // ── Credentials List ─────────────────────────────────────────
@@ -570,6 +571,14 @@ class ProfileSettingsViewModel(application: Application) : AndroidViewModel(appl
                                 // path if the server has no avatar yet.
                                 avatarUrl = serverAvatar ?: it.avatarUrl
                             )
+                        }
+                        // V3 multi-package titles for rotating pack card
+                        runCatching {
+                            val cat = RetrofitClient.paymentApiService.getV3BillingCatalog(bearerToken())
+                            if (cat.isSuccessful) {
+                                val subs = cat.body()?.activeSubscriptions.orEmpty()
+                                _state.update { it.copy(activeSubscriptions = subs) }
+                            }
                         }
                     } else {
                         _state.update { it.copy(isLoading = false) }

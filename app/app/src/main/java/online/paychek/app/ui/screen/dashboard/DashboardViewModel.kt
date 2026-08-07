@@ -65,8 +65,10 @@ data class DashboardScreenState(
     val extendedTransactions: List<TransactionItem> = emptyList(),
     val historyTier: HistoryLoadTier = HistoryLoadTier.INITIAL_20,
     val isLoadingMoreHistory: Boolean = false,
-    // Custom Sender ID Archive additions
-    val selectedTab: Int               = 0, // 0 = Payment Records, 1 = Custom Archive
+    // All-SMS archive (gated by perm_custom_sender / personal package)
+    val selectedTab: Int               = 0, // 0 = Payment Records, 1 = All SMS
+    /** Same gate as device “কাস্টম অল / সকল এসএমএস” template enable. */
+    val hasAllSmsPermission: Boolean   = false,
     val customArchives: List<CustomArchiveItem> = emptyList(),
     val isCustomArchivesLoading: Boolean = false,
     val customArchivesError: String?   = null,
@@ -116,7 +118,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // ViewModel তৈরি হওয়ার সাথে সাথে SharedPrefs থেকে স্টেট পড়া
         val isActive = prefs.getBoolean(AppConfig.KEY_SMS_SERVICE_ACTIVE, false)
         val userName = prefs.getString("pcu_user_name", "ব্যবহারকারী") ?: "ব্যবহারকারী"
-        val defaultTab = prefs.getInt("pcu_default_dashboard_tab", 0)
+        val cachedEnt = online.paychek.app.utils.AccountEntitlementsStore.readCached(application)
+        val hasAllSms = cachedEnt.hasCustomSender
+        val preferredTab = prefs.getInt("pcu_default_dashboard_tab", 0)
+        val defaultTab = if (hasAllSms) preferredTab else 0
 
         // Read templates cache from PrefsHelper and filter by isActive == 1
         val cachedTemplatesJson = online.paychek.app.data.local.prefs.PrefsHelper.getSmsTemplatesCache(application)
@@ -135,6 +140,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 isServiceActive = isActive, 
                 userName = userName,
                 selectedTab = defaultTab,
+                hasAllSmsPermission = hasAllSms,
                 globalTemplates = activeTemplates
             ) 
         }
@@ -149,9 +155,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 .distinctUntilChanged()
                 .filter { it }
                 .collect {
+                    refreshAllSmsPermission()
                     loadDashboardStats()
                     loadPlans()
-                    if (_state.value.selectedTab == 1) {
+                    if (_state.value.selectedTab == 1 && _state.value.hasAllSmsPermission) {
                         loadCustomArchives()
                     }
                 }
@@ -159,6 +166,30 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
         viewModelScope.launch {
             ensureSmsServiceRunning()
+        }
+
+        viewModelScope.launch {
+            refreshAllSmsPermission()
+        }
+    }
+
+    /** Sync home All-SMS tab with the same entitlement used for custom-all templates. */
+    fun refreshAllSmsPermission() {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val ent = online.paychek.app.utils.AccountEntitlementsStore.refresh(app)
+                ?: online.paychek.app.utils.AccountEntitlementsStore.readCached(app)
+            applyAllSmsPermission(ent.hasCustomSender)
+        }
+    }
+
+    private fun applyAllSmsPermission(allowed: Boolean) {
+        _state.update { st ->
+            val tab = if (!allowed && st.selectedTab == 1) 0 else st.selectedTab
+            if (!allowed && st.selectedTab == 1) {
+                prefs.edit().putInt("pcu_default_dashboard_tab", 0).apply()
+            }
+            st.copy(hasAllSmsPermission = allowed, selectedTab = tab)
         }
     }
 
@@ -361,7 +392,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun onRefresh(): Boolean {
         return RefreshCooldown.tryRefresh {
             _state.update { it.copy(isRefreshing = true) }
-            if (_state.value.selectedTab == 1) {
+            refreshAllSmsPermission()
+            if (_state.value.selectedTab == 1 && _state.value.hasAllSmsPermission) {
                 loadCustomArchives(forceNetwork = true)
             } else {
                 loadDashboardStats()
@@ -504,6 +536,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun setSelectedTab(tabIndex: Int) {
+        if (tabIndex == 1 && !_state.value.hasAllSmsPermission) return
         _state.update { it.copy(selectedTab = tabIndex) }
         if (tabIndex == 1) {
             loadCustomArchives()
@@ -511,10 +544,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun saveDefaultTabPreference(tabIndex: Int) {
+        if (tabIndex == 1 && !_state.value.hasAllSmsPermission) return
         prefs.edit().putInt("pcu_default_dashboard_tab", tabIndex).apply()
     }
 
     fun loadCustomArchives(query: String = "", forceNetwork: Boolean = false) {
+        if (!_state.value.hasAllSmsPermission) {
+            applyAllSmsPermission(false)
+            return
+        }
         viewModelScope.launch {
             _state.update {
                 it.copy(
@@ -604,6 +642,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     /** Progressive archive history: 20 → 7d → 15d (matches rolling retention). */
     fun loadMoreArchives() {
         val current = _state.value
+        if (!current.hasAllSmsPermission) return
         if (current.isLoadingMoreArchives || current.isCustomArchivesLoading) return
         val nextDays = current.archiveHistoryTier.nextArchiveHistoryDays() ?: return
 

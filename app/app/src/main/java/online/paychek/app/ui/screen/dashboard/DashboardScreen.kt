@@ -196,6 +196,7 @@ fun DashboardScreen(
                 isAccessibilityEnabled = AccessibilityHelper.isAccessibilityServiceEnabled(context)
                 isBatteryUnrestricted = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
                 viewModel.ensureSmsServiceRunning()
+                viewModel.refreshAllSmsPermission()
 
                 // Monitor was requested earlier but guards were incomplete — start now.
                 if (online.paychek.app.data.local.prefs.PrefsHelper.isPendingMonitorStart(context) &&
@@ -306,9 +307,9 @@ fun DashboardScreen(
         }
     }
 
-    // Archive tab: debounce server search so full-SMS paste can find older rows
-    LaunchedEffect(archiveSearchQuery, screenState.selectedTab) {
-        if (screenState.selectedTab != 1) return@LaunchedEffect
+    // All-SMS tab: debounce server search so full-SMS paste can find older rows
+    LaunchedEffect(archiveSearchQuery, screenState.selectedTab, screenState.hasAllSmsPermission) {
+        if (screenState.selectedTab != 1 || !screenState.hasAllSmsPermission) return@LaunchedEffect
         kotlinx.coroutines.delay(350)
         viewModel.loadCustomArchives(archiveSearchQuery)
     }
@@ -563,6 +564,7 @@ fun DashboardScreen(
                     isPaid = isPaid,
                     isTrial = isTrial,
                     activePlanName = successStats?.activePlanName ?: "FREE_LEVEL",
+                    activeSubscriptions = successStats?.activeSubscriptions.orEmpty(),
                     expiryDate = successStats?.expiryDate,
                     onBuyPlanClick = onNavigateToSubscription,
                     isServiceActive = screenState.isServiceActive,
@@ -588,13 +590,15 @@ fun DashboardScreen(
 
             // Dual-Tab Toggle Row
             item {
+                val canOpenAllSms = screenState.hasAllSmsPermission
                 TabRow(
-                    selectedTabIndex = screenState.selectedTab,
+                    selectedTabIndex = screenState.selectedTab.coerceIn(0, 1),
                     containerColor = DashBg,
                     contentColor = AccentCyan,
                     indicator = { tabPositions ->
+                        val idx = screenState.selectedTab.coerceIn(0, tabPositions.lastIndex)
                         TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[screenState.selectedTab]),
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[idx]),
                             color = AccentCyan
                         )
                     },
@@ -617,16 +621,24 @@ fun DashboardScreen(
                         }
                     )
                     Tab(
-                        selected = screenState.selectedTab == 1,
+                        selected = screenState.selectedTab == 1 && canOpenAllSms,
                         onClick = {
+                            if (!canOpenAllSms) return@Tab
                             viewModel.setSelectedTab(1)
                             viewModel.saveDefaultTabPreference(1)
                         },
                         text = {
                             Text(
-                                text = "কাস্টম আর্কাইভ",
+                                text = "সকল এসএমএস",
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
+                                fontSize = 14.sp,
+                                color = if (canOpenAllSms) {
+                                    Color.Unspecified
+                                } else if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) {
+                                    Color.White.copy(alpha = 0.32f)
+                                } else {
+                                    TextMuted.copy(alpha = 0.38f)
+                                }
                             )
                         }
                     )
@@ -958,7 +970,7 @@ fun DashboardScreen(
                 }
             }
 
-            if (screenState.selectedTab == 1) {
+            if (screenState.selectedTab == 1 && screenState.hasAllSmsPermission) {
                 item {
                     OutlinedTextField(
                         value = archiveSearchQuery,
@@ -1051,7 +1063,7 @@ fun DashboardScreen(
                                 text = if (archiveSearchQuery.isNotBlank()) {
                                     "কোনো ম্যাচিং আর্কাইভ এসএমএস পাওয়া যায়নি"
                                 } else {
-                                    "কাস্টম আর্কাইভে কোনো বার্তা নেই"
+                                    "সকল এসএমএস-এ কোনো বার্তা নেই"
                                 },
                                 color = TextMuted,
                                 fontSize = 14.sp,
@@ -1162,6 +1174,7 @@ private fun DashboardHeaderBlock(
     isPaid: Boolean,
     isTrial: Boolean,
     activePlanName: String,
+    activeSubscriptions: List<online.paychek.app.data.remote.dto.V3ActiveSubscriptionDto> = emptyList(),
     expiryDate: String?,
     onBuyPlanClick: () -> Unit,
     isServiceActive: Boolean,
@@ -1208,24 +1221,10 @@ private fun DashboardHeaderBlock(
                     )
                 }
 
-                // Notification icon button (replaces old 3-dot menu)
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.15f))
-                        .clickable {
-                            // Notifications entry point
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Notifications,
-                        contentDescription = "নোটিফিকেশন",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                online.paychek.app.ui.component.AdminNoticeBellButton(
+                    tint = Color.White,
+                    circleBackground = Color.White.copy(alpha = 0.15f)
+                )
             }
 
             // Row 2: Compact glass bar — 2 lines (package name + expiry/days) + small renew button
@@ -1266,16 +1265,22 @@ private fun DashboardHeaderBlock(
                             tint = AccentAmber,
                             modifier = Modifier.size(16.dp)
                         )
-                    Text(
-                        text = if (isPaid || isTrial) activePlanName else "ফ্রি প্ল্যান",
+                        val planFrames = remember(activeSubscriptions, activePlanName, isPaid, isTrial) {
+                            when {
+                                !isPaid && !isTrial -> emptyList()
+                                activeSubscriptions.isNotEmpty() ->
+                                    online.paychek.app.ui.components.plan.buildPlanTitleFrames(activeSubscriptions)
+                                (isPaid || isTrial) && activePlanName.isNotBlank() && activePlanName != "FREE_LEVEL" ->
+                                    listOf(activePlanName)
+                                else -> emptyList()
+                            }
+                        }
+                        online.paychek.app.ui.components.plan.RotatingPlanTitle(
+                            frames = planFrames,
                             color = Color.White,
                             fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            softWrap = false,
-                            modifier = Modifier
-                                .weight(1f, fill = false)
-                                .basicMarquee()
+                            fallback = if (isPaid || isTrial) activePlanName.ifBlank { "Active Package" } else "ফ্রি প্ল্যান",
+                            modifier = Modifier.weight(1f, fill = false)
                         )
                     }
                     Text(
@@ -2052,7 +2057,7 @@ private fun TrialWelcomeDialog(
     val trialDays = welcome?.trialDays ?: 7
     val title = welcome?.title?.ifBlank { null } ?: "অভিনন্দন!"
     val rawMessage = welcome?.message?.ifBlank { null }
-        ?: "আপনার জন্য {trial_days} দিনের Trial Package সক্রিয় করা হয়েছে।\n\nএখন আপনি সম্পূর্ণ ফ্রি-তে PayCheck-এর সকল Premium Feature ব্যবহার করে দেখতে পারবেন।"
+        ?: "আপনার জন্য {trial_days} দিনের Trial Package সক্রিয় করা হয়েছে।\n\nএখন আপনি সম্পূর্ণ ফ্রি-তে Paycheck-এর সকল Premium Feature ব্যবহার করে দেখতে পারবেন।"
     val formattedExpiry = formatExpiryDateToBangla(expiryDate)
     val message = rawMessage
         .replace("{trial_days}", trialDays.toString())

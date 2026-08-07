@@ -1439,8 +1439,14 @@ async function uploadMerchantAccountLogo(req, res) {
       });
     }
 
-    if (acct.logo_url && websiteLogoService.isManagedLogoPath(acct.logo_url, userId, row.id)) {
-      websiteLogoService.deleteLogoFile(acct.logo_url);
+    // saveWebsiteLogo clears prior files; skip delete when path unchanged (would erase new file).
+    const prev = acct.logo_url;
+    if (
+      prev &&
+      prev !== relPath &&
+      websiteLogoService.isManagedLogoPath(prev, userId, row.id)
+    ) {
+      websiteLogoService.deleteLogoFile(prev);
     }
     const updated = await prisma.merchant_accounts.update({
       where: { id: acct.id },
@@ -1468,7 +1474,6 @@ async function uploadWebsiteLogo(req, res) {
       return res.status(400).json({ success: false, error: 'NO_FILE', message: 'লোগো ফাইল পাঠানো হয়নি।' });
     }
 
-    const oldPath = row.logo_url;
     let relPath;
     try {
       relPath = await websiteLogoService.saveWebsiteLogo(
@@ -1490,10 +1495,8 @@ async function uploadWebsiteLogo(req, res) {
       });
     }
 
-    if (oldPath && websiteLogoService.isManagedLogoPath(oldPath, userId, row.id)) {
-      websiteLogoService.deleteLogoFile(oldPath);
-    }
-
+    // saveWebsiteLogo already clears prior managed logo_* files in this folder.
+    // Do NOT delete oldPath after write — same relative path would wipe the new file.
     const updated = await prisma.gateway_layouts.update({
       where: { id: row.id },
       data: { logo_url: relPath, updated_at: new Date() },

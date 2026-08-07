@@ -23,11 +23,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import online.paychek.app.config.AppConfig
 import online.paychek.app.data.remote.api.RetrofitClient
-import online.paychek.app.ui.component.AdminNoticeDialog
 import online.paychek.app.utils.SecurePreferences
 import online.paychek.app.ui.screen.auth.pin.SecurityGateScreen
 import online.paychek.app.ui.screen.device.RemoteLockScreen
-import online.paychek.app.ui.screen.maintenance.MaintenanceScreen
+import online.paychek.app.services.connectivity.ConnectionEngine
+import online.paychek.app.ui.screen.maintenance.MaintenanceDialog
 import online.paychek.app.ui.theme.AppTheme
 import online.paychek.app.utils.SessionFlags
 import online.paychek.app.utils.SessionLockPolicy
@@ -43,8 +43,6 @@ class MainActivity : FragmentActivity() {
     private var isAppLocked by mutableStateOf(false)
     private var isAppDeactivated by mutableStateOf(false)
     private var isMaintenanceBlocked by mutableStateOf(false)
-    /** Bumped after each admin-notice fetch so the popup re-reads its queue. */
-    private var noticeRefreshKey by mutableStateOf(0)
     private var wasStopped = false
 
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
@@ -81,18 +79,26 @@ class MainActivity : FragmentActivity() {
                     Box(modifier = Modifier.fillMaxSize()) {
                         MainNavigation()
 
+                        when {
+                            isAppDeactivated -> {
+                                RemoteLockScreen(modifier = Modifier.fillMaxSize())
+                            }
+                            isAppLocked -> {
+                                SecurityGateScreen(
+                                    onUnlockSuccess = { isAppLocked = false },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
+
+                        // Maintenance: keep UI/services alive under a blocking popup.
+                        // বুঝেছি closes the Activity only — process/services continue.
                         if (isMaintenanceBlocked) {
-                            MaintenanceScreen(modifier = Modifier.fillMaxSize())
-                        } else if (isAppDeactivated) {
-                            RemoteLockScreen(modifier = Modifier.fillMaxSize())
-                        } else if (isAppLocked) {
-                            SecurityGateScreen(
-                                onUnlockSuccess = { isAppLocked = false },
-                                modifier = Modifier.fillMaxSize()
+                            MaintenanceDialog(
+                                onUnderstood = {
+                                    finish()
+                                }
                             )
-                        } else {
-                            // Admin announcements — only once the user is past every gate.
-                            AdminNoticeDialog(refreshKey = noticeRefreshKey)
                         }
                     }
                 }
@@ -112,7 +118,7 @@ class MainActivity : FragmentActivity() {
                         .setTitle("নিরাপত্তা সতর্কতা")
                         .setMessage(
                             "এই ডিভাইসে Root সনাক্ত হয়েছে।\n\n" +
-                                "নিরাপত্তার কারণে Paychek এই ডিভাইসে চলতে পারবে না। " +
+                                "নিরাপত্তার কারণে Paycheck এই ডিভাইসে চলতে পারবে না। " +
                                 "Root করা ডিভাইসে আপনার HMAC Secret Key এবং পেমেন্ট " +
                                 "তথ্য নিরাপদ নাও থাকতে পারে।"
                         )
@@ -246,17 +252,16 @@ class MainActivity : FragmentActivity() {
     private fun refreshAdminNotices() {
         lifecycleScope.launch(Dispatchers.IO) {
             online.paychek.app.services.notify.AdminNoticeManager.refreshFromServer(this@MainActivity)
-            withContext(Dispatchers.Main) { noticeRefreshKey++ }
         }
     }
 
     private fun refreshMaintenanceGate() {
         if (!SessionFlags.hasAuth(this)) {
-            isMaintenanceBlocked = false
+            applyMaintenanceBlocked(false)
             return
         }
         if (SessionFlags.userRole(this) == "admin") {
-            isMaintenanceBlocked = false
+            applyMaintenanceBlocked(false)
             return
         }
         lifecycleScope.launch(Dispatchers.IO) {
@@ -267,9 +272,15 @@ class MainActivity : FragmentActivity() {
                 false
             }
             withContext(Dispatchers.Main) {
-                isMaintenanceBlocked = blocked
+                applyMaintenanceBlocked(blocked)
             }
         }
+    }
+
+    /** Blocks UI with popup and suppresses the negative app-bar server-error banner. */
+    private fun applyMaintenanceBlocked(blocked: Boolean) {
+        isMaintenanceBlocked = blocked
+        ConnectionEngine.getInstance(this).setMaintenanceMode(blocked)
     }
 
     private fun healDeviceConfigCache() {

@@ -119,7 +119,7 @@ fun BackgroundPersistenceCard(
             SetupRow(
                 done = accessibilityOk,
                 title = "১. Accessibility চালু",
-                subtitle = "Paychek Background Guard → ON",
+                subtitle = "Paycheck Background Guard → ON",
                 onSetup = { AccessibilityHelper.openAccessibilitySettings(context) }
             )
             SetupRow(

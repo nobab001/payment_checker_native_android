@@ -8,9 +8,19 @@ const checkoutPaymentBridge = require('../services/checkoutPaymentBridge');
 const manualAccounts = require('../services/checkoutManualAccountService');
 const helplineService = require('../services/checkoutHelplineService');
 const manualAccountCtrl = require('./checkoutManualAccountController');
-const { normalizeWebsitePurpose, normalizeSessionPurpose, computePurposeAmounts, roundMoney2 } = require('../services/websitePurpose');
+const { normalizeWebsitePurpose, normalizeSessionPurpose, computePurposeAmounts, roundMoney2, roundPayableTaka } = require('../services/websitePurpose');
 const settlementService = require('../services/checkoutSettlementService');
 const { isSessionExpired } = require('../payment/shared/session-utils');
+const dataSyncCache = require('../services/dataSyncCache');
+
+async function bumpHistoryAfterSoldOut(userId) {
+  if (!userId) return;
+  try {
+    await dataSyncCache.bumpUserHistoryVersion(userId);
+  } catch (e) {
+    console.warn('[CHECKOUT] bumpUserHistoryVersion failed:', e.message);
+  }
+}
 
 const CHECKOUT_SESSION_EXPIRED_MSG = 'Checkout session expired. Please reopen checkout and try again.';
 
@@ -400,6 +410,7 @@ async function verifyCheckoutPayment(req, res) {
           where: { id: payment.id },
           data: { is_used: 1, used_at: new Date(), used_by_merchant_id: merchant.id },
         });
+        await bumpHistoryAfterSoldOut(merchant.user_id);
       }
 
       const history = await prisma.sms_history.findUnique({
@@ -449,10 +460,12 @@ async function verifyCheckoutPayment(req, res) {
     }
 
     // ── Payment: multi-txn settlement ─────────────────────────────────────
+    // Prefer client expectedPayable; else round session amount to whole Taka
+    // (checkout UI shows roundPayableTaka — must not demand leftover paisa).
     const payableHint = expectedPayable != null && expectedPayable !== ''
       ? Number(expectedPayable)
-      : Number(orderAmount);
-    const expectedPay = roundMoney2(payableHint > 0 ? payableHint : orderAmount);
+      : roundPayableTaka(orderAmount);
+    const expectedPay = roundMoney2(payableHint > 0 ? payableHint : roundPayableTaka(orderAmount));
 
     const settlementKey = settlementService.buildSettlementKey({
       sessionToken: session || null,
@@ -475,6 +488,7 @@ async function verifyCheckoutPayment(req, res) {
         where: { id: payment.id },
         data: { is_used: 1, used_at: new Date(), used_by_merchant_id: merchant.id },
       });
+      await bumpHistoryAfterSoldOut(merchant.user_id);
     }
 
     const applied = await settlementService.applyPart(settlementKey, {
@@ -626,6 +640,7 @@ async function claimCheckTransaction(req, res) {
         used_by_merchant_id: merchant.id
       }
     });
+    await bumpHistoryAfterSoldOut(merchant.user_id);
 
     console.log(`[B2B CLAIM] Trx ${payment.trx_id} (৳${payment.amount}) marked SOLDOUT for merchant ID ${merchant.id}`);
 

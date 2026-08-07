@@ -2,14 +2,15 @@ package online.paychek.app.ui.screen.admin
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,17 +20,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import online.paychek.app.data.remote.dto.AdminDeviceDto
+import online.paychek.app.data.remote.dto.AdminPurchaseHistoryDto
 import online.paychek.app.data.remote.dto.AdminUserDto
 import online.paychek.app.data.remote.dto.AdminWebsiteDto
-import online.paychek.app.data.remote.dto.SubscriptionPlanDto
 import online.paychek.app.ui.theme.RoyalIndigo
 import online.paychek.app.ui.theme.StatusGreen
 import online.paychek.app.ui.theme.StatusRed
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
 
 private val AccentCyan = Color(0xFF22D3EE)
 
@@ -52,6 +56,7 @@ fun AdminUserSettingsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingExtendDays by remember { mutableStateOf<Int?>(null) }
     var extendReason by remember { mutableStateOf("Manual Adjustment") }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val extendReasons = remember {
         listOf(
@@ -96,6 +101,22 @@ fun AdminUserSettingsScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                actions = {
+                    IconButton(
+                        onClick = { viewModel.openPurchaseHistory() },
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(RoyalIndigo.copy(alpha = 0.12f))
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ReceiptLong,
+                            contentDescription = "পেমেন্ট হিস্টরি",
+                            tint = RoyalIndigo
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
@@ -133,9 +154,6 @@ fun AdminUserSettingsScreen(
                         extendReason = "Manual Adjustment"
                         pendingExtendDays = days
                     },
-                    onUpdateDeviceTrial = { id, exp, locked, reason ->
-                        viewModel.updateDeviceTrial(id, exp, locked, reason)
-                    },
                     onPermissionChange = { siteId, payType, commission, commMenu ->
                         viewModel.setWebsitePermission(siteId, payType, commission, commMenu)
                     },
@@ -144,6 +162,20 @@ fun AdminUserSettingsScreen(
                         .padding(padding)
                 )
             }
+        }
+    }
+
+    if (uiState.showPurchaseHistory) {
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.closePurchaseHistory() },
+            sheetState = sheetState
+        ) {
+            PurchaseHistorySheet(
+                purchases = uiState.purchases,
+                isLoading = uiState.isLoadingPurchases,
+                isSaving = uiState.isSaving,
+                onMark = { id, marked -> viewModel.markPurchase(id, marked) }
+            )
         }
     }
 
@@ -197,7 +229,6 @@ private fun AdminUserSettingsContent(
     isSaving: Boolean,
     onToggleBlock: (Boolean) -> Unit,
     onExtendSubscription: (Int) -> Unit,
-    onUpdateDeviceTrial: (Int, String?, Boolean, String?) -> Unit,
     onPermissionChange: (Int, Boolean?, Boolean?, Boolean?) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -214,7 +245,7 @@ private fun AdminUserSettingsContent(
             isSaving = isSaving,
             onToggleBlock = onToggleBlock
         )
-        DevicesSection(user.devices, onUpdateDeviceTrial)
+        DevicesCountSection(deviceCount = user.devices.size)
         MerchantApiPermissionsSection(websites, isSaving, onPermissionChange)
         Spacer(modifier = Modifier.height(24.dp))
     }
@@ -371,91 +402,271 @@ private fun QuickActionsRow(
 }
 
 @Composable
-private fun DevicesSection(
-    devices: List<AdminDeviceDto>,
-    onUpdateDeviceTrial: (Int, String?, Boolean, String?) -> Unit
+private fun DevicesCountSection(deviceCount: Int) {
+    SectionHeader(Icons.Default.PhoneAndroid, "ডিভাইস")
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "মোট ডিভাইস সংখ্যা",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "$deviceCount",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = RoyalIndigo
+            )
+        }
+    }
+}
+
+@Composable
+private fun PurchaseHistorySheet(
+    purchases: List<AdminPurchaseHistoryDto>,
+    isLoading: Boolean,
+    isSaving: Boolean,
+    onMark: (Int, Boolean) -> Unit
 ) {
-    SectionHeader(Icons.Default.PhoneAndroid, "ডিভাইস (${devices.size})")
-    if (devices.isEmpty()) {
-        EmptyHint("কোনো ডিভাইস নেই।")
-    } else {
-        devices.forEach { dev ->
-            CompactDeviceCard(dev) { exp, locked, reason ->
-                onUpdateDeviceTrial(dev.id, exp, locked, reason)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            "পেমেন্ট হিস্টরি",
+            fontWeight = FontWeight.Bold,
+            fontSize = 17.sp,
+            color = RoyalIndigo
+        )
+        Text(
+            "প্যাকেজ কেনার ট্রানজেকশন ও সময়সহ ডিটেইলস। মার্ক করে চিহ্নিত রাখুন।",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        when {
+            isLoading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = RoyalIndigo)
+                }
+            }
+            purchases.isEmpty() -> {
+                EmptyHint("কোনো পেমেন্ট হিস্টরি নেই।")
+            }
+            else -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 480.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    purchases.forEach { purchase ->
+                        PurchaseHistoryCard(
+                            purchase = purchase,
+                            enabled = !isSaving,
+                            onMark = { onMark(purchase.id, it) }
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun CompactDeviceCard(
-    dev: AdminDeviceDto,
-    onSave: (String?, Boolean, String?) -> Unit
+private fun PurchaseHistoryCard(
+    purchase: AdminPurchaseHistoryDto,
+    enabled: Boolean,
+    onMark: (Boolean) -> Unit
 ) {
-    var isLocked by remember(dev.id) { mutableStateOf(dev.isTrialLocked) }
-    var daysStr by remember(dev.id) { mutableStateOf("") }
-
+    val paid = purchase.paidAmount?.let { "৳${formatAmount(it)}" } ?: "—"
+    val listPrice = purchase.listPrice?.let { "৳${formatAmount(it)}" }
     Card(
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (purchase.adminMarked) {
+                StatusGreen.copy(alpha = 0.08f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (purchase.adminMarked) StatusGreen.copy(alpha = 0.4f)
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        ),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("${dev.deviceName} · ${dev.deviceModel}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-            Text(
-                "Android ${dev.androidVersion} · ${dev.status} · ব্যাটারি ${dev.lastBatteryPercent ?: 0}%",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                "ট্রায়াল: ${dev.trialExpiresAt?.take(10) ?: "N/A"}",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("লক", fontSize = 12.sp)
-                Switch(checked = isLocked, onCheckedChange = { isLocked = it })
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = daysStr,
-                    onValueChange = { daysStr = it },
-                    placeholder = { Text("±দিন", fontSize = 12.sp) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
+                Text(
+                    purchase.packageFullName ?: purchase.packageSku ?: "Package",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    modifier = Modifier.weight(1f)
                 )
-                FilledTonalButton(
-                    onClick = {
-                        val addDays = daysStr.toIntOrNull() ?: 0
-                        val currentExp = dev.trialExpiresAt?.let {
-                            try {
-                                val parts = it.substring(0, 10).split("-")
-                                java.util.Calendar.getInstance().apply {
-                                    set(parts[0].toInt(), parts[1].toInt() - 1, parts[2].toInt())
-                                }.time
-                            } catch (_: Exception) {
-                                java.util.Date()
-                            }
-                        } ?: java.util.Date()
-                        val cal = java.util.Calendar.getInstance().apply { time = currentExp }
-                        cal.add(java.util.Calendar.DAY_OF_YEAR, addDays)
-                        val fmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-                        onSave(fmt.format(cal.time), isLocked, if (isLocked) "Admin locked" else null)
-                        daysStr = ""
-                    },
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (purchase.adminMarked) "মার্কড" else "মার্ক",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Checkbox(
+                        checked = purchase.adminMarked,
+                        onCheckedChange = onMark,
+                        enabled = enabled
+                    )
+                }
+            }
+            DetailLine("ইনভয়েস", purchase.invoiceNo ?: "—")
+            CopyableTransactionLine(transactionId = purchase.transactionId)
+            DetailLine("সময়", formatDateTime(purchase.purchasedAt))
+            DetailLine("পরিমাণ", paid)
+            if (listPrice != null && purchase.listPrice != purchase.paidAmount) {
+                DetailLine("লিস্ট প্রাইস", listPrice)
+            }
+            if (!purchase.creditApplied.isNullOrZero()) {
+                DetailLine("ক্রেডিট", "৳${formatAmount(purchase.creditApplied!!)}")
+            }
+            DetailLine("মেয়াদ", "${formatDate(purchase.startedAt)} → ${formatDate(purchase.endsAt)}")
+            if (!purchase.durationKey.isNullOrBlank() || purchase.durationDays != null) {
+                DetailLine(
+                    "ডিউরেশন",
+                    listOfNotNull(
+                        purchase.durationKey?.uppercase(),
+                        purchase.durationDays?.let { "$it দিন" }
+                    ).joinToString(" · ")
+                )
+            }
+            if (!purchase.purchaseType.isNullOrBlank()) {
+                DetailLine("টাইপ", purchase.purchaseType!!)
+            }
+            if (!purchase.category.isNullOrBlank()) {
+                DetailLine("ক্যাটাগরি", purchase.category!!)
+            }
+            if (!purchase.refundStatus.isNullOrBlank()) {
+                DetailLine("রিফান্ড", purchase.refundStatus!!)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailLine(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            value,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(start = 12.dp)
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CopyableTransactionLine(transactionId: String?) {
+    val context = LocalContext.current
+    val value = transactionId?.takeIf { it.isNotBlank() } ?: "—"
+    val canCopy = !transactionId.isNullOrBlank()
+
+    fun copyTrx() {
+        if (!canCopy) return
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("transaction_id", transactionId))
+        Toast.makeText(context, "ট্রানজেকশন আইডি কপি হয়েছে", Toast.LENGTH_SHORT).show()
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text("ট্রানজেকশন", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .padding(start = 8.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .then(
+                    if (canCopy) {
+                        Modifier.combinedClickable(
+                            onClick = { copyTrx() },
+                            onLongClick = { copyTrx() }
+                        )
+                    } else Modifier
+                )
+                .padding(horizontal = 4.dp, vertical = 2.dp)
+        ) {
+            Text(
+                value,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (canCopy) RoyalIndigo else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.widthIn(max = 180.dp)
+            )
+            if (canCopy) {
+                IconButton(
+                    onClick = { copyTrx() },
+                    modifier = Modifier.size(28.dp)
                 ) {
-                    Text("সেভ", fontSize = 12.sp)
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "কপি",
+                        tint = RoyalIndigo,
+                        modifier = Modifier.size(14.dp)
+                    )
                 }
             }
         }
     }
+}
+
+private fun Double?.isNullOrZero(): Boolean = this == null || this == 0.0
+
+private fun formatAmount(value: Double): String {
+    return if (value % 1.0 == 0.0) value.toInt().toString() else String.format("%.2f", value)
+}
+
+private fun formatDate(raw: String?): String {
+    if (raw.isNullOrBlank()) return "—"
+    return raw.take(10)
+}
+
+private fun formatDateTime(raw: String?): String {
+    if (raw.isNullOrBlank()) return "—"
+    val cleaned = raw.replace('T', ' ')
+    return if (cleaned.length >= 19) cleaned.take(19) else cleaned.take(16)
 }
 
 @Composable

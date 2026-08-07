@@ -303,9 +303,9 @@ fun ProfileSettingsScreen(
                 modifier            = Modifier
                     .fillMaxSize()
                     .verticalScroll(scroll),
-                verticalArrangement = Arrangement.spacedBy(adaptivePadding(12.dp, 16.dp))
+                verticalArrangement = Arrangement.spacedBy(adaptivePadding(8.dp, 10.dp))
             ) {
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(2.dp))
 
                 // ── Section 1: Profile Header ──────────────────────────────
                 ProfileHeaderCard(
@@ -315,6 +315,7 @@ fun ProfileSettingsScreen(
                     subscriptionPlan = state.subscriptionPlan,
                     isPaid           = state.isPaid,
                     activePlanName   = state.activePlanName,
+                    activeSubscriptions = state.activeSubscriptions,
                     expiryDate       = state.expiryDate,
                     uploading        = state.avatarUploading,
                     uploadProgress   = state.avatarUploadProgress,
@@ -341,7 +342,7 @@ fun ProfileSettingsScreen(
 
                 // Theme is now managed solely via the one-tap top bar icon
 
-                Spacer(Modifier.height(32.dp))
+                Spacer(modifier.height(16.dp))
             }
 
             // Full-screen loading overlay
@@ -472,6 +473,7 @@ private fun ProfileHeaderCard(
     subscriptionPlan: String,
     isPaid: Boolean,
     activePlanName: String,
+    activeSubscriptions: List<online.paychek.app.data.remote.dto.V3ActiveSubscriptionDto> = emptyList(),
     expiryDate: String?,
     uploading: Boolean,
     uploadProgress: Int,
@@ -484,12 +486,12 @@ private fun ProfileHeaderCard(
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // ── Profile picture (centered, Facebook-style) ──
         Box(
             modifier = Modifier
-                .size(110.dp)
+                .size(132.dp)
                 .clip(CircleShape)
                 .background(PsCardAlt)
                 .border(3.dp, if (isRestricted) PsCyan.copy(alpha = 0.5f) else PsCyan, CircleShape)
@@ -521,7 +523,7 @@ private fun ProfileHeaderCard(
                     Text(
                         text = if (userName.isNotEmpty()) userName.first().uppercase() else "M",
                         color = TextW,
-                        fontSize = 40.sp,
+                        fontSize = 48.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -531,7 +533,7 @@ private fun ProfileHeaderCard(
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .size(32.dp)
+                        .size(36.dp)
                         .clip(CircleShape)
                         .background(PsCyan)
                         .border(2.dp, PsBg, CircleShape),
@@ -541,7 +543,7 @@ private fun ProfileHeaderCard(
                         imageVector = Icons.Default.PhotoCamera,
                         contentDescription = "ছবি পরিবর্তন",
                         tint = Color.White,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
@@ -560,7 +562,7 @@ private fun ProfileHeaderCard(
                         color = Color.White,
                         trackColor = Color.White.copy(alpha = 0.25f),
                         strokeWidth = 3.dp,
-                        modifier = Modifier.size(54.dp)
+                        modifier = Modifier.size(60.dp)
                     )
                     Text(
                         text = "$uploadProgress%",
@@ -572,31 +574,34 @@ private fun ProfileHeaderCard(
             }
         }
 
-        // ── Name (centered) ──
-        Text(
-            text = userName.ifEmpty { "মার্চেন্ট" },
-            color = TextW,
-            fontSize = adaptiveTextSize(20.sp, 24.sp),
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center
-        )
-
-        // ── Contact lines (centered, subtle) ──
-        if (!primaryPhone.isNullOrEmpty()) {
+        // ── Name + contact (tight vertical stack) ──
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
             Text(
-                text = primaryPhone,
-                color = TextM,
-                fontSize = adaptiveTextSize(12.sp, 13.sp),
+                text = userName.ifEmpty { "মার্চেন্ট" },
+                color = TextW,
+                fontSize = adaptiveTextSize(20.sp, 24.sp),
+                fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
             )
-        }
-        if (!primaryEmail.isNullOrEmpty()) {
-            Text(
-                text = primaryEmail,
-                color = TextM,
-                fontSize = adaptiveTextSize(12.sp, 13.sp),
-                textAlign = TextAlign.Center
-            )
+            if (!primaryPhone.isNullOrEmpty()) {
+                Text(
+                    text = primaryPhone,
+                    color = TextM,
+                    fontSize = adaptiveTextSize(12.sp, 13.sp),
+                    textAlign = TextAlign.Center
+                )
+            }
+            if (!primaryEmail.isNullOrEmpty()) {
+                Text(
+                    text = primaryEmail,
+                    color = TextM,
+                    fontSize = adaptiveTextSize(12.sp, 13.sp),
+                    textAlign = TextAlign.Center
+                )
+            }
         }
 
                 // ── Pack card (home page style: name + expiry/days + renew) ──
@@ -611,7 +616,6 @@ private fun ProfileHeaderCard(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 4.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .background(GradHeader, RoundedCornerShape(16.dp))
                         .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -632,16 +636,22 @@ private fun ProfileHeaderCard(
                                 tint = PsAmber,
                                 modifier = Modifier.size(16.dp)
                             )
-                            Text(
-                                text = if (isPaid) activePlanName else "ফ্রি প্ল্যান",
+                            val planFrames = remember(activeSubscriptions, activePlanName, isPaid) {
+                                when {
+                                    !isPaid -> emptyList()
+                                    activeSubscriptions.isNotEmpty() ->
+                                        online.paychek.app.ui.components.plan.buildPlanTitleFrames(activeSubscriptions)
+                                    activePlanName.isNotBlank() && activePlanName != "FREE_LEVEL" ->
+                                        listOf(activePlanName)
+                                    else -> emptyList()
+                                }
+                            }
+                            online.paychek.app.ui.components.plan.RotatingPlanTitle(
+                                frames = planFrames,
                                 color = Color.White,
                                 fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                softWrap = false,
-                                modifier = Modifier
-                                    .weight(1f, fill = false)
-                                    .basicMarquee()
+                                fallback = if (isPaid) activePlanName.ifBlank { "Active Package" } else "ফ্রি প্ল্যান",
+                                modifier = Modifier.weight(1f, fill = false)
                             )
                         }
                         Text(

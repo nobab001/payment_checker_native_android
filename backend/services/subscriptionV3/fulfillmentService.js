@@ -280,6 +280,31 @@ async function fulfillSubscription({
       SELECT id, invoice_no FROM subscription_purchases WHERE transaction_id = ${transactionId} LIMIT 1
     `;
     if (dup.length) {
+      // Purchase row may exist from a partial prior fulfill — ensure live subscription is present.
+      const pkg = await getPackageBySku(quote.package_sku);
+      if (pkg && !(quote.purchase_type === 'downgrade' && quote.deferred)) {
+        const live = await prisma.$queryRaw`
+          SELECT id FROM user_subscriptions
+          WHERE user_id = ${Number(userId)}
+            AND category = ${quote.category}
+            AND status = 'active'
+            AND package_sku = ${quote.package_sku}
+          LIMIT 1
+        `;
+        if (!live.length) {
+          await upsertUserSubscription(userId, quote, pkg, Number(quote.payable_amount));
+          await syncAddons(userId, quote.addons || [], quote.final_expiry);
+          await mirrorUserBilling(userId);
+          const { reactivateUser } = require('../subscriptionStatusService');
+          await reactivateUser(userId);
+          await bustEntitlementCache(userId);
+          try {
+            const { ensureSubscriptionFresh } = require('../permissionEngineService');
+            await ensureSubscriptionFresh(userId);
+          } catch (_) { /* non-fatal */ }
+          return { success: true, invoice_no: dup[0].invoice_no, repaired: true };
+        }
+      }
       return { already: true, invoice_no: dup[0].invoice_no };
     }
   }

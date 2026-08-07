@@ -5,7 +5,7 @@
  * first visit and refreshes the cache in the background. Dynamic API calls
  * (payment data) always go straight to the network and are never cached.
  */
-const CACHE = 'paychek-checkout-v8';
+const CACHE = 'paychek-checkout-v18';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

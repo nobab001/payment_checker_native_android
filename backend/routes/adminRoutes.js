@@ -96,6 +96,8 @@ router.patch('/demo-payments/:id/refund', admin.updateDemoPaymentRefund);
 
 // 6. User and Device management list and toggle endpoints
 router.get('/users', admin.listUsers);
+router.get('/users/:id/purchase-history', admin.getUserPurchaseHistory);
+router.post('/users/:id/purchases/:purchaseId/mark', admin.markUserPurchase);
 router.post('/users/:id/block', admin.toggleUserBlock);
 router.post('/devices/:id/trial', admin.updateDeviceTrial);
 

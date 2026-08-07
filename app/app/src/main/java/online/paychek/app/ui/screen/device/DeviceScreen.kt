@@ -1596,6 +1596,13 @@ private fun RemoteDeviceSettingsFullScreen(
                 value = state.remoteDeviceEditName,
                 onValueChange = viewModel::onRemoteDeviceEditNameChanged,
                 label = { Text("ডিভাইসের নাম", color = TextMuted) },
+                supportingText = {
+                    Text(
+                        text = "সর্বোচ্চ ১৫ অক্ষর (${state.remoteDeviceEditName.length}/১৫)",
+                        color = TextMuted,
+                        fontSize = 11.sp
+                    )
+                },
                 leadingIcon = {
                     Icon(Icons.Default.Edit, null, tint = AccentCyan, modifier = Modifier.size(18.dp))
                 },
@@ -1751,6 +1758,11 @@ private fun RemoteDeviceSettingsFullScreen(
     }
 }
 
+private const val DEVICE_NAME_MAX_CHARS = 15
+
+private fun clampDeviceName(raw: String): String =
+    if (raw.length <= DEVICE_NAME_MAX_CHARS) raw else raw.take(DEVICE_NAME_MAX_CHARS)
+
 @Composable
 private fun ChildDeviceCard(
     device: ChildDeviceDto,
@@ -1780,83 +1792,104 @@ private fun ChildDeviceCard(
         device.isAppActive == 1 -> AccentGreen
         else -> Color(0xFFEF4444)
     }
-    val roleLabel = if (device.deviceRole == "owner") "মালিক" else "স্টাফ"
-    val roleColor = if (device.deviceRole == "owner") AccentCyan else Color(0xFFF59E0B)
+    val isOwner = device.deviceRole == "owner"
+    val roleLabel = if (isOwner) "মালিক" else "স্টাফ"
+    val roleColor = if (isOwner) AccentCyan else Color(0xFFF59E0B)
+    val displayName = clampDeviceName(
+        device.customDeviceName.ifBlank { "চাইল্ড ডিভাইস" }
+    )
 
     Card(
         colors = CardDefaults.cardColors(containerColor = GwCard),
         shape = RoundedCornerShape(16.dp),
-        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) null else BorderStroke(1.dp, Color(0xFFE3E5E8)),
+        border = if (MaterialTheme.colorScheme.background == Color(0xFF0B0E14)) {
+            null
+        } else {
+            BorderStroke(1.dp, Color(0xFFE3E5E8))
+        },
         modifier = modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(adaptivePadding(12.dp, 16.dp)),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.weight(1f)
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(AccentCyan.copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(AccentCyan.copy(alpha = 0.1f)),
-                    contentAlignment = Alignment.Center
+                Icon(
+                    imageVector = Icons.Default.PhoneAndroid,
+                    contentDescription = null,
+                    tint = AccentCyan,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // Line 1 — name + optional current-device badge
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.PhoneAndroid,
-                        contentDescription = null,
-                        tint = AccentCyan,
-                        modifier = Modifier.size(24.dp)
+                    Text(
+                        text = displayName,
+                        color = TextWhite,
+                        fontSize = adaptiveTextSize(14.sp, 16.sp),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
+                    if (device.isCurrent == 1) {
                         Text(
-                            text = device.customDeviceName.ifEmpty { "চাইল্ড ডিভাইস" },
-                            color = TextWhite,
-                            fontSize = adaptiveTextSize(14.sp, 16.sp),
+                            text = "এই ডিভাইস",
+                            color = AccentCyan,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        if (device.isCurrent == 1) {
-                            Text(
-                                text = "এই ডিভাইস",
-                                color = AccentCyan,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier
-                                    .background(AccentCyan.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = roleLabel,
-                            color = roleColor,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
                             modifier = Modifier
-                                .background(roleColor.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                                .background(AccentCyan.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         )
+                    }
+                }
+
+                // Line 2 — role + connection status (fixed slots, never share space with SIM)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = roleLabel,
+                        color = roleColor,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .widthIn(min = 48.dp)
+                            .background(roleColor.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                        textAlign = TextAlign.Center
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
                         Box(
                             modifier = Modifier
-                                .size(6.dp)
+                                .size(7.dp)
                                 .clip(CircleShape)
                                 .background(statusColor)
                         )
@@ -1864,50 +1897,99 @@ private fun ChildDeviceCard(
                             text = statusText,
                             color = statusColor,
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Text(
-                            text = "• SIM1: ${if(device.simOneActive == 1) "ON" else "OFF"} • SIM2: ${if(device.simTwoActive == 1) "ON" else "OFF"}",
-                            color = TextMuted,
-                            fontSize = 11.sp
+                    }
+                }
+
+                // Line 3 — SIM status chips (own row so they never collide with actions)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    DeviceSimStatusChip(
+                        label = "SIM 1",
+                        isOn = device.simOneActive == 1
+                    )
+                    DeviceSimStatusChip(
+                        label = "SIM 2",
+                        isOn = device.simTwoActive == 1
+                    )
+                }
+            }
+
+            // Actions — fixed right column
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (!isPendingApproval) {
+                    IconButton(
+                        onClick = onConfigure,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(GwBg, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "কনফিগার করুন",
+                            tint = AccentCyan,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                if (device.isCurrent != 1 && !isPendingApproval) {
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(GwBg, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "মুছুন",
+                            tint = Color(0xFFEF4444),
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
             }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (!isPendingApproval) {
-            IconButton(
-                onClick = onConfigure,
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(GwBg, CircleShape)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "কনফিগার করুন",
-                    tint = AccentCyan,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            }
-            if (device.isCurrent != 1 && !isPendingApproval) {
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(GwBg, CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "মুছুন",
-                        tint = Color(0xFFEF4444),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-            }
         }
+    }
+}
+
+@Composable
+private fun DeviceSimStatusChip(
+    label: String,
+    isOn: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val onColor = AccentGreen
+    val offColor = TextMuted
+    val tint = if (isOn) onColor else offColor
+    Row(
+        modifier = modifier
+            .background(
+                color = tint.copy(alpha = 0.10f),
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = label,
+            color = TextMuted,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1
+        )
+        Text(
+            text = if (isOn) "ON" else "OFF",
+            color = tint,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1
+        )
     }
 }
 

@@ -211,6 +211,7 @@ async function ensureSubscriptionV3Schema() {
       ['transaction_id', '`transaction_id` VARCHAR(128) NULL'],
       ['quote_token', '`quote_token` VARCHAR(64) NULL'],
       ['refund_status', '`refund_status` VARCHAR(16) NULL'],
+      ['admin_marked', '`admin_marked` TINYINT NOT NULL DEFAULT 0'],
     ]) {
       await ensureColumn('subscription_purchases', col, ddl);
     }

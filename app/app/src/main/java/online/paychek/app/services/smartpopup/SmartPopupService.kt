@@ -634,7 +634,7 @@ class SmartPopupService : Service() {
         if (!online.paychek.app.services.accessibility.PaychekAccessibilityService.isRunning) {
             Toast.makeText(
                 this,
-                "স্ক্যান করতে Accessibility (Paychek Background Guard) চালু করুন",
+                "স্ক্যান করতে Accessibility (Paycheck Background Guard) চালু করুন",
                 Toast.LENGTH_LONG
             ).show()
             return

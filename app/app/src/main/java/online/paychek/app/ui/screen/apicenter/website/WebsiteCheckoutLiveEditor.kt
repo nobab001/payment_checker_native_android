@@ -11,12 +11,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -27,10 +29,18 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import kotlinx.coroutines.delay
 import online.paychek.app.data.remote.dto.ActiveNumberDto
 import online.paychek.app.data.remote.dto.CheckoutTabDto
 import online.paychek.app.data.remote.dto.ProviderBrandingDto
 import online.paychek.app.ui.common.RemoteImage
+
+/**
+ * In-app Website Settings preview of customer checkout.
+ * Design-1 layout must stay visually aligned with
+ * `backend/public/checkout.html` + `js/checkout/` (real customer page).
+ * Updating checkout UI → update BOTH places.
+ */
 
 private val Purple = Color(0xFF5B21B6)
 private val Bkash = Color(0xFFE2136E)
@@ -254,7 +264,7 @@ fun WebsiteCheckoutLiveEditor(
             Modifier.fillMaxWidth().background(Purple).padding(12.dp)
         ) {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(companyName.ifBlank { "Paychek" }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text(companyName.ifBlank { "Paycheck" }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Text("৳ 500.00", color = Color.White.copy(0.9f), fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
             }
         }
@@ -355,23 +365,176 @@ private fun Design1Preview(
     providerBranding: Map<String, ProviderBrandingDto> = emptyMap()
 ) {
     val grouped = numbers.groupBy { it.displayName ?: it.provider }
-    grouped.forEach { (label, items) ->
-        // Large logo next to the provider/group name
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(vertical = 4.dp)
-        ) {
-            ProviderLogo(logoFor(providerBranding, items.firstOrNull()?.templateId), items.firstOrNull()?.provider ?: label, 28.dp)
-            Spacer(Modifier.width(8.dp))
-            Text(label, color = Purple, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-        }
-        items.forEach { num ->
-            val localIdx = numbers.indexOfFirst { it.methodId == num.methodId }
-            val globalIdx = globalIndices.getOrNull(localIdx) ?: localIdx
-            NumberListRow(num, editable, globalIdx == draggingIndex, dragOffset, rowHeightPx, localIdx, onDragStart, onDragEnd, onDrag, onToggle, logoFor(providerBranding, num.templateId))
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        grouped.forEach { (label, items) ->
+            val provider = items.firstOrNull()?.provider ?: label
+            val brand = provColor(provider)
+            val tintTop = brand.copy(alpha = 0.07f)
+            val tintBottom = brand.copy(alpha = 0.03f)
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        brush = Brush.linearGradient(
+                            colors = listOf(tintTop, tintBottom)
+                        )
+                    )
+                    .padding(horizontal = 8.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                ) {
+                    ProviderLogo(
+                        logoFor(providerBranding, items.firstOrNull()?.templateId),
+                        provider,
+                        30.dp
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        label,
+                        color = Color(0xFF212121),
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 14.sp,
+                        lineHeight = 17.sp
+                    )
+                }
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.White.copy(alpha = 0.45f))
+                ) {
+                    items.forEachIndexed { itemIdx, num ->
+                        val localIdx = numbers.indexOfFirst { it.methodId == num.methodId }
+                        val globalIdx = globalIndices.getOrNull(localIdx) ?: localIdx
+                        Design1NumberRow(
+                            num = num,
+                            editable = editable,
+                            isDragging = globalIdx == draggingIndex,
+                            dragOffset = dragOffset,
+                            rowHeightPx = rowHeightPx,
+                            index = localIdx,
+                            onDragStart = onDragStart,
+                            onDragEnd = onDragEnd,
+                            onDrag = onDrag,
+                            onToggle = onToggle,
+                            logoUrl = logoFor(providerBranding, num.templateId),
+                            showDivider = itemIdx < items.lastIndex
+                        )
+                    }
+                }
+            }
         }
     }
     if (numbers.isEmpty()) EmptyNumbers()
+}
+
+/** Design-1 row: logo + number + outline copy (matches checkout.html). */
+@Composable
+private fun Design1NumberRow(
+    num: ActiveNumberDto,
+    editable: Boolean,
+    isDragging: Boolean,
+    dragOffset: Float,
+    rowHeightPx: Float,
+    index: Int,
+    onDragStart: (Int) -> Unit,
+    onDragEnd: () -> Unit,
+    onDrag: (Int, Float) -> Unit,
+    onToggle: (Int, Boolean) -> Unit,
+    logoUrl: String?,
+    showDivider: Boolean
+) {
+    Column {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(34.dp)
+                .zIndex(if (isDragging) 1f else 0f)
+                .graphicsLayer { if (isDragging) translationY = dragOffset }
+                // Name starts at 40dp (30 logo + 10 gap); row logo 20 + gap 5 → pad 15
+                .padding(start = 15.dp, end = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (editable) {
+                Icon(
+                    Icons.Default.DragIndicator, "Drag", tint = Color.Gray,
+                    modifier = Modifier.size(18.dp).pointerInput(index) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { onDragStart(index) },
+                            onDragEnd = { onDragEnd() },
+                            onDragCancel = { onDragEnd() },
+                            onDrag = { change, drag -> change.consume(); onDrag(index, drag.y) }
+                        )
+                    }
+                )
+                Spacer(Modifier.width(2.dp))
+            }
+            ProviderLogo(logoUrl, num.provider, 20.dp)
+            Spacer(Modifier.width(5.dp))
+            Text(
+                num.number,
+                Modifier.weight(1f),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold
+            )
+            if (editable) {
+                Switch(
+                    checked = num.enabled,
+                    onCheckedChange = { onToggle(num.methodId, it) },
+                    modifier = Modifier.height(26.dp)
+                )
+            } else {
+                OutlineCopyButton()
+            }
+        }
+        if (showDivider) {
+            HorizontalDivider(
+                thickness = 1.dp,
+                color = Color(0xFF0F172A).copy(alpha = 0.08f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun OutlineCopyButton() {
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1000)
+            copied = false
+        }
+    }
+    val bg = if (copied) Color(0xFF10B981) else Color.White
+    val fg = if (copied) Color.White else Color(0xFF1A237E)
+    val border = if (copied) Color(0xFF10B981) else Color(0xFF1A237E).copy(alpha = 0.28f)
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(bg)
+            .border(1.5.dp, border, RoundedCornerShape(6.dp))
+            .clickable { copied = true }
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Icon(
+            Icons.Default.ContentCopy,
+            contentDescription = null,
+            tint = fg,
+            modifier = Modifier.size(12.dp)
+        )
+        Text(
+            if (copied) "কপি হয়েছে" else "কপি করুন",
+            color = fg,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
 }
 
 @Composable

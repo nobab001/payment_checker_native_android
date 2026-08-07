@@ -12,6 +12,7 @@ const {
   formatDateYmd,
 } = require('./subscriptionBillingService');
 const { syncUserEntitlements } = require('./accountEntitlementsService');
+const { roundPayableTaka } = require('./websitePurpose');
 
 let ordersTableReady = false;
 
@@ -285,6 +286,7 @@ async function fulfillPaidOrder(order, { trxId } = {}) {
     return { error: result.error, message: result.message, order };
   }
 
+  // already / repaired / success — mark activated only when fulfillment did not error.
   await prisma.$executeRaw`
     UPDATE subscription_checkout_orders
     SET status = 'activated',
@@ -293,7 +295,13 @@ async function fulfillPaidOrder(order, { trxId } = {}) {
     WHERE order_id = ${order.order_id} AND status IN ('pending', 'paid')
   `;
 
-  return { success: true, result, order };
+  if (result.already || result.repaired) {
+    try {
+      await syncUserEntitlements(order.user_id);
+    } catch (_) { /* non-fatal */ }
+  }
+
+  return { success: true, result, order, already: Boolean(result.already) };
 }
 
 /**
@@ -320,6 +328,11 @@ async function createSubscriptionCheckout(req, {
       return { error: quote.error, message: quote.message, status: 404 };
     }
     payable = Number(quote.payable_amount) || 0;
+  }
+
+  // Payment-mode checkout settles on whole Taka (same as checkout UI roundPayableTaka).
+  if (payable > 0) {
+    payable = roundPayableTaka(payable);
   }
 
   // Full credit / free upgrade — activate without gateway.
@@ -426,7 +439,7 @@ async function createAddonCheckout(req, { userId, planId }) {
     };
   }
 
-  const payable = Number(plan.price) || 0;
+  const payable = roundPayableTaka(Number(plan.price) || 0);
   if (payable <= 0) {
     const applied = await applyAddonPurchase(userId, planId);
     if (applied.error) {

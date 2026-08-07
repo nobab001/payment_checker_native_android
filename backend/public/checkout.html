@@ -134,20 +134,8 @@
                 border-radius: 14px;
             }
         }
-        .secure-chip {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            margin-top: 6px;
-            padding: 2px 8px;
-            border-radius: 999px;
-            background: var(--brand-soft);
-            color: var(--brand);
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 0.01em;
-        }
-        .secure-chip svg { flex-shrink: 0; width: 12px; height: 12px; }
+        .secure-chip { display: none !important; }
+        .sync-note { display: none !important; }
         .premium-top {
             display: flex;
             justify-content: space-between;
@@ -254,9 +242,9 @@
             transform: scale(1.03);
         }
         .amount-card {
-            margin-top: 8px;
-            border-radius: 12px;
-            padding: 8px 14px;
+            margin-top: 10px;
+            border-radius: 14px;
+            padding: 16px 16px;
             background: linear-gradient(145deg, var(--brand) 0%, var(--brand-mid) 100%);
             color: #fff;
             text-align: center;
@@ -264,12 +252,13 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
+            min-height: 64px;
         }
-        .amount-label { font-size: 11.5px; opacity: .92; font-weight: 600; text-align: left; }
+        .amount-label { font-size: 12px; opacity: .92; font-weight: 600; text-align: left; }
         .amount-value {
             margin-top: 0;
             font-family: 'Outfit', 'Hind Siliguri', sans-serif;
-            font-size: 24px;
+            font-size: 26px;
             font-weight: 800;
             letter-spacing: -0.02em;
             line-height: 1;
@@ -295,14 +284,14 @@
         .tab-btn.active .lbl { color: var(--purple); }
 
         .content {
-            padding: 6px 8px 16px;
+            padding: 6px 8px 8px;
             overflow-y: auto;
             max-height: none;
             -webkit-overflow-scrolling: touch;
-            padding-bottom: calc(44px + var(--safe-bottom));
+            padding-bottom: calc(12px + var(--safe-bottom));
         }
         @media (min-width: 768px) {
-            .content { padding-bottom: 24px; }
+            .content { padding-bottom: 10px; }
         }
         .d3-tab-switcher { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
         .d3-tab-bar {
@@ -315,35 +304,76 @@
         .prov-avatar { width: 20px; height: 20px; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 11px; }
         .hidden { display: none !important; }
 
-        /* ── Design 1: List (Compact 34px Height Rows - 50% Height Reduction) ── */
+        /* ── Design 1: List rows ── */
         .group-title {
             font-size: 13px; font-weight: 700; color: var(--purple);
             margin: 6px 0 3px; padding-left: 2px; display: flex; align-items: center; gap: 6px;
         }
         .list-row {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 5px 10px; background: #fff; border: 1px solid var(--border);
-            border-radius: 8px; margin-bottom: 4px; min-height: 34px;
+            padding: 4px 2px; background: transparent; border: none;
+            border-radius: 0; margin-bottom: 0; min-height: 30px;
+            gap: 6px;
         }
-        .list-row .num { font-weight: 700; font-size: 13.5px; letter-spacing: .3px; font-family: 'Outfit', sans-serif; }
+        .list-row .num { font-weight: 700; font-size: 13px; letter-spacing: .2px; font-family: 'Outfit', sans-serif; line-height: 1.2; }
         .btn-copy {
-            background: var(--purple); color: #fff; border: none; border-radius: 6px;
-            padding: 4px 10px; font-size: 11px; font-weight: 700; cursor: pointer; min-height: 26px;
-            transition: transform 120ms ease, background 120ms ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #fff;
+            color: var(--brand);
+            border: 1.5px solid rgba(26, 35, 126, 0.28);
+            border-radius: 6px;
+            padding: 3px 8px;
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            min-height: 24px;
+            line-height: 1;
+            box-shadow: none;
+            transition: transform 120ms ease, background 120ms ease, border-color 120ms ease, color 120ms ease;
         }
+        .btn-copy .btn-copy-ico { flex-shrink: 0; display: block; width: 12px; height: 12px; }
+        .btn-copy .btn-copy-lbl { line-height: 1; }
         .btn-copy:active { transform: scale(0.96); }
         .btn-copy:focus-visible, .tab-btn:focus-visible, .prov-card:focus-visible,
         .acc-head:focus-visible, .checkout-sheet-back:focus-visible,
         .checkout-empty-retry:focus-visible, .checkout-error-retry:focus-visible {
             outline: 2px solid var(--purple); outline-offset: 2px;
         }
-        .btn-copy.copied { background: #10B981; }
-        .btn-copy:disabled { background: #cbd5e1; cursor: not-allowed; transform: none; }
+        .btn-copy.copied {
+            background: #10B981;
+            border-color: #10B981;
+            color: #fff;
+            box-shadow: none;
+        }
+        .btn-copy:disabled { background: #f1f5f9; color: #94a3b8; border-color: #e2e8f0; cursor: not-allowed; transform: none; }
         .number-inactive { opacity: 0.55; }
         .number-inactive .num { color: var(--muted); }
         .num-badge.inactive {
             display: inline-block; font-size: 9px; font-weight: 700; margin-left: 6px;
             padding: 2px 6px; border-radius: 6px; background: #f1f5f9; color: #64748b;
+        }
+        .num-logo {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            width: 20px;
+            height: 20px;
+            margin-left: 0;
+        }
+        .num-logo .prov-logo-img,
+        .num-logo img {
+            width: 20px !important;
+            height: 20px !important;
+            border-radius: 5px !important;
+            object-fit: cover;
+        }
+        .num-logo .prov-avatar {
+            width: 20px !important;
+            height: 20px !important;
+            font-size: 9px !important;
         }
 
         /* ── Design 2: Cards — responsive grid ── */
@@ -370,7 +400,7 @@
             object-fit: contain; background: #fff; display: block;
         }
         .card-detail-panels { margin-top: 14px; }
-        .card-detail-panels .provider-block { margin-bottom: 16px; }
+        .card-detail-panels .provider-block { margin-bottom: 8px; }
 
         /* ── Design 3: Accordion ── */
         .accordion { border: 1px solid var(--border); border-radius: 14px; margin-bottom: 10px; overflow: hidden; }
@@ -640,20 +670,103 @@
         @keyframes spin { to { transform: rotate(360deg); } }
 
         /* ── Layout engine (Compact & Sleek) ── */
-        .provider-block { margin-bottom: 8px; }
-        .provider-detail-block { margin-top: 6px; }
+        .provider-block:not(.accordion) {
+            --prov-header-logo: 30px;
+            --prov-header-gap: 10px;
+            /* Number row logo+num start under provider name’s first letter */
+            --prov-name-indent: calc(var(--prov-header-logo) + var(--prov-header-gap));
+            margin-bottom: 8px;
+            background: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 8px 8px 4px;
+            box-shadow: none;
+        }
+        .provider-block.accordion { margin-bottom: 8px; }
+        .provider-detail-block { margin-top: 4px; }
+        .provider-card-top {
+            display: flex;
+            align-items: center;
+            gap: var(--prov-header-gap, 10px);
+            margin-bottom: 4px;
+        }
+        .provider-card-meta {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            padding-top: 0;
+        }
+        .provider-card-head {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 0;
+        }
+        .provider-card-top .provider-name,
+        .provider-card-head .provider-name {
+            font-size: 14px;
+            font-weight: 800;
+            color: var(--text);
+            line-height: 1.2;
+        }
+        .provider-card-top .prov-logo-img,
+        .provider-card-top img.prov-logo-img,
+        .provider-card-top .prov-avatar {
+            width: var(--prov-header-logo, 30px) !important;
+            height: var(--prov-header-logo, 30px) !important;
+            border-radius: 8px !important;
+            flex-shrink: 0;
+        }
         .instruction-area {
-            margin: 2px 0 5px; padding: 4px 8px;
-            background: rgba(26, 35, 126, 0.04); border-left: 3px solid var(--brand);
-            border-radius: 4px; font-size: 11px; color: var(--text); line-height: 1.35;
-            font-weight: 600;
+            margin: 0;
+            padding: 0;
+            background: none;
+            border: none;
+            border-radius: 0;
+            font-size: 10px;
+            font-weight: 500;
+            color: var(--muted);
+            line-height: 1.25;
+        }
+        .provider-card-numbers {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            background: rgba(255, 255, 255, 0.45);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .provider-card-numbers .list-row.number-card {
+            margin: 0;
+            border-radius: 0;
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+            min-height: 32px;
+            /* Row logo (20) + gap (5) sit left of name; .num aligns to name start */
+            --row-logo: 20px;
+            --row-logo-gap: 5px;
+            padding: 3px 6px 3px calc(var(--prov-name-indent, 40px) - var(--row-logo) - var(--row-logo-gap));
+            align-items: center;
+        }
+        .provider-card-numbers .list-row.number-card:last-child {
+            border-bottom: none;
         }
         .group-section-title {
             font-size: 13px; font-weight: 800; color: var(--purple);
-            margin: 0 0 6px; padding-left: 2px;
+            margin: 0 0 4px; padding-left: 2px;
         }
         .card-detail-panels { display: none; }
-        .num-wrap { min-width: 0; display: flex; align-items: center; gap: 8px; }
+        /* Logo sits tight against the phone number (vertically centered). */
+        .num-wrap {
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            flex: 1;
+        }
 
         /* ── Phase-2 Interaction ── */
         .checkout-skeleton { padding: 14px; }
@@ -711,25 +824,28 @@
             transform: translateY(12px); transition: transform 220ms ease;
             -webkit-overflow-scrolling: touch;
         }
-        /* Footer (Compact 50% Height) */
+        /* Footer (tight, ~70% type size) */
         .checkout-footer {
-            margin-top: auto;
-            padding: 8px 12px calc(12px + var(--safe-bottom));
+            margin-top: 4px;
+            padding: 2px 12px calc(6px + var(--safe-bottom));
             text-align: center;
+            line-height: 1.15;
         }
         .checkout-footer .powered {
             font-family: 'Outfit', sans-serif;
-            font-size: 12px;
+            font-size: 8.5px;
             font-weight: 700;
             color: var(--brand);
-            letter-spacing: 0.02em;
+            letter-spacing: 0.01em;
             display: inline-block;
+            line-height: 1.2;
         }
         .checkout-footer .secure-note {
-            margin-top: 2px;
-            font-size: 10px;
+            margin-top: 1px;
+            font-size: 7px;
             color: var(--muted);
             font-weight: 600;
+            line-height: 1.2;
         }
         .page {
             display: flex;
@@ -786,11 +902,21 @@
         .tab-btn.active .lbl { color: #fff; }
 
         .btn-copy {
-            border-radius: 9px;
-            background: linear-gradient(135deg, var(--brand-mid), var(--brand));
-            box-shadow: 0 2px 8px rgba(26, 35, 126, 0.22);
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            border-radius: 8px;
+            background: #fff;
+            color: var(--brand);
+            border: 1.5px solid rgba(26, 35, 126, 0.28);
+            box-shadow: none;
         }
-        .btn-copy.copied { background: #10B981; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3); }
+        .btn-copy.copied {
+            background: #10B981;
+            border-color: #10B981;
+            color: #fff;
+            box-shadow: none;
+        }
 
         /* Premium tabular figures for account numbers */
         .num, .pnum, .acc-info .pnum {
@@ -805,8 +931,9 @@
         .acc-head.open { background: var(--brand-soft); }
         .acc-head.open .chev { color: var(--brand); }
 
-        /* Softer, layered cards */
-        .accordion, .provider-block { box-shadow: 0 2px 12px rgba(18, 22, 31, 0.05); }
+        /* Softer, layered cards — provider list blocks stay borderless */
+        .accordion { box-shadow: 0 2px 12px rgba(18, 22, 31, 0.05); }
+        .provider-block:not(.accordion) { box-shadow: none !important; border: none !important; }
         .prov-card { box-shadow: 0 4px 16px rgba(18, 22, 31, 0.06); }
         .prov-card:hover { box-shadow: 0 8px 22px rgba(18, 22, 31, 0.10); transform: translateY(-2px); }
         .prov-card:active { transform: scale(.97); }
@@ -819,6 +946,8 @@
             .tab-btn, .acc-head, .btn-copy, .prov-card { transition: none !important; transform: none !important; }
         }
     </style>
+    <!-- Design-1 provider list CSS must stay aligned with Android
+         WebsiteCheckoutLiveEditor.kt (Website Settings preview). -->
     <link rel="icon" type="image/x-icon" href="/assets/brand/favicon.ico?v=1.0.0" />
     <link rel="icon" type="image/png" sizes="16x16" href="/assets/brand/favicon-16.png?v=1.0.0" />
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/favicon-32.png?v=1.0.0" />
@@ -868,13 +997,6 @@
             <div class="amount-label" data-i18n="pay_amount">পরিশোধযোগ্য মোট পরিমাণ</div>
             <div class="amount-value">৳ <span id="payment-amount">0.00</span></div>
         </div>
-        <div class="secure-chip" aria-hidden="true">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                <path d="M9.5 12.2l1.8 1.8 3.4-3.6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            Secure Checkout · Encrypted
-        </div>
     </div>
 <!-- Vibe pre-step -->
     <div id="vibe-step" class="verify-box hidden">
@@ -921,10 +1043,6 @@
 
         <!-- Legacy inline box removed from Normal mode — verify via FAB modal -->
         <div id="inline-verify-box" class="verify-box hidden"></div>
-
-        <div class="sync-note">
-            📡 নাম্বারগুলো আপনার অ্যাক্টিভ ডিভাইসের SIM থেকে অটো-সিঙ্ক হয়। ম্যানুয়ালি যোগ/এডিট করা যায় না। নিষ্ক্রিয় SIM স্বয়ংক্রিয়ভাবে সরে যায়।
-        </div>
     </div>
 
     <footer class="checkout-footer">
@@ -979,6 +1097,6 @@
     </div>
 </div>
 
-<script type="module" src="/js/checkout/app.js?v=10"></script>
+<script type="module" src="/js/checkout/app.js?v=11"></script>
 </body>
 </html>

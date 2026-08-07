@@ -366,7 +366,7 @@ class PaymentRepository {
                         )
                     )
                 } else {
-                    Result.failure(Exception("কাস্টম আর্কাইভ লোড ব্যর্থ"))
+                    Result.failure(Exception("সকল এসএমএস লোড ব্যর্থ"))
                 }
             } else {
                 Result.failure(Exception(ApiErrorMapper.fromHttpCode(response.code(), "Transaction লোড ব্যর্থ")))

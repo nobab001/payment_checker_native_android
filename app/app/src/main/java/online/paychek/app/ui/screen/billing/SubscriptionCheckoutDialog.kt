@@ -186,7 +186,7 @@ fun SubscriptionCheckoutDialog(
                             if (awaitingPayment) {
                                 "পেমেন্ট সম্পন্ন হলে অ্যাপে ফিরে আসুন — প্যাকেজ স্বয়ংক্রিয়ভাবে সক্রিয় হবে।"
                             } else {
-                                "বাই ক্লিক করলে PayChek চেকআউট খুলবে (Payment মোড)। পেমেন্ট ভেরিফাই হলে সাবস্ক্রিপশন সক্রিয় হবে।"
+                                "বাই ক্লিক করলে Paycheck চেকআউট খুলবে (Payment মোড)। পেমেন্ট ভেরিফাই হলে সাবস্ক্রিপশন সক্রিয় হবে।"
                             },
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

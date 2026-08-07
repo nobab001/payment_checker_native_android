@@ -132,7 +132,7 @@ fun GlobalCheckoutScreen(
             when (designerTab) {
                 0 -> {
                     WebsiteCheckoutLiveEditor(
-                        companyName = "Paychek",
+                        companyName = "Paycheck",
                         logoUrl = null,
                         checkoutMode = checkoutMode,
                         onCheckoutModeChange = { checkoutMode = it },
@@ -172,7 +172,7 @@ fun GlobalCheckoutScreen(
                 }
                 1 -> {
                     WebsiteCheckoutLiveEditor(
-                        companyName = "Paychek",
+                        companyName = "Paycheck",
                         logoUrl = null,
                         checkoutMode = checkoutMode,
                         onCheckoutModeChange = {},

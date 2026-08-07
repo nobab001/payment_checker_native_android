@@ -940,7 +940,7 @@ Unread resolution only looks back **30 days** (`UNREAD_LOOKBACK_DAYS`) so a fres
 - **Heartbeat:** the heartbeat response includes the oldest unread notices (limit 3). A notification failure never breaks liveness reporting — it degrades to an empty list.
 - **App open:** `MainActivity.onResume()` pulls `GET /api/notifications`, which also works for suspended packages (heartbeat returns `STOP_MONITORING`) and devices with SMS monitoring off.
 - **Client guards** (`AdminNoticeManager.kt`): `pcu_notification_shown_ids` (already posted to the status bar) + `pcu_notification_pending` (in-app popup queue) prevent repeat heartbeats from re-nagging. The read receipt is sent as soon as the notice reaches the device, so admin-side "read" means **delivered to a device**, not opened by the user.
-- **UI:** status-bar notification (`IMPORTANCE_HIGH`) is the primary channel; an in-app `AlertDialog` popup (`AdminNoticeDialog`) shows queued notices on app open once the user is past the lock/maintenance gates.
+- **UI:** status-bar notification (`IMPORTANCE_HIGH`) plus home-header bell inbox (`AdminNoticeInboxSheet`). Unread count shows as a red badge (1–9 / 9+); opening the inbox clears the badge. Auto full-screen popup is not used.
 
 #### 5. Admin UI
 
@@ -1009,6 +1009,8 @@ The composer lives in the Admin panel **অ্যাপ সেটিংস (App 
 | **GET** | `/api/admin/sms-otp-template` | (Admin) Load baseline verification text formats | Yes (Admin) |
 | **PUT** | `/api/admin/sms-otp-template` | (Admin) Update baseline verification text formats | Yes (Admin) |
 | **GET** | `/api/admin/users` | (Admin) Retrieve directory of linked users | Yes (Admin) |
+| **GET** | `/api/admin/users/:id/purchase-history` | (Admin) User package purchase history (trx, time, amounts, mark flag) | Yes (Admin) |
+| **POST** | `/api/admin/users/:id/purchases/:purchaseId/mark` | (Admin) Mark/unmark a purchase as reviewed (`{ marked: true/false }`) | Yes (Admin) |
 | **PUT** | `/api/admin/users/:id` | (Admin) Update blocks and roles for a user | Yes (Admin) |
 | **PUT** | `/api/admin/users/:id/permissions`| (Admin) Set tracking permissions for user | Yes (Admin) |
 
@@ -1206,7 +1208,7 @@ The composer lives in the Admin panel **অ্যাপ সেটিংস (App 
 - **Custom Sender Ingestion Control**: গেটওয়ে মেথডের সাথে `created_at` কলাম ক্লায়েন্টে পাঠানো হয়েছে। `SmsPollWorker` স্ক্যান করার সময় শুধুমাত্র কাস্টম সেন্ডার যোগ হওয়ার পরের (ভবিষ্যতের) মেসেজগুলো রিড করবে এবং ওল্ড মেসেজ হিস্ট্রি স্কিপ করবে।
 - **Inbox Scanner Crash Fix**: `SmsInboxScanner.kt`-এ aggregate `MAX(_id)` কোয়েরি বদলে স্ট্যান্ডার্ড `DESC LIMIT 1` কোয়েরি ব্যবহার করা হয়েছে, যা ডিভাইস স্পেসিফিক কুয়েরি ক্র্যাশ দূর করেছে।
 - **Fix Segment Splitting**: `SmsReceiver.kt`-এ মাল্টি-পার্ট SMS এর পার্টগুলো লুপ দিয়ে আলাদা প্রসেস না করে প্রথমে StringBuilder দিয়ে কম্বাইন করে সম্পূর্ণ বডি একবারে প্রসেস করা হয়েছে, যা বড় ওটিপি বিভক্ত হয়ে যাওয়ার সমস্যা সমাধান করেছে।
-- **Select & Copy Custom Archives**: ড্যাশবোর্ডে কাস্টম আর্কাইভ টেক্সটকে `SelectionContainer` দিয়ে আবৃত করা হয়েছে যাতে ইউজার ওটিপি বডি চাপ দিয়ে ধরে সিলেক্ট ও কপি করতে পারেন।
+- **Select & Copy All SMS**: ড্যাশবোর্ডে সকল এসএমএস টেক্সটকে `SelectionContainer` দিয়ে আবৃত করা হয়েছে যাতে ইউজার ওটিপি বডি চাপ দিয়ে ধরে সিলেক্ট ও কপি করতে পারেন।
 
 ### ✅ Session: 2026-06-27 (Part 10) — Add is_parseable to Admin & Fix bKash Personal Template
 **কী করা হয়েছে:**
@@ -1349,7 +1351,7 @@ The composer lives in the Admin panel **অ্যাপ সেটিংস (App 
 - `smsRetentionCleanup.js` সরলীকৃত; `smsWorker`, `billingScheduler`, `permissionEngineService`, `accountEntitlementsService`, `dataSyncCache` আপডেট।
 
 **App (Android):**
-- **Dashboard**: কাস্টম আর্কাইভ হিস্ট্রি লোড-মোর পেজিনেশন (`HistoryLoadTier`) + কুইক ডেট রেঞ্জ।
+- **Dashboard**: সকল এসএমএস হিস্ট্রি লোড-মোর পেজিনেশন (`HistoryLoadTier`) + কুইক ডেট রেঞ্জ; ট্যাব `perm_custom_sender` (পার্সোনাল / কাস্টম-অল পারমিশন) ছাড়া ডিম ও নন-ক্লিকেবল।
 - **Device Screen**: Custom ALL টেমপ্লেট চিপ + entitlement না থাকলে লকড পপআপ (`SubscriptionLockState`, admin-editable কপি)।
 - **Billing/Admin**: `SubscriptionV3PackagesScreen`, `BillingConfigScreen`-এ অ্যাড-অন কনফিগ সেকশন; নতুন `ui/components/subscription/` কম্পোনেন্ট সেট; `SearchInputLimits` ইউটিলিটি।
 
@@ -1372,7 +1374,7 @@ The composer lives in the Admin panel **অ্যাপ সেটিংস (App 
 - **Backend**: নতুন raw-SQL টেবিল `app_notifications` + `app_notification_reads` (`db/ensure-app-notifications.js`, additive)। `services/notificationService.js` (টার্গেটিং/আনরিড/রিড-রিসিট), `controllers/notificationController.js`, `routes/adminRoutes.js` (create/list/delete) ও `routes/gatewayRoutes.js` (list/read — suspended অবস্থাতেও পড়া যায়)। হার্টবিট রেসপন্সে `notifications` ফিল্ড যুক্ত (`heartbeatController`) — নোটিফিকেশন ফেইল করলেও liveness কখনো ভাঙে না।
 - **টার্গেটিং**: তিনটি সাবস্ক্রিপশন ক্যাটাগরি (`gateway`/`personal_business`/`personal`)। তিনটিই নির্বাচন = ব্রডকাস্ট (ট্রায়াল/এক্সপায়ার্ড অ্যাকাউন্টসহ সবার কাছে যায়)। আনরিড উইন্ডো ৩০ দিন।
 - **Admin UI**: অ্যাডমিন প্যানেলের **অ্যাপ সেটিংস** ট্যাবে নোটিফিকেশন কার্ড — শিরোনাম, বিস্তারিত, তিন ক্যাটাগরি চিপ, **Send** বাটন + পাঠানো হিস্ট্রি (ডিলিট + ডেলিভারড কাউন্ট)।
-- **User App**: `AdminNoticeManager` (স্ট্যাটাস-বার নোটিফিকেশন + ইন-অ্যাপ পপআপ কিউ, repeat-nag গার্ড) + `MainActivity.onResume()`-এ অ্যাপ-ওপেন পুল + `AdminNoticeDialog` পপআপ (সব লক/মেইনটেনেন্স গেট পেরোনোর পর)।
+- **User App**: `AdminNoticeManager` (স্ট্যাটাস-বার নোটিফিকেশন + হোম বেল ইনবক্স/আনরিড ব্যাজ) + `MainActivity.onResume()`-এ অ্যাপ-ওপেন পুল + `AdminNoticeInboxSheet` (বেল আইকনে ক্লিক)।
 
 **Verification & Deployment:**
 - সব পরিবর্তিত/নতুন backend ফাইল `node --check` এবং deploy/healthcheck স্ক্রিপ্ট `bash -n` পাস।

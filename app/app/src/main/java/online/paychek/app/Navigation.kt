@@ -51,8 +51,37 @@ fun MainNavigation() {
     val billingSuccess by MainActivity.pendingBillingSuccess
     LaunchedEffect(billingSuccess) {
         if (!billingSuccess) return@LaunchedEffect
-        // Refresh lock BEFORE clearing the flag / popping — Home may miss a one-shot true.
+        val orderId = MainActivity.pendingBillingOrderId
+        var activated = false
+        var statusMessage: String? = null
+
         withContext(Dispatchers.IO) {
+            // Only toast success after server confirms activation (webhook fulfill).
+            if (!orderId.isNullOrBlank()) {
+                val token = SecurePreferences.decrypt(context, online.paychek.app.config.AppConfig.KEY_AUTH_TOKEN)
+                if (token.isNotBlank()) {
+                    val repo = online.paychek.app.data.repository.PaymentRepository()
+                    repeat(8) { attempt ->
+                        val result = repo.getSubscriptionCheckoutStatus(token, orderId)
+                        val st = result.getOrNull()
+                        if (st != null) {
+                            when {
+                                st.activated || st.status == "activated" -> {
+                                    activated = true
+                                    statusMessage = st.message
+                                    return@repeat
+                                }
+                                st.status == "failed" -> {
+                                    statusMessage = st.message
+                                        ?: "পেমেন্ট যাচাই হয়েছে, কিন্তু প্যাকেজ সক্রিয় হয়নি।"
+                                    return@repeat
+                                }
+                            }
+                        }
+                        if (attempt < 7) kotlinx.coroutines.delay(1500)
+                    }
+                }
+            }
             AccountEntitlementsStore.refresh(context)
             SubscriptionLockState.refresh(context)
         }
@@ -60,7 +89,6 @@ fun MainNavigation() {
         MainActivity.pendingBillingSuccess.value = false
         MainActivity.pendingBillingOrderId = null
         if (SessionFlags.hasAuth(context)) {
-            // Pop back to Home (or land on Home)
             while (backStack.size > 1) {
                 val last = backStack.lastOrNull()
                 if (last is NavKey.Home) break
@@ -69,9 +97,16 @@ fun MainNavigation() {
             if (backStack.lastOrNull() !is NavKey.Home) {
                 backStack.add(NavKey.Home)
             }
+            val toastText = when {
+                activated -> statusMessage ?: "পেমেন্ট সফল — সাবস্ক্রিপশন আপডেট হয়েছে।"
+                !orderId.isNullOrBlank() ->
+                    statusMessage
+                        ?: "পেমেন্ট পাওয়া গেছে। প্যাকেজ সক্রিয় হতে কয়েক মুহূর্ত লাগতে পারে — সাবস্ক্রিপশন পেজ রিফ্রেশ করুন।"
+                else -> "পেমেন্ট সফল — সাবস্ক্রিপশন আপডেট হয়েছে।"
+            }
             android.widget.Toast.makeText(
                 context,
-                "পেমেন্ট সফল — সাবস্ক্রিপশন আপডেট হয়েছে।",
+                toastText,
                 android.widget.Toast.LENGTH_LONG
             ).show()
         }

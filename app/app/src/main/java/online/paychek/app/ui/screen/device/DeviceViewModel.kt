@@ -756,7 +756,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
         _state.update {
             it.copy(
                 activeRemoteDevice = device,
-                remoteDeviceEditName = device.customDeviceName,
+                remoteDeviceEditName = device.customDeviceName.take(15),
                 remoteDeviceEditSim1Number = device.simOneNumber ?: "",
                 remoteDeviceEditSim1Active = device.simOneActive == 1,
                 remoteDeviceEditSim2Number = device.simTwoNumber ?: "",
@@ -782,7 +782,8 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun onRemoteDeviceEditNameChanged(name: String) {
-        _state.update { it.copy(remoteDeviceEditName = name) }
+        val clamped = if (name.length <= 15) name else name.take(15)
+        _state.update { it.copy(remoteDeviceEditName = clamped) }
     }
 
     fun onRemoteDeviceEditSim1NumberChanged(num: String) {
@@ -813,7 +814,7 @@ class DeviceViewModel(application: Application) : AndroidViewModel(application) 
 
     fun saveRemoteDeviceSettings() {
         val device = _state.value.activeRemoteDevice ?: return
-        val name = _state.value.remoteDeviceEditName.trim()
+        val name = _state.value.remoteDeviceEditName.trim().take(15)
         val sim1Num = _state.value.remoteDeviceEditSim1Number.trim()
         val sim1Active = if (_state.value.remoteDeviceEditSim1Active) 1 else 0
         val sim2Num = _state.value.remoteDeviceEditSim2Number.trim()

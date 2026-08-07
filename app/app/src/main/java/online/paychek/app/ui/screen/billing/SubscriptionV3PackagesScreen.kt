@@ -127,8 +127,6 @@ fun SubscriptionV3PackagesScreen(
     var pendingOrderId by remember { mutableStateOf<String?>(null) }
     var checkoutError  by remember { mutableStateOf<String?>(null) }
     var showDetails    by remember { mutableStateOf<V3PackageDto?>(null) }
-    var refundTarget   by remember { mutableStateOf<V3PurchaseHistoryDto?>(null) }
-    var isRefunding    by remember { mutableStateOf(false) }
     var historyExpanded by remember { mutableStateOf(false) }
     var addonInfoPopup by remember { mutableStateOf<Pair<String, String>?>(null) }
 
@@ -241,8 +239,6 @@ fun SubscriptionV3PackagesScreen(
         }
     }
 
-    val activePlan = cat?.activeSubscriptions?.firstOrNull()
-
     // Determine "popular" package for badge tag text
     val popularSkuKey = remember(packages, durationKey) {
         if (packages.isEmpty()) null
@@ -260,100 +256,122 @@ fun SubscriptionV3PackagesScreen(
     // ─── UI Layout ─────────────────────────────────────────────────────────
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
-        Column(
+        LazyColumn(
             modifier = modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(padding),
+            contentPadding = PaddingValues(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
+            item(key = "status_strip") {
+                ThinStatusStrip(
+                    activeSubscriptions = cat?.activeSubscriptions.orEmpty(),
+                    sharedExpiry = cat?.sharedExpiry,
+                    trialDays = cat?.settings?.trialDays
+                )
+            }
 
-            // ── Thin Status Strip (replaces big header card) ──────────────────
-            ThinStatusStrip(activePlan, cat?.sharedExpiry, cat?.settings?.trialDays)
+            item(key = "category_tabs") {
+                PremiumTabRow(
+                    tabs = tabOrder.map { v3TabLabel(it) },
+                    selectedIndex = safeTabIndex,
+                    onTabSelected = { idx ->
+                        selectedTab = idx
+                        selectedPkg = null
+                        selectedAddons = emptySet()
+                    }
+                )
+            }
 
-            // ── Category Tabs (new design) ───────────────────────────────────
-            PremiumTabRow(
-                tabs = tabOrder.map { v3TabLabel(it) },
-                selectedIndex = safeTabIndex,
-                onTabSelected = { idx ->
-                    selectedTab = idx
-                    selectedPkg = null
-                    selectedAddons = emptySet()
+            item(key = "promo_banner") {
+                PremiumPromoBanner(maxDiscount = maxDiscount)
+            }
+
+            item(key = "duration_selector") {
+                Column {
+                    PremiumDurationSelector(
+                        segments = durationTabs,
+                        selectedIndex = durationIndex,
+                        onSelect = { durationIndex = it }
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
-            )
+            }
 
-            // ── Gradient Promo Banner (between tabs and duration) ─────────────
-            PremiumPromoBanner(maxDiscount = maxDiscount)
-
-            // ── Duration Selector (divider style, icon + 2 lines + pill) ─────
-            PremiumDurationSelector(
-                segments = durationTabs,
-                selectedIndex = durationIndex,
-                onSelect = { durationIndex = it }
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // ── Package List / Loading / Error states ────────────────────────
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                when {
-                    isLoading -> SkeletonPackageList()
-
-                    errorMessage != null -> Column(
-                        modifier = Modifier.align(Alignment.Center).padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(errorMessage!!, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
-                        Button(onClick = { reload() }) { Text("পুনরায় চেষ্টা") }
+            when {
+                isLoading -> {
+                    item(key = "skeleton") {
+                        SkeletonPackageList()
                     }
+                }
 
-                    packages.isEmpty() -> Column(
-                        modifier = Modifier.align(Alignment.Center).padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text("📦", fontSize = 32.sp, textAlign = TextAlign.Center)
-                        Text(
-                            text = "এই ক্যাটাগরিতে কোনো প্যাকেজ নেই।",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
+                errorMessage != null -> {
+                    item(key = "error") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(errorMessage!!, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+                            Button(onClick = { reload() }) { Text("পুনরায় চেষ্টা") }
+                        }
                     }
+                }
 
-                    else -> LazyColumn(
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        items(packages.size, key = { packages[it].skuKey }) { index ->
-                            val pkg = packages[index]
-                            val price   = priceForDuration(pkg, durationKey)
-                            val disc    = pkg.discounts?.get(durationKey) ?: 0
-                            val badge   = if (disc > 0) "-$disc%" else null
-                            val months  = durationMonths(durationKey)
+                packages.isEmpty() -> {
+                    item(key = "empty") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("📦", fontSize = 32.sp, textAlign = TextAlign.Center)
+                            Text(
+                                text = "এই ক্যাটাগরিতে কোনো প্যাকেজ নেই।",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
 
-                            val originalPrice = if (disc > 0 && price > 0) {
-                                price / (1.0 - disc / 100.0)
-                            } else null
+                else -> {
+                    items(
+                        count = packages.size,
+                        key = { packages[it].skuKey }
+                    ) { index ->
+                        val pkg = packages[index]
+                        val price   = priceForDuration(pkg, durationKey)
+                        val disc    = pkg.discounts?.get(durationKey) ?: 0
+                        val badge   = if (disc > 0) "-$disc%" else null
+                        val months  = durationMonths(durationKey)
 
-                            val perMonthText = if (months > 1 && price > 0) {
-                                MoneyFormat.perMonth(price, months)
-                            } else null
+                        val originalPrice = if (disc > 0 && price > 0) {
+                            price / (1.0 - disc / 100.0)
+                        } else null
 
-                            val savingsText = if (originalPrice != null && originalPrice > price) {
-                                "${MoneyFormat.taka(originalPrice - price)} সঞ্চয়"
-                            } else null
+                        val perMonthText = if (months > 1 && price > 0) {
+                            MoneyFormat.perMonth(price, months)
+                        } else null
 
-                            // Badge tag text for the popular/recommended card
-                            val badgeTagText = when {
-                                pkg.skuKey == popularSkuKey && disc > 0 -> "সেরা অফার"
-                                pkg.skuKey == popularSkuKey -> "রিকমেন্ডেড"
-                                else -> null
-                            }
+                        val savingsText = if (originalPrice != null && originalPrice > price) {
+                            "${MoneyFormat.taka(originalPrice - price)} সঞ্চয়"
+                        } else null
 
-                            // Multi-color: each card gets a unique accent by index
-                            val accent = cardAccentColor(index)
+                        val badgeTagText = when {
+                            pkg.skuKey == popularSkuKey && disc > 0 -> "সেরা অফার"
+                            pkg.skuKey == popularSkuKey -> "রিকমেন্ডেড"
+                            else -> null
+                        }
 
-                            val featureList = buildFeatureList(pkg)
+                        val accent = cardAccentColor(index)
+                        val featureList = buildFeatureList(pkg)
 
+                        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                             PremiumPackageCard(
                                 planName      = pkg.displayName,
                                 subtitle      = banglaDurationLabel(durationKey),
@@ -373,18 +391,18 @@ fun SubscriptionV3PackagesScreen(
                                 onDetailsClick = { showDetails = pkg }
                             )
                         }
+                    }
 
-                        // ── Collapsible History Section ──────────────────────
-                        val hasHistory = !cat?.extensionHistory.isNullOrEmpty() || !cat?.purchaseHistory.isNullOrEmpty()
-                        if (hasHistory) {
-                            item {
-                                Spacer(Modifier.height(8.dp))
+                    val hasHistory = !cat?.extensionHistory.isNullOrEmpty() || !cat?.purchaseHistory.isNullOrEmpty()
+                    if (hasHistory) {
+                        item(key = "history") {
+                            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                Spacer(modifier = Modifier.height(8.dp))
                                 HistorySection(
                                     extensionHistory = cat?.extensionHistory.orEmpty(),
                                     purchaseHistory = cat?.purchaseHistory.orEmpty(),
                                     expanded = historyExpanded,
-                                    onToggle = { historyExpanded = !historyExpanded },
-                                    onRefundRequest = { refundTarget = it }
+                                    onToggle = { historyExpanded = !historyExpanded }
                                 )
                             }
                         }
@@ -407,62 +425,6 @@ fun SubscriptionV3PackagesScreen(
                 selectedPkg = pkg
                 selectedAddons = emptySet()
                 updateQuote(pkg, emptySet(), currentTabKey, durationKey)
-            }
-        )
-    }
-
-    // ─── Refund Confirmation Dialog ─────────────────────────────────────────
-
-    refundTarget?.let { h ->
-        AlertDialog(
-            onDismissRequest = { if (!isRefunding) refundTarget = null },
-            title = { Text("রিফান্ড রিকোয়েস্ট", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "আপনি কি নিশ্চিত যে \"${h.packageFullName}\" প্যাকেজের জন্য রিফান্ড রিকোয়েস্ট পাঠাতে চান?",
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        "ইনভয়েস: ${h.invoiceNo ?: "—"} • মূল্য: ${MoneyFormat.taka(h.paidAmount ?: 0.0)}",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        isRefunding = true
-                        scope.launch {
-                            repository.postV3RefundRequest(token(), h.id, "User requested refund").fold(
-                                onSuccess = {
-                                    isRefunding = false; refundTarget = null
-                                    Toast.makeText(context, "রিফান্ড রিকোয়েস্ট পাঠানো হয়েছে", Toast.LENGTH_SHORT).show()
-                                    reload()
-                                },
-                                onFailure = { err ->
-                                    isRefunding = false; refundTarget = null
-                                    Toast.makeText(context, err.message, Toast.LENGTH_LONG).show()
-                                }
-                            )
-                        }
-                    },
-                    enabled = !isRefunding,
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    if (isRefunding) {
-                        CircularProgressIndicator(Modifier.size(16.dp), color = MaterialTheme.colorScheme.onError, strokeWidth = 2.dp)
-                    } else {
-                        Text("রিকোয়েস্ট পাঠান", color = MaterialTheme.colorScheme.onError)
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { refundTarget = null }, enabled = !isRefunding) {
-                    Text("বাতিল")
-                }
             }
         )
     }
@@ -691,11 +653,14 @@ fun SubscriptionV3PackagesScreen(
 
 @Composable
 private fun ThinStatusStrip(
-    activePlan: V3ActiveSubscriptionDto?,
+    activeSubscriptions: List<online.paychek.app.data.remote.dto.V3ActiveSubscriptionDto>,
     sharedExpiry: String?,
     trialDays: Int?
 ) {
-    val hasActivePlan = activePlan != null
+    val hasActivePlan = activeSubscriptions.isNotEmpty()
+    val planFrames = remember(activeSubscriptions) {
+        online.paychek.app.ui.components.plan.buildPlanTitleFrames(activeSubscriptions)
+    }
 
     Row(
         modifier = Modifier
@@ -707,7 +672,6 @@ private fun ThinStatusStrip(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Status dot
         Box(
             modifier = Modifier
                 .size(7.dp)
@@ -718,24 +682,27 @@ private fun ThinStatusStrip(
                 )
         )
 
-        // Plan name or trial message
-        Text(
-            text = if (hasActivePlan) {
-                activePlan!!.packageFullName
-            } else {
-                val days = trialDays ?: 7
-                "${BanglaDateTimeFormat.toBanglaDigits(days.toString())} দিনের ফ্রি ট্রায়াল উপভোগ করছেন"
-            },
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (hasActivePlan) MaterialTheme.colorScheme.onSurfaceVariant
-            else MaterialTheme.colorScheme.primary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
+        if (hasActivePlan) {
+            online.paychek.app.ui.components.plan.RotatingPlanTitle(
+                frames = planFrames,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
+            )
+        } else {
+            val days = trialDays ?: 7
+            Text(
+                text = "${BanglaDateTimeFormat.toBanglaDigits(days.toString())} দিনের ফ্রি ট্রায়াল উপভোগ করছেন",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
 
-        // Expiry (compact)
         sharedExpiry?.let { exp ->
             Text(
                 text = "মেয়াদ: ${formatExpiryDate(exp)}",
@@ -753,7 +720,7 @@ private fun ThinStatusStrip(
 private fun SkeletonPackageList() {
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -832,8 +799,7 @@ private fun HistorySection(
     extensionHistory: List<V3ExtensionHistoryDto>,
     purchaseHistory: List<V3PurchaseHistoryDto>,
     expanded: Boolean,
-    onToggle: () -> Unit,
-    onRefundRequest: (V3PurchaseHistoryDto) -> Unit
+    onToggle: () -> Unit
 ) {
     val chevronRotation by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
@@ -858,7 +824,7 @@ private fun HistorySection(
                 modifier = Modifier.size(18.dp)
             )
             Text(
-                text = "ক্রয় ও এক্সটেনশন ইতিহাস",
+                text = "পেমেন্ট হিস্টরি",
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -914,20 +880,15 @@ private fun HistorySection(
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(Modifier.padding(12.dp)) {
+                        Column(
+                            Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
                             Text(h.packageFullName, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                             Text(
                                 "${h.invoiceNo ?: "—"} • ${MoneyFormat.taka(h.paidAmount ?: 0.0)} • ${formatDateBangla(h.purchasedAt ?: "")}",
                                 fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            h.refundStatus?.takeIf { it != "none" && it.isNotBlank() }?.let { rs ->
-                                Text("রিফান্ড: $rs", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
-                            }
-                            if (h.refundStatus.isNullOrBlank() || h.refundStatus == "none") {
-                                TextButton(onClick = { onRefundRequest(h) }) {
-                                    Text("রিফান্ড রিকোয়েস্ট", fontSize = 12.sp)
-                                }
-                            }
                         }
                     }
                 }

@@ -1,9 +1,21 @@
 /** Shared DOM / branding helpers for checkout UI (no API calls). */
 
 import { esc, safeImgSrc } from './sanitize.js';
+import {
+  DEFAULT_TAB_ICONS,
+  defaultProviderLogo,
+  defaultTabIcon,
+} from './default-assets.js';
 
 export { esc, escAttr, safeImgSrc, safeText } from './sanitize.js';
+export {
+  DEFAULT_TAB_ICONS,
+  DEFAULT_PROVIDER_LOGOS,
+  defaultProviderLogo,
+  defaultTabIcon,
+} from './default-assets.js';
 
+/** @deprecated emoji kept only as last-resort label metadata — UI uses images */
 export const TAB_FALLBACK = {
   send_money: { icon: '💸', label: 'Send Money' },
   cash_out: { icon: '💵', label: 'Cash Out' },
@@ -63,23 +75,36 @@ export function templateLogoUrl(branding, tid) {
   return (b && b.logoUrl) ? b.logoUrl : '';
 }
 
+function imgWithFallback(src, fallbackSrc, attrs) {
+  const primary = safeImgSrc(src) || safeImgSrc(fallbackSrc);
+  const fb = safeImgSrc(fallbackSrc);
+  if (!primary) return '';
+  const fbAttr = fb && fb !== primary
+    ? ` data-fallback-src="${esc(fb)}"`
+    : (fb ? ` data-fallback-src="${esc(fb)}"` : '');
+  return `<img src="${esc(primary)}"${fbAttr} ${attrs}>`;
+}
+
 export function providerLogoHtml(branding, tid, provider, px = 28) {
   px = px || 28;
   const logoUrl = templateLogoUrl(branding, tid);
-  const color = provColor(provider);
-  const initial = provInitial(provider);
+  const fallback = defaultProviderLogo(provider);
   const radius = Math.round(px * 0.28);
-  if (hasImg(logoUrl)) {
-    return `<img src="${esc(safeImgSrc(logoUrl))}" alt="" class="prov-logo-img" style="width:${px}px;height:${px}px;border-radius:${radius}px;object-fit:contain;background:#fff;flex:0 0 auto" decoding="async" loading="lazy" data-initial="${esc(initial)}" data-color="${esc(color)}" data-px="${px}" onerror="window.__checkoutLogoFail&&window.__checkoutLogoFail(this)">`;
+  const attrs = `alt="" class="prov-logo-img" style="width:${px}px;height:${px}px;border-radius:${radius}px;object-fit:contain;background:#fff;flex:0 0 auto" decoding="async" loading="lazy" data-px="${px}" onerror="window.__checkoutLogoFail&&window.__checkoutLogoFail(this)"`;
+  const html = imgWithFallback(logoUrl, fallback, attrs);
+  if (html) return html;
+  // Absolute last resort — still an image path if known, else empty box (no letter avatar)
+  if (fallback) {
+    return `<img src="${esc(safeImgSrc(fallback))}" alt="" class="prov-logo-img" style="width:${px}px;height:${px}px;border-radius:${radius}px;object-fit:contain;background:#fff;flex:0 0 auto" decoding="async" loading="lazy">`;
   }
-  return `<span class="prov-avatar" style="width:${px}px;height:${px}px;border-radius:${radius}px;background:${esc(color)};font-size:${Math.round(px * 0.42)}px;flex:0 0 auto">${esc(initial)}</span>`;
+  return `<span class="prov-avatar" style="width:${px}px;height:${px}px;border-radius:${radius}px;background:#e2e8f0;flex:0 0 auto"></span>`;
 }
 
 export function tabIconHtml(tab) {
-  const fb = TAB_FALLBACK[tab.id] || { icon: '💳', label: tab.label };
-  const emoji = tab.icon || fb.icon;
-  if (hasImg(tab.iconUrl)) {
-    return `<img src="${esc(safeImgSrc(tab.iconUrl))}" alt="" width="22" height="22" decoding="async" loading="eager" data-emoji="${esc(emoji)}" onerror="window.__checkoutIconFail&&window.__checkoutIconFail(this)">`;
-  }
-  return esc(emoji);
+  const tabId = tab.id || tab.key || '';
+  const fallback = defaultTabIcon(tabId) || DEFAULT_TAB_ICONS.send_money;
+  const attrs = `alt="" width="22" height="22" decoding="async" loading="eager" data-tab="${esc(tabId)}" onerror="window.__checkoutIconFail&&window.__checkoutIconFail(this)"`;
+  const html = imgWithFallback(tab.iconUrl, fallback, attrs);
+  if (html) return html;
+  return `<img src="${esc(safeImgSrc(fallback))}" alt="" width="22" height="22" decoding="async" loading="eager">`;
 }

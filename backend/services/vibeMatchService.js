@@ -141,9 +141,20 @@ async function claimHistoryForVibe(historyId, merchantId) {
   });
 }
 
+async function bumpHistoryAfterClaim(userId) {
+  if (!userId) return;
+  try {
+    const dataSyncCache = require('./dataSyncCache');
+    await dataSyncCache.bumpUserHistoryVersion(userId);
+  } catch (e) {
+    console.warn('[VIBE] bumpUserHistoryVersion failed:', e.message);
+  }
+}
+
 async function applyVibeMatch(vibeRequest, history, merchant) {
   const claimed = await claimHistoryForVibe(history.id, merchant.id);
   if (claimed.count === 0) return false;
+  await bumpHistoryAfterClaim(merchant.user_id);
 
   await prisma.checkout_vibe_requests.update({
     where: { id: vibeRequest.id },

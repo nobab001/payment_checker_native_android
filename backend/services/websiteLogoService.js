@@ -123,9 +123,10 @@ async function saveWebsiteLogo(buffer, mimeType, accountId, websiteId) {
     outBuf = buffer;
   }
 
-  const filePath = path.join(dir, 'logo.webp');
+  const fileName = `logo_${crypto.randomBytes(4).toString('hex')}.webp`;
+  const filePath = path.join(dir, fileName);
   fs.writeFileSync(filePath, outBuf);
-  return logoRelativePath(accountId, websiteId);
+  return `${managedLogoPrefix(accountId, websiteId)}${fileName}`;
 }
 
 module.exports = {

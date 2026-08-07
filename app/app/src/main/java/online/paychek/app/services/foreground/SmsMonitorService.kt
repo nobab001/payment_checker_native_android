@@ -286,7 +286,7 @@ class SmsMonitorService : Service() {
             NotificationCompat.PRIORITY_LOW
         }
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("💳 Paychek — সক্রিয়")
+            .setContentTitle("💳 Paycheck — সক্রিয়")
             .setContentText(statusText)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)

@@ -1,6 +1,33 @@
 const prisma = require('../../db/prisma');
 const { ensureSubscriptionV3Schema } = require('./schema');
-const { CATEGORIES } = require('./constants');
+const { CATEGORIES, DURATION_LABELS } = require('./constants');
+
+function shortDisplayName(fullName, durationKey) {
+  const raw = String(fullName || '').trim();
+  if (!raw) return '';
+  const label = DURATION_LABELS[durationKey];
+  if (label && raw.toLowerCase().startsWith(`${String(label).toLowerCase()} `)) {
+    return raw.slice(String(label).length + 1).trim();
+  }
+  return raw.replace(/^(Monthly|Yearly|Annually|Half Yearly|Half-Yearly)\s+/i, '').trim() || raw;
+}
+
+function mapActiveSubscriptionsForClient(rows) {
+  return (rows || []).map((r) => {
+    const full = String(r.package_full_name || '').trim();
+    const durationKey = r.duration_key ? String(r.duration_key) : null;
+    return {
+      ...r,
+      category: String(r.category || ''),
+      package_sku: r.package_sku ? String(r.package_sku) : null,
+      package_full_name: full,
+      duration_key: durationKey,
+      display_name: shortDisplayName(full, durationKey),
+      expires_at: r.expires_at,
+      starts_at: r.starts_at,
+    };
+  });
+}
 
 function dateOnly(d = new Date()) {
   const x = new Date(d);
@@ -37,12 +64,7 @@ async function getUserSubscriptions(userId) {
     FROM user_subscriptions
     WHERE user_id = ${Number(userId)} AND status = 'active'
   `;
-  return rows.map((r) => ({
-    ...r,
-    category: String(r.category),
-    expires_at: r.expires_at,
-    starts_at: r.starts_at,
-  }));
+  return mapActiveSubscriptionsForClient(rows);
 }
 
 async function getSharedExpiry(userId) {
@@ -97,6 +119,7 @@ module.exports = {
   parseYmd,
   addDays,
   getUserSubscriptions,
+  mapActiveSubscriptionsForClient,
   getSharedExpiry,
   getEffectiveExpiry,
   remainingDays,

@@ -59,8 +59,12 @@ object AppConfig {
     const val KEY_DASHBOARD_STATS_CACHE   = "pcu_dashboard_stats_cache_v1"
     /** JSON queue of admin notices already shown as a status-bar notification. */
     const val KEY_NOTIFICATION_SHOWN_IDS  = "pcu_notification_shown_ids"
-    /** JSON queue of notices waiting to be shown as an in-app popup. */
+    /** Legacy popup queue — migrated into [KEY_NOTIFICATION_INBOX]. */
     const val KEY_NOTIFICATION_PENDING    = "pcu_notification_pending"
+    /** Recent admin notices for the home bell inbox. */
+    const val KEY_NOTIFICATION_INBOX      = "pcu_notification_inbox"
+    /** Notice ids the user has opened in the home bell inbox (badge clear). */
+    const val KEY_NOTIFICATION_INBOX_SEEN_IDS = "pcu_notification_inbox_seen_ids"
 
     // -----------------------------------------------------------------------
     // P2P Sync defaults

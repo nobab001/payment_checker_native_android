@@ -7,19 +7,45 @@ const prisma = require('../db/prisma');
 const GLOBAL_TABS_KEY = 'checkout_tabs_global';
 const PROVIDER_BRANDING_KEY = 'checkout_provider_branding';
 
+/** Built-in images shipped with the app — admin upload overrides these. */
+const BUILTIN_TAB_ICONS = {
+  send_money: '/assets/checkout/tabs/send_money.png',
+  cash_out: '/assets/checkout/tabs/cash_out.png',
+  payment: '/assets/checkout/tabs/payment.png',
+  bank: '/assets/checkout/tabs/bank.png',
+  card: '/assets/checkout/tabs/card.png',
+};
+
+const BUILTIN_PROVIDER_LOGOS = {
+  bkash: '/assets/checkout/providers/bkash.png?v=4',
+  nagad: '/assets/checkout/providers/nagad.png?v=2',
+  rocket: '/assets/checkout/providers/rocket.png',
+  upay: '/assets/checkout/providers/upay.png',
+};
+
+function builtinLogoForSender(senderId) {
+  const k = String(senderId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!k) return '';
+  if (k.includes('bkash') || k === 'bka') return BUILTIN_PROVIDER_LOGOS.bkash;
+  if (k.includes('nagad')) return BUILTIN_PROVIDER_LOGOS.nagad;
+  if (k.includes('rocket') || k === '16216') return BUILTIN_PROVIDER_LOGOS.rocket;
+  if (k.includes('upay')) return BUILTIN_PROVIDER_LOGOS.upay;
+  return BUILTIN_PROVIDER_LOGOS[k] || '';
+}
+
 const DEFAULT_TABS = {
-  send_money: { enabled: true, label: 'Send Money', icon: '💸', iconUrl: '', category: 'SEND_MONEY' },
-  cash_out: { enabled: true, label: 'Cash Out', icon: '💵', iconUrl: '', category: 'CASH_OUT' },
-  payment: { enabled: true, label: 'Payment', icon: '📱', iconUrl: '', category: 'PAYMENT' },
-  bank: { enabled: false, label: 'Bank', icon: '🏦', iconUrl: '', category: 'BANK' },
-  card: { enabled: true, label: 'Card Payment', icon: '💳', iconUrl: '', category: 'CARD' },
+  send_money: { enabled: true, label: 'Send Money', icon: '💸', iconUrl: BUILTIN_TAB_ICONS.send_money, category: 'SEND_MONEY' },
+  cash_out: { enabled: true, label: 'Cash Out', icon: '💵', iconUrl: BUILTIN_TAB_ICONS.cash_out, category: 'CASH_OUT' },
+  payment: { enabled: true, label: 'Payment', icon: '📱', iconUrl: BUILTIN_TAB_ICONS.payment, category: 'PAYMENT' },
+  bank: { enabled: false, label: 'Bank', icon: '🏦', iconUrl: BUILTIN_TAB_ICONS.bank, category: 'BANK' },
+  card: { enabled: true, label: 'Card Payment', icon: '💳', iconUrl: BUILTIN_TAB_ICONS.card, category: 'CARD' },
 };
 
 const DEFAULT_PROVIDER_BRANDING = {
-  bkash: { displayName: 'bKash', logoUrl: '' },
-  nagad: { displayName: 'Nagad', logoUrl: '' },
-  rocket: { displayName: 'Rocket', logoUrl: '' },
-  upay: { displayName: 'Upay', logoUrl: '' },
+  bkash: { displayName: 'bKash', logoUrl: BUILTIN_PROVIDER_LOGOS.bkash },
+  nagad: { displayName: 'Nagad', logoUrl: BUILTIN_PROVIDER_LOGOS.nagad },
+  rocket: { displayName: 'Rocket', logoUrl: BUILTIN_PROVIDER_LOGOS.rocket },
+  upay: { displayName: 'Upay', logoUrl: BUILTIN_PROVIDER_LOGOS.upay },
 };
 
 const VALID_DESIGNS = new Set(['design-1', 'design-2', 'design-3']);
@@ -98,7 +124,7 @@ function parseTabs(layoutConfigRaw, globalTabs) {
       id: key,
       label: ov.label || gv.label || def.label,
       icon: ov.icon || gv.icon || def.icon,
-      iconUrl: ov.iconUrl || gv.iconUrl || def.iconUrl || '',
+      iconUrl: ov.iconUrl || gv.iconUrl || def.iconUrl || BUILTIN_TAB_ICONS[key] || '',
       category: ov.category || gv.category || def.category,
       enabled: ov.enabled !== undefined ? !!ov.enabled
         : (gv.enabled !== undefined ? !!gv.enabled : def.enabled),
@@ -254,7 +280,12 @@ async function deriveProviderBrandingFromTemplates() {
     for (const r of rows) {
       const key = providerKeyForTemplate(r.id);
       const name = (r.template_name || r.sender_id || key).trim();
-      map[key] = { displayName: name, logoUrl: '', templateId: r.id };
+      map[key] = {
+        displayName: name,
+        logoUrl: builtinLogoForSender(r.sender_id),
+        templateId: r.id,
+        senderId: r.sender_id || '',
+      };
     }
   } catch (_) { /* ignore — empty branding */ }
   _providerCache = { at: now, data: map };
@@ -273,9 +304,11 @@ async function resolveProviderBrandingFull(globalBranding) {
   const merged = {};
   for (const [k, v] of Object.entries(derived)) {
     const ov = saved[k] || {};
+    const savedLogo = (ov.logoUrl !== undefined && ov.logoUrl !== null) ? String(ov.logoUrl).trim() : '';
+    // Admin upload wins when set; otherwise built-in. Client keeps image fallback if URL 404s.
     merged[k] = {
       displayName: (ov.displayName && String(ov.displayName).trim()) || v.displayName,
-      logoUrl: (ov.logoUrl !== undefined && ov.logoUrl !== null) ? ov.logoUrl : (v.logoUrl || ''),
+      logoUrl: savedLogo || v.logoUrl || builtinLogoForSender(v.senderId) || '',
       templateId: v.templateId,
     };
   }

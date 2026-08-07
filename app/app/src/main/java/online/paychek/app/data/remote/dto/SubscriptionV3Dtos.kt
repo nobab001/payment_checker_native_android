@@ -97,6 +97,9 @@ data class V3AdminAddonUpdateResponse(
 data class V3ActiveSubscriptionDto(
     @SerializedName("category") val category: String,
     @SerializedName("package_full_name") val packageFullName: String,
+    @SerializedName("package_sku") val packageSku: String? = null,
+    @SerializedName("duration_key") val durationKey: String? = null,
+    @SerializedName("display_name") val displayName: String? = null,
     @SerializedName("expires_at") val expiresAt: String? = null
 )
 

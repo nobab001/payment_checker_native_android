@@ -248,10 +248,10 @@ function onNumberCopied() {
     startWaitTimer();
     $('vibe-waiting-main')?.classList.remove('hidden');
     $('vibe-manual-link')?.classList.remove('hidden');
-    setProgressCard({ titleKey: 'progress_copied_title', subKey: 'progress_copied_sub' });
+    // No "number copied" banner above tabs — waiting UI is enough.
   }
   if (!isVibeMode) {
-    // Normal Mode: FAB appears only after at least one copy
+    // Normal Mode: FAB appears only after at least one copy (no progress banner).
     const fab = $('verify-fab');
     if (fab) {
       fab.classList.remove('hidden');
@@ -260,7 +260,6 @@ function onNumberCopied() {
         { duration: 240, easing: 'ease-in-out', fill: 'both' },
       );
     }
-    setProgressCard({ titleKey: 'progress_copied_title', subKey: 'copy_hint' });
   }
 }
 

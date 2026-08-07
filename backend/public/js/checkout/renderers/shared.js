@@ -1,5 +1,7 @@
 import { esc, providerLogoHtml } from '../utils.js';
 
+const COPY_ICON_SVG = `<svg class="btn-copy-ico" width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" stroke-width="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+
 function numberRowAttrs(number) {
   const inactive = number.enabled === false;
   return {
@@ -11,13 +13,18 @@ function numberRowAttrs(number) {
   };
 }
 
-/** Shared number row fragments — compact provider logo (20px). */
+/** Compact provider logo beside each number. */
 function numberLogoHtml(number, provider, branding) {
   const tid = number.templateId ?? provider.metadata?.templateId ?? null;
   const prov = number.provider || provider.provider;
-  return providerLogoHtml(branding, tid, prov, 20);
+  return `<span class="num-logo">${providerLogoHtml(branding, tid, prov, 20)}</span>`;
 }
 
+function copyButtonHtml(number, ariaLabel, disabled) {
+  return `<button type="button" class="btn-copy" data-copy="${esc(number)}" aria-label="${esc(ariaLabel)}"${disabled}>${COPY_ICON_SVG}<span class="btn-copy-lbl">কপি করুন</span></button>`;
+}
+
+/** List design: logo + number + outline copy button. */
 export function renderNumberRow(number, branding = {}, provider = {}) {
   const { inactive, rowClass, disabled, badge, ariaLabel } = numberRowAttrs(number);
   const logo = numberLogoHtml(number, provider, branding);
@@ -27,7 +34,7 @@ export function renderNumberRow(number, branding = {}, provider = {}) {
       <span class="num">${esc(number.number)}</span>
       ${badge}
     </span>
-    <button type="button" class="btn-copy" data-copy="${esc(number.number)}" aria-label="${esc(ariaLabel)}"${disabled}>কপি করুন</button>
+    ${copyButtonHtml(number.number, ariaLabel, disabled)}
   </div>`;
 }
 
@@ -42,7 +49,7 @@ export function renderGroupNumberItem(number, provider, branding = {}) {
       <div class="pnum">${esc(number.number)}</div>
       ${badge}
     </div>
-    <button type="button" class="acc-copy btn-copy" data-copy="${esc(number.number)}" aria-label="${esc(ariaLabel)}"${disabled}>কপি</button>
+    ${copyButtonHtml(number.number, ariaLabel, disabled)}
   </div>`;
 }
 

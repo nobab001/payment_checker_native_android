@@ -73,7 +73,7 @@ object OemBackgroundHelper {
             steps += BackgroundSetupStep(
                 id = "accessibility",
                 title = "Accessibility চালু করুন",
-                description = "Settings → Accessibility → Paychek Background Guard → ON করুন।"
+                description = "Settings → Accessibility → Paycheck Background Guard → ON করুন।"
             )
         }
 
@@ -81,7 +81,7 @@ object OemBackgroundHelper {
             steps += BackgroundSetupStep(
                 id = "battery_exempt",
                 title = "Battery Unrestricted",
-                description = "Settings → Apps → Paychek → Battery → Unrestricted / অপ্টিমাইজ করবেন না।"
+                description = "Settings → Apps → Paycheck → Battery → Unrestricted / অপ্টিমাইজ করবেন না।"
             )
         }
 
@@ -89,22 +89,22 @@ object OemBackgroundHelper {
             OemVendor.HUAWEI -> steps += BackgroundSetupStep(
                 id = "oem_autostart",
                 title = "App Launch = Manual",
-                description = "Phone Manager → App launch → Paychek → Manage manually → Auto-launch + Secondary launch + Run in background ON।"
+                description = "Phone Manager → App launch → Paycheck → Manage manually → Auto-launch + Secondary launch + Run in background ON।"
             )
             OemVendor.XIAOMI -> steps += BackgroundSetupStep(
                 id = "oem_autostart",
                 title = "Autostart ON",
-                description = "Security → Autostart → Paychek ON করুন। Lock recent apps (lock icon) রাখুন।"
+                description = "Security → Autostart → Paycheck ON করুন। Lock recent apps (lock icon) রাখুন।"
             )
             OemVendor.VIVO -> steps += BackgroundSetupStep(
                 id = "oem_autostart",
                 title = "Autostart / High background",
-                description = "iManager → App manager → Autostart → Paychek ON। Battery → High background power consumption allow।"
+                description = "iManager → App manager → Autostart → Paycheck ON। Battery → High background power consumption allow।"
             )
             OemVendor.SAMSUNG -> steps += BackgroundSetupStep(
                 id = "oem_autostart",
                 title = "Never sleeping apps",
-                description = "Device Care → Battery → Background usage limits → Never sleeping apps-এ Paychek যোগ করুন।"
+                description = "Device Care → Battery → Background usage limits → Never sleeping apps-এ Paycheck যোগ করুন।"
             )
             else -> Unit
         }

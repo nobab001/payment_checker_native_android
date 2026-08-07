@@ -20,8 +20,11 @@ data class AdminUserSettingsState(
     val user: AdminUserDto? = null,
     val websites: List<AdminWebsiteDto> = emptyList(),
     val plans: List<SubscriptionPlanDto> = emptyList(),
+    val purchases: List<AdminPurchaseHistoryDto> = emptyList(),
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
+    val isLoadingPurchases: Boolean = false,
+    val showPurchaseHistory: Boolean = false,
     val errorMessage: String? = null,
     val successMessage: String? = null
 )
@@ -89,6 +92,78 @@ class AdminUserSettingsViewModel(
         }
     }
 
+    fun openPurchaseHistory() {
+        _state.update { it.copy(showPurchaseHistory = true) }
+        loadPurchaseHistory()
+    }
+
+    fun closePurchaseHistory() {
+        _state.update { it.copy(showPurchaseHistory = false) }
+    }
+
+    fun loadPurchaseHistory() {
+        viewModelScope.launch {
+            _state.update { it.copy(isLoadingPurchases = true) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val response = api.getUserPurchaseHistory(token, userId)
+                if (response.isSuccessful && response.body()?.success == true) {
+                    _state.update {
+                        it.copy(
+                            purchases = response.body()?.purchases.orEmpty(),
+                            isLoadingPurchases = false
+                        )
+                    }
+                } else {
+                    _state.update {
+                        it.copy(
+                            isLoadingPurchases = false,
+                            errorMessage = "পেমেন্ট হিস্টরি লোড ব্যর্থ।"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(
+                        isLoadingPurchases = false,
+                        errorMessage = e.localizedMessage ?: "পেমেন্ট হিস্টরি লোড ব্যর্থ।"
+                    )
+                }
+            }
+        }
+    }
+
+    fun markPurchase(purchaseId: Int, marked: Boolean) {
+        viewModelScope.launch {
+            _state.update { it.copy(isSaving = true) }
+            try {
+                val token = "Bearer ${getToken()}"
+                val response = api.markUserPurchase(
+                    token,
+                    userId,
+                    purchaseId,
+                    MarkPurchaseRequest(marked)
+                )
+                if (response.isSuccessful && response.body()?.success == true) {
+                    _state.update { state ->
+                        state.copy(
+                            isSaving = false,
+                            purchases = state.purchases.map { p ->
+                                if (p.id == purchaseId) p.copy(adminMarked = marked) else p
+                            },
+                            successMessage = response.body()?.message
+                                ?: if (marked) "মার্ক করা হয়েছে।" else "মার্ক সরানো হয়েছে।"
+                        )
+                    }
+                } else {
+                    _state.update { it.copy(isSaving = false, errorMessage = "মার্ক আপডেট ব্যর্থ।") }
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }
+            }
+        }
+    }
+
     fun toggleUserBlock(blocked: Boolean) {
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true) }
@@ -140,28 +215,6 @@ class AdminUserSettingsViewModel(
                             errorMessage = msg ?: "এক্সটেন্ড ব্যর্থ।"
                         )
                     }
-                }
-            } catch (e: Exception) {
-                _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }
-            }
-        }
-    }
-
-    fun updateDeviceTrial(deviceId: Int, trialExpiresAt: String?, isTrialLocked: Boolean, lockReason: String?) {
-        viewModelScope.launch {
-            _state.update { it.copy(isSaving = true) }
-            try {
-                val token = "Bearer ${getToken()}"
-                val response = api.updateDeviceTrial(
-                    token,
-                    deviceId,
-                    UpdateDeviceTrialRequest(trialExpiresAt, isTrialLocked, lockReason)
-                )
-                if (response.isSuccessful && response.body()?.success == true) {
-                    _state.update { it.copy(successMessage = "ডিভাইস আপডেট সফল।") }
-                    load()
-                } else {
-                    _state.update { it.copy(isSaving = false, errorMessage = "ডিভাইস আপডেট ব্যর্থ।") }
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(isSaving = false, errorMessage = e.localizedMessage) }

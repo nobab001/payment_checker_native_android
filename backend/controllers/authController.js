@@ -2204,6 +2204,8 @@ async function remoteUpdateDevice(req, res) {
       return res.status(400).json({ success: false, error: 'deviceId is required' });
     }
 
+    const safeName = String(custom_device_name || '').trim().slice(0, 15);
+
     const result = await query(
       `UPDATE registered_devices 
        SET custom_device_name = ?, 
@@ -2216,7 +2218,7 @@ async function remoteUpdateDevice(req, res) {
            device_specific_pin = COALESCE(?, device_specific_pin)
        WHERE user_id = ? AND device_id = ?`,
       [
-        custom_device_name || '',
+        safeName,
         sim_one_number || null,
         sim_one_active !== undefined ? sim_one_active : 1,
         sim_two_number || null,

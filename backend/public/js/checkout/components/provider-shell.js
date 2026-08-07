@@ -1,4 +1,4 @@
-import { esc, providerLogoHtml, provColor, provInitial, hasImg, safeImgSrc } from '../utils.js';
+import { esc, providerLogoHtml, provColor, provInitial, hasImg, safeImgSrc, defaultProviderLogo } from '../utils.js';
 import { renderInstruction } from './instruction.js';
 import { PROVIDER_TYPE } from '../provider-constants.js';
 
@@ -64,12 +64,39 @@ function payHintAttr(provider) {
 }
 
 /** Provider header: compact logo + display name. */
-export function renderProviderHeader(provider, branding, { logoPx = 24, className = 'group-title provider-header' } = {}) {
-  return `<div class="${className}" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+export function renderProviderHeader(provider, branding, { logoPx = 28, className = 'provider-card-head' } = {}) {
+  return `<div class="${className}">
     ${providerLogoHtml(branding, templateId(provider), provider.provider, logoPx)}
-    <span>${esc(provider.displayName)}</span>
-    ${incentiveBadgeHtml(provider)}
+    <div class="provider-name">${esc(provider.displayName)}${incentiveBadgeHtml(provider)}</div>
   </div>`;
+}
+
+/** Soft brand wash (~7%) — solid fallback + light diagonal gradient. */
+function tintFromProvider(provider, alpha = 0.07) {
+  const hex = String(provColor(provider.provider) || '#94a3b8').replace('#', '');
+  if (hex.length !== 6) {
+    return `linear-gradient(135deg, rgba(148,163,184,${alpha}) 0%, rgba(148,163,184,${alpha * 0.4}) 100%)`;
+  }
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return `linear-gradient(135deg, rgba(${r},${g},${b},${alpha}) 0%, rgba(${r},${g},${b},${alpha * 0.4}) 100%)`;
+}
+
+/** Standard provider block: logo | name+hint column, then compact numbers. */
+export function renderProviderShell(provider, branding, bodyHtml, { headerLogoPx = 30 } = {}) {
+  const instruction = renderInstruction(provider.instruction);
+  const tint = tintFromProvider(provider, 0.07);
+  return `<section class="provider-block" style="background:${esc(tint)}" data-provider-id="${esc(provider.id)}" data-provider-type="${esc(provider.type)}" data-tab="${esc(provider.tabId)}" data-pay-amount="${esc(String(provider.incentive?.payAmount ?? ''))}"${payHintAttr(provider)}>
+    <div class="provider-card-top">
+      ${providerLogoHtml(branding, templateId(provider), provider.provider, headerLogoPx)}
+      <div class="provider-card-meta">
+        <div class="provider-name">${esc(provider.displayName)}${incentiveBadgeHtml(provider)}</div>
+        ${instruction}
+      </div>
+    </div>
+    <div class="provider-card-numbers">${bodyHtml || ''}</div>
+  </section>`;
 }
 
 /** Card grid tile — logo + name only. */
@@ -77,13 +104,18 @@ export function renderProviderCardPreview(provider, branding) {
   const tid = templateId(provider);
   const logoUrl = (provider.metadata?.logoUrl)
     || (tid != null ? (branding['t' + tid]?.logoUrl || '') : '');
+  const fallback = defaultProviderLogo(provider.provider);
   const c = provColor(provider.provider);
   const isRedirect = provider.type !== PROVIDER_TYPE.SIM;
-  const logoInner = hasImg(logoUrl)
-    ? `<img src="${esc(safeImgSrc(logoUrl))}" class="prov-card-logo" decoding="async" loading="lazy" data-initial="${esc(provInitial(provider.provider))}" data-color="${esc(c)}" onerror="window.__checkoutCardLogoFail&&window.__checkoutCardLogoFail(this)">`
+  const primary = safeImgSrc(logoUrl) || safeImgSrc(fallback);
+  const fbAttr = fallback && safeImgSrc(fallback) !== primary
+    ? ` data-fallback-src="${esc(safeImgSrc(fallback))}"`
+    : (fallback ? ` data-fallback-src="${esc(safeImgSrc(fallback))}"` : '');
+  const logoInner = primary
+    ? `<img src="${esc(primary)}" class="prov-card-logo" decoding="async" loading="lazy"${fbAttr} onerror="window.__checkoutCardLogoFail&&window.__checkoutCardLogoFail(this)">`
     : isRedirect
       ? `<div class="logo" style="background:var(--purple)">⚡</div>`
-      : `<div class="logo" style="background:${esc(c)}">${esc(provInitial(provider.provider))}</div>`;
+      : `<div class="logo" style="background:${esc(c)}"></div>`;
 
   const liveAttr = isRedirect ? ` data-live="${esc(liveKey(provider))}"${merchantIdAttr(provider)}` : '';
   const extraClass = isRedirect ? ' live-prov-card' : ' provider-card';
@@ -113,15 +145,6 @@ export function renderProviderLiveBody(provider) {
       </div>
     </div><span aria-hidden="true">→</span>
   </div>`;
-}
-
-/** Standard provider block: header + instruction + body. */
-export function renderProviderShell(provider, branding, bodyHtml, { headerLogoPx = 24 } = {}) {
-  const header = renderProviderHeader(provider, branding, { logoPx: headerLogoPx });
-  const instruction = renderInstruction(provider.instruction);
-  return `<section class="provider-block" data-provider-id="${esc(provider.id)}" data-provider-type="${esc(provider.type)}" data-tab="${esc(provider.tabId)}" data-pay-amount="${esc(String(provider.incentive?.payAmount ?? ''))}"${payHintAttr(provider)}>
-    ${header}${instruction}${bodyHtml || ''}
-  </section>`;
 }
 
 /** Group accordion shell. */

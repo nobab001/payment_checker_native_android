@@ -759,6 +759,66 @@ async function manualGrace(req, res) {
   });
 }
 
+async function getUserPurchaseHistory(req, res) {
+  try {
+    const userId = Number(req.params.id);
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'INVALID_USER_ID' });
+    }
+    const { getAdminPurchaseHistory } = require('../services/subscriptionV3/refundService');
+    const purchases = await getAdminPurchaseHistory(userId);
+    return res.json({
+      success: true,
+      purchases: (purchases || []).map((row) => ({
+        id: Number(row.id),
+        invoice_no: row.invoice_no || null,
+        package_full_name: row.package_full_name || row.package_sku || 'Package',
+        package_sku: row.package_sku || null,
+        category: row.category || null,
+        duration_key: row.duration_key || null,
+        purchase_type: row.purchase_type || null,
+        list_price: Number(row.list_price || 0),
+        credit_applied: Number(row.credit_applied || 0),
+        paid_amount: Number(row.paid_amount || 0),
+        duration_days: row.duration_days != null ? Number(row.duration_days) : null,
+        started_at: row.started_at || null,
+        ends_at: row.ends_at || null,
+        transaction_id: row.transaction_id || null,
+        purchased_at: row.purchased_at || null,
+        refund_status: row.refund_status || null,
+        admin_marked: Number(row.admin_marked || 0) === 1,
+      })),
+    });
+  } catch (err) {
+    console.error('[Admin] getUserPurchaseHistory error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
+async function markUserPurchase(req, res) {
+  try {
+    const userId = Number(req.params.id);
+    const purchaseId = Number(req.params.purchaseId);
+    const marked = req.body?.marked === true || req.body?.marked === 1 || req.body?.marked === '1';
+    if (!userId || !purchaseId) {
+      return res.status(400).json({ success: false, error: 'INVALID_REQUEST' });
+    }
+    const { markAdminPurchase } = require('../services/subscriptionV3/refundService');
+    const ok = await markAdminPurchase(userId, purchaseId, marked);
+    if (!ok) {
+      return res.status(404).json({ success: false, error: 'PURCHASE_NOT_FOUND' });
+    }
+    return res.json({
+      success: true,
+      message: marked ? 'মার্ক করা হয়েছে।' : 'মার্ক সরানো হয়েছে।',
+      marked,
+    });
+  } catch (err) {
+    console.error('[Admin] markUserPurchase error:', err);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+}
+
 async function extendSubscription(req, res) {
   try {
     const { id } = req.params;
@@ -1257,5 +1317,7 @@ module.exports = {
   getGlobalBlockedSendersAdmin,
   saveGlobalBlockedSendersAdmin,
   extendSubscription,
+  getUserPurchaseHistory,
+  markUserPurchase,
   generateCustomRegex
 };

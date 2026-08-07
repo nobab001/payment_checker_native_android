@@ -160,6 +160,36 @@ data class UpdateDeviceTrialRequest(
     @SerializedName("lock_reason") val lockReason: String?
 )
 
+data class AdminPurchaseHistoryDto(
+    @SerializedName("id") val id: Int,
+    @SerializedName("invoice_no") val invoiceNo: String? = null,
+    @SerializedName("package_full_name") val packageFullName: String? = null,
+    @SerializedName("package_sku") val packageSku: String? = null,
+    @SerializedName("category") val category: String? = null,
+    @SerializedName("duration_key") val durationKey: String? = null,
+    @SerializedName("purchase_type") val purchaseType: String? = null,
+    @SerializedName("list_price") val listPrice: Double? = null,
+    @SerializedName("credit_applied") val creditApplied: Double? = null,
+    @SerializedName("paid_amount") val paidAmount: Double? = null,
+    @SerializedName("duration_days") val durationDays: Int? = null,
+    @SerializedName("started_at") val startedAt: String? = null,
+    @SerializedName("ends_at") val endsAt: String? = null,
+    @SerializedName("transaction_id") val transactionId: String? = null,
+    @SerializedName("purchased_at") val purchasedAt: String? = null,
+    @SerializedName("refund_status") val refundStatus: String? = null,
+    @SerializedName("admin_marked") val adminMarked: Boolean = false
+)
+
+data class AdminPurchaseHistoryResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("purchases") val purchases: List<AdminPurchaseHistoryDto>? = null,
+    @SerializedName("error") val error: String? = null
+)
+
+data class MarkPurchaseRequest(
+    @SerializedName("marked") val marked: Boolean
+)
+
 data class OtpFormatResponse(
     @SerializedName("success") val success: Boolean,
     @SerializedName("template") val template: String

@@ -3,7 +3,7 @@ package online.paychek.app.ui.common
 /**
  * Progressive SMS history windows shared by Home + Search.
  * INITIAL_20 = latest page (~20). Then expand: 7 → 15 → 21 → 30 days.
- * Custom Archive stops at 15 days (rolling retention window).
+ * All-SMS archive stops at 15 days (rolling retention window).
  */
 enum class HistoryLoadTier {
     INITIAL_20,

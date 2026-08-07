@@ -100,7 +100,7 @@ fun BillingConfigScreen(
     var trialWelcomeTitle by remember { mutableStateOf("অভিনন্দন!") }
     var trialWelcomeMessage by remember {
         mutableStateOf(
-            "আপনার জন্য {trial_days} দিনের Trial Package সক্রিয় করা হয়েছে।\n\nএখন আপনি সম্পূর্ণ ফ্রি-তে PayCheck-এর সকল Premium Feature ব্যবহার করে দেখতে পারবেন।"
+            "আপনার জন্য {trial_days} দিনের Trial Package সক্রিয় করা হয়েছে।\n\nএখন আপনি সম্পূর্ণ ফ্রি-তে Paycheck-এর সকল Premium Feature ব্যবহার করে দেখতে পারবেন।"
         )
     }
     var trialWelcomeFeatures by remember {
@@ -159,7 +159,7 @@ fun BillingConfigScreen(
         trialWelcomeEnabled = (uiState.configs["trial_welcome_enabled"] ?: "1") != "0"
         trialWelcomeTitle = uiState.configs["trial_welcome_title"] ?: "অভিনন্দন!"
         trialWelcomeMessage = uiState.configs["trial_welcome_message"]
-            ?: "আপনার জন্য {trial_days} দিনের Trial Package সক্রিয় করা হয়েছে।\n\nএখন আপনি সম্পূর্ণ ফ্রি-তে PayCheck-এর সকল Premium Feature ব্যবহার করে দেখতে পারবেন।"
+            ?: "আপনার জন্য {trial_days} দিনের Trial Package সক্রিয় করা হয়েছে।\n\nএখন আপনি সম্পূর্ণ ফ্রি-তে Paycheck-এর সকল Premium Feature ব্যবহার করে দেখতে পারবেন।"
         trialWelcomeFeatures = uiState.configs["trial_welcome_features"]
             ?: "Payment Monitoring\nAPI Access\nCheckout System\nMerchant Dashboard\nReal-time Notification"
         trialWelcomeShowOnce = (uiState.configs["trial_welcome_show_once"] ?: "1") != "0"
